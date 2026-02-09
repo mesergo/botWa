@@ -197,16 +197,22 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId) => {
       }
 
       case 'output_menu': {
+        // Send text message first (if exists)
         const text = replaceParameters(nodeData.content || '', params);
-        const options = (nodeData.options || []).map((opt, idx) => ({
-          label: opt,
-          value: opt,
-          image_url: nodeData.optionImages?.[idx] || undefined
-        })).filter(o => o.label !== 'default');
+        if (text) {
+          const textMsg = { type: 'Text', text, created: new Date().toISOString() };
+          messages.push(textMsg);
+          addToHistory(session, textMsg, currentNodeId);
+        }
         
-        const msg = { type: 'Options', text, options, created: new Date().toISOString() };
-        messages.push(msg);
-        addToHistory(session, msg, currentNodeId);
+        // Then send options menu (array of strings, not objects)
+        const options = (nodeData.options || [])
+          .filter(opt => opt !== 'default')
+          .map(opt => String(opt));
+        
+        const optionsMsg = { type: 'Options', options, created: new Date().toISOString() };
+        messages.push(optionsMsg);
+        addToHistory(session, optionsMsg, currentNodeId);
         
         // Stop here and wait for user selection
         session.current_node_id = currentNodeId;
