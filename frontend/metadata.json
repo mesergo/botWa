@@ -1,0 +1,8 @@
+{
+  "name": "FlowBot Builder",
+  "description": "A professional-grade chatbot flow builder with a visual canvas, drag-and-drop components, and a real-time simulator to test conversational logic.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
