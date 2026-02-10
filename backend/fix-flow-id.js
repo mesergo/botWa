@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 import BotFlow from './models/BotFlow.js';
 import Widget from './models/Widget.js';
 
-const MONGODB_URI = 'mongodb://localhost:27017/botswa';
+const MONGODB_URI = 'mongodb://127.0.0.1:27017/bots';
 
 async function fixFlowIds() {
   try {
