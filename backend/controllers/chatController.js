@@ -4,7 +4,47 @@ import Widget from '../models/Widget.js';
 import Option from '../models/Option.js';
 import BotSession from '../models/BotSession.js';
 import fetch from 'node-fetch';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { handleWebService, findMatchingOption } from '../utils/webserviceHandler.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Helper: Convert base64 to URL
+const convertBase64ToUrl = (base64Data, req) => {
+  if (!base64Data || !base64Data.startsWith('data:image')) {
+    return base64Data; // Return as-is if not base64
+  }
+
+  try {
+    const matches = base64Data.match(/^data:image\/([a-zA-Z]+);base64,(.+)$/);
+    if (!matches) return base64Data;
+
+    const ext = matches[1];
+    const data = matches[2];
+    const buffer = Buffer.from(data, 'base64');
+
+    const uploadDir = path.join(__dirname, '../uploads');
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+
+    const filename = `${Date.now()}-${Math.round(Math.random() * 1E9)}.${ext}`;
+    const filepath = path.join(uploadDir, filename);
+
+    fs.writeFileSync(filepath, buffer);
+
+    // Return URL
+    const protocol = req?.protocol || 'http';
+    const host = req?.get('host') || 'localhost:3001';
+    return `${protocol}://${host}/uploads/${filename}`;
+  } catch (error) {
+    console.error('[convertBase64ToUrl] Error:', error);
+    return base64Data; // Return original if conversion fails
+  }
+};
 
 // Helper: Replace parameters in text
 const replaceParameters = (text, parameters) => {
@@ -138,7 +178,7 @@ const addToHistory = (session, message, nodeId) => {
 };
 
 // Main: Walk through nodes chain
-const walkChain = async (startNodeId, nodes, edges, session, flowId) => {
+const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null) => {
   const messages = [];
   let currentNodeId = startNodeId;
   let depth = 0;
@@ -178,7 +218,9 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId) => {
       }
 
       case 'output_image': {
-        const url = replaceParameters(nodeData.url || '', params);
+        let url = replaceParameters(nodeData.url || '', params);
+        // Convert base64 to URL if needed
+        url = convertBase64ToUrl(url, req);
         const msg = { type: 'Image', url, created: new Date().toISOString() };
         messages.push(msg);
         addToHistory(session, msg, currentNodeId);
@@ -297,7 +339,7 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId) => {
             session.execution_stack = stack;
             
             // Process subprocess
-            const subMessages = await walkChain(startNode.id, subFlow.nodes, subFlow.edges, session, flowId);
+            const subMessages = await walkChain(startNode.id, subFlow.nodes, subFlow.edges, session, flowId, req);
             messages.push(...subMessages);
             
             // If subprocess finished, return to parent
@@ -337,7 +379,7 @@ export const respondToMessage = async (req, res) => {
     const isGetRequest = req.method === 'GET';
     const source = isGetRequest ? req.query : req.body;
     
-    const { phone, text = '', sender = 'unknown', token: tokenParam } = source;
+    const { phone, text = '', sender = 'unknown', token: tokenParam, bot_id } = source;
     const token = req.headers.authorization?.replace('Bearer ', '') || tokenParam;
 
     console.log('[BOT] Incoming request:', { phone, sender, text: text.substring(0, 50) });
@@ -360,28 +402,34 @@ export const respondToMessage = async (req, res) => {
 
     // Find or create session
     let session = await BotSession.findOne({
-      customer_phone: phone,
       sender,
       is_active: true
-    }).sort({ updated_at: -1 });
+    }).sort({ updatedAt: -1 });
 
     let isNewSession = false;
     let messages = [];
     let control = null;
 
-    // Check if session expired (10 minutes)
+    // Check if session exists and is within 15 minutes
     if (session) {
-      const diffMinutes = (new Date() - new Date(session.updated_at)) / (1000 * 60);
-      if (diffMinutes > 10) {
-        console.log('[BOT] Session expired, closing');
+      const diffMinutes = (new Date() - new Date(session.updatedAt)) / (1000 * 60);
+      console.log(`[BOT] Found existing session - age: ${diffMinutes.toFixed(2)} minutes`);
+      
+      if (diffMinutes > 15) {
+        console.log('[BOT] Session expired (>15 min), closing and will create new one');
         session.is_active = false;
         await session.save();
         session = null;
       } else {
-        // Update sender if changed
+        console.log(`[BOT] Using existing session - bot: ${session.flow_id}, sender: ${session.sender}`);
+        // Update sender and phone if changed
         if (session.sender !== sender) {
           console.log(`[BOT] Updating sender from ${session.sender} to ${sender}`);
           session.sender = sender;
+        }
+        if (session.customer_phone !== phone) {
+          console.log(`[BOT] Updating phone from ${session.customer_phone} to ${phone}`);
+          session.customer_phone = phone;
         }
       }
     }
@@ -390,19 +438,38 @@ export const respondToMessage = async (req, res) => {
     if (!session) {
       console.log('[BOT] Creating new session');
       
-      // Find user's bots
-      const userBots = await BotFlow.find({ user_id: user._id });
-      console.log(`[BOT] Found ${userBots.length} bots:`, userBots.map(b => ({ id: b._id, name: b.name })));
+      let bot;
       
-      if (userBots.length === 0) {
-        return res.status(404).json({ 
-          StatusId: 0, 
-          StatusDescription: 'No bots found for user' 
-        });
+      // If bot_id provided, use that specific bot
+      if (bot_id) {
+        console.log('[BOT] Looking for specific bot_id:', bot_id);
+        bot = await BotFlow.findOne({ _id: bot_id, user_id: user._id });
+        if (!bot) {
+          return res.status(404).json({ 
+            StatusId: 0, 
+            StatusDescription: 'Bot not found or does not belong to user' 
+          });
+        }
+        console.log('[BOT] Using specified bot:', { id: bot._id, name: bot.name });
+      } else {
+        // No bot_id provided - use default bot
+        console.log('[BOT] No bot_id provided, looking for default bot');
+        bot = await BotFlow.findOne({ user_id: user._id, is_default: true });
+        
+        if (!bot) {
+          // No default bot - use first bot
+          console.log('[BOT] No default bot found, using first bot');
+          const userBots = await BotFlow.find({ user_id: user._id });
+          if (userBots.length === 0) {
+            return res.status(404).json({ 
+              StatusId: 0, 
+              StatusDescription: 'No bots found for user' 
+            });
+          }
+          bot = userBots[0];
+        }
+        console.log('[BOT] Using bot:', { id: bot._id, name: bot.name, is_default: bot.is_default });
       }
-
-      // Use first bot (or implement bot selection logic)
-      const bot = userBots[0];
       console.log('[BOT] Using bot:', { id: bot._id, id_string: bot._id.toString(), name: bot.name });
       
       // First, let's check what flow_ids exist in widgets
@@ -512,7 +579,7 @@ export const respondToMessage = async (req, res) => {
       console.log(`[BOT] Next node ID: ${nextNodeId}`);
       
       if (nextNodeId) {
-        messages = await walkChain(nextNodeId, flowData.nodes, flowData.edges, session, session.flow_id);
+        messages = await walkChain(nextNodeId, flowData.nodes, flowData.edges, session, session.flow_id, req);
       }
     } else if (currentNode.type === 'input_text' || currentNode.type === 'input_date' || currentNode.type === 'input_file') {
       // Save input to parameters
@@ -524,7 +591,7 @@ export const respondToMessage = async (req, res) => {
       
       const nextNodeId = findNextNode(currentNode.id, flowData.edges);
       if (nextNodeId) {
-        messages = await walkChain(nextNodeId, flowData.nodes, flowData.edges, session, session.flow_id);
+        messages = await walkChain(nextNodeId, flowData.nodes, flowData.edges, session, session.flow_id, req);
       }
     } else if (currentNode.type === 'output_menu') {
       // Handle menu selection
@@ -541,7 +608,7 @@ export const respondToMessage = async (req, res) => {
         
         const nextNodeId = findNextNode(currentNode.id, flowData.edges, `option-${selectedIdx}`);
         if (nextNodeId) {
-          messages = await walkChain(nextNodeId, flowData.nodes, flowData.edges, session, session.flow_id);
+          messages = await walkChain(nextNodeId, flowData.nodes, flowData.edges, session, session.flow_id, req);
         }
       } else {
         messages.push({ 
@@ -578,7 +645,7 @@ export const respondToMessage = async (req, res) => {
       console.log(`[BOT] Next node ID: ${nextNodeId}`);
       
       if (nextNodeId) {
-        messages = await walkChain(nextNodeId, flowData.nodes, flowData.edges, session, session.flow_id);
+        messages = await walkChain(nextNodeId, flowData.nodes, flowData.edges, session, session.flow_id, req);
       }
     }
 
