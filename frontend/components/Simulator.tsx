@@ -116,6 +116,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
   const scrollRef = useRef<HTMLDivElement>(null);
   const simulatorFileInputRef = useRef<HTMLInputElement>(null);
   const initialStartRef = useRef(false);
+  const updateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => { 
     if (isOpen && nodes && nodes.length > 0 && !initialStartRef.current) {
@@ -134,13 +135,41 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
   useEffect(() => { if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight; }, [messages, isBotTyping]);
 
   useEffect(() => {
-    if (sessionId && token) {
-      fetch(`${API_BASE}/sessions/update-parameters`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ sessionId, parameters: sessionParameters })
-      }).catch(err => console.error("Failed to sync parameters:", err));
+    if (!sessionId || Object.keys(sessionParameters).length === 0) {
+      return;
     }
+
+    // Clear previous timeout
+    if (updateTimeoutRef.current) {
+      clearTimeout(updateTimeoutRef.current);
+    }
+
+    // Debounce: wait 300ms before sending update
+    updateTimeoutRef.current = setTimeout(async () => {
+      try {
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+        
+        const response = await fetch(`${API_BASE}/sessions/update-parameters`, {
+          method: 'POST',
+          headers: headers,
+          body: JSON.stringify({ sessionId, parameters: sessionParameters })
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+          console.error("Failed to sync parameters:", errorData);
+        }
+      } catch (err) {
+        console.error("Failed to sync parameters:", err);
+      }
+    }, 300);
+
+    return () => {
+      if (updateTimeoutRef.current) {
+        clearTimeout(updateTimeoutRef.current);
+      }
+    };
   }, [sessionParameters, sessionId, token]);
 
   const updateParam = (name: string, value: any) => {
@@ -155,21 +184,39 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
   };
 
   const resetChat = async () => {
+    // Clear any pending parameter updates
+    if (updateTimeoutRef.current) {
+      clearTimeout(updateTimeoutRef.current);
+      updateTimeoutRef.current = null;
+    }
+    
     setMessages([]); setExecutionStack([]); sessionParamsRef.current = {}; setSessionParameters({});
     setLastUserValue({ string: null, number: null }); setCurrentCommand(null); setIsWaitingForWebserviceResponse(false); setSessionId(null);
     const instance = getActiveInstance();
     const startNode = instance?.getNodes().find((n: any) => n.type === NodeType.START || n.type === NodeType.AUTOMATIC_RESPONSES);
     
-    if (token && startNode) {
+    if (startNode && startNode.id) {
       try {
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+
         const res = await fetch(`${API_BASE}/sessions/start`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-          body: JSON.stringify({ widget_id: startNode?.id })
+          headers: headers,
+          body: JSON.stringify({ widget_id: startNode.id })
         });
+        
+        if (!res.ok) {
+          const errData = await res.json();
+          throw new Error(errData.error || 'Server error');
+        }
+
         const data = await res.json();
         setSessionId(data.sessionId);
-      } catch (e) { console.error("Failed to start session:", e); }
+      } catch (e) { 
+        console.error("Failed to start session:", e); 
+        // Optional: show user friendly error
+      }
     }
 
     if (startNode) { 
@@ -179,7 +226,10 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
   };
 
   const openInNewWindow = () => {
-    const url = window.location.origin + window.location.pathname + '?mode=simulator' + (flowId ? `&flow_id=${flowId}` : '');
+    const pid = currentUser?.public_id || (new URLSearchParams(window.location.search)).get('public_id');
+    let url = window.location.origin + window.location.pathname + '?mode=simulator';
+    if (pid) url += `&public_id=${pid}`;
+    if (flowId) url += `&flow_id=${flowId}`;
     window.open(url, 'FlowBotSimulator', 'width=450,height=850,menubar=no,toolbar=no,location=no,status=no');
   };
 
@@ -334,7 +384,15 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
         setIsBotTyping(true); setIsWaitingForWebserviceResponse(false);
         try {
           const payload = { campaign: { id: 50000, name: "FlowBot Campaign" }, chat: { created: new Date().toISOString().replace('T', ' ').split('.')[0], source: "FlowBot_Studio", sender: "SimUser_123", control: nodeId }, parameters: Object.entries(sessionParamsRef.current).map(([name, value]) => ({ name, value })), value: forcedValue || lastUserValue, command: forcedCommand !== undefined ? forcedCommand : currentCommand };
-          const response = await fetch(`${API_BASE}/proxy/webservice`, { method: 'POST', headers: token ? { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` } : { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: interpolate(node.data.url), payload: payload }) });
+          
+          const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+          if (token) headers['Authorization'] = `Bearer ${token}`;
+
+          const response = await fetch(`${API_BASE}/proxy/webservice`, { 
+            method: 'POST', 
+            headers: headers, 
+            body: JSON.stringify({ url: interpolate(node.data.url), payload: payload }) 
+          });
           const data = await response.json(); 
           
           setIsBotTyping(false); 
@@ -436,7 +494,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
         <div className="flex items-center gap-4 flex-row-reverse">
           <div className="w-11 h-11 rounded-2xl bg-blue-600 flex items-center justify-center text-white shadow-lg"><Bot size={24} /></div>
           <div className="text-right">
-            <h2 className="font-bold text-xs uppercase tracking-widest">InforUMobile API</h2>
+            <h2 className="font-bold text-xs uppercase tracking-widest">MeserGO</h2>
             <div className="flex items-center justify-end gap-2 mt-0.5">
               <span className="text-[10px] text-slate-400 font-bold uppercase tracking-tighter">סימולטור פעיל</span>
               <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
@@ -522,7 +580,10 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
                   {msg.type === 'link' && (
                     <div className="space-y-2">
                       <p>{msg.content}</p>
-                      <a href={msg.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 text-blue-600 hover:underline font-bold text-xs">{msg.url} <ExternalLink size={14} /></a>
+
+                      <a href={msg.url} target="_blank" rel="noopener noreferrer" className="block text-blue-600 hover:underline font-bold text-xs break-all overflow-wrap-anywhere">
+                        <span className="inline-flex items-center gap-1">{msg.url} <ExternalLink size={14} className="flex-shrink-0" /></span>
+                      </a>
                     </div>
                   )}
                   {msg.type === 'menu' && (
@@ -549,7 +610,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
                        </button>
                     </div>
                   )}
-                  {msg.type.startsWith('input_') && msg.type !== 'input_file' && <div className="flex items-center justify-end gap-2 italic text-slate-400">{msg.content} <FileText size={16} /></div>}
+                  {msg.type.startsWith('input_') && msg.type !== 'input_file' && <div className="text-slate-900">{msg.content}</div>}
                 </div>
               </div>
             )}
@@ -563,7 +624,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
       </div>
       <div className="p-6 bg-white border-t border-slate-50">
         <div className="flex items-center gap-3 bg-slate-50 rounded-[1.5rem] p-2.5 pr-6 border border-slate-100 flex-row-reverse">
-          <input type="text" placeholder="הקלד תשובה..." className="flex-1 bg-transparent border-none outline-none text-sm font-bold text-black h-10 text-right" value={userInput} onChange={e => setUserInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSend()} />
+          <input type="text" placeholder="הקלד תשובה..." dir="rtl" className="flex-1 bg-transparent border-none outline-none text-sm font-bold text-black h-10 text-right" value={userInput} onChange={e => setUserInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSend()} />
           <button onClick={handleSend} disabled={!userInput.trim()} className={`p-3 rounded-2xl transition-all ${userInput.trim() ? 'bg-blue-600 text-white shadow-xl shadow-blue-600/20' : 'bg-slate-200 text-slate-400'}`}><Send size={20} className="transform rotate-180" /></button>
         </div>
       </div>

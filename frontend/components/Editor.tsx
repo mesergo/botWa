@@ -67,7 +67,8 @@ const Editor: React.FC<EditorProps> = ({
             <Search className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-300" size={20} />
             <input 
               className="pr-14 pl-32 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm w-80 outline-none focus:bg-white focus:ring-4 focus:ring-blue-600/5 focus:border-blue-600 transition-all text-right font-medium" 
-              placeholder={`עריכת: ${selectedBot?.name || 'תזרים'}...`} 
+              placeholder="חיפוש text או ID" 
+              dir="rtl"
               value={searchQuery} 
               onChange={e => onSearchChange(e.target.value)} 
             />
@@ -100,6 +101,7 @@ const Editor: React.FC<EditorProps> = ({
               nodeTypes={nodeTypes} edgeTypes={edgeTypes} 
               fitView 
               fitViewOptions={{ padding: 6.0 }}
+              proOptions={{ hideAttribution: true }}
             >
               <Background variant={BackgroundVariant.Dots} color="#b9bdc1ff" gap={20} size={2} />
               <Controls className="!bg-white !shadow-xl !rounded-2xl !border-slate-100" />

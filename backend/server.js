@@ -11,6 +11,8 @@ import proxyRoutes from './routes/proxyRoutes.js';
 import sessionRoutes from './routes/sessionRoutes.js';
 import versionRoutes from './routes/versionRoutes.js';
 import chatRoutes from './routes/chatRoutes.js';
+import templateRoutes from './routes/templateRoutes.js';
+import { seedTemplates } from './controllers/templateController.js';
 
 // Load environment variables
 dotenv.config();
@@ -35,6 +37,9 @@ async function startServer() {
     await connectDB();
     console.log('✅ Database connected, registering routes...');
     
+    // Seed templates AFTER database connection
+    await seedTemplates();
+    
     // Register routes AFTER database connection
     app.use('/api/auth', authRoutes);
     app.use('/api/bots', botRoutes);
@@ -45,6 +50,8 @@ async function startServer() {
     app.use('/api/versions', versionRoutes);
     app.use('/api/chat', chatRoutes);
     
+    app.use('/api/templates', templateRoutes);
+
     // Start server
     app.listen(PORT, () => {
       console.log(`🚀 Backend server running on http://localhost:${PORT}`);

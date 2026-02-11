@@ -84,3 +84,4 @@ mongoose.connection.on('disconnected', () => {
 mongoose.set('bufferCommands', false);
 
 export default connectDB;
+export { mongoose };

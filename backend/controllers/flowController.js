@@ -2,6 +2,7 @@
 import Version from '../models/Version.js';
 import Widget from '../models/Widget.js';
 import Option from '../models/Option.js';
+import { mongoose } from '../config/db.js';
 
 const fetchFlowData = async (userId, flow_id, standard_process_id = null, versionId = null) => {
   if (versionId) {
@@ -182,10 +183,31 @@ export const getFlow = async (req, res) => {
 };
 
 export const getPublicFlow = async (req, res) => {
-  const { userId } = req.params;
+  const { userId } = req.params; // This userId is the public_id from URL
   const { flow_id, version_id = null } = req.query;
   try {
-    const data = await fetchFlowData(userId, flow_id, null, version_id);
+    // Access the collection via mongoose connection
+    const userCollection = mongoose.connection.collection('User');
+    
+    // We need to find the real owner database ID using the public_id provided in the URL
+    const owner = await userCollection.findOne({ public_id: userId });
+    if (!owner) {
+      return res.status(404).json({ error: 'Flow owner not found' });
+    }
+    const internalUserId = owner._id.toString();
+
+    // Fix: If flow_id is missing or 'null', try to find the most recent bot of this user
+    let targetFlowId = flow_id;
+    if (!targetFlowId || targetFlowId === 'null') {
+      const botCollection = mongoose.connection.collection('bot_flows');
+      const latestBot = await botCollection.findOne({ user_id: internalUserId }, { sort: { created_at: -1 } });
+      if (latestBot) targetFlowId = latestBot._id.toString();
+    }
+
+    const data = await fetchFlowData(internalUserId, targetFlowId, null, version_id);
     res.json(data);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { 
+    console.error("Public Flow Error:", err);
+    res.status(500).json({ error: err.message }); 
+  }
 };

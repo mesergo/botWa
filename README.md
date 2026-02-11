@@ -1,40 +1,4 @@
-# FlowBot Studio - מערכת בניית בוטים לוויזואלית
-
-## 🎯 מה זה?
-
-מערכת מתקדמת לבניית בוטים שיחה (chatbots) בצורה ויזואלית, ללא צורך בקוד.  
-כוללת:
-- ✅ עורך drag & drop ויזואלי
-- ✅ סימולטור מובנה לבדיקות
-- ✅ **API חדש** לשילוב WhatsApp ומערכות חיצוניות
-- ✅ ניהול משתמשים וגרסאות
-- ✅ תהליקים משותפים (Fixed Processes)
-- ✅ אינטגרציה עם Webservices
-
----
-
-## 🆕 חדש! WhatsApp Bot API
-
-**נוסף לאחרונה**: API endpoint מלא שמאפשר לשלוח הודעות ולקבל תגובות אוטומטיות!
-
-📚 **קרא עוד**:
-- [CHAT-API-README.md](./CHAT-API-README.md) - מדריך מהיר
-- [CHAT-API-GUIDE.md](./CHAT-API-GUIDE.md) - תיעוד טכני
-- [CHAT-API-EXAMPLES.md](./CHAT-API-EXAMPLES.md) - דוגמאות שימוש
-- [IMPLEMENTATION-SUMMARY.md](./IMPLEMENTATION-SUMMARY.md) - סיכום שינויים
-
-**שימוש מהיר**:
-```bash
-# 1. צור token למשתמש
-node backend/add-token.js your@email.com
-
-# 2. שלח הודעה
-curl -X POST http://localhost:3001/api/chat/respond \
-  -H "Authorization: Bearer YOUR-TOKEN" \
-  -d '{"phone":"972501234567","text":"שלום","sender":"972509876543"}'
-```
-
----
+# FlowBot Studio - מערכת בניית תהליכים אוטומטיים
 
 ## סביבות הרצה
 

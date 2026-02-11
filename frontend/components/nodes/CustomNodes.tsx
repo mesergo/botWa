@@ -271,7 +271,7 @@ export const OutputLinkNode = (props: any) => (
 );
 
 export const OutputMenuNode = (props: any) => {
-  const options = props.data.options || ['אפשרות 1'];
+  const options = props.data.options || [''];
   const optionImages = props.data.optionImages || [];
   const fileInputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
@@ -302,7 +302,7 @@ export const OutputMenuNode = (props: any) => {
 
   const addOption = () => {
     props.data.onChange({ 
-      options: [...options, `אפשרות ${options.length + 1}`],
+      options: [...options, ''],
       optionImages: [...(props.data.optionImages || Array(options.length).fill('')), '']
     });
   };
@@ -325,7 +325,7 @@ export const OutputMenuNode = (props: any) => {
           <div key={i} className="flex items-center gap-2 p-2 bg-slate-50 border border-slate-100 rounded-2xl group/item relative transition-colors hover:bg-white hover:border-blue-100">
             <Handle type="source" position={Position.Right} id={`option-${i}`} style={{ top: '50%', right: -16 }} className="w-4 h-4 bg-slate-400 border-2 border-white rounded-full shadow-lg" />
             <div className="flex-1">
-              <SearchableInput value={opt} onChange={(v: string) => updateOption(i, v)} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
+              <SearchableInput value={opt} onChange={(v: string) => updateOption(i, v)} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} placeholder="הזן ערך" />
             </div>
             <div className="flex items-center gap-1.5 pl-1 pr-1">
               {optionImages[i] ? (
@@ -422,11 +422,6 @@ export const ActionWebServiceNode = (props: any) => {
               </div>
               <button onClick={() => removeBranch(i)} className="p-2 text-slate-300 hover:text-red-500 opacity-0 group-hover/branch:opacity-100 transition-all nodrag"><X size={18} /></button>
             </div>
-            
-            <div className="flex items-center justify-end gap-1.5 text-[12px] text-slate-400 font-bold uppercase tracking-tight">
-              <span>{OPERATORS.find(o => o.id === operators[i])?.label}</span>
-              <GitBranch size={12} />
-            </div>
           </div>
         ))}
         {branches.length === 0 && (
@@ -493,7 +488,7 @@ export const AutomaticResponsesNode = (props: any) => {
             <div key={i} className={`flex items-center gap-2 p-2 border rounded-2xl group/item relative transition-colors ${isDefault ? 'bg-slate-50 border-slate-200' : 'bg-slate-50 border-slate-100 hover:bg-white hover:border-blue-100'}`}>
               <Handle type="source" position={Position.Right} id={`option-${i}`} style={{ top: '50%', right: -16 }} className="w-4 h-4 bg-slate-400 border-2 border-white rounded-full shadow-lg" />
               <div className="flex-1">
-                <SearchableInput value={opt} onChange={(v: string) => updateOption(i, v)} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} disabled={isDefault} placeholder={!isDefault ? "הזן פתיח (למשל: שלום)" : ""} />
+                <SearchableInput value={opt} onChange={(v: string) => updateOption(i, v)} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} disabled={isDefault} placeholder={!isDefault ? "הזן ערך" : ""} />
               </div>
               <div className="flex items-center gap-1.5 pl-1 pr-1 flex-row-reverse">
                 {!isDefault ? (

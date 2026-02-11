@@ -8,9 +8,10 @@ interface DashboardProps {
   onCreateBot: (name: string) => void;
   onDeleteBot: (id: string) => void;
   onLogout: () => void;
+  currentUser?: { name?: string; email?: string } | null;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, onDeleteBot, onLogout }) => {
+const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, onDeleteBot, onLogout, currentUser }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newBotName, setNewBotName] = useState('');
 
@@ -34,6 +35,9 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
           <img src="/images/mesergo-logo.png" alt="Logo" className="h-10 w-auto" />
         </div>
         <div className="flex items-center gap-4">
+          {currentUser && (
+            <span className="text-sm font-bold text-slate-600">שלום, {currentUser.name || currentUser.email}</span>
+          )}
           <button onClick={onLogout} className="p-2.5 text-slate-300 hover:text-red-500 transition-colors rounded-xl hover:bg-red-50"><LogOut size={22} /></button>
         </div>
       </nav>

@@ -1,11 +1,10 @@
 
 import express from 'express';
 import { startSession, updateSessionParameters } from '../controllers/sessionController.js';
-import { authenticateToken } from '../middleware/auth.js';
 
 const router = express.Router();
 
-router.post('/start', authenticateToken, startSession);
-router.post('/update-parameters', authenticateToken, updateSessionParameters);
-
+// Public routes for simulator usage
+router.post('/start', startSession);
+router.post('/update-parameters', updateSessionParameters);
 export default router;

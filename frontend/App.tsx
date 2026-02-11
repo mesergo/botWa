@@ -1,15 +1,17 @@
+
 import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { ReactFlowProvider, addEdge, Node, Edge, applyNodeChanges, applyEdgeChanges, OnNodesChange, OnEdgesChange, OnConnect, ReactFlowInstance, MarkerType } from 'reactflow';
-import { NodeType, NodeData, User, FixedProcess, Version, BotFlow } from './types';
+import { NodeType, NodeData, User, FixedProcess, Version, BotFlow, PredefinedTemplate } from './types';
 import Dashboard from './components/Dashboard';
 import AuthScreen from './components/AuthScreen';
 import Editor from './components/Editor';
+import TemplateSelection from './components/TemplateSelection';
+import TemplateForm from './components/TemplateForm';
 import { StartNode, InputTextNode, InputDateNode, InputFileNode, OutputTextNode, OutputImageNode, OutputLinkNode, OutputMenuNode, ActionWebServiceNode, ActionWaitNode, FixedProcessNode, AutomaticResponsesNode } from './components/nodes/CustomNodes';
 import ButtonEdge from './components/edges/ButtonEdge';
 import { CloudUpload, RotateCcw, Plus, AlertTriangle, Copy, X, Lock } from 'lucide-react';
 import Simulator from './components/Simulator';
 
-// const API_BASE = 'http://localhost:3001/api';
 const API_BASE = window.location.hostname === 'localhost' 
   ? 'http://localhost:3001/api' 
   : `${window.location.origin}/api`;
@@ -29,8 +31,8 @@ const nodeTypes = {
 };
 const edgeTypes = { button: ButtonEdge };
 const DEFAULT_EDGE_STYLE = { stroke: '#3b82f6', strokeWidth: 2, strokeDasharray: '6,4' };
-
-type ViewMode = 'dashboard' | 'editor' | 'editing-process' | 'viewing-process' | 'simulator-only';
+ 
+type ViewMode = 'dashboard' | 'editor' | 'editing-process' | 'viewing-process' | 'simulator-only' | 'template-selection' | 'template-form';
 
 const FlowBuilder: React.FC = () => {
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
@@ -79,8 +81,11 @@ const FlowBuilder: React.FC = () => {
   const [isProcessModalOpen, setIsProcessModalOpen] = useState(false);
   const [newProcessName, setNewProcessName] = useState('');
 
-  // New Quota State
+  // Quota State
   const [quotaError, setQuotaError] = useState<{ type: 'bots' | 'versions', message: string, price: number } | null>(null);
+
+  // Template State
+  const [selectedTemplate, setSelectedTemplate] = useState<PredefinedTemplate | null>(null);
 
   // --- Edge Delete Listener ---
   useEffect(() => {
@@ -231,8 +236,8 @@ const FlowBuilder: React.FC = () => {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const flowIdFromUrl = params.get('flow_id');
-    const publicIdFromUrl = params.get('public_id');
-    const botId = selectedBot?.id || flowIdFromUrl || publicIdFromUrl || null;
+    // Ensure we don't treat the public_id as the botId
+    const botId = selectedBot?.id || flowIdFromUrl || null;
 
     if (token) loadProcesses();
     if (botId || activeProcessId) {
@@ -251,38 +256,20 @@ const FlowBuilder: React.FC = () => {
     const e = customEdges || edges;
     const pId = customProcessId !== undefined ? customProcessId : activeProcessId;
     
-    console.log('🔄 שומר flow:', {
-      nodesCount: n.length,
-      edgesCount: e.length,
-      flow_id: selectedBot?.id,
-      processId: pId
+    await fetch(`${API_BASE}/flow/sync`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify({ 
+        nodes: n, 
+        edges: e, 
+        flow_id: selectedBot?.id || null, 
+        standard_process_id: pId 
+      })
     });
-    
-    try {
-      const response = await fetch(`${API_BASE}/flow/sync`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ 
-          nodes: n, 
-          edges: e, 
-          flow_id: selectedBot?.id || null, 
-          standard_process_id: pId 
-        })
-      });
-      
-      const result = await response.json();
-      if (response.ok) {
-        console.log('✅ Flow נשמר בהצלחה', result);
-      } else {
-        console.error('❌ שגיאה בשמירת flow:', result);
-      }
-    } catch (error) {
-      console.error('❌ שגיאת רשת בשמירת flow:', error);
-    }
   };
 
   useEffect(() => {
-    if (viewMode !== 'dashboard' && viewMode !== 'simulator-only' && (selectedBot || activeProcessId)) {
+    if (viewMode !== 'dashboard' && viewMode !== 'template-selection' && viewMode !== 'template-form' && viewMode !== 'simulator-only' && (selectedBot || activeProcessId)) {
       const timer = setTimeout(syncFlow, 1500);
       return () => clearTimeout(timer);
     }
@@ -378,17 +365,22 @@ const FlowBuilder: React.FC = () => {
   };
 
   const handleCreateBot = async (name: string) => {
+    console.log("Creating bot with name:", name);
     const res = await fetch(`${API_BASE}/bots`, { 
       method: 'POST', 
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, 
       body: JSON.stringify({ name }) 
     });
+    console.log("Create bot response status:", res.status);
     const data = await res.json();
     if (res.status === 403 && data.error === 'MAX_BOTS_REACHED') {
       setQuotaError({ type: 'bots', message: data.message, price: data.price });
       return;
     }
+    console.log("Created bot data:", data);
     setBots(prev => [data, ...prev]);
+    setSelectedBot(data);
+    setViewMode('template-selection');
   };
 
   const handleDeleteBot = async (id: string) => {
@@ -396,7 +388,7 @@ const FlowBuilder: React.FC = () => {
     await fetch(`${API_BASE}/bots/${id}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
     setBots(prev => prev.filter(b => b.id !== id));
   };
-
+ 
   const handleAuth = async () => {
     const endpoint = authMode === 'login' ? '/auth/login' : '/auth/register';
     const res = await fetch(`${API_BASE}${endpoint}`, {
@@ -597,6 +589,27 @@ const FlowBuilder: React.FC = () => {
     }
   };
 
+  const handleInitializeFromTemplate = async (templateId: string, values: Record<string, string>) => {
+    if (!selectedBot || !token) return;
+    try {
+      const res = await fetch(`${API_BASE}/templates/initialize`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({
+          bot_id: selectedBot.id,
+          template_id: templateId,
+          values: values
+        })
+      });
+      if (res.ok) {
+        loadFlow(selectedBot.id);
+        setViewMode('editor');
+      } else {
+        alert("שגיאה ביצירת תהליך מהתבנית");
+      }
+    } catch (e) { console.error(e); }
+  };
+
   const enterBot = (bot: BotFlow) => {
     setActiveProcessId(null);
     setSelectedBot(bot);
@@ -651,7 +664,7 @@ const FlowBuilder: React.FC = () => {
   if (viewMode === 'dashboard') {
     return (
       <>
-        <Dashboard bots={bots} onEnterBot={enterBot} onCreateBot={handleCreateBot} onDeleteBot={handleDeleteBot} onLogout={() => { localStorage.clear(); window.location.reload(); }} />
+        <Dashboard bots={bots} onEnterBot={enterBot} onCreateBot={handleCreateBot} onDeleteBot={handleDeleteBot} onLogout={() => { localStorage.clear(); window.location.reload(); }} currentUser={currentUser} />
         {quotaError && (
           <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[200] p-6 text-right">
             <div className="bg-white w-full max-w-sm rounded-[2.5rem] shadow-2xl p-10 animate-in zoom-in duration-200 border border-slate-100">
@@ -667,6 +680,29 @@ const FlowBuilder: React.FC = () => {
         )}
       </>
     );
+  }
+
+  if (viewMode === 'template-selection') {
+    return <TemplateSelection 
+      onSelect={(template) => { 
+        if (!template) {
+          setViewMode('editor');
+          loadFlow(selectedBot?.id || null);
+        } else {
+          setSelectedTemplate(template);
+          setViewMode('template-form');
+        }
+      }} 
+      onBack={() => setViewMode('dashboard')}
+    />;
+  }
+
+  if (viewMode === 'template-form' && selectedTemplate) {
+    return <TemplateForm 
+      template={selectedTemplate} 
+      onSubmit={(values) => handleInitializeFromTemplate(selectedTemplate.id, values)}
+      onBack={() => setViewMode('template-selection')}
+    />;
   }
 
   if (viewMode === 'simulator-only') {
@@ -691,6 +727,8 @@ const FlowBuilder: React.FC = () => {
     );
   }
 
+  // Ensure 'simulator-only' doesn't get blocked by the Loading check
+  // The check for viewMode !== 'simulator-only' is redundant here as it's handled above.
   if (!selectedBot && !activeProcessId) return <div>Loading...</div>;
 
   return (
@@ -743,14 +781,14 @@ const FlowBuilder: React.FC = () => {
 
       {quotaError && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[200] p-6 text-right">
-          <div className="bg-white w-full max-w-sm rounded-[2.5rem] shadow-2xl p-10 animate-in zoom-in duration-200 border border-slate-100">
+          <div className="bg-white w-full max-sm rounded-[2.5rem] shadow-2xl p-10 animate-in zoom-in duration-200 border border-slate-100">
             <div className="w-16 h-16 bg-red-50 text-red-500 rounded-3xl flex items-center justify-center mb-6 mr-0"><Lock size={32} /></div>
             <h3 className="text-2xl font-bold text-slate-900 mb-2">המכסה הסתיימה</h3>
             <p className="text-slate-500 text-sm mb-8 font-medium leading-relaxed">{quotaError.message}</p>
             <div className="flex flex-col gap-3">
               <button 
                 onClick={() => window.open('https://payment.mesergo.com', '_blank')} 
-                className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg hover:bg-indigo-700 transition-all"
+                className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg shadow-indigo-600/20 hover:bg-indigo-700 transition-all"
               >
                 מעבר לתשלום ({quotaError.price}₪)
               </button>
