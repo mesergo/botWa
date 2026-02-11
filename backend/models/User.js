@@ -7,7 +7,6 @@ const userSchema = new mongoose.Schema({
   password: { type: String, required: true },
   role: { type: String, default: 'user' },
   public_id: String,
-  token: String, // Add token field
   account_type: { type: String, default: 'Basic' },
   status: { type: String, default: 'active' }
 }, {

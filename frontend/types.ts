@@ -43,7 +43,6 @@ export interface BotFlow {
   user_id: string;
   public_id: string;
   created_at: string;
-  is_default?: boolean;
 }
 
 export interface FixedProcess {
