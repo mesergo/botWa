@@ -1,4 +1,3 @@
-
 export enum NodeType {
   // Inputs
   INPUT_TEXT = 'input_text',
@@ -12,6 +11,7 @@ export enum NodeType {
   // Actions
   ACTION_WEB_SERVICE = 'action_web_service',
   ACTION_WAIT = 'action_wait',
+  ACTION_TIME_ROUTING = 'action_time_routing',
   // Special
   START = 'start',
   FIXED_PROCESS = 'fixed_process',
@@ -25,16 +25,16 @@ export interface NodeData {
   url?: string;
   linkLabel?: string;
   waitTime?: number;
-  options?: string[]; // For menu
-  optionOperators?: string[]; // Operators for Web Service branching
-  optionImages?: string[]; // Images for menu options
-  processId?: string; // For FixedProcess nodes
+  options?: string[];
+  optionOperators?: string[];
+  optionImages?: string[];
+  timeRanges?: Array<{ fromHour: number; toHour: number; }>;
+  processId?: string;
   onChange?: (data: Partial<NodeData>) => void;
   onDelete?: () => void;
-  // Search properties
   searchQuery?: string;
   isCurrentMatch?: boolean;
-  serialId?: string; // Added for serial identification (#1, B1 etc)
+  serialId?: string;
 }
 
 export interface BotFlow {
@@ -43,7 +43,6 @@ export interface BotFlow {
   user_id: string;
   public_id: string;
   created_at: string;
-  is_default?: boolean;
 }
 
 export interface FixedProcess {
@@ -64,6 +63,30 @@ export interface Version {
   };
 }
 
+export interface TemplateField {
+  id: string;
+  label: string;
+  type: 'text' | 'image' | 'url' | 'tel';
+  placeholder?: string;
+}
+
+export interface PredefinedTemplate {
+  id: string;
+  name: string;
+  description: string;
+  fields: TemplateField[];
+}
+
+export interface User {
+  id: string;
+  name: string;
+  email: string;
+  public_id: string;
+  account_type: 'Basic' | 'Premium';
+  status: 'active' | 'inActive' | 'pause';
+  password?: string;
+}
+
 export interface CarouselItem {
   title?: string;
   subtitle?: string;
@@ -79,22 +102,8 @@ export interface ChatMessage {
   content?: string;
   url?: string;
   options?: string[];
-  optionValues?: string[]; 
+  optionValues?: string[];
   optionImages?: string[];
-  carouselItems?: CarouselItem[]; // Added for carousel support
+  carouselItems?: CarouselItem[];
   timestamp: Date;
 }
-
-export interface User {
-  id: string;
-  name: string;
-  email: string;
-  public_id: string;
-  password?: string;
-  account_type: 'Basic' | 'Premium';
-  status: 'active' | 'inActive' | 'pause';
-}
-export interface EditorProps {
-  reactFlowWrapper: React.RefObject<HTMLDivElement | null>;
-}
-

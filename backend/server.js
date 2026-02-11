@@ -2,8 +2,6 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import path from 'path';
-import { fileURLToPath } from 'url';
 import connectDB from './config/db.js';
 import authRoutes from './routes/authRoutes.js';
 import botRoutes from './routes/botRoutes.js';
@@ -15,10 +13,6 @@ import versionRoutes from './routes/versionRoutes.js';
 import chatRoutes from './routes/chatRoutes.js';
 import templateRoutes from './routes/templateRoutes.js';
 import { seedTemplates } from './controllers/templateController.js';
-import uploadRoutes from './routes/uploadRoutes.js';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 // Load environment variables
 dotenv.config();
@@ -36,9 +30,6 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.use(express.json({ limit: '50mb' }));
 
-// Serve uploaded images statically
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
-
 // Connect to MongoDB before starting the server
 async function startServer() {
   try {
@@ -55,7 +46,6 @@ async function startServer() {
     app.use('/api/flow', flowRoutes);
     app.use('/api/processes', processRoutes);
     app.use('/api/proxy', proxyRoutes);
-    app.use('/api/upload', uploadRoutes);
     app.use('/api/sessions', sessionRoutes);
     app.use('/api/versions', versionRoutes);
     app.use('/api/chat', chatRoutes);
