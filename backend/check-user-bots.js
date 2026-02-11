@@ -16,7 +16,7 @@ async function checkUserBots() {
     const bots = await BotFlow.find({ user_id: userId });
     console.log(`\n📊 Found ${bots.length} bots for this user:`);
     bots.forEach(bot => {
-      console.log(`   - ${bot.name} (ID: ${bot._id})`);
+      console.log(`   - ${bot.name} (ID: ${bot._id}) ${bot.is_default ? '⭐ DEFAULT' : ''}`);
     });
 
     console.log(`\n📊 Checking widgets by flow_id:`);

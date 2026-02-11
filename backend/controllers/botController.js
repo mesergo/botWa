@@ -28,13 +28,18 @@ export const createBot = async (req, res) => {
 
     const publicId = Math.random().toString(36).substring(2, 12);
     const createdAt = new Date().toISOString();
+    
+    // If this is the first bot, set it as default
+    const isFirstBot = currentBotsCount === 0;
+    
     const bot = await BotFlow.create({
       name: name,
       user_id: userId,
       public_id: publicId,
-      created_at: createdAt
+      created_at: createdAt,
+      is_default: isFirstBot
     });
-    res.json({ id: bot._id.toString(), name, public_id: publicId, created_at: createdAt });
+    res.json({ id: bot._id.toString(), name, public_id: publicId, created_at: createdAt, is_default: isFirstBot });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -48,7 +53,8 @@ export const getBots = async (req, res) => {
       id: b._id.toString(),
       name: b.name,
       public_id: b.public_id,
-      created_at: b.created_at
+      created_at: b.created_at,
+      is_default: b.is_default || false
     })));
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -59,10 +65,50 @@ export const deleteBot = async (req, res) => {
   const { id } = req.params;
   const userId = req.user.id;
   try {
+    // Check if the bot being deleted is the default
+    const botToDelete = await BotFlow.findOne({ _id: id, user_id: userId });
+    const wasDefault = botToDelete?.is_default || false;
+    
     await Widget.deleteMany({ flow_id: id });
     await Version.deleteMany({ flow_id: id });
     await BotFlow.deleteOne({ _id: id, user_id: userId });
+    
+    // If the deleted bot was default, set another bot as default
+    if (wasDefault) {
+      const remainingBots = await BotFlow.find({ user_id: userId }).sort({ created_at: 1 });
+      if (remainingBots.length > 0) {
+        remainingBots[0].is_default = true;
+        await remainingBots[0].save();
+      }
+    }
+    
     res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+export const setDefaultBot = async (req, res) => {
+  const { id } = req.params;
+  const userId = req.user.id;
+  try {
+    // Verify bot belongs to user
+    const bot = await BotFlow.findOne({ _id: id, user_id: userId });
+    if (!bot) {
+      return res.status(404).json({ error: 'Bot not found' });
+    }
+
+    // Remove default from all user's bots
+    await BotFlow.updateMany(
+      { user_id: userId },
+      { is_default: false }
+    );
+
+    // Set this bot as default
+    bot.is_default = true;
+    await bot.save();
+
+    res.json({ success: true, message: 'הבוט הוגדר כברירת מחדל' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

@@ -388,7 +388,26 @@ const FlowBuilder: React.FC = () => {
     await fetch(`${API_BASE}/bots/${id}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
     setBots(prev => prev.filter(b => b.id !== id));
   };
- 
+
+  const handleSetDefaultBot = async (id: string) => {
+    try {
+      const res = await fetch(`${API_BASE}/bots/${id}/set-default`, { 
+        method: 'PATCH', 
+        headers: { 'Authorization': `Bearer ${token}` } 
+      });
+      
+      if (res.ok) {
+        // Update bots list - remove default from all, set it on the selected one
+        setBots(prev => prev.map(b => ({
+          ...b,
+          is_default: b.id === id
+        })));
+      }
+    } catch (error) {
+      console.error('Error setting default bot:', error);
+    }
+  };
+
   const handleAuth = async () => {
     const endpoint = authMode === 'login' ? '/auth/login' : '/auth/register';
     const res = await fetch(`${API_BASE}${endpoint}`, {
@@ -664,7 +683,7 @@ const FlowBuilder: React.FC = () => {
   if (viewMode === 'dashboard') {
     return (
       <>
-        <Dashboard bots={bots} onEnterBot={enterBot} onCreateBot={handleCreateBot} onDeleteBot={handleDeleteBot} onLogout={() => { localStorage.clear(); window.location.reload(); }} currentUser={currentUser} />
+        <Dashboard bots={bots} onEnterBot={enterBot} onCreateBot={handleCreateBot} onDeleteBot={handleDeleteBot} onSetDefaultBot={handleSetDefaultBot} onLogout={() => { localStorage.clear(); window.location.reload(); }} />
         {quotaError && (
           <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[200] p-6 text-right">
             <div className="bg-white w-full max-w-sm rounded-[2.5rem] shadow-2xl p-10 animate-in zoom-in duration-200 border border-slate-100">
