@@ -7,11 +7,12 @@ interface DashboardProps {
   onEnterBot: (bot: BotFlow) => void;
   onCreateBot: (name: string) => void;
   onDeleteBot: (id: string) => void;
+  onSetDefaultBot: (id: string) => void;
   onLogout: () => void;
   currentUser?: { name?: string; email?: string } | null;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, onDeleteBot, onLogout, currentUser }) => {
+const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, onDeleteBot, onSetDefaultBot, onLogout, currentUser }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newBotName, setNewBotName] = useState('');
 
@@ -66,12 +67,28 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                     <div className="p-4 bg-blue-50 text-blue-600 rounded-2xl group-hover:bg-blue-600 group-hover:text-white transition-colors">
                       <Bot size={28} />
                     </div>
-                    <button 
-                      onClick={(e) => { e.stopPropagation(); onDeleteBot(bot.id); }}
-                      className="p-2 text-slate-200 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
-                    >
-                      <Trash2 size={18} />
-                    </button>
+                    <div className="flex items-center gap-2">
+                      {bot.is_default && (
+                        <div className="px-3 py-1 bg-yellow-100 text-yellow-700 rounded-lg text-xs font-bold">
+                          ברירת מחדל
+                        </div>
+                      )}
+                      {!bot.is_default && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); onSetDefaultBot(bot.id); }}
+                          className="px-3 py-1 text-slate-400 hover:text-yellow-600 hover:bg-yellow-50 rounded-lg transition-all text-xs font-bold"
+                          title="הגדר כברירת מחדל"
+                        >
+                          הגדר כברירת מחדל
+                        </button>
+                      )}
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); onDeleteBot(bot.id); }}
+                        className="p-2 text-slate-200 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
+                      >
+                        <Trash2 size={18} />
+                      </button>
+                    </div>
                   </div>
                   <h3 className="text-2xl font-black text-slate-900 mb-2 truncate">{bot.name}</h3>
                   <p className="text-slate-400 text-sm font-bold flex items-center justify-end gap-2 uppercase tracking-widest">
