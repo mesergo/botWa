@@ -116,7 +116,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
   const scrollRef = useRef<HTMLDivElement>(null);
   const simulatorFileInputRef = useRef<HTMLInputElement>(null);
   const initialStartRef = useRef(false);
-  const updateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const updateTimeoutRef = useRef<number | null>(null);
 
   useEffect(() => { 
     if (isOpen && nodes && nodes.length > 0 && !initialStartRef.current) {
