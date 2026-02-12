@@ -196,9 +196,9 @@ const Sidebar: React.FC<SidebarProps> = ({
               ) : versions.map((v) => (
                 <div 
                   key={v.id}
-                  className={`px-4 py-3 bg-white border rounded-2xl transition-all group relative overflow-hidden ${v.isLocked ? 'border-amber-200 bg-amber-50/30' : 'border-slate-100 hover:border-indigo-400'}`}
+                  className={`px-2 py-2 bg-white border rounded-2xl transition-all group relative overflow-hidden ${v.isLocked ? 'border-amber-200 bg-amber-50/30' : 'border-slate-100 hover:border-indigo-400'}`}
                 >
-                  <div className="flex items-start justify-between flex-row-reverse mb-1">
+                  <div className="flex items-start justify-between flex-row-reverse">
                     <div className="text-right flex-1 min-w-0 pr-1">
                       <div className="flex items-center justify-end gap-1 mb-0.5">
                         {v.isLocked && <Lock size={10} className="text-amber-500" />}
@@ -207,7 +207,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                       <span className="block text-[9px] text-slate-400 font-medium">{formatDate(v.created_at)}</span>
                     </div>
                     
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-0.5 mr-auto">
                       <button 
                         onClick={() => onRestoreVersion(v)}
                         className="p-1.5 bg-indigo-50 text-indigo-600 rounded-lg hover:bg-indigo-600 hover:text-white transition-all shadow-sm"
@@ -223,17 +223,15 @@ const Sidebar: React.FC<SidebarProps> = ({
                       >
                         {v.isLocked ? <Lock size={12} /> : <Unlock size={12} />}
                       </button>
+                      
+                      <button 
+                        onClick={() => onDeleteVersion(v.id)}
+                        className="p-1.5 bg-rose-50 text-rose-400 rounded-lg hover:bg-red-50 hover:text-red-500 transition-all shadow-sm"
+                        title="מחק גרסה"
+                      >
+                        <Trash2 size={12} />
+                      </button>
                     </div>
-                  </div>
-                  
-                  <div className="flex justify-end mt-1">
-                    <button 
-                      onClick={() => onDeleteVersion(v.id)}
-                      className="p-1 text-slate-200 hover:text-red-500 rounded-md transition-all opacity-0 group-hover:opacity-100"
-                      title="מחק גרסה"
-                    >
-                      <Trash2 size={10} />
-                    </button>
                   </div>
                 </div>
               ))}
