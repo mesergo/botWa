@@ -342,6 +342,10 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
         const nextInParent = findNextNodeId(last.nodeId, last.instance);
         return processNext(nextInParent, last.instance, depth + 1, remainingStack);
       }
+      // End of flow - clear current node
+      console.log('[Simulator] ✅ End of flow reached - clearing current node');
+      setCurrentNodeId(null);
+      setCurrentInstance(null);
       return; 
     }
     const nodesList = instance?.getNodes() || [];
@@ -439,12 +443,64 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
   };
 
   const handleSend = async () => {
-    if (!userInput.trim() || !currentNodeId || !currentInstance) return;
-    const text = userInput; setUserInput('');
+    if (!userInput.trim()) return;
+    
+    // Check if we reached the end of flow (no current node or current node has no next edge)
+    if (!currentNodeId || !currentInstance) {
+      // Reset and start fresh
+      console.log('[Simulator] No active session - resetting and starting fresh');
+      const text = userInput;
+      setUserInput('');
+      await resetChat();
+      // Wait a bit for reset to complete
+      await new Promise(r => setTimeout(r, 200));
+      // Now send the message
+      setUserInput(text);
+      // The reset will position us at automatic_responses, now trigger send again
+      setTimeout(() => {
+        const tempText = text;
+        setUserInput('');
+        const isNum = !isNaN(Number(tempText)) && tempText.trim() !== "";
+        const newValue = { string: tempText, number: isNum ? Number(tempText) : null };
+        setLastUserValue(newValue);
+        addMessage({ sender: 'user', type: 'text', content: tempText });
+        
+        const instance = getActiveInstance();
+        const startNode = instance?.getNodes().find((n: any) => n.type === NodeType.START || n.type === NodeType.AUTOMATIC_RESPONSES);
+        if (startNode) {
+          setCurrentInstance(instance);
+          processNext(startNode.id, instance, 0, [], newValue, null);
+        }
+      }, 300);
+      return;
+    }
+    
+    const text = userInput; 
+    setUserInput('');
     const isNum = !isNaN(Number(text)) && text.trim() !== "";
-    const newValue = { string: text, number: isNum ? Number(text) : null }; setLastUserValue(newValue);
+    const newValue = { string: text, number: isNum ? Number(text) : null }; 
+    setLastUserValue(newValue);
     const nodesList = currentInstance.getNodes() || [];
     const node = nodesList.find((n: any) => n.id === currentNodeId);
+    
+    // Check if current node has no next edges (end of flow)
+    const nextNodeId = findNextNodeId(currentNodeId, currentInstance);
+    if (!node || !nextNodeId) {
+      console.log('[Simulator] End of flow detected - resetting and starting fresh with new message');
+      addMessage({ sender: 'user', type: 'text', content: text });
+      await resetChat();
+      // Wait a bit for reset to complete
+      await new Promise(r => setTimeout(r, 200));
+      // Now process with automatic_responses
+      const instance = getActiveInstance();
+      const startNode = instance?.getNodes().find((n: any) => n.type === NodeType.START || n.type === NodeType.AUTOMATIC_RESPONSES);
+      if (startNode) {
+        setCurrentInstance(instance);
+        await processNext(startNode.id, instance, 0, [], newValue, null);
+      }
+      return;
+    }
+    
     if (node && node.data.variableName) updateParam(node.data.variableName, text);
     addMessage({ sender: 'user', type: 'text', content: text });
     

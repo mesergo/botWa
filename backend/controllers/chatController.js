@@ -213,7 +213,19 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
         const msg = { type: 'Text', text, created: new Date().toISOString() };
         messages.push(msg);
         addToHistory(session, msg, currentNodeId);
-        currentNodeId = findNextNode(currentNodeId, edges);
+        
+        // Check if this is the last node (no outgoing edges)
+        const nextNode = findNextNode(currentNodeId, edges);
+        if (!nextNode) {
+          console.log('[BOT] ✅ Last node reached - closing session immediately');
+          session.is_active = false;
+          session.current_node_id = null;
+          session.waiting_text_input = false;
+          await session.save();
+          console.log('[BOT] ✅ Session saved as inactive');
+          return messages;
+        }
+        currentNodeId = nextNode;
         break;
       }
 
@@ -224,7 +236,19 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
         const msg = { type: 'Image', url, created: new Date().toISOString() };
         messages.push(msg);
         addToHistory(session, msg, currentNodeId);
-        currentNodeId = findNextNode(currentNodeId, edges);
+        
+        // Check if this is the last node (no outgoing edges)
+        const nextNode = findNextNode(currentNodeId, edges);
+        if (!nextNode) {
+          console.log('[BOT] ✅ Last node (image) reached - closing session immediately');
+          session.is_active = false;
+          session.current_node_id = null;
+          session.waiting_text_input = false;
+          await session.save();
+          console.log('[BOT] ✅ Session saved as inactive after image');
+          return messages;
+        }
+        currentNodeId = nextNode;
         break;
       }
 
@@ -234,7 +258,19 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
         const msg = { type: 'URL', text, url, created: new Date().toISOString() };
         messages.push(msg);
         addToHistory(session, msg, currentNodeId);
-        currentNodeId = findNextNode(currentNodeId, edges);
+        
+        // Check if this is the last node (no outgoing edges)
+        const nextNode = findNextNode(currentNodeId, edges);
+        if (!nextNode) {
+          console.log('[BOT] ✅ Last node (link) reached - closing session immediately');
+          session.is_active = false;
+          session.current_node_id = null;
+          session.waiting_text_input = false;
+          await session.save();
+          console.log('[BOT] ✅ Session saved as inactive after link');
+          return messages;
+        }
+        currentNodeId = nextNode;
         break;
       }
 
@@ -365,10 +401,16 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
 
   // End of chain
   if (depth >= maxDepth) {
-    console.log('[BOT] Max depth reached');
+    console.log('[BOT] ⚠️ Max depth reached');
+  } else if (!currentNodeId) {
+    console.log('[BOT] ✅ End of flow reached - closing session immediately');
+    session.is_active = false;
+    session.current_node_id = null;
+    session.waiting_text_input = false;
+    await session.save();
+    console.log('[BOT] ✅ Session saved as inactive at end of flow');
   }
   
-  session.is_active = false;
   return messages;
 };
 
