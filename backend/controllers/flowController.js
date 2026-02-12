@@ -43,6 +43,26 @@ const fetchFlowData = async (userId, flow_id, standard_process_id = null, versio
     let metadata = w.image_file || {};
     const nodeOptions = options.filter(o => o.widget_id === w.id);
     
+    // Special handling for TIME_ROUTING
+    if (w.type === 'action_time_routing') {
+      const timeRanges = nodeOptions
+        .filter(o => o.operator === 'time_range')
+        .map(o => {
+          const [fromHour, toHour] = o.value.split('-').map(Number);
+          return { fromHour, toHour };
+        });
+      
+      return { 
+        id: w.id, 
+        type: w.type, 
+        position: { x: w.pos_x, y: w.pos_y }, 
+        data: { 
+          ...metadata,
+          timeRanges: timeRanges
+        } 
+      };
+    }
+    
     return { 
       id: w.id, 
       type: w.type, 
@@ -64,11 +84,33 @@ const fetchFlowData = async (userId, flow_id, standard_process_id = null, versio
       edges.push({ id: `e-${w.id}-${w.next}`, source: w.id, target: w.next, type: 'button', style: { stroke: '#3b82f6', strokeWidth: 2, strokeDasharray: '6,4' } });
     }
     const wOptions = options.filter(o => o.widget_id === w.id);
-    wOptions.forEach((o, i) => { 
-      if (o.next) { 
-        edges.push({ id: `e-${w.id}-opt-${i}`, source: w.id, sourceHandle: `option-${i}`, target: o.next, type: 'button', style: { stroke: '#3b82f6', strokeWidth: 2, strokeDasharray: '6,4' } }); 
-      } 
-    });
+    
+    // Special handling for TIME_ROUTING
+    if (w.type === 'action_time_routing') {
+      let timeRangeIndex = 0;
+      wOptions.forEach((o) => { 
+        if (o.next) {
+          const sourceHandle = o.operator === 'default' ? 'option-default' : `option-${timeRangeIndex}`;
+          edges.push({ 
+            id: `e-${w.id}-${sourceHandle}-${o.next}`, 
+            source: w.id, 
+            sourceHandle: sourceHandle, 
+            target: o.next, 
+            type: 'button', 
+            style: { stroke: '#3b82f6', strokeWidth: 2, strokeDasharray: '6,4' } 
+          });
+          if (o.operator === 'time_range') timeRangeIndex++;
+        } else if (o.operator === 'time_range') {
+          timeRangeIndex++;
+        }
+      });
+    } else {
+      wOptions.forEach((o, i) => { 
+        if (o.next) { 
+          edges.push({ id: `e-${w.id}-opt-${i}`, source: w.id, sourceHandle: `option-${i}`, target: o.next, type: 'button', style: { stroke: '#3b82f6', strokeWidth: 2, strokeDasharray: '6,4' } }); 
+        } 
+      });
+    }
   });
 
   return { nodes, edges };
@@ -105,7 +147,7 @@ export const syncFlow = async (req, res) => {
 
     for (const node of nodes) {
       const isFirst = (node.type === 'start' || node.type === 'automatic_responses') ? 1 : 0;
-      const isBranching = node.type === 'output_menu' || node.type === 'action_web_service' || node.type === 'automatic_responses';
+      const isBranching = node.type === 'output_menu' || node.type === 'action_web_service' || node.type === 'automatic_responses' || node.type === 'action_time_routing';
       const nextEdge = !isBranching ? edges.find(e => e.source === node.id && !e.sourceHandle) : null;
       const nextId = nextEdge ? nextEdge.target : null;
       const isProxy = node.type === 'fixed_process' || node.data.isStandardProcess ? 1 : 0;
@@ -149,7 +191,35 @@ export const syncFlow = async (req, res) => {
       const localTime = new Date(savedWidget.createdAt).toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem' });
       console.log(`⏰ Widget נשמר - UTC: ${savedWidget.createdAt.toISOString()}, מקומי: ${localTime}, value: "${savedWidget.value}"`);
       
-      if (isBranching && node.data.options) {
+      // Handle TIME_ROUTING differently - it has timeRanges + default option
+      if (node.type === 'action_time_routing') {
+        const timeRanges = node.data.timeRanges || [];
+        
+        // Save each time range as an option
+        for (let i = 0; i < timeRanges.length; i++) {
+          const range = timeRanges[i];
+          const optionEdge = edges.find(e => e.source === node.id && e.sourceHandle === `option-${i}`);
+          await Option.create({
+            widget_id: node.id,
+            value: `${range.fromHour}-${range.toHour}`, // Store as "8-16"
+            next: optionEdge ? optionEdge.target : null,
+            image_url: null,
+            operator: 'time_range' // Special operator for time ranges
+          });
+        }
+        
+        // Save the default option
+        const defaultEdge = edges.find(e => e.source === node.id && e.sourceHandle === 'option-default');
+        if (defaultEdge) {
+          await Option.create({
+            widget_id: node.id,
+            value: 'default',
+            next: defaultEdge.target,
+            image_url: null,
+            operator: 'default'
+          });
+        }
+      } else if (isBranching && node.data.options) {
         for (let i = 0; i < node.data.options.length; i++) {
           const branchValue = node.data.options[i];
           const branchOperator = node.data.optionOperators?.[i] || 'eq';

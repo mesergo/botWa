@@ -446,6 +446,85 @@ export const FixedProcessNode = (props: any) => (
   </BaseNode>
 );
 
+export const ActionTimeRoutingNode = (props: any) => {
+  const timeRanges = props.data.timeRanges || [];
+
+  const updateTimeRange = (index: number, field: 'fromHour' | 'toHour', value: any) => {
+    const newRanges = [...timeRanges];
+    newRanges[index] = { ...newRanges[index], [field]: value };
+    props.data.onChange({ timeRanges: newRanges });
+  };
+
+  const addTimeRange = () => {
+    props.data.onChange({ 
+      timeRanges: [...timeRanges, { fromHour: 9, toHour: 17 }]
+    });
+  };
+
+  const removeTimeRange = (index: number) => {
+    const newRanges = timeRanges.filter((_: any, i: number) => i !== index);
+    props.data.onChange({ timeRanges: newRanges });
+  };
+
+  return (
+    <BaseNode id={props.id} title="ניתוב לפי שעות" icon={<Clock size={20} />} type={NodeType.ACTION_TIME_ROUTING} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId}>
+      <div className="space-y-4 relative text-right">
+        <label className="block text-[14px] font-bold text-slate-400 uppercase tracking-widest">טווחי שעות</label>
+        
+        {/* Default option */}
+        <div className="flex items-center gap-2 p-2 bg-slate-50 border border-slate-200 rounded-2xl relative">
+          <Handle type="source" position={Position.Right} id="option-default" style={{ top: '50%', right: -16 }} className="w-4 h-4 bg-slate-400 border-2 border-white rounded-full shadow-lg" />
+          <div className="flex-1 text-center py-2">
+            <span className="text-sm font-bold text-slate-600">ברירת מחדל (כל שאר השעות)</span>
+          </div>
+        </div>
+
+        {/* Time ranges */}
+        {timeRanges.map((range: any, i: number) => (
+          <div key={i} className="flex items-center gap-2 p-3 bg-slate-50 border border-slate-100 rounded-2xl group/item relative transition-colors hover:bg-white hover:border-orange-100">
+            <Handle type="source" position={Position.Right} id={`option-${i}`} style={{ top: '50%', right: -16 }} className="w-4 h-4 bg-slate-400 border-2 border-white rounded-full shadow-lg" />
+            
+            <div className="flex-1">
+              <div className="flex gap-2 items-center justify-center py-1">
+                <input 
+                  type="number" 
+                  min="0" 
+                  max="23" 
+                  value={range.toHour} 
+                  onChange={(e) => updateTimeRange(i, 'toHour', parseInt(e.target.value) || 0)}
+                  className="w-16 px-2 py-2 border border-slate-200 rounded-lg text-center nodrag font-bold"
+                />
+                <span className="text-sm font-bold text-slate-500">עד</span>
+                <input 
+                  type="number" 
+                  min="0" 
+                  max="23" 
+                  value={range.fromHour} 
+                  onChange={(e) => updateTimeRange(i, 'fromHour', parseInt(e.target.value) || 0)}
+                  className="w-16 px-2 py-2 border border-slate-200 rounded-lg text-center nodrag font-bold"
+                />
+                <span className="text-sm font-bold text-slate-500">משעה</span>
+              </div>
+            </div>
+            
+            <button 
+              onClick={() => removeTimeRange(i)} 
+              className="w-10 h-10 rounded-lg flex items-center justify-center text-slate-200 hover:text-red-500 hover:bg-red-50 transition-all opacity-0 group-hover/item:opacity-100 nodrag flex-shrink-0"
+              title="מחק טווח"
+            >
+              <X size={18} />
+            </button>
+          </div>
+        ))}
+        
+        <button onClick={addTimeRange} className="w-full mt-2 py-4 text-[13px] font-bold bg-white text-blue-600 rounded-2xl border-2 border-dashed border-blue-100 hover:bg-blue-50 hover:border-blue-400 flex items-center justify-center gap-2 transition-all nodrag uppercase tracking-wider">
+          <Plus size={18} /> הוסף טווח שעות
+        </button>
+      </div>
+    </BaseNode>
+  );
+};
+
 export const AutomaticResponsesNode = (props: any) => {
   const options = props.data.options || ['כניסה'];
   const operators = props.data.optionOperators || Array(options.length).fill('eq');

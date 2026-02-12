@@ -18,7 +18,7 @@ interface BaseNodeProps {
 const BaseNode: React.FC<BaseNodeProps> = ({ id, title, icon, children, type, selected, onDelete, serialId }) => {
   const isStart = type === NodeType.START;
   const isAutomaticResponses = type === NodeType.AUTOMATIC_RESPONSES;
-  const isBranchingNode = type === NodeType.OUTPUT_MENU || type === NodeType.ACTION_WEB_SERVICE || type === NodeType.AUTOMATIC_RESPONSES;
+  const isBranchingNode = type === NodeType.OUTPUT_MENU || type === NodeType.ACTION_WEB_SERVICE || type === NodeType.AUTOMATIC_RESPONSES || type === NodeType.ACTION_TIME_ROUTING;
 
   const getNodeTheme = (nodeType: NodeType) => {
     switch (nodeType) {
@@ -33,6 +33,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ id, title, icon, children, type, se
         return { bar: 'bg-emerald-500', iconColor: 'text-emerald-600', ring: 'ring-emerald-600/10' };
       case NodeType.ACTION_WEB_SERVICE:
       case NodeType.ACTION_WAIT:
+      case NodeType.ACTION_TIME_ROUTING:
         return { bar: 'bg-orange-500', iconColor: 'text-orange-600', ring: 'ring-orange-600/10' };
       case NodeType.FIXED_PROCESS:
         return { bar: 'bg-indigo-500', iconColor: 'text-indigo-600', ring: 'ring-indigo-600/10' };

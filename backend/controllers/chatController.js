@@ -323,6 +323,51 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
         break;
       }
 
+      case 'action_time_routing': {
+        // Get current hour in Israel timezone (handles DST automatically)
+        const now = new Date();
+        const israelTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Jerusalem' }));
+        const israelHour = israelTime.getHours();
+        
+        console.log(`[BOT] Time routing - current Israel hour: ${israelHour}`);
+        
+        // Check time ranges
+        const timeRanges = nodeData.timeRanges || [];
+        let matchedIndex = -1;
+        
+        for (let i = 0; i < timeRanges.length; i++) {
+          const range = timeRanges[i];
+          const fromHour = parseInt(range.fromHour) || 0;
+          const toHour = parseInt(range.toHour) || 23;
+          
+          // Check if current hour is within range
+          // Handle ranges that cross midnight (e.g., 22-8 means 22:00-07:59)
+          let inRange = false;
+          if (fromHour <= toHour) {
+            // Normal range (e.g., 8-16)
+            inRange = israelHour >= fromHour && israelHour < toHour;
+          } else {
+            // Range crosses midnight (e.g., 22-8)
+            inRange = israelHour >= fromHour || israelHour < toHour;
+          }
+          
+          if (inRange) {
+            matchedIndex = i;
+            console.log(`[BOT] Matched time range ${i}: ${fromHour}-${toHour}`);
+            break;
+          }
+        }
+        
+        // Route to matched option or default
+        if (matchedIndex >= 0) {
+          currentNodeId = findNextNode(currentNodeId, edges, `option-${matchedIndex}`);
+        } else {
+          console.log(`[BOT] No time range matched, using default route`);
+          currentNodeId = findNextNode(currentNodeId, edges, 'option-default');
+        }
+        break;
+      }
+
       case 'action_web_service': {
         console.log('[BOT] Web service node - calling API');
         

@@ -37,6 +37,7 @@ export const COMPONENT_GROUPS = [
     items: [
       { type: NodeType.ACTION_WEB_SERVICE, label: 'קריאת API', icon: <Globe size={18} /> },
       { type: NodeType.ACTION_WAIT, label: 'המתנה', icon: <Clock size={18} /> },
+      { type: NodeType.ACTION_TIME_ROUTING, label: 'ניתוב לפי שעה', icon: <Clock size={18} /> },
     ]
   }
 ];

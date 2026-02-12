@@ -7,7 +7,7 @@ import AuthScreen from './components/AuthScreen';
 import Editor from './components/Editor';
 import TemplateSelection from './components/TemplateSelection';
 import TemplateForm from './components/TemplateForm';
-import { StartNode, InputTextNode, InputDateNode, InputFileNode, OutputTextNode, OutputImageNode, OutputLinkNode, OutputMenuNode, ActionWebServiceNode, ActionWaitNode, FixedProcessNode, AutomaticResponsesNode } from './components/nodes/CustomNodes';
+import { StartNode, InputTextNode, InputDateNode, InputFileNode, OutputTextNode, OutputImageNode, OutputLinkNode, OutputMenuNode, ActionWebServiceNode, ActionWaitNode, ActionTimeRoutingNode, FixedProcessNode, AutomaticResponsesNode } from './components/nodes/CustomNodes';
 import ButtonEdge from './components/edges/ButtonEdge';
 import { CloudUpload, RotateCcw, Plus, AlertTriangle, Copy, X, Lock } from 'lucide-react';
 import Simulator from './components/Simulator';
@@ -26,6 +26,7 @@ const nodeTypes = {
   [NodeType.OUTPUT_MENU]: OutputMenuNode,
   [NodeType.ACTION_WEB_SERVICE]: ActionWebServiceNode,
   [NodeType.ACTION_WAIT]: ActionWaitNode,
+  [NodeType.ACTION_TIME_ROUTING]: ActionTimeRoutingNode,
   [NodeType.FIXED_PROCESS]: FixedProcessNode,
   [NodeType.AUTOMATIC_RESPONSES]: AutomaticResponsesNode,
 };
@@ -303,6 +304,11 @@ const FlowBuilder: React.FC = () => {
           height += 40; 
           break;
         case NodeType.ACTION_WAIT: height += 80; break;
+        case NodeType.ACTION_TIME_ROUTING:
+          height += 100; // Default option
+          if (node.data.timeRanges) height += node.data.timeRanges.length * 80;
+          height += 70; // Add button
+          break;
         case NodeType.FIXED_PROCESS: height += 70; break;
         case NodeType.AUTOMATIC_RESPONSES:
           height += 80;
@@ -348,7 +354,15 @@ const FlowBuilder: React.FC = () => {
         if (!edgeA) return 1;
         if (!edgeB) return -1;
         if (edgeA.source === edgeB.source) {
-          const getHandleIdx = (h?: string | null) => h?.startsWith('option-') ? parseInt(h.split('-')[1]) : 0;
+          const getHandleIdx = (h?: string | null) => {
+            if (!h) return 1000;
+            if (h === 'option-default') return -1; // default comes first
+            if (h.startsWith('option-')) {
+              const num = parseInt(h.split('-')[1]);
+              return isNaN(num) ? 1000 : num;
+            }
+            return 1000;
+          };
           return getHandleIdx(edgeA.sourceHandle) - getHandleIdx(edgeB.sourceHandle);
         }
         return (finalPositions[edgeA.source]?.y || 0) - (finalPositions[edgeB.source]?.y || 0);
