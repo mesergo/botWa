@@ -1,12 +1,13 @@
 
 import React, { useRef, useEffect, useState } from 'react';
 import { COMPONENT_GROUPS } from '../constants';
-import { Plus, Layers, Edit, Eye, Trash2, CheckCircle2, History, RotateCcw, CloudUpload, Lock, Unlock } from 'lucide-react';
-import { FixedProcess, Version } from '../types';
+import { Plus, Layers, Edit, Eye, Trash2, CheckCircle2, History, RotateCcw, CloudUpload, Lock, Unlock, Archive } from 'lucide-react';
+import { FixedProcess, Version, RestorableVersionsData } from '../types';
 
 interface SidebarProps {
   fixedProcesses: FixedProcess[];
   versions: Version[];
+  restorableVersions?: RestorableVersionsData | null;
   activeProcessId?: string | null;
   onAddFixedProcess: () => void;
   onEditFixedProcess: (id: string) => void;
@@ -16,12 +17,14 @@ interface SidebarProps {
   onDeleteVersion: (id: string) => void;
   onToggleVersionLock: (id: string, isLocked: boolean) => void;
   onOpenPublishModal: () => void;
+  onRestoreArchivedVersion?: (versionId: string, versionPrice: number) => void;
   isReadOnly?: boolean;
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ 
   fixedProcesses, 
   versions,
+  restorableVersions,
   activeProcessId,
   onAddFixedProcess, 
   onEditFixedProcess, 
@@ -31,10 +34,13 @@ const Sidebar: React.FC<SidebarProps> = ({
   onDeleteVersion,
   onToggleVersionLock,
   onOpenPublishModal,
+  onRestoreArchivedVersion,
   isReadOnly
 }) => {
   const activeItemRef = useRef<HTMLDivElement>(null);
   const [activeTab, setActiveTab] = useState<'components' | 'versions'>('components');
+  const [restorableHeight, setRestorableHeight] = useState(80); // גובה התחלתי ב-px
+  const [isDragging, setIsDragging] = useState(false);
 
   // Scroll active process into view when it changes
   useEffect(() => {
@@ -42,6 +48,43 @@ const Sidebar: React.FC<SidebarProps> = ({
       activeItemRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
   }, [activeProcessId]);
+
+  // Handle resizable divider
+  const handleMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isDragging) return;
+      
+      const sidebar = document.querySelector('aside');
+      if (!sidebar) return;
+      
+      const sidebarRect = sidebar.getBoundingClientRect();
+      const newHeight = sidebarRect.bottom - e.clientY - 60; // 60px for footer
+      
+      // הגבלת גובה מינימלי ומקסימלי
+      const minHeight = 0; // אפשר להקטין עד 0 - רק הכותרת תיראה
+      const maxHeight = 300;
+      setRestorableHeight(Math.max(minHeight, Math.min(maxHeight, newHeight)));
+    };
+
+    const handleMouseUp = () => {
+      setIsDragging(false);
+    };
+
+    if (isDragging) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+    }
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isDragging]);
 
   const onDragStart = (event: React.DragEvent, nodeType: string, extraData?: any) => {
     event.dataTransfer.setData('application/reactflow', nodeType);
@@ -175,7 +218,7 @@ const Sidebar: React.FC<SidebarProps> = ({
           </>
         ) : (
           /* Versions Tab Content */
-          <div className="space-y-4">
+          <div className="h-full flex flex-col">
             <button 
               onClick={onOpenPublishModal}
               className="w-full flex items-center justify-center gap-3 p-4 bg-indigo-600 text-white rounded-2xl font-bold text-xs uppercase tracking-widest shadow-lg shadow-indigo-600/20 hover:bg-indigo-700 transition-all mb-6"
@@ -183,12 +226,14 @@ const Sidebar: React.FC<SidebarProps> = ({
               <CloudUpload size={18} /> פרסם גרסה חדשה
             </button>
             
-            <h3 className="text-[9px] font-bold text-slate-400 uppercase tracking-widest flex items-center justify-end gap-2 mb-4">
-              היסטוריית גרסאות
-              <div className="w-1.5 h-1.5 bg-amber-400 rounded-full"></div>
-            </h3>
+            {/* היסטוריית גרסאות - Scrollable Section */}
+            <div className="flex-1 min-h-0 flex flex-col">
+              <h3 className="text-[9px] font-bold text-slate-400 uppercase tracking-widest flex items-center justify-end gap-2 mb-3">
+                היסטוריית גרסאות
+                <div className="w-1.5 h-1.5 bg-amber-400 rounded-full"></div>
+              </h3>
 
-            <div className="space-y-2">
+              <div className="overflow-y-auto space-y-2 flex-1 scrollbar-thin scrollbar-thumb-slate-200 scrollbar-track-transparent pr-1">
               {versions.length === 0 ? (
                 <div className="text-[9px] text-slate-300 font-bold uppercase tracking-widest text-center p-6 border-2 border-dashed border-slate-50 rounded-2xl">
                   אין גרסאות שמורות
@@ -235,7 +280,58 @@ const Sidebar: React.FC<SidebarProps> = ({
                   </div>
                 </div>
               ))}
+              </div>
             </div>
+
+            {/* Restorable Versions Section - Fixed at Bottom */}
+            {restorableVersions && restorableVersions.count > 0 && onRestoreArchivedVersion && (
+              <div className="flex flex-col mt-4">
+                {/* Resizable Divider */}
+                <div 
+                  onMouseDown={handleMouseDown}
+                  className={`relative py-2 cursor-ns-resize select-none group ${isDragging ? 'bg-slate-100' : 'hover:bg-slate-50'} transition-colors`}
+                >
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="flex items-center gap-1">
+                      <div className="w-8 h-0.5 bg-slate-300 rounded group-hover:bg-slate-400 transition-colors"></div>
+                      <div className="text-slate-300 text-xs group-hover:text-slate-400">⟷</div>
+                      <div className="w-8 h-0.5 bg-slate-300 rounded group-hover:bg-slate-400 transition-colors"></div>
+                    </div>
+                  </div>
+                </div>
+                
+                <h3 className="text-[9px] font-bold text-slate-400 uppercase tracking-widest flex items-center justify-end gap-2 mb-3 mt-2">
+                 ({restorableVersions.count}) שיחזור גרסאות
+                  <div className="w-1.5 h-1.5 bg-slate-300 rounded-full"></div>
+                </h3>
+                <div 
+                  className="overflow-y-auto space-y-2 scrollbar-thin scrollbar-thumb-slate-200 scrollbar-track-transparent pr-1"
+                  style={{ maxHeight: `${restorableHeight}px` }}
+                >
+                  {restorableVersions.versions.map((v) => (
+                    <div 
+                      key={v.id}
+                      className="px-2 py-2 bg-white border border-slate-100 rounded-2xl transition-all hover:border-slate-300 group"
+                    >
+                      <div className="flex items-start justify-between flex-row-reverse">
+                        <div className="text-right flex-1 min-w-0 pr-1">
+                          <span className="block text-[11px] font-bold text-slate-700 truncate leading-tight">{v.name}</span>
+                          <span className="block text-[9px] text-slate-400 font-medium">{formatDate(v.created_at)}</span>
+                        </div>
+                        
+                        <button 
+                          onClick={() => onRestoreArchivedVersion(v.id, restorableVersions.versionPrice)}
+                          className="p-1.5 bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-600 hover:text-white transition-all shadow-sm"
+                          title={`שחזר גרסה (${restorableVersions.versionPrice}₪)`}
+                        >
+                          <RotateCcw size={12} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

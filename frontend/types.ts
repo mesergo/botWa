@@ -64,6 +64,17 @@ export interface Version {
   };
 }
 
+export interface RestorableVersionsData {
+  count: number;
+  versionPrice: number;
+  versions: Array<{
+    id: string;
+    name: string;
+    created_at: string;
+    isLocked: boolean;
+  }>;
+}
+
 export interface TemplateField {
   id: string;
   label: string;

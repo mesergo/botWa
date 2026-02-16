@@ -1,7 +1,7 @@
 
 import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { ReactFlowProvider, addEdge, Node, Edge, applyNodeChanges, applyEdgeChanges, OnNodesChange, OnEdgesChange, OnConnect, ReactFlowInstance, MarkerType } from 'reactflow';
-import { NodeType, NodeData, User, FixedProcess, Version, BotFlow, PredefinedTemplate } from './types';
+import { NodeType, NodeData, User, FixedProcess, Version, BotFlow, PredefinedTemplate, RestorableVersionsData } from './types';
 import Dashboard from './components/Dashboard';
 import AuthScreen from './components/AuthScreen';
 import Editor from './components/Editor';
@@ -9,7 +9,7 @@ import TemplateSelection from './components/TemplateSelection';
 import TemplateForm from './components/TemplateForm';
 import { StartNode, InputTextNode, InputDateNode, InputFileNode, OutputTextNode, OutputImageNode, OutputLinkNode, OutputMenuNode, ActionWebServiceNode, ActionWaitNode, ActionTimeRoutingNode, FixedProcessNode, AutomaticResponsesNode } from './components/nodes/CustomNodes';
 import ButtonEdge from './components/edges/ButtonEdge';
-import { CloudUpload, RotateCcw, Plus, AlertTriangle, Copy, X, Lock } from 'lucide-react';
+import { CloudUpload, RotateCcw, Plus, AlertTriangle, Copy, X, Lock, Wallet } from 'lucide-react';
 import Simulator from './components/Simulator';
 
 const API_BASE = window.location.hostname === 'localhost' 
@@ -54,6 +54,7 @@ const FlowBuilder: React.FC = () => {
   const [edges, setEdges] = useState<Edge[]>([]);
   const [fixedProcesses, setFixedProcesses] = useState<FixedProcess[]>([]);
   const [versions, setVersions] = useState<Version[]>([]);
+  const [restorableVersions, setRestorableVersions] = useState<RestorableVersionsData | null>(null);
   const [activeProcessId, setActiveProcessId] = useState<string | null>(null);
   const [reactFlowInstance, setReactFlowInstance] = useState<ReactFlowInstance | null>(null);
   const [isSimulatorOpen, setIsSimulatorOpen] = useState(viewMode === 'simulator-only');
@@ -71,6 +72,9 @@ const FlowBuilder: React.FC = () => {
   const [newVersionName, setNewVersionName] = useState('');
   const [isRestoreModalOpen, setIsRestoreModalOpen] = useState(false);
   const [versionToRestore, setVersionToRestore] = useState<Version | null>(null);
+  
+  const [isRestoreArchivedModalOpen, setIsRestoreArchivedModalOpen] = useState(false);
+  const [archivedVersionToRestore, setArchivedVersionToRestore] = useState<{ id: string, price: number } | null>(null);
   
   const [isDuplicateModalOpen, setIsDuplicateModalOpen] = useState(false);
   const [duplicateName, setDuplicateName] = useState('');
@@ -234,6 +238,23 @@ const FlowBuilder: React.FC = () => {
     } catch (e) { console.error(e); }
   }, [token, selectedBot, activeProcessId]);
 
+  const loadRestorableVersions = useCallback(async (botIdOverride?: string) => {
+    const params = new URLSearchParams(window.location.search);
+    const botId = botIdOverride || selectedBot?.id || params.get('flow_id');
+    if (!token || !botId) return;
+    const url = activeProcessId 
+      ? `${API_BASE}/versions/restorable?flow_id=${botId}&standard_process_id=${activeProcessId}` 
+      : `${API_BASE}/versions/restorable?flow_id=${botId}`;
+    try {
+      const res = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
+      const data = await res.json();
+      setRestorableVersions(data);
+    } catch (e) { 
+      console.error(e);
+      setRestorableVersions(null);
+    }
+  }, [token, selectedBot, activeProcessId]);
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const flowIdFromUrl = params.get('flow_id');
@@ -245,6 +266,7 @@ const FlowBuilder: React.FC = () => {
       loadFlow(botId, activeProcessId);
       if (token && botId) {
         loadVersions(botId);
+        loadRestorableVersions(botId);
       }
     }
   }, [selectedBot?.id, activeProcessId, token, loadFlow]);
@@ -441,6 +463,49 @@ const FlowBuilder: React.FC = () => {
     }
   };
 
+  const handlePublishPaidVersion = async () => {
+    if (!newVersionName.trim() || !selectedBot || !token) return;
+    
+    try {
+      console.log('Starting paid version publish...');
+      
+      // In a real implementation, here you would:
+      // 1. Open payment gateway (e.g., PayPal, Stripe, etc.)
+      // 2. Wait for payment confirmation
+      // 3. Then call the publish-paid endpoint
+      
+      const res = await fetch(`${API_BASE}/versions/publish-paid`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({
+          name: newVersionName,
+          nodes: nodes,
+          edges: edges,
+          flow_id: selectedBot.id,
+          standard_process_id: activeProcessId
+        })
+      });
+      
+      const data = await res.json();
+      console.log('Paid publish response:', res.status, data);
+      
+      if (res.ok) {
+        setIsPublishModalOpen(false);
+        setNewVersionName('');
+        setQuotaError(null);
+        await loadVersions();
+        await loadRestorableVersions();
+        alert(`הגרסה פורסמה בהצלחה! סכום התשלום: ${quotaError?.price}₪`);
+      } else {
+        console.error('Paid publish error:', data);
+        alert(`שגיאה בפרסום: ${data.error || 'אנא נסה שוב'}`);
+      }
+    } catch (e) {
+      console.error("Publish paid version failed", e);
+      alert("שגיאה בתקשורת עם השרת");
+    }
+  };
+
   const handlePublishVersion = async () => {
     if (!newVersionName.trim() || !selectedBot || !token) {
       if (!newVersionName.trim()) alert("נא להזין שם לגרסה");
@@ -462,6 +527,7 @@ const FlowBuilder: React.FC = () => {
       
       const data = await res.json();
       if (res.status === 403 && data.error === 'MAX_VERSIONS_LOCKED') {
+        console.info('Version quota reached - showing payment modal');
         setIsPublishModalOpen(false);
         setQuotaError({ type: 'versions', message: data.message, price: data.price });
         return;
@@ -471,6 +537,7 @@ const FlowBuilder: React.FC = () => {
         setIsPublishModalOpen(false);
         setNewVersionName('');
         loadVersions();
+        loadRestorableVersions();
       } else {
         alert(`שגיאה בפרסום: ${data.error || 'אנא נסה שוב'}`);
       }
@@ -488,7 +555,10 @@ const FlowBuilder: React.FC = () => {
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ isLocked })
       });
-      if (res.ok) loadVersions();
+      if (res.ok) {
+        loadVersions();
+        loadRestorableVersions();
+      }
     } catch (e) { console.error(e); }
   };
 
@@ -501,6 +571,7 @@ const FlowBuilder: React.FC = () => {
       });
       if (res.ok) {
         setVersions(prev => prev.filter(v => v.id !== id));
+        loadRestorableVersions();
       } else {
         alert("שגיאה במחיקת הגרסה");
       }
@@ -534,6 +605,53 @@ const FlowBuilder: React.FC = () => {
     } catch (e) {
       console.error("Restore version failed", e);
       alert("שגיאה בשחזור הגרסה");
+    }
+  };
+
+  const handleRestoreArchivedVersion = async () => {
+    if (!archivedVersionToRestore || !selectedBot || !token) return;
+    
+    try {
+      // In a real implementation, here you would:
+      // 1. Open payment gateway (e.g., PayPal, Stripe, etc.)
+      // 2. Wait for payment confirmation
+      // 3. Then call the restore endpoint
+      
+      // For now, we'll simulate payment confirmation
+      const confirmPayment = window.confirm(
+        `האם אתה בטוח שברצונך לשלם ${archivedVersionToRestore.price}₪ לשיחזור הגירסה?`
+      );
+      
+      if (!confirmPayment) {
+        setIsRestoreArchivedModalOpen(false);
+        setArchivedVersionToRestore(null);
+        return;
+      }
+      
+      const res = await fetch(`${API_BASE}/versions/${archivedVersionToRestore.id}/restore`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json', 
+          'Authorization': `Bearer ${token}` 
+        }
+      });
+      
+      const data = await res.json();
+      
+      if (res.ok) {
+        // Refresh versions and restorable versions
+        await loadVersions();
+        await loadRestorableVersions();
+        
+        setIsRestoreArchivedModalOpen(false);
+        setArchivedVersionToRestore(null);
+        alert(`הגרסה שוחזרה בהצלחה! סכום התשלום: ${archivedVersionToRestore.price}₪`);
+      } else {
+        alert(`שגיאה בשיחזור: ${data.error || 'אנא נסה שוב'}`);
+      }
+    } catch (e) {
+      console.error("Restore archived version failed", e);
+      alert("שגיאה בתקשורת עם השרת");
     }
   };
 
@@ -698,7 +816,7 @@ const FlowBuilder: React.FC = () => {
     return (
       <>
         <Dashboard bots={bots} onEnterBot={enterBot} onCreateBot={handleCreateBot} onDeleteBot={handleDeleteBot} onSetDefaultBot={handleSetDefaultBot} onLogout={() => { localStorage.clear(); window.location.reload(); }} currentUser={currentUser} />
-        {quotaError && (
+        {quotaError && quotaError.type === 'bots' && (
           <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[200] p-6 text-right">
             <div className="bg-white w-full max-w-sm rounded-[2.5rem] shadow-2xl p-10 animate-in zoom-in duration-200 border border-slate-100">
               <div className="w-16 h-16 bg-red-50 text-red-500 rounded-3xl flex items-center justify-center mb-6 mr-0"><AlertTriangle size={32} /></div>
@@ -800,6 +918,7 @@ const FlowBuilder: React.FC = () => {
         sidebarProps={{
           fixedProcesses,
           versions,
+          restorableVersions,
           activeProcessId,
           onAddFixedProcess: () => setIsProcessModalOpen(true),
           onEditFixedProcess: (id: string) => { setActiveProcessId(id); setViewMode('editing-process'); loadFlow(selectedBot?.id || null, id); },
@@ -808,25 +927,31 @@ const FlowBuilder: React.FC = () => {
           onRestoreVersion: (v: Version) => { setVersionToRestore(v); setIsRestoreModalOpen(true); },
           onDeleteVersion: handleDeleteVersion,
           onToggleVersionLock: handleToggleVersionLock,
-          onOpenPublishModal: openPublishModal
+          onOpenPublishModal: openPublishModal,
+          onRestoreArchivedVersion: (versionId: string, versionPrice: number) => {
+            setArchivedVersionToRestore({ id: versionId, price: versionPrice });
+            setIsRestoreArchivedModalOpen(true);
+          }
         }}
       />
 
-      {quotaError && (
+      {quotaError && quotaError.type === 'versions' && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[200] p-6 text-right">
-          <div className="bg-white w-full max-sm rounded-[2.5rem] shadow-2xl p-10 animate-in zoom-in duration-200 border border-slate-100">
+          <div className="bg-white w-full max-w-sm rounded-[2.5rem] shadow-2xl p-10 animate-in zoom-in duration-200 border border-slate-100">
             <div className="w-16 h-16 bg-red-50 text-red-500 rounded-3xl flex items-center justify-center mb-6 mr-0"><Lock size={32} /></div>
-            <h3 className="text-2xl font-bold text-slate-900 mb-2">המכסה הסתיימה</h3>
+            <h3 className="text-2xl font-bold text-slate-900 mb-2">
+              הגעת למגבלת הגרסאות
+            </h3>
             <p className="text-slate-500 text-sm mb-8 font-medium leading-relaxed">{quotaError.message}</p>
             <div className="flex flex-col gap-3">
               <button 
-                onClick={() => window.open('https://payment.mesergo.com', '_blank')} 
+                onClick={handlePublishPaidVersion} 
                 className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg shadow-indigo-600/20 hover:bg-indigo-700 transition-all"
               >
-                מעבר לתשלום ({quotaError.price}₪)
+                פרסם גרסה בתשלום ({quotaError.price}₪)
               </button>
               <button 
-                onClick={() => setQuotaError(null)} 
+                onClick={() => { setQuotaError(null); setIsPublishModalOpen(false); setNewVersionName(''); }} 
                 className="w-full py-4 border border-slate-200 text-slate-400 rounded-2xl font-bold hover:bg-slate-50 transition-all"
               >
                 ביטול
@@ -916,6 +1041,44 @@ const FlowBuilder: React.FC = () => {
             <div className="flex gap-4">
               <button onClick={() => { setIsRestoreModalOpen(false); setVersionToRestore(null); }} className="flex-1 py-4 border border-slate-200 text-slate-400 rounded-2xl font-bold text-xs uppercase tracking-widest hover:bg-slate-50 transition-colors">ביטול</button>
               <button onClick={handleRestoreVersion} className="flex-1 py-4 bg-amber-500 text-white rounded-2xl font-bold text-xs uppercase tracking-widest shadow-lg shadow-amber-500/20 hover:bg-amber-600 transition-colors">שחזר עכשיו</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isRestoreArchivedModalOpen && archivedVersionToRestore && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[100] p-6 text-right">
+          <div className="bg-white w-full max-w-sm rounded-[2.5rem] shadow-2xl p-10 animate-in zoom-in duration-200 border border-slate-100">
+            <div className="w-16 h-16 bg-slate-100 text-slate-600 rounded-3xl flex items-center justify-center mb-6 mr-0"><RotateCcw size={32} /></div>
+            <h3 className="text-2xl font-bold text-slate-900 mb-2 text-right">שיחזור גרסה</h3>
+            <p className="text-slate-500 text-sm mb-4 font-medium leading-relaxed text-right">
+              שחזור גרסה זו ידרוס את העבודה הנוכחית שלך אם לא שמרת גרסה.
+            </p>
+            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 mb-6">
+              <div className="flex items-center justify-center gap-2 text-slate-700">
+                <Wallet size={20} />
+                <span className="text-lg font-bold">עלות שחזור: {archivedVersionToRestore.price}₪</span>
+              </div>
+              <div className="text-xs text-center text-slate-600 mt-2">
+                תשלום חד פעמי
+              </div>
+            </div>
+            <p className="text-slate-400 text-xs mb-6 text-center">
+              שחזור הגרסה ינעל אותה ותוסיף אותה לרשימה הנראית מעבר למגבלה
+            </p>
+            <div className="flex gap-4">
+              <button 
+                onClick={() => { setIsRestoreArchivedModalOpen(false); setArchivedVersionToRestore(null); }} 
+                className="flex-1 py-4 border border-slate-200 text-slate-400 rounded-2xl font-bold text-xs uppercase tracking-widest hover:bg-slate-50 transition-colors"
+              >
+                ביטול
+              </button>
+              <button 
+                onClick={handleRestoreArchivedVersion} 
+                className="flex-1 py-4 bg-slate-600 text-white rounded-2xl font-bold text-xs uppercase tracking-widest shadow-lg shadow-slate-600/20 hover:bg-slate-700 transition-colors"
+              >
+                שלם ושחזר ({archivedVersionToRestore.price}₪)
+              </button>
             </div>
           </div>
         </div>
