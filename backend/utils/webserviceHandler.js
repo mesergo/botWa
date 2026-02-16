@@ -238,10 +238,14 @@ export const handleWebService = async (node, session, userInput = null) => {
  * Find matching option based on return value
  * @param {Object} node - The webservice node
  * @param {*} returnValue - Value returned from webservice
- * @returns {Number} Index of matching option or -1
+ * @returns {Number} Index of matching option, or -2 for default option
  */
 export const findMatchingOption = (node, returnValue) => {
-  if (returnValue === null || returnValue === undefined) return -1;
+  if (returnValue === null || returnValue === undefined) {
+    // Always use default option when no return value
+    console.log('[WS] No return value, using default option');
+    return -2; // Special value to indicate default option
+  }
   
   const options = node.data.options || [];
   const operators = node.data.optionOperators || options.map(() => 'eq');
@@ -253,5 +257,7 @@ export const findMatchingOption = (node, returnValue) => {
     }
   }
   
-  return -1;
+  // If no match found, always use default option
+  console.log('[WS] No match found, using default option');
+  return -2; // Special value to indicate default option
 };

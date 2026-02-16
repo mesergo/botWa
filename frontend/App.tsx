@@ -92,6 +92,9 @@ const FlowBuilder: React.FC = () => {
   // Template State
   const [selectedTemplate, setSelectedTemplate] = useState<PredefinedTemplate | null>(null);
 
+  // Change Template State
+  const [isChangeTemplateModalOpen, setIsChangeTemplateModalOpen] = useState(false);
+
   // --- Edge Delete Listener ---
   useEffect(() => {
     const handleEdgeDelete = (e: any) => {
@@ -761,6 +764,26 @@ const FlowBuilder: React.FC = () => {
     } catch (e) { console.error(e); }
   };
 
+  const handleChangeTemplate = async () => {
+    if (!selectedBot || !token) return;
+    
+    try {
+      // Clear current flow
+      setNodes([]);
+      setEdges([]);
+      
+      // Sync empty flow to server
+      await syncFlow([], []);
+      
+      // Close modal and go to template selection
+      setIsChangeTemplateModalOpen(false);
+      setViewMode('template-selection');
+    } catch (e) {
+      console.error("Change template failed", e);
+      alert("שגיאה בהחלפת התסריט");
+    }
+  };
+
   const enterBot = (bot: BotFlow) => {
     setActiveProcessId(null);
     setSelectedBot(bot);
@@ -915,6 +938,7 @@ const FlowBuilder: React.FC = () => {
         onSimulatorOpen={() => setIsSimulatorOpen(true)}
         onSimulatorClose={() => setIsSimulatorOpen(false)}
         onDuplicate={() => { setDuplicateName(`${fixedProcesses.find(p => p.id.toString() === activeProcessId)?.name || ''} (עותק)`); setIsDuplicateModalOpen(true); }}
+        onChangeTemplate={() => setIsChangeTemplateModalOpen(true)}
         sidebarProps={{
           fixedProcesses,
           versions,
@@ -973,6 +997,22 @@ const FlowBuilder: React.FC = () => {
                 <button onClick={() => { setIsProcessModalOpen(false); setNewProcessName(''); }} className="flex-1 py-4 border border-slate-200 text-slate-400 rounded-2xl font-bold text-xs uppercase tracking-widest hover:bg-slate-50 transition-colors">ביטול</button>
                 <button onClick={handleCreateProcess} className="flex-1 py-4 bg-blue-600 text-white rounded-2xl font-bold text-xs uppercase tracking-widest shadow-lg shadow-blue-600/20 hover:bg-blue-700 transition-colors">צור תהליך</button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isChangeTemplateModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[110] p-6 text-right">
+          <div className="bg-white w-full max-w-sm rounded-[2.5rem] shadow-2xl p-10 animate-in zoom-in duration-200 border border-slate-100">
+            <div className="w-16 h-16 bg-orange-50 text-orange-500 rounded-3xl flex items-center justify-center mb-6 mr-0"><AlertTriangle size={32} /></div>
+            <h3 className="text-2xl font-bold text-slate-900 mb-2 text-right">הזהרה</h3>
+            <p className="text-slate-500 text-sm mb-8 font-medium leading-relaxed text-right">
+              פעולה זו תמחק את כל התסריט, לרבות השינויים שבוצעו בו עד כה. האם תרצה להמשיך לשינוי התסריט?
+            </p>
+            <div className="flex gap-4">
+              <button onClick={() => setIsChangeTemplateModalOpen(false)} className="flex-1 py-4 border border-slate-200 text-slate-400 rounded-2xl font-bold text-xs uppercase tracking-widest hover:bg-slate-50 transition-colors">בטל</button>
+              <button onClick={handleChangeTemplate} className="flex-1 py-4 bg-orange-500 text-white rounded-2xl font-bold text-xs uppercase tracking-widest shadow-lg shadow-orange-500/20 hover:bg-orange-600 transition-colors">אשר</button>
             </div>
           </div>
         </div>

@@ -47,6 +47,7 @@ interface EditorProps {
   onSimulatorOpen: () => void;
   onSimulatorClose: () => void;
   onDuplicate: () => void;
+  onChangeTemplate: () => void;
   sidebarProps: any;
 }
 
@@ -54,7 +55,7 @@ const Editor: React.FC<EditorProps> = ({
   selectedBot, nodes, edges, fixedProcesses, versions, currentUser, token, viewMode, activeProcessId,
   searchQuery, searchResults, currentSearchIndex, reactFlowWrapper, nodeTypes, edgeTypes, isSimulatorOpen,
   onNodesChange, onEdgesChange, onConnect, onInit, onDrop, onSearchChange, onSearchNav, onTidy, onPublish,
-  onCloseEditor, onHome, onSimulatorOpen, onSimulatorClose, onDuplicate, sidebarProps
+  onCloseEditor, onHome, onSimulatorOpen, onSimulatorClose, onDuplicate, onChangeTemplate, sidebarProps
 }) => {
   return (
     <div className="flex flex-col h-screen w-full bg-[#f8fafc] overflow-hidden text-black font-medium text-right">
@@ -71,6 +72,12 @@ const Editor: React.FC<EditorProps> = ({
               dir="rtl"
               value={searchQuery} 
               onChange={e => onSearchChange(e.target.value)} 
+              onKeyDown={e => {
+                if (e.key === 'Enter' && searchResults.length > 0) {
+                  e.preventDefault();
+                  onSearchNav('down');
+                }
+              }}
             />
             {searchResults.length > 0 && (
               <div className="absolute left-3 top-1/2 -translate-y-1/2 flex items-center gap-1 bg-white border border-slate-100 px-2 py-1 rounded-lg shadow-sm">
@@ -83,6 +90,9 @@ const Editor: React.FC<EditorProps> = ({
         </div>
         <div className="flex items-center gap-6">
           <button onClick={onPublish} className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 text-white border border-indigo-600 rounded-full text-xs font-bold shadow-sm hover:bg-indigo-700 transition-all"><CloudUpload size={16} /> פרסם גרסה</button>
+          {viewMode === 'main' && (
+            <button onClick={onChangeTemplate} className="flex items-center gap-2 px-6 py-2.5 bg-white border border-orange-500 text-orange-500 rounded-full text-xs font-bold shadow-sm hover:bg-orange-50 transition-all"><AlertTriangle size={16} /> החלף תסריט</button>
+          )}
           <button onClick={onTidy} className="flex items-center gap-2 px-6 py-2.5 bg-white border border-slate-200 rounded-full text-xs font-bold shadow-sm hover:border-blue-600 hover:text-blue-600 transition-all"><Wand2 size={16} /> סדר הכל</button>
           <div className="h-8 w-px bg-slate-100 mx-1"></div>
           <button onClick={onHome} className="p-2 text-slate-300 hover:text-blue-600 transition-colors"><X size={22} /></button>

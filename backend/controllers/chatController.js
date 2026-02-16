@@ -390,18 +390,19 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
         }
         
         // If we have a return value, find matching option
-        if (wsResult.returnValue !== null && wsResult.returnValue !== undefined) {
-          const matchedIdx = findMatchingOption(node, wsResult.returnValue);
-          if (matchedIdx !== -1) {
-            currentNodeId = findNextNode(currentNodeId, edges, `option-${matchedIdx}`);
-            session.waiting_webservice = false;
-            break;
-          }
+        const matchedIdx = findMatchingOption(node, wsResult.returnValue);
+        if (matchedIdx === -2) {
+          // Use default option
+          currentNodeId = findNextNode(currentNodeId, edges, 'option-default');
+        } else if (matchedIdx !== -1) {
+          // Use matched option
+          currentNodeId = findNextNode(currentNodeId, edges, `option-${matchedIdx}`);
+        } else {
+          // No match and no default (shouldn't happen anymore)
+          currentNodeId = findNextNode(currentNodeId, edges);
         }
         
-        // No match or no return value - continue to next
         session.waiting_webservice = false;
-        currentNodeId = findNextNode(currentNodeId, edges);
         break;
       }
 

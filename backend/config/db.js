@@ -6,7 +6,7 @@ dotenv.config();
 
 async function connectDB() {
   try {
-    const connectionString = process.env.MONGODB_URI || 'mongodb://localhost:27017/flowbot';
+    const connectionString = process.env.MONGODB_URI || 'mongodb://bots:b0t5bots@127.0.0.1/bots';
     const isProduction = process.env.NODE_ENV === 'production';
     
     console.log('🔌 Connecting to MongoDB...');

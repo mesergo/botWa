@@ -411,6 +411,15 @@ export const ActionWebServiceNode = (props: any) => {
           <label className="block text-[14px] font-bold text-slate-400 uppercase tracking-widest">פיצול לפי תשובה (Return)</label>
           <button onClick={addBranch} className="p-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-600 hover:text-white transition-all"><Plus size={16} /></button>
         </div>
+        
+        {/* Default option - always visible */}
+        <div className="flex items-center gap-2 p-3 bg-slate-50 border border-slate-200 rounded-2xl relative">
+          <Handle type="source" position={Position.Right} id="option-default" style={{ top: '50%', right: -16 }} className="w-4 h-4 bg-slate-400 border-2 border-white rounded-full shadow-lg" />
+          <div className="flex-1 text-center py-1">
+            <span className="text-sm font-bold text-slate-600">ברירת מחדל (אם אין התאמה)</span>
+          </div>
+        </div>
+        
         {branches.map((branch: string, i: number) => (
           <div key={i} className="flex flex-col gap-2 p-3 bg-slate-50 border border-slate-100 rounded-2xl group/branch relative transition-colors hover:bg-white hover:border-blue-100">
             <Handle type="source" position={Position.Right} id={`option-${i}`} style={{ top: '50%', right: -16 }} className="w-4 h-4 bg-slate-400 border-2 border-white rounded-full shadow-lg" />
