@@ -1,6 +1,10 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Bot, Calendar, ShoppingCart, Info, UserCheck, ArrowLeft, Zap, Layers } from 'lucide-react';
 import { PredefinedTemplate } from '../types';
+
+const API_BASE = window.location.hostname === 'localhost' 
+  ? 'http://localhost:3001/api' 
+  : `${window.location.origin}/api`;
 
 const TEMPLATES: PredefinedTemplate[] = [
   {
@@ -52,7 +56,43 @@ const TEMPLATES: PredefinedTemplate[] = [
   }
 ];
 
-const TemplateSelection: React.FC<{ onSelect: (template: PredefinedTemplate | null) => void, onBack: () => void }> = ({ onSelect, onBack }) => {
+interface DBTemplate {
+  _id: string;
+  template_id: string;
+  name: string;
+  description?: string;
+  isPublic: boolean;
+}
+
+const TemplateSelection: React.FC<{ onSelect: (template: PredefinedTemplate | null) => void, onBack: () => void, token?: string | null }> = ({ onSelect, onBack, token }) => {
+  const [dbTemplates, setDbTemplates] = useState<DBTemplate[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchTemplates = async () => {
+      try {
+        const headers: Record<string, string> = {};
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+        }
+        const res = await fetch(`${API_BASE}/templates/public`, { headers });
+        const data = await res.json();
+        setDbTemplates(data);
+      } catch (e) {
+        console.error('Failed to fetch templates', e);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchTemplates();
+  }, [token]);
+
+  const handleSelectDBTemplate = async (templateId: string) => {
+    // When selecting a DB template, we need to handle it differently
+    // For now, we'll just trigger a special flow
+    onSelect({ id: templateId, name: '', description: '', fields: [] } as PredefinedTemplate);
+  };
+
   const getIcon = (id: string) => {
     switch (id) {
       case 'customer_service': return <Bot size={24} />;
@@ -90,21 +130,21 @@ const TemplateSelection: React.FC<{ onSelect: (template: PredefinedTemplate | nu
             <p className="text-slate-400 text-center text-xs font-bold">התחל מאפס ובנה הכל לבד</p>
           </div>
 
-          {/* Predefined Templates */}
-          {TEMPLATES.map((tpl) => (
+          {/* DB Templates (only public ones) */}
+          {dbTemplates.map((tpl) => (
             <div 
-              key={tpl.id}
-              onClick={() => onSelect(tpl)}
-              className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all cursor-pointer flex flex-col h-[200px] justify-between group"
+              key={tpl._id}
+              onClick={() => handleSelectDBTemplate(tpl.template_id)}
+              className="bg-white border border-indigo-100 rounded-2xl p-5 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all cursor-pointer flex flex-col h-[200px] justify-between group"
             >
               <div>
-                <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center mb-3 mr-0 group-hover:bg-blue-600 group-hover:text-white transition-all">
-                  {getIcon(tpl.id)}
+                <div className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center mb-3 mr-0 group-hover:bg-indigo-600 group-hover:text-white transition-all">
+                  <Layers size={24} />
                 </div>
                 <h3 className="text-lg font-black text-slate-900 mb-2">{tpl.name}</h3>
-                <p className="text-slate-500 text-xs leading-snug">{tpl.description}</p>
+                <p className="text-slate-500 text-xs leading-snug">{tpl.description || 'תבנית מותאמת אישית'}</p>
               </div>
-              <div className="flex items-center justify-end gap-2 text-blue-600 font-black text-xs group-hover:gap-3 transition-all">
+              <div className="flex items-center justify-end gap-2 text-indigo-600 font-black text-xs group-hover:gap-3 transition-all">
                 <span>בחר תבנית</span>
                 <ArrowLeft size={14} />
               </div>

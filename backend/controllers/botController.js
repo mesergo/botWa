@@ -2,26 +2,22 @@ import User from '../models/User.js';
 import BotFlow from '../models/BotFlow.js';
 import Widget from '../models/Widget.js';
 import Version from '../models/Version.js';
-
-const ACCOUNTS_CONFIG = {
-  Basic: { maxBots: 3, maxVersions: 5, versionPrice: 5, botPrice: 30 },
-  Premium: { maxBots: 6, maxVersions: 10, versionPrice: 5, botPrice: 30 }
-};
+import { getUserLimits } from '../utils/limits.js';
 
 export const createBot = async (req, res) => {
   const { name } = req.body;
   const userId = req.user.id;
   try {
     const user = await User.findById(userId);
+    const limits = await getUserLimits(user);
     const accountType = user.account_type || 'Basic';
-    const limits = ACCOUNTS_CONFIG[accountType];
 
     const currentBotsCount = await BotFlow.countDocuments({ user_id: userId });
 
     if (currentBotsCount >= limits.maxBots) {
       return res.status(403).json({ 
         error: 'MAX_BOTS_REACHED', 
-        message: `הגעת למכסה המקסימלית של ${limits.maxBots} בוטים לחשבון ${accountType}.`,
+        message: `הגעת למכסה המקסימלית של ${limits.maxBots} בוטים.`,
         price: limits.botPrice
       });
     }

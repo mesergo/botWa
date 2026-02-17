@@ -2,10 +2,7 @@
 import User from '../models/User.js';
 import Version from '../models/Version.js';
 
-const ACCOUNTS_CONFIG = {
-  Basic: { maxBots: 3, maxVersions: 5, versionPrice: 5, botPrice: 30 },
-  Premium: { maxBots: 6, maxVersions: 10, versionPrice: 5, botPrice: 30 }
-};
+import { getUserLimits } from '../utils/limits.js';
 
 export const publishVersion = async (req, res) => {
   const userId = req.user.id;
@@ -13,8 +10,7 @@ export const publishVersion = async (req, res) => {
   
   try {
     const user = await User.findById(userId);
-    const accountType = user.account_type || 'Basic';
-    const limits = ACCOUNTS_CONFIG[accountType];
+    const limits = await getUserLimits(user);
     const normalizedProcessId = (standard_process_id === "null" || !standard_process_id) ? null : standard_process_id;
 
     // Get all existing versions for this flow/process combination
@@ -68,8 +64,7 @@ export const publishPaidVersion = async (req, res) => {
   
   try {
     const user = await User.findById(userId);
-    const accountType = user.account_type || 'Basic';
-    const limits = ACCOUNTS_CONFIG[accountType];
+    const limits = await getUserLimits(user);
     const normalizedProcessId = (standard_process_id === "null" || !standard_process_id) ? null : standard_process_id;
 
     // Note: Payment will be handled externally via payment gateway
@@ -108,8 +103,7 @@ export const getVersions = async (req, res) => {
   try {
     const user = await User.findById(userId);
     const accountType = user.account_type || 'Basic';
-    const limits = ACCOUNTS_CONFIG[accountType];
-
+    const limits = await getUserLimits(user)
     const normalizedProcessId = (standard_process_id === "null" || !standard_process_id) ? null : standard_process_id;
     const query = { user_id: userId, flow_id: flow_id, standard_process_id: normalizedProcessId };
     
@@ -183,8 +177,7 @@ export const getRestorableVersions = async (req, res) => {
   try {
     const user = await User.findById(userId);
     const accountType = user.account_type || 'Basic';
-    const limits = ACCOUNTS_CONFIG[accountType];
-
+    const limits = await getUserLimits(user)
     const normalizedProcessId = (standard_process_id === "null" || !standard_process_id) ? null : standard_process_id;
     const query = { user_id: userId, flow_id: flow_id, standard_process_id: normalizedProcessId };
     
@@ -230,8 +223,7 @@ export const restoreVersion = async (req, res) => {
   try {
     const user = await User.findById(userId);
     const accountType = user.account_type || 'Basic';
-    const limits = ACCOUNTS_CONFIG[accountType];
-    
+    const limits = await getUserLimits(user)
     // Find the version to restore
     const versionToRestore = await Version.findOne({ _id: id, user_id: userId });
     if (!versionToRestore) {

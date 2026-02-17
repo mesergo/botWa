@@ -12,6 +12,7 @@ import sessionRoutes from './routes/sessionRoutes.js';
 import versionRoutes from './routes/versionRoutes.js';
 import chatRoutes from './routes/chatRoutes.js';
 import templateRoutes from './routes/templateRoutes.js';
+import adminRoutes from './routes/adminRoutes.js';
 import { seedTemplates } from './controllers/templateController.js';
 
 // Load environment variables
@@ -49,8 +50,8 @@ async function startServer() {
     app.use('/api/sessions', sessionRoutes);
     app.use('/api/versions', versionRoutes);
     app.use('/api/chat', chatRoutes);
-    
     app.use('/api/templates', templateRoutes);
+    app.use('/api/admin', adminRoutes);
 
     // Start server
     app.listen(PORT, () => {

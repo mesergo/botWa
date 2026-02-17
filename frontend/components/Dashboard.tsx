@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, Bot, ArrowLeft, Trash2, Calendar, LogOut } from 'lucide-react';
+import { Plus, Bot, ArrowLeft, Trash2, Calendar, LogOut, Shield, UserCog } from 'lucide-react';
 import { BotFlow } from '../types';
 
 interface DashboardProps {
@@ -9,10 +9,12 @@ interface DashboardProps {
   onDeleteBot: (id: string) => void;
   onSetDefaultBot: (id: string) => void;
   onLogout: () => void;
-  currentUser?: { name?: string; email?: string } | null;
+  currentUser?: { name?: string; email?: string; role?: string; isImpersonating?: boolean } | null;
+  onOpenAdminPanel?: () => void;
+  onStopImpersonation?: () => void;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, onDeleteBot, onSetDefaultBot, onLogout, currentUser }) => {
+const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, onDeleteBot, onSetDefaultBot, onLogout, currentUser, onOpenAdminPanel, onStopImpersonation }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newBotName, setNewBotName] = useState('');
 
@@ -31,6 +33,24 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
 
   return (
     <div className="h-screen w-screen bg-[#f8fafc] flex flex-col font-medium text-right overflow-hidden">
+      {/* Impersonation Banner */}
+      {currentUser?.isImpersonating && (
+        <div className="bg-gradient-to-r from-orange-500 to-red-500 text-white px-6 py-3 flex items-center justify-between z-30">
+          <div className="flex items-center gap-3">
+            <UserCog className="w-5 h-5" />
+            <span className="font-bold">מצב התחזות - אתה רואה את המערכת כמשתמש: {currentUser.name || currentUser.email}</span>
+          </div>
+          {onStopImpersonation && (
+            <button
+              onClick={onStopImpersonation}
+              className="bg-white text-orange-600 px-4 py-2 rounded-lg font-bold hover:bg-orange-50 transition-colors"
+            >
+              חזור למצב מנהל
+            </button>
+          )}
+        </div>
+      )}
+      
       <nav className="h-20 bg-white border-b border-slate-100 flex items-center justify-between px-10 z-20">
         <div className="flex items-center gap-4">
           <img src="/images/mesergo-logo.png" alt="Logo" className="h-10 w-auto" />
@@ -38,6 +58,15 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
         <div className="flex items-center gap-4">
           {currentUser && (
             <span className="text-sm font-bold text-slate-600">שלום, {currentUser.name || currentUser.email}</span>
+          )}
+          {currentUser?.role === 'admin' && !currentUser?.isImpersonating && onOpenAdminPanel && (
+            <button
+              onClick={onOpenAdminPanel}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-100 text-blue-700 rounded-lg font-bold hover:bg-blue-200 transition-colors"
+            >
+              <Shield size={18} />
+              פאנל ניהול
+            </button>
           )}
           <button onClick={onLogout} className="p-2.5 text-slate-300 hover:text-red-500 transition-colors rounded-xl hover:bg-red-50"><LogOut size={22} /></button>
         </div>

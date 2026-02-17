@@ -49,16 +49,93 @@ interface EditorProps {
   onDuplicate: () => void;
   onChangeTemplate: () => void;
   sidebarProps: any;
+  isEditingTemplate?: boolean;
+  onSaveTemplate?: (name: string, description: string, isPublic: boolean) => void;
+  existingTemplateData?: { name: string; description: string; isPublic: boolean } | null;
 }
 
 const Editor: React.FC<EditorProps> = ({
   selectedBot, nodes, edges, fixedProcesses, versions, currentUser, token, viewMode, activeProcessId,
   searchQuery, searchResults, currentSearchIndex, reactFlowWrapper, nodeTypes, edgeTypes, isSimulatorOpen,
   onNodesChange, onEdgesChange, onConnect, onInit, onDrop, onSearchChange, onSearchNav, onTidy, onPublish,
-  onCloseEditor, onHome, onSimulatorOpen, onSimulatorClose, onDuplicate, onChangeTemplate, sidebarProps
+  onCloseEditor, onHome, onSimulatorOpen, onSimulatorClose, onDuplicate, onChangeTemplate, sidebarProps,
+  isEditingTemplate, onSaveTemplate, existingTemplateData
 }) => {
+  const [showSaveModal, setShowSaveModal] = React.useState(false);
+  const [templateName, setTemplateName] = React.useState(existingTemplateData?.name || '');
+  const [templateDescription, setTemplateDescription] = React.useState(existingTemplateData?.description || '');
+  const [templateIsPublic, setTemplateIsPublic] = React.useState(existingTemplateData?.isPublic ?? true);
+
+  React.useEffect(() => {
+    if (existingTemplateData) {
+      setTemplateName(existingTemplateData.name);
+      setTemplateDescription(existingTemplateData.description);
+      setTemplateIsPublic(existingTemplateData.isPublic);
+    }
+  }, [existingTemplateData]);
+
+  const handleSaveTemplate = () => {
+    if (onSaveTemplate && templateName.trim()) {
+      onSaveTemplate(templateName, templateDescription, templateIsPublic);
+      setShowSaveModal(false);
+    }
+  };
+
   return (
-    <div className="flex flex-col h-screen w-full bg-[#f8fafc] overflow-hidden text-black font-medium text-right">
+    <div className="flex flex-col h-screen w-full bg-[#f8fafc] overflow-hidden text-black font-medium text-right">{isEditingTemplate && showSaveModal && (
+        <div className="fixed inset-0 bg-black/50 z-[200] flex items-center justify-center p-4">
+          <div className="bg-white p-8 rounded-3xl w-full max-w-md shadow-2xl">
+            <h3 className="text-2xl font-bold mb-6 text-slate-800">שמירת תבנית</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-2">שם התבנית</label>
+                <input 
+                  type="text" 
+                  className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                  value={templateName}
+                  onChange={e => setTemplateName(e.target.value)}
+                  placeholder="נא להזין שם לתבנית"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-2">תיאור קצר</label>
+                <textarea 
+                  className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none resize-none h-24"
+                  value={templateDescription}
+                  onChange={e => setTemplateDescription(e.target.value)}
+                  placeholder="תיאור מה התבנית עושה..."
+                />
+              </div>
+              <div className="flex items-center gap-3">
+                <input 
+                  type="checkbox" 
+                  id="isPublic"
+                  checked={templateIsPublic}
+                  onChange={e => setTemplateIsPublic(e.target.checked)}
+                  className="w-5 h-5 rounded border-slate-300"
+                />
+                <label htmlFor="isPublic" className="text-sm font-bold text-slate-700">תבנית ציבורית (גלויה למשתמשים)</label>
+              </div>
+              <div className="flex gap-3 mt-8">
+                <button 
+                  onClick={handleSaveTemplate}
+                  disabled={!templateName.trim()}
+                  className="bg-indigo-600 text-white px-6 py-3 rounded-xl flex-1 font-bold shadow-lg shadow-indigo-200 hover:bg-indigo-700 transition-all disabled:opacity-50 disabled:shadow-none"
+                >
+                  שמור תבנית
+                </button>
+                <button 
+                  onClick={() => setShowSaveModal(false)}
+                  className="bg-slate-100 text-slate-600 px-6 py-3 rounded-xl font-bold hover:bg-slate-200 transition-colors"
+                >
+                  ביטול
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      
       <nav className="h-20 bg-white border-b border-slate-100 flex items-center justify-between px-8 z-20">
         <div className="flex items-center gap-10 text-right">
           <div className="flex items-center cursor-pointer group" onClick={onHome}>
@@ -89,8 +166,16 @@ const Editor: React.FC<EditorProps> = ({
           </div>
         </div>
         <div className="flex items-center gap-6">
-          <button onClick={onPublish} className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 text-white border border-indigo-600 rounded-full text-xs font-bold shadow-sm hover:bg-indigo-700 transition-all"><CloudUpload size={16} /> פרסם גרסה</button>
-          {viewMode === 'main' && (
+          {isEditingTemplate && onSaveTemplate ? (
+            <button onClick={() => setShowSaveModal(true)} className="flex items-center gap-2 px-6 py-2.5 bg-green-600 text-white border border-green-600 rounded-full text-xs font-bold shadow-sm hover:bg-green-700 transition-all">
+              <CloudUpload size={16} /> שמור תבנית
+            </button>
+          ) : (
+            <button onClick={onPublish} className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 text-white border border-indigo-600 rounded-full text-xs font-bold shadow-sm hover:bg-indigo-700 transition-all">
+              <CloudUpload size={16} /> פרסם גרסה
+            </button>
+          )}
+          {viewMode === 'main' && !isEditingTemplate && (
             <button onClick={onChangeTemplate} className="flex items-center gap-2 px-6 py-2.5 bg-white border border-orange-500 text-orange-500 rounded-full text-xs font-bold shadow-sm hover:bg-orange-50 transition-all"><AlertTriangle size={16} /> החלף תסריט</button>
           )}
           <button onClick={onTidy} className="flex items-center gap-2 px-6 py-2.5 bg-white border border-slate-200 rounded-full text-xs font-bold shadow-sm hover:border-blue-600 hover:text-blue-600 transition-all"><Wand2 size={16} /> סדר הכל</button>

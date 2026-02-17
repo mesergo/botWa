@@ -1,6 +1,8 @@
 import Template from '../models/Template.js';
 import Widget from '../models/Widget.js';
 import Option from '../models/Option.js';
+import BotFlow from '../models/BotFlow.js';
+import Version from '../models/Version.js';
 import { ObjectId } from 'mongodb';
 
 /**
@@ -145,7 +147,7 @@ export const seedTemplates = async () => {
   for (const template of INITIAL_TEMPLATES) {
     await Template.updateOne(
       { template_id: template.template_id },
-      { $set: template },
+      { $set: { ...template, isPublic: true } },
       { upsert: true }
     );
   }
@@ -249,3 +251,142 @@ function replaceAll(text, values) {
   });
   return result;
 }
+
+// --- Template Management ---
+
+export const getAllTemplates = async (req, res) => {
+  try {
+    const templates = await Template.find({});
+    res.json(templates);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const getPublicTemplates = async (req, res) => {
+  try {
+    const templates = await Template.find({ isPublic: true });
+    res.json(templates);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const getTemplate = async (req, res) => {
+  try {
+    const template = await Template.findById(req.params.id); 
+    if (!template) return res.status(404).json({ error: 'Template not found' });
+    res.json(template);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const getTemplateFlow = async (req, res) => {
+  try {
+    const template = await Template.findById(req.params.id);
+    if (!template) {
+      return res.status(404).json({ error: 'Template not found' });
+    }
+    res.json({
+      nodes: template.nodes || [],
+      edges: template.edges || []
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const updateTemplateFlow = async (req, res) => {
+  const { nodes, edges } = req.body;
+  try {
+    const template = await Template.findByIdAndUpdate(
+      req.params.id,
+      { nodes, edges },
+      { new: true }
+    );
+    if (!template) {
+      return res.status(404).json({ error: 'Template not found' });
+    }
+    res.json(template);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const createTemplate = async (req, res) => {
+  const { name, description, nodes, edges, template_id, isPublic } = req.body;
+  try {
+    const newTemplate = new Template({
+      template_id: template_id || `tpl_${Date.now()}`,
+      name,
+      description,
+      isPublic: isPublic !== undefined ? isPublic : true,
+      nodes,
+      edges
+    });
+    await newTemplate.save();
+    res.json(newTemplate);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const updateTemplate = async (req, res) => {
+  const { name, description, nodes, edges, template_id, isPublic } = req.body;
+  
+  // Build update object dynamically
+  const updateData = {};
+  if (name) updateData.name = name;
+  if (description) updateData.description = description;
+  if (isPublic !== undefined) updateData.isPublic = isPublic;
+  if (nodes) updateData.nodes = nodes;
+  if (edges) updateData.edges = edges;
+  if (template_id) updateData.template_id = template_id; // Allow updating ID if needed, but be careful
+
+  try {
+    const template = await Template.findByIdAndUpdate(
+      req.params.id,
+      updateData,
+      { new: true }
+    );
+    res.json(template);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const deleteTemplate = async (req, res) => {
+  try {
+    await Template.findByIdAndDelete(req.params.id);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const createTemplateFromBot = async (req, res) => {
+  const { botId, name, description } = req.body; 
+  
+  try {
+    // Check if it's a flow ID/version
+    const latestVersion = await Version.findOne({ flow_id: botId }).sort({ created_at: -1 });
+
+    if (!latestVersion) {
+        return res.status(404).json({ error: 'No version found for this bot to create template from' });
+    }
+
+    const newTemplate = new Template({
+      template_id: `tpl_${Date.now()}`,
+      name: name || `Template from ${latestVersion.name}`,
+      description,
+      nodes: latestVersion.data.nodes,
+      edges: latestVersion.data.edges
+    });
+
+    await newTemplate.save();
+    res.json(newTemplate);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};

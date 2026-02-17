@@ -7,6 +7,7 @@ import AuthScreen from './components/AuthScreen';
 import Editor from './components/Editor';
 import TemplateSelection from './components/TemplateSelection';
 import TemplateForm from './components/TemplateForm';
+import AdminPanel from './components/AdminPanel';
 import { StartNode, InputTextNode, InputDateNode, InputFileNode, OutputTextNode, OutputImageNode, OutputLinkNode, OutputMenuNode, ActionWebServiceNode, ActionWaitNode, ActionTimeRoutingNode, FixedProcessNode, AutomaticResponsesNode } from './components/nodes/CustomNodes';
 import ButtonEdge from './components/edges/ButtonEdge';
 import { CloudUpload, RotateCcw, Plus, AlertTriangle, Copy, X, Lock, Wallet } from 'lucide-react';
@@ -33,7 +34,7 @@ const nodeTypes = {
 const edgeTypes = { button: ButtonEdge };
 const DEFAULT_EDGE_STYLE = { stroke: '#3b82f6', strokeWidth: 2, strokeDasharray: '6,4' };
  
-type ViewMode = 'dashboard' | 'editor' | 'editing-process' | 'viewing-process' | 'simulator-only' | 'template-selection' | 'template-form';
+type ViewMode = 'dashboard' | 'editor' | 'editing-process' | 'viewing-process' | 'simulator-only' | 'template-selection' | 'template-form' | 'admin-panel' | 'editing-template' | 'creating-template';
 
 const FlowBuilder: React.FC = () => {
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
@@ -91,6 +92,9 @@ const FlowBuilder: React.FC = () => {
 
   // Template State
   const [selectedTemplate, setSelectedTemplate] = useState<PredefinedTemplate | null>(null);
+  const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
+  const [editingTemplateData, setEditingTemplateData] = useState<{ name: string; description: string; isPublic: boolean } | null>(null);
+  const [creatingTemplate, setCreatingTemplate] = useState(false);
 
   // Change Template State
   const [isChangeTemplateModalOpen, setIsChangeTemplateModalOpen] = useState(false);
@@ -277,10 +281,22 @@ const FlowBuilder: React.FC = () => {
   useEffect(() => { if (currentUser) loadBots(); }, [currentUser, loadBots]);
 
   const syncFlow = async (customNodes?: Node[], customEdges?: Edge[], customProcessId?: string) => {
-    if (!token || (!selectedBot && !activeProcessId)) return;
+    if (!token || (!selectedBot && !activeProcessId && !editingTemplateId && !creatingTemplate)) return;
     const n = customNodes || nodes;
     const e = customEdges || edges;
     const pId = customProcessId !== undefined ? customProcessId : activeProcessId;
+    
+    // If editing/creating template, sync to template endpoint
+    if (editingTemplateId || creatingTemplate) {
+      if (editingTemplateId) {
+        await fetch(`${API_BASE}/templates/${editingTemplateId}/flow`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          body: JSON.stringify({ nodes: n, edges: e })
+        });
+      }
+      return;
+    }
     
     await fetch(`${API_BASE}/flow/sync`, {
       method: 'POST',
@@ -295,11 +311,11 @@ const FlowBuilder: React.FC = () => {
   };
 
   useEffect(() => {
-    if (viewMode !== 'dashboard' && viewMode !== 'template-selection' && viewMode !== 'template-form' && viewMode !== 'simulator-only' && (selectedBot || activeProcessId)) {
+    if (viewMode !== 'dashboard' && viewMode !== 'template-selection' && viewMode !== 'template-form' && viewMode !== 'simulator-only' && viewMode !== 'admin-panel' && (selectedBot || activeProcessId || editingTemplateId)) {
       const timer = setTimeout(syncFlow, 1500);
       return () => clearTimeout(timer);
     }
-  }, [nodes, edges, viewMode, selectedBot, activeProcessId]);
+  }, [nodes, edges, viewMode, selectedBot, activeProcessId, editingTemplateId]);
 
   const tidyFlow = () => {
     if (!reactFlowInstance || nodes.length === 0) return;
@@ -465,6 +481,40 @@ const FlowBuilder: React.FC = () => {
       setAuthErrors({ general: data.error || 'Invalid credentials' });
     }
   };
+
+  const handleImpersonate = useCallback((userData: any, impersonationToken: string) => {
+    setToken(impersonationToken);
+    setCurrentUser(userData);
+    localStorage.setItem('flowbot_token', impersonationToken);
+    localStorage.setItem('flowbot_user', JSON.stringify(userData));
+    setViewMode('dashboard');
+    // Reload bots for the impersonated user
+    loadBots();
+  }, [loadBots]);
+
+  const handleStopImpersonation = useCallback(async () => {
+    if (!token) return;
+    
+    try {
+      const res = await fetch(`${API_BASE}/admin/stop-impersonation`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      
+      const data = await res.json();
+      if (res.ok && data.token) {
+        setToken(data.token);
+        setCurrentUser(data.user);
+        localStorage.setItem('flowbot_token', data.token);
+        localStorage.setItem('flowbot_user', JSON.stringify(data.user));
+        setViewMode('dashboard');
+        // Reload bots for the admin user
+        loadBots();
+      }
+    } catch (error) {
+      console.error('Error stopping impersonation:', error);
+    }
+  }, [token, loadBots]);
 
   const handlePublishPaidVersion = async () => {
     if (!newVersionName.trim() || !selectedBot || !token) return;
@@ -764,6 +814,123 @@ const FlowBuilder: React.FC = () => {
     } catch (e) { console.error(e); }
   };
 
+  const handleLoadTemplateForEditing = async (templateId: string) => {
+    if (!token) return;
+    try {
+      // Load template data first
+      const templateRes = await fetch(`${API_BASE}/templates/${templateId}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const templateData = await templateRes.json();
+      setEditingTemplateData({
+        name: templateData.name,
+        description: templateData.description || '',
+        isPublic: templateData.isPublic
+      });
+
+      // Load template flow
+      const res = await fetch(`${API_BASE}/templates/${templateId}/flow`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (data.nodes?.length > 0) {
+        setNodes(data.nodes.map((n: any) => bindNodeCallbacks(n)));
+        setEdges(data.edges.map((e: any) => ({ ...e, style: DEFAULT_EDGE_STYLE, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6' } })));
+      } else {
+        // Empty template - start with automatic responses node
+        const start = bindNodeCallbacks({
+          id: `auto-responses-${Date.now()}`,
+          type: NodeType.AUTOMATIC_RESPONSES,
+          position: { x: 800, y: 400 },
+          data: { label: 'תגובות אוטומטיות', serialId: '#1', options: ['כניסה'], optionOperators: ['eq'] },
+        });
+        setNodes([start]);
+        setEdges([]);
+      }
+      setEditingTemplateId(templateId);
+      setViewMode('editing-template');
+    } catch (e) { 
+      console.error(e); 
+      alert("שגיאה בטעינת תבנית");
+    }
+  };
+
+  const handleCreateNewTemplate = () => {
+    // Start with empty template
+    const start = bindNodeCallbacks({
+      id: `auto-responses-${Date.now()}`,
+      type: NodeType.AUTOMATIC_RESPONSES,
+      position: { x: 800, y: 400 },
+      data: { label: 'תגובות אוטומטיות', serialId: '#1', options: ['כניסה'], optionOperators: ['eq'] },
+    });
+    setNodes([start]);
+    setEdges([]);
+    setCreatingTemplate(true);
+    setViewMode('creating-template');
+  };
+
+  const handleSaveNewTemplate = async (name: string, description: string, isPublic: boolean) => {
+    if (!token) return;
+    try {
+      const res = await fetch(`${API_BASE}/templates`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({
+          name,
+          description,
+          isPublic,
+          nodes,
+          edges
+        })
+      });
+      if (res.ok) {
+        setCreatingTemplate(false);
+        setViewMode('admin-panel');
+        alert('תבנית נשמרה בהצלחה!');
+      } else {
+        alert('שגיאה בשמירת תבנית');
+      }
+    } catch (e) {
+      console.error(e);
+      alert('שגיאה בשמירת תבנית');
+    }
+  };
+
+  const handleUpdateExistingTemplate = async (name: string, description: string, isPublic: boolean) => {
+    if (!token || !editingTemplateId) return;
+    try {
+      const res = await fetch(`${API_BASE}/templates/${editingTemplateId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({
+          name,
+          description,
+          isPublic,
+          nodes,
+          edges
+        })
+      });
+      if (res.ok) {
+        setEditingTemplateData({ name, description, isPublic });
+        alert('תבנית עודכנה בהצלחה!');
+      } else {
+        alert('שגיאה בעדכון תבנית');
+      }
+    } catch (e) {
+      console.error(e);
+      alert('שגיאה בעדכון תבנית');
+    }
+  };
+
+  const handleCloseTemplateEditor = () => {
+    setEditingTemplateId(null);
+    setEditingTemplateData(null);
+    setCreatingTemplate(false);
+    setNodes([]);
+    setEdges([]);
+    setViewMode('admin-panel');
+  };
+
   const handleChangeTemplate = async () => {
     if (!selectedBot || !token) return;
     
@@ -838,7 +1005,17 @@ const FlowBuilder: React.FC = () => {
   if (viewMode === 'dashboard') {
     return (
       <>
-        <Dashboard bots={bots} onEnterBot={enterBot} onCreateBot={handleCreateBot} onDeleteBot={handleDeleteBot} onSetDefaultBot={handleSetDefaultBot} onLogout={() => { localStorage.clear(); window.location.reload(); }} currentUser={currentUser} />
+        <Dashboard 
+          bots={bots} 
+          onEnterBot={enterBot} 
+          onCreateBot={handleCreateBot} 
+          onDeleteBot={handleDeleteBot} 
+          onSetDefaultBot={handleSetDefaultBot} 
+          onLogout={() => { localStorage.clear(); window.location.reload(); }} 
+          currentUser={currentUser}
+          onOpenAdminPanel={() => setViewMode('admin-panel')}
+          onStopImpersonation={handleStopImpersonation}
+        />
         {quotaError && quotaError.type === 'bots' && (
           <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[200] p-6 text-right">
             <div className="bg-white w-full max-w-sm rounded-[2.5rem] shadow-2xl p-10 animate-in zoom-in duration-200 border border-slate-100">
@@ -856,15 +1033,33 @@ const FlowBuilder: React.FC = () => {
     );
   }
 
+  if (viewMode === 'admin-panel') {
+    return (
+      <AdminPanel 
+        token={token!} 
+        currentUser={currentUser}
+        onBack={() => setViewMode('dashboard')}
+        onImpersonate={handleImpersonate}
+        onEditTemplate={handleLoadTemplateForEditing}
+        onCreateTemplate={handleCreateNewTemplate}
+      />
+    );
+  }
+
   if (viewMode === 'template-selection') {
     return <TemplateSelection 
+      token={token}
       onSelect={(template) => { 
         if (!template) {
           setViewMode('editor');
           loadFlow(selectedBot?.id || null);
-        } else {
+        } else if (template.fields && template.fields.length > 0) {
+          // Old predefined template with fields
           setSelectedTemplate(template);
           setViewMode('template-form');
+        } else {
+          // DB template - directly initialize from it
+          handleInitializeFromTemplate(template.id, {});
         }
       }} 
       onBack={() => setViewMode('dashboard')}
@@ -877,6 +1072,64 @@ const FlowBuilder: React.FC = () => {
       onSubmit={(values) => handleInitializeFromTemplate(selectedTemplate.id, values)}
       onBack={() => setViewMode('template-selection')}
     />;
+  }
+
+  // Template Editor (creating or editing)
+  if (viewMode === 'creating-template' || viewMode === 'editing-template') {
+    return (
+      <>
+        <Editor 
+          selectedBot={null}
+          nodes={nodesWithSearch}
+          edges={edges}
+          fixedProcesses={fixedProcesses}
+          versions={[]}
+          currentUser={currentUser}
+          token={token}
+          viewMode='main'
+          activeProcessId={null}
+          searchQuery={searchQuery}
+          searchResults={searchResults}
+          currentSearchIndex={currentSearchIndex}
+          reactFlowWrapper={reactFlowWrapper}
+          nodeTypes={nodeTypes}
+          edgeTypes={edgeTypes}
+          isSimulatorOpen={false}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          onConnect={onConnect}
+          onInit={setReactFlowInstance}
+          onDrop={onDrop}
+          onSearchChange={setSearchQuery}
+          onSearchNav={(dir) => setCurrentSearchIndex(i => dir === 'up' ? (i > 0 ? i - 1 : searchResults.length - 1) : (i + 1) % searchResults.length)}
+          onTidy={tidyFlow}
+          onPublish={() => {}}
+          onCloseEditor={handleCloseTemplateEditor}
+          onHome={handleCloseTemplateEditor}
+          onSimulatorOpen={() => {}}
+          onSimulatorClose={() => {}}
+          onDuplicate={() => {}}
+          onChangeTemplate={() => {}}
+          sidebarProps={{
+            fixedProcesses,
+            versions: [],
+            restorableVersions: null,
+            activeProcessId: null,
+            onAddFixedProcess: () => {},
+            onEditFixedProcess: () => {},
+            onViewFixedProcess: () => {},
+            onDeleteFixedProcess: () => {},
+            onRestoreVersion: () => {},
+            onArchiveVersion: () => {},
+            onRestoreArchivedVersion: () => {},
+            onDeleteVersion: () => {}
+          }}
+          isEditingTemplate={true}
+          onSaveTemplate={viewMode === 'creating-template' ? handleSaveNewTemplate : handleUpdateExistingTemplate}
+          existingTemplateData={editingTemplateData}
+        />
+      </>
+    );
   }
 
   if (viewMode === 'simulator-only') {
@@ -903,7 +1156,7 @@ const FlowBuilder: React.FC = () => {
 
   // Ensure 'simulator-only' doesn't get blocked by the Loading check
   // The check for viewMode !== 'simulator-only' is redundant here as it's handled above.
-  if (!selectedBot && !activeProcessId) return <div>Loading...</div>;
+  if (!selectedBot && !activeProcessId && !editingTemplateId && !creatingTemplate) return <div>Loading...</div>;
 
   return (
     <>

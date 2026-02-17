@@ -4,15 +4,33 @@ import jwt from 'jsonwebtoken';
 import { SECRET_KEY } from '../middleware/auth.js';
 
 export const register = async (req, res) => {
-  const { name, email, phone, password } = req.body;
+  const { name, email, phone, password, role } = req.body;
   try {
     const publicId = Math.random().toString(36).substring(2, 15);
+    
+    // Check if role=admin was requested
+    let userRole = 'user';
+    if (role === 'admin') {
+      // Allow admin creation if:
+      // 1. It's the first user in the system (no admins exist)
+      // 2. Or in development environment
+      const adminCount = await User.countDocuments({ role: 'admin' });
+      const isDevelopment = process.env.NODE_ENV !== 'production';
+      
+      if (adminCount === 0 || isDevelopment) {
+        userRole = 'admin';
+        console.log(`✅ Creating admin user: ${email} (First admin: ${adminCount === 0}, Dev mode: ${isDevelopment})`);
+      } else {
+        console.log(`⚠️ Attempted admin creation denied for ${email} - admins already exist in production`);
+      }
+    }
+    
     const user = await User.create({
       name,
       email,
       phone,
       password,
-      role: 'user',
+      role: userRole,
       public_id: publicId,
       account_type: 'Basic',
       status: 'active'
@@ -28,6 +46,7 @@ export const register = async (req, res) => {
         id: userId, 
         name, 
         email, 
+        role: 'user',
         public_id: publicId, 
         account_type: 'Basic', 
         status: 'active',
@@ -54,6 +73,7 @@ export const login = async (req, res) => {
         id: userId, 
         name: user.name, 
         email: user.email, 
+        role: user.role || 'user',
         public_id: user.public_id,
         account_type: user.account_type || 'Basic',
         status: user.status || 'active',

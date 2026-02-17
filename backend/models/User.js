@@ -8,7 +8,13 @@ const userSchema = new mongoose.Schema({
   role: { type: String, default: 'user' },
   public_id: String,
   account_type: { type: String, default: 'Basic' },
-  status: { type: String, default: 'active' }
+  status: { type: String, default: 'active' },
+  custom_limits: {
+    max_bots: { type: Number, default: null },
+    max_versions: { type: Number, default: null },
+    version_price: { type: Number, default: null },
+    bot_price: { type: Number, default: null }
+  }
 }, {
   timestamps: true,
   collection: 'User'

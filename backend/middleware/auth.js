@@ -1,4 +1,5 @@
 import jwt from 'jsonwebtoken';
+import User from '../models/User.js';
 
 const SECRET_KEY = 'flowbot-secure-jwt-key';
 
@@ -14,6 +15,19 @@ export const authenticateToken = (req, res, next) => {
     req.userId = user.id; // Add userId for easier access
     next();
   });
+};
+
+// Middleware to check if user is admin
+export const requireAdmin = async (req, res, next) => {
+  try {
+    const user = await User.findById(req.userId);
+    if (!user || user.role !== 'admin') {
+      return res.status(403).json({ error: 'Access denied. Admin privileges required.' });
+    }
+    next();
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 };
 
 // Alias for authenticate

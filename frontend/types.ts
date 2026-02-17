@@ -93,10 +93,13 @@ export interface User {
   id: string;
   name: string;
   email: string;
+  role?: 'admin' | 'user';
   public_id: string;
   account_type: 'Basic' | 'Premium';
   status: 'active' | 'inActive' | 'pause';
   password?: string;
+  isImpersonating?: boolean;
+  impersonatedBy?: string;
 }
 
 export interface CarouselItem {
