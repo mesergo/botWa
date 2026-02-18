@@ -107,6 +107,7 @@ export const getAllUsers = async (req, res) => {
     const usersWithStats = await Promise.all(users.map(async (user) => {
       const userId = user._id.toString();
       const botCount = await BotFlow.countDocuments({ user_id: userId }); // Fixed: Use BotFlow, not Session
+      const sessionCount = await BotSession.countDocuments({ user_id: userId });
       
       const limits = await getUserLimits(user);
       
@@ -124,7 +125,8 @@ export const getAllUsers = async (req, res) => {
         custom_limits: user.custom_limits,
         limits_in_effect: limits,
         stats: {
-          bots: botCount
+          bots: botCount,
+          flows: sessionCount
         }
       };
     }));
@@ -146,6 +148,7 @@ export const getUserDetails = async (req, res) => {
     }
     
     const bots = await BotFlow.find({ user_id: userId }); // Fixed: BotFlow
+    const sessionCount = await BotSession.countDocuments({ user_id: userId });
     const limits = await getUserLimits(user);
     
     res.json({
@@ -162,7 +165,11 @@ export const getUserDetails = async (req, res) => {
         custom_limits: user.custom_limits,
         limits_in_effect: limits,
         createdAt: user.createdAt,
-        updatedAt: user.updatedAt
+        updatedAt: user.updatedAt,
+        stats: {
+            bots: bots.length, // Added this line to fix the bug
+            flows: sessionCount
+        }
       },
       bots
     });

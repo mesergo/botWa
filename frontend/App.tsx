@@ -4,6 +4,7 @@ import { ReactFlowProvider, addEdge, Node, Edge, applyNodeChanges, applyEdgeChan
 import { NodeType, NodeData, User, FixedProcess, Version, BotFlow, PredefinedTemplate, RestorableVersionsData } from './types';
 import Dashboard from './components/Dashboard';
 import AuthScreen from './components/AuthScreen';
+import RegisterPage from './components/RegisterPage';
 import Editor from './components/Editor';
 import TemplateSelection from './components/TemplateSelection';
 import TemplateForm from './components/TemplateForm';
@@ -39,8 +40,14 @@ type ViewMode = 'dashboard' | 'editor' | 'editing-process' | 'viewing-process' |
 const FlowBuilder: React.FC = () => {
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
-    const saved = localStorage.getItem('flowbot_user');
-    return saved ? JSON.parse(saved) : null;
+    try {
+      const saved = localStorage.getItem('flowbot_user');
+      if (!saved || saved === "undefined") return null;
+      return JSON.parse(saved);
+    } catch (e) {
+      console.error("Failed to parse user from local storage", e);
+      return null;
+    }
   });
   const [token, setToken] = useState<string | null>(localStorage.getItem('flowbot_token'));
   
@@ -174,6 +181,16 @@ const FlowBuilder: React.FC = () => {
     if (!token) return;
     try {
       const res = await fetch(`${API_BASE}/bots`, { headers: { 'Authorization': `Bearer ${token}` } });
+      if (!res.ok) {
+        if (res.status === 401 || res.status === 403) {
+            console.error("Authentication error loading bots - forcing logout");
+            setToken(null);
+            setCurrentUser(null);
+            localStorage.removeItem('flowbot_token');
+            localStorage.removeItem('flowbot_user');
+        }
+        return;
+      }
       const data = await res.json();
       setBots(data);
     } catch (e) { console.error(e); }
@@ -183,6 +200,16 @@ const FlowBuilder: React.FC = () => {
     if (!token) return;
     try {
       const res = await fetch(`${API_BASE}/processes`, { headers: { 'Authorization': `Bearer ${token}` } });
+       if (!res.ok) {
+        if (res.status === 401 || res.status === 403) {
+            console.error("Authentication error loading processes - forcing logout");
+            setToken(null);
+            setCurrentUser(null);
+            localStorage.removeItem('flowbot_token');
+            localStorage.removeItem('flowbot_user');
+        }
+        return;
+      }
       const data = await res.json();
       setFixedProcesses(data);
     } catch (e) { console.error(e); }
@@ -211,6 +238,10 @@ const FlowBuilder: React.FC = () => {
 
     try {
       const res = await fetch(url, { headers });
+      if (!res.ok) {
+        console.error("Failed to load flow:", res.status, res.statusText);
+        return;
+      }
       const data = await res.json();
       if (data.nodes?.length > 0) {
         setNodes(data.nodes.map((n: any) => bindNodeCallbacks(n)));
@@ -999,6 +1030,12 @@ const FlowBuilder: React.FC = () => {
     setNewVersionName(`גרסה מ-${dateStr} ${timeStr}`);
     setIsPublishModalOpen(true);
   }, []);
+
+  // Show standalone registration page when ?register=1 is in the URL
+  const isRegisterPage = new URLSearchParams(window.location.search).get('register') === '1';
+  if (isRegisterPage) {
+    return <RegisterPage />;
+  }
 
   if (!currentUser && viewMode !== 'simulator-only') {
     return <AuthScreen mode={authMode} form={authForm} errors={authErrors} onFormChange={setAuthForm} onAuth={handleAuth} onSwitchMode={() => setAuthMode(m => m === 'login' ? 'register' : 'login')} />;
