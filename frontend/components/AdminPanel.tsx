@@ -3,7 +3,7 @@ import {
   Users, UserCog, LogOut, ArrowLeft, AlertCircle, Shield, Activity, 
   Search, Trash2, Edit2, Ban, CheckCircle, BarChart2, Settings, 
   FileText, Save, Plus, Eye, EyeOff, Bot, ChevronRight, LayoutDashboard,
-  CreditCard, MoreVertical, X
+  CreditCard, MoreVertical, X, Star
 } from 'lucide-react';
 
 interface User {
@@ -370,8 +370,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
         }
         
         .sidebar-link-active {
-          background: linear-gradient(90deg, #EEF2FF 0%, #F5F3FF 100%);
-          color: #4F46E5;
+          background: linear-gradient(90deg, #E0F2FE 0%, #F0F9FF 100%);
+          color: #0284C7;
           position: relative;
         }
         .sidebar-link-active::before {
@@ -383,7 +383,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
           width: 4px;
           border-top-left-radius: 4px;
           border-bottom-left-radius: 4px;
-          background-color: #4F46E5;
+          background-color: #0284C7;
         }
       `}</style>
       
@@ -391,7 +391,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
       <aside className="w-72 bg-white flex flex-col z-30 border-l border-slate-100 shadow-[4px_0_24px_rgba(0,0,0,0.02)]">
         <div className="p-8 pb-6">
           <div className="flex items-center gap-3 mb-10">
-           <div className="flex items-center gap-4">
+           <div 
+             className="flex items-center gap-4 cursor-pointer hover:opacity-80 transition-opacity"
+             onClick={onBack}
+           >
           <img src="/images/mesergo-logo.png" alt="Logo" className="h-10 w-auto" />
         </div>
           </div>
@@ -412,9 +415,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                     : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'
                 }`}
               >
-                <item.icon size={20} className={`transition-colors flex-shrink-0 ${activeTab === item.id ? 'text-indigo-600' : 'text-slate-400 group-hover:text-slate-600'}`} />
+                <item.icon size={20} className={`transition-colors flex-shrink-0 ${activeTab === item.id ? 'text-sky-600' : 'text-slate-400 group-hover:text-slate-600'}`} />
                 <span className="tracking-tight">{item.label}</span>
-                {activeTab === item.id && <ChevronRight size={16} className="mr-auto opacity-50 text-indigo-400" />}
+                {activeTab === item.id && <ChevronRight size={16} className="mr-auto opacity-50 text-sky-400" />}
               </button>
             ))}
           </nav>
@@ -452,17 +455,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
               {activeTab === 'settings' && 'הגדרת מגבלות, מחירים ופרמטרים למערכת'}
             </p>
           </div>
-          <div className="flex items-center gap-6">
-             <div className="flex items-center gap-3 bg-white pl-5 pr-2 py-2 rounded-full shadow-sm border border-slate-200/60 hover:shadow-md transition-shadow cursor-default">
-                <div className="text-right">
-                  <div className="text-sm font-bold text-slate-700 leading-tight">{currentUser?.name}</div>
-                  <div className="text-[10px] font-bold text-indigo-500 uppercase tracking-wider">Super Admin</div>
-                </div>
-                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-white font-bold text-lg shadow-md ring-2 ring-white">
-                  {currentUser?.name?.charAt(0) || 'A'}
-                </div>
-             </div>
-          </div>
+
         </header>
 
         {/* Content Scroll Area */}
@@ -481,8 +474,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
             <div className="space-y-10 animate-fade-in-up">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                 {[
-                  { label: 'סה"כ משתמשים', value: stats.totalUsers, icon: Users, color: 'blue', bg: 'bg-blue-500' },
-                  { label: 'בוטים פעילים', value: stats.totalBots, icon: Activity, color: 'indigo', bg: 'bg-indigo-500' },
+                  { label: 'סה"כ משתמשים', value: stats.totalUsers, icon: Users, color: 'sky', bg: 'bg-sky-500' },
+                  { label: 'בוטים פעילים', value: stats.totalBots, icon: Activity, color: 'blue', bg: 'bg-blue-500' },
                   { label: 'מצטרפים היום', value: stats.usersGrowth.today, icon: BarChart2, color: 'emerald', bg: 'bg-emerald-500' },
                   { label: 'מצטרפים החודש', value: stats.usersGrowth.month, icon: BarChart2, color: 'violet', bg: 'bg-violet-500' },
                 ].map((stat, i) => (
@@ -501,42 +494,28 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                 ))}
               </div>
               
-              <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden min-h-[400px] flex md:flex-row flex-col">
-                <div className="flex-1 p-10 flex flex-col justify-center">
-                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-50 text-indigo-600 text-xs font-bold w-fit mb-6">
-                     <span className="w-2 h-2 rounded-full bg-indigo-600 animate-pulse"></span>
-                     עדכוני מערכת
+              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden min-h-[160px] flex md:flex-row flex-col items-center">
+                <div className="flex-1 p-6 md:p-8 flex flex-col md:flex-row items-center justify-between gap-6">
+                  <div>
+                    <h3 className="text-xl font-bold text-slate-800 mb-2">ברוכים הבאים למרכז השליטה</h3>
+                    <p className="text-slate-500 text-sm max-w-xl">
+                      כאן תוכלו לנהל את המערכת.
+                    </p>
                   </div>
-                  <h3 className="text-4xl font-black text-slate-800 mb-6 leading-tight">ברוכים הבאים <br/><span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-violet-600">למרכז השליטה החדש</span></h3>
-                  <p className="text-slate-500 text-lg mb-10 leading-relaxed max-w-xl">
-                    כאן תוכלו לנהל את כל האספקטים של המערכת בצורה ויזואלית ונוחה. 
-                    הדשבורד החדש מאפשר גישה מהירה לנתונים קריטיים ופעולות ניהול נפוצות.
-                  </p>
-                  <div className="flex gap-4">
+                  <div className="flex gap-3 mt-4 md:mt-0">
                     <button 
                       onClick={() => setActiveTab('users')}
-                      className="bg-slate-900 text-white px-8 py-3.5 rounded-xl font-bold hover:bg-slate-800 transition-all shadow-lg hover:shadow-xl inline-flex items-center gap-2 group"
+                      className="bg-slate-900 text-white px-5 py-2.5 rounded-lg text-sm font-bold hover:bg-slate-800 transition-all shadow-sm flex items-center gap-2 group whitespace-nowrap"
                     >
-                      ניהול משתמשים <ArrowLeft size={18} className="group-hover:-translate-x-1 transition-transform" />
+                      ניהול משתמשים <ArrowLeft size={16} className="group-hover:-translate-x-1 transition-transform" />
                     </button>
                     <button 
                       onClick={() => setActiveTab('templates')}
-                      className="bg-white text-slate-700 border border-slate-200 px-8 py-3.5 rounded-xl font-bold hover:bg-slate-50 transition-all inline-flex items-center gap-2"
+                      className="bg-white text-slate-700 border border-slate-200 px-5 py-2.5 rounded-lg text-sm font-bold hover:bg-slate-50 transition-all flex items-center gap-2 whitespace-nowrap"
                     >
                       ספריית תבניות
                     </button>
                   </div>
-                </div>
-                <div className="md:w-1/3 bg-gradient-to-br from-indigo-600 to-violet-700 relative overflow-hidden flex items-center justify-center p-12">
-                   <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 brightness-100 contrast-150"></div>
-                   <div className="relative text-center text-white z-10">
-                      <Shield size={80} className="mx-auto mb-6 opacity-90" strokeWidth={1.5} />
-                      <h4 className="text-2xl font-bold mb-2">BotWa Admin v2.0</h4>
-                      <p className="text-indigo-200">מערכת יציבה ומאובטחת</p>
-                   </div>
-                   {/* Abstract Circles */}
-                   <div className="absolute -top-10 -right-10 w-40 h-40 bg-white opacity-10 rounded-full blur-2xl"></div>
-                   <div className="absolute -bottom-10 -left-10 w-40 h-40 bg-indigo-400 opacity-20 rounded-full blur-3xl"></div>
                 </div>
               </div>
             </div>
@@ -544,23 +523,23 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
 
           {/* USERS TAB */}
           {activeTab === 'users' && (
-            <div className="grid grid-cols-12 gap-8 h-[calc(100vh-180px)] animate-fade-in-up">
+            <div className="grid grid-cols-12 gap-6 h-[calc(100vh-140px)] animate-fade-in-up">
               {/* Users List */}
-              <div className="col-span-12 lg:col-span-4 bg-white rounded-3xl shadow-sm border border-slate-200 flex flex-col overflow-hidden">
-                <div className="p-6 border-b border-slate-100 space-y-5 bg-white z-10">
+              <div className="col-span-12 lg:col-span-4 bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden">
+                <div className="p-4 border-b border-slate-100 space-y-4 bg-white z-10">
                   <div className="relative group">
-                    <Search className="absolute right-4 top-4 text-slate-400 w-5 h-5 group-focus-within:text-indigo-500 transition-colors" />
+                    <Search className="absolute right-3.5 top-3 text-slate-400 w-4 h-4 group-focus-within:text-sky-500 transition-colors" />
                     <input 
                       type="text" 
                       placeholder="חיפוש משתמשים..."
-                      className="w-full pr-12 pl-4 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl group-focus-within:bg-white focus:ring-4 focus:ring-indigo-50 focus:border-indigo-500 outline-none transition-all font-medium text-slate-700"
+                      className="w-full pr-10 pl-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl group-focus-within:bg-white focus:ring-2 focus:ring-sky-100 focus:border-sky-500 outline-none transition-all font-medium text-slate-700 text-sm"
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
                     />
                   </div>
-                  <div className="flex gap-2 bg-slate-50 p-1.5 rounded-xl overflow-x-auto no-scrollbar scroll-smooth">
+                  <div className="flex gap-2 bg-slate-50 p-1 rounded-lg overflow-x-auto no-scrollbar scroll-smooth">
                     {[
-                      { id: 'all', label: 'כל המשתמשים' },
+                      { id: 'all', label: 'הכל' },
                       { id: 'admin', label: 'מנהלים' },
                       { id: 'premium', label: 'פרימיום' },
                       { id: 'inactive', label: 'חסומים' }
@@ -568,7 +547,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                       <button 
                         key={f.id}
                         onClick={() => setFilterType(f.id)} 
-                        className={`flex-1 px-4 py-2 rounded-lg text-xs font-bold whitespace-nowrap transition-all duration-200 ${filterType === f.id ? 'bg-white text-indigo-700 shadow-md shadow-indigo-100' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'}`}
+                        className={`flex-1 px-3 py-1.5 rounded-md text-xs font-bold whitespace-nowrap transition-all duration-200 ${filterType === f.id ? 'bg-white text-sky-700 shadow-sm' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'}`}
                       >
                         {f.label}
                       </button>
@@ -576,47 +555,47 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                   </div>
                 </div>
 
-                <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-slate-50/50">
+                <div className="flex-1 overflow-y-auto p-3 space-y-2 bg-slate-50/50">
                   {filteredUsers.length === 0 ? (
-                     <div className="flex flex-col items-center justify-center h-64 text-slate-400">
-                        <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mb-4"><Search size={28} className="opacity-40" /></div>
-                        <p className="font-medium">לא נמצאו משתמשים תואמים</p>
-                        <button onClick={() => {setSearchQuery(''); setFilterType('all');}} className="text-sm text-indigo-600 font-bold mt-2 hover:underline">נקה סינון</button>
+                     <div className="flex flex-col items-center justify-center h-48 text-slate-400">
+                        <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center mb-3"><Search size={20} className="opacity-40" /></div>
+                        <p className="font-medium text-sm">לא נמצאו משתמשים</p>
+                        <button onClick={() => {setSearchQuery(''); setFilterType('all');}} className="text-xs text-sky-600 font-bold mt-1 hover:underline">נקה סינון</button>
                      </div>
                   ) : (
                     filteredUsers.map(user => (
                       <div 
                         key={user.id}
                         onClick={() => fetchUserDetails(user.id)}
-                        className={`group p-4 rounded-2xl cursor-pointer transition-all border relative overflow-hidden ${
+                        className={`group p-3 rounded-xl cursor-pointer transition-all border relative overflow-hidden ${
                           selectedUser?.id === user.id 
-                            ? 'bg-white border-indigo-500 shadow-xl shadow-indigo-100/50 scale-[1.02] z-10 ring-1 ring-indigo-500/10' 
-                            : 'bg-white border-transparent hover:border-slate-300 hover:shadow-md hover:scale-[1.01]'
+                            ? 'bg-white border-sky-500 shadow-lg shadow-sky-100/50 z-10 ring-1 ring-sky-500/10' 
+                            : 'bg-white border-transparent hover:border-slate-300 hover:shadow-sm'
                         }`}
                       >
-                       {selectedUser?.id === user.id && <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-indigo-500"></div>}
-                        <div className="flex justify-between items-start mb-3">
-                          <div className="flex items-center gap-3.5">
-                             <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-sm font-black shadow-sm ${selectedUser?.id === user.id ? 'bg-gradient-to-br from-indigo-500 to-violet-600 text-white' : 'bg-slate-100 text-slate-600 group-hover:bg-slate-200'}`}>
+                       {selectedUser?.id === user.id && <div className="absolute left-0 top-0 bottom-0 w-1 bg-sky-500"></div>}
+                        <div className="flex justify-between items-start mb-2">
+                          <div className="flex items-center gap-3">
+                             <div className={`w-9 h-9 rounded-lg flex items-center justify-center text-xs font-black shadow-sm ${selectedUser?.id === user.id ? 'bg-gradient-to-br from-sky-500 to-blue-600 text-white' : 'bg-slate-100 text-slate-600 group-hover:bg-slate-200'}`}>
                                 {user.name.charAt(0)}
                              </div>
                              <div>
-                                <h3 className={`font-bold text-sm leading-tight mb-0.5 ${selectedUser?.id === user.id ? 'text-indigo-900' : 'text-slate-800'}`}>{user.name}</h3>
-                                <p className="text-xs text-slate-500 font-medium">{user.email}</p>
+                                <h3 className={`font-bold text-sm leading-tight mb-0.5 ${selectedUser?.id === user.id ? 'text-sky-900' : 'text-slate-800'}`}>{user.name}</h3>
+                                <p className="text-[11px] text-slate-500 font-medium">{user.email}</p>
                              </div>
                           </div>
-                          {user.role === 'admin' && <div className="bg-indigo-50 p-1.5 rounded-lg text-indigo-600" title="מנהל"><Shield size={14} fill="currentColor" className="opacity-20" /> </div>}
+                          {user.role === 'admin' && <div className="bg-sky-50 p-1 rounded text-sky-600" title="מנהל"><Shield size={12} fill="currentColor" className="opacity-40" /> </div>}
                         </div>
-                        <div className="flex items-center justify-between mt-3 pl-2">
+                        <div className="flex items-center justify-between mt-2 pl-2">
                           <div className="flex gap-2">
-                            <span className={`px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider ${user.status === 'active' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-rose-50 text-rose-600 border border-rose-100'}`}>
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${user.status === 'active' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-rose-50 text-rose-600 border border-rose-100'}`}>
                                 {user.status === 'active' ? 'פעיל' : 'חסום'}
                             </span>
-                            <span className={`px-2.5 py-1 rounded-md text-[10px] font-bold border ${user.account_type === 'Premium' ? 'bg-amber-50 text-amber-600 border-amber-100' : 'bg-slate-50 text-slate-500 border-slate-100'}`}>
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${user.account_type === 'Premium' ? 'bg-amber-50 text-amber-600 border-amber-100' : 'bg-slate-50 text-slate-500 border-slate-100'}`}>
                                 {user.account_type}
                             </span>
                           </div>
-                          <ChevronRight size={14} className={`transition-transform duration-300 ${selectedUser?.id === user.id ? 'text-indigo-500 translate-x-1' : 'text-slate-300 opacity-0 group-hover:opacity-100'}`} />
+                          <ChevronRight size={14} className={`transition-transform duration-300 ${selectedUser?.id === user.id ? 'text-sky-500 translate-x-1' : 'text-slate-300 opacity-0 group-hover:opacity-100'}`} />
                         </div>
                       </div>
                     ))
@@ -625,90 +604,81 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
               </div>
 
               {/* User Details Panel */}
-              <div className="col-span-12 lg:col-span-8 bg-white rounded-3xl shadow-lg shadow-slate-200/50 border border-slate-200 flex flex-col relative transition-all h-full">
+              <div className="col-span-12 lg:col-span-8 bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col relative transition-all h-full overflow-hidden">
                 {selectedUser ? (
-                  <div className="flex flex-col animate-fade-in overflow-y-auto h-full rounded-3xl">
-                    {/* Header Image Background */}
-                    <div className="h-40 from-slate-800 to-slate-900 w-full relative shrink-0">
-                        <div className="absolute inset-0 opacity-20"></div>
-                        <div className="absolute -right-10 -top-20 w-64 h-64 bg-indigo-500 rounded-full blur-3xl opacity-20"></div>
-                        <div className="absolute -left-10 bottom-0 w-40 h-40 bg-blue-500 rounded-full blur-3xl opacity-20"></div>
-                    </div>
-
-                    {/* Content */}
-                    <div className="flex-1 px-8 pb-8 relative">
-                        {/* Profile Header (Floating) */}
-                        <div className="flex flex-col sm:flex-row justify-between items-end sm:items-center -mt-12 mb-8 relative z-10">
-                            <div className="flex items-end gap-5">
-                                <div className="w-24 h-24 bg-white rounded-3xl p-1.5 shadow-lg">
-                                    <div className="w-full h-full bg-gradient-to-br from-indigo-100 to-white rounded-2xl flex items-center justify-center text-4xl font-black text-indigo-900">
-                                        {selectedUser.name.charAt(0)}
-                                    </div>
-                                </div>
-                                <div className="mb-2">
-                                    <h2 className="text-3xl font-black text-slate-800 tracking-tight leading-none">{selectedUser.name}</h2>
-                                    <div className="flex items-center gap-2 mt-2">
-                                        <span className="font-mono text-xs text-slate-400 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">{selectedUser.public_id}</span>
-                                        <span className="text-xs font-bold text-slate-400">•</span>
-                                        <span className="text-xs font-bold text-slate-500">הצטרף ב-{new Date(selectedUser.createdAt).toLocaleDateString('he-IL')}</span>
-                                    </div>
-                                </div>
+                  <div className="flex flex-col h-full bg-slate-50/30 animate-fade-in">
+                    {/* Header - Spacious & Clean */}
+                    <div className="bg-white border-b border-slate-100 px-8 py-6 sticky top-0 z-20 flex justify-between items-center shadow-sm shrink-0">
+                        <div className="flex items-center gap-5">
+                            <div className="w-16 h-16 bg-sky-100 rounded-2xl flex items-center justify-center text-3xl font-black text-sky-700 shrink-0 shadow-sm border border-sky-200">
+                                {selectedUser.name.charAt(0)}
                             </div>
-                            
-                            <div className="flex gap-2 mt-4 sm:mt-0">
-                                {!isEditing ? (
-                                    <>
-                                        <button 
-                                            onClick={async () => {
-                                                try {
-                                                    const response = await fetch(`${API_BASE}/admin/impersonate/${selectedUser.id}`, {
-                                                        method: 'POST',
-                                                        headers: { 'Authorization': `Bearer ${token}` }
-                                                    });
-                                                    const data = await response.json();
-                                                    onImpersonate(data.user, data.token);
-                                                } catch (e) { console.error(e); }
-                                            }}
-                                            className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl text-sm font-bold transition-all shadow-lg hover:shadow-indigo-200 active:scale-95 flex items-center gap-2"
-                                        >
-                                            <UserCog size={18} /> כניסה כמשתמש
-                                        </button>
-                                        <button 
-                                            onClick={() => { setIsEditing(true); setEditForm(selectedUser); }}
-                                            className="bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 px-5 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2 hover:shadow-sm"
-                                        >
-                                            <Edit2 size={18} /> עריכה
-                                        </button>
-                                    </>
-                                ) : (
-                                    <>
-                                        <button onClick={handleUpdateUser} className="bg-emerald-500 hover:bg-emerald-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold transition-all shadow-lg shadow-emerald-100 flex items-center gap-2"><CheckCircle size={18} /> שמירה</button>
-                                        <button onClick={() => setIsEditing(false)} className="bg-white border border-slate-200 text-slate-700 px-5 py-2.5 rounded-xl text-sm font-bold hover:bg-slate-50">ביטול</button>
-                                    </>
-                                )}
-                                <button onClick={() => handleDeleteUser(selectedUser.id)} className="bg-rose-50 hover:bg-rose-100 text-rose-600 p-2.5 rounded-xl transition-colors border border-rose-100" title="מחק משתמש"><Trash2 size={20} /></button>
+                            <div>
+                                <h2 className="text-2xl font-black text-slate-800 leading-tight mb-1">{selectedUser.name}</h2>
+                                <div className="flex items-center gap-3 text-xs text-slate-500 font-medium">
+                                    <span className="bg-slate-100 px-2.5 py-1 rounded-md border border-slate-200 font-mono tracking-tight text-slate-600">{selectedUser.public_id}</span>
+                                    <span className="text-slate-300">•</span>
+                                    <span>הצטרף ב-{new Date(selectedUser.createdAt).toLocaleDateString('he-IL')}</span>
+                                </div>
                             </div>
                         </div>
 
-                      {/* Info Cards Grid */}
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-                        {/* Box 1 */}
-                        <div className="bg-slate-50/80 p-6 rounded-3xl border border-slate-100 hover:border-slate-200 transition-colors">
-                            <h3 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-5 flex items-center gap-2">
-                                <Users size={14} className="text-slate-400" /> פרטים אישיים
+                        <div className="flex gap-3">
+                           {!isEditing ? (
+                                <>
+                                    <button 
+                                        onClick={async () => {
+                                            try {
+                                                const response = await fetch(`${API_BASE}/admin/impersonate/${selectedUser.id}`, {
+                                                    method: 'POST',
+                                                    headers: { 'Authorization': `Bearer ${token}` }
+                                                });
+                                                const data = await response.json();
+                                                onImpersonate(data.user, data.token);
+                                            } catch (e) { console.error(e); }
+                                        }}
+                                        className="bg-sky-600 hover:bg-sky-700 text-white px-5 py-2.5 rounded-xl text-sm font-bold transition-all shadow-md shadow-sky-100 hover:-translate-y-0.5 active:translate-y-0 flex items-center gap-2"
+                                    >
+                                        <UserCog size={18} /> כניסה למשתמש
+                                    </button>
+                                    <button 
+                                        onClick={() => { setIsEditing(true); setEditForm(selectedUser); }}
+                                        className="bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 px-5 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2 hover:shadow-sm"
+                                    >
+                                        <Edit2 size={18} /> עריכה
+                                    </button>
+                                </>
+                            ) : (
+                                <>
+                                    <button onClick={handleUpdateUser} className="bg-emerald-500 hover:bg-emerald-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold transition-all shadow-md shadow-emerald-100 flex items-center gap-2 hover:-translate-y-0.5"><CheckCircle size={18} /> שמור שינויים</button>
+                                    <button onClick={() => setIsEditing(false)} className="bg-white border border-slate-200 text-slate-700 px-5 py-2.5 rounded-xl text-sm font-bold hover:bg-slate-50">ביטול</button>
+                                </>
+                            )}
+                            <button onClick={() => handleDeleteUser(selectedUser.id)} className="bg-white hover:bg-rose-50 text-rose-600 p-2.5 rounded-xl transition-colors border border-slate-200 hover:border-rose-200" title="מחק משתמש"><Trash2 size={20} /></button>
+                        </div>
+                    </div>
+
+                    {/* Content - Spacious Grid Layout */}
+                    <div className="flex-1 overflow-y-auto p-8 content-start h-full"> 
+                      <div className="grid grid-cols-12 gap-6 auto-rows-min h-full">
+                        
+                        {/* Personal Details - Main Card */}
+                        <div className="col-span-12 md:col-span-7 bg-white p-8 rounded-3xl border border-slate-100 shadow-sm hover:shadow-md transition-shadow flex flex-col justify-center">
+                            <h3 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-6 flex items-center gap-2 border-b border-slate-50 pb-4">
+                                <Users size={16} className="text-slate-400" /> פרטים אישיים
                             </h3>
-                            <div className="space-y-4">
+                            <div className="space-y-6">
                                 {[{l:'שם מלא', k:'name'}, {l:'אימייל', k:'email'}, {l:'טלפון', k:'phone'}].map(f => (
-                                    <div key={f.k}>
-                                        <label className="block text-xs font-bold text-slate-400 mb-1.5">{f.l}</label>
+                                    <div key={f.k} className="flex flex-col gap-2">
+                                        <label className="text-xs font-bold text-slate-400">{f.l}</label>
                                         {isEditing ? (
                                             <input 
-                                                className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 font-medium outline-none" 
+                                                className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-sky-500 outline-none transition-all" 
                                                 value={(editForm[f.k as keyof Pick<User, 'name' | 'email' | 'phone'>] as string) || ''} 
                                                 onChange={e => setEditForm(prev => ({...prev, [f.k]: e.target.value}))} 
                                             />
                                         ) : ( 
-                                            <div className="text-slate-800 font-bold text-sm break-all">
+                                            <div className="text-slate-800 font-medium text-lg truncate select-all px-2" title={(selectedUser[f.k as keyof Pick<User, 'name' | 'email' | 'phone'>] as string)}>
                                                 {(selectedUser[f.k as keyof Pick<User, 'name' | 'email' | 'phone'>] as string) || '-'}
                                             </div> 
                                         )}
@@ -717,99 +687,103 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                             </div>
                         </div>
 
-                        {/* Box 2 */}
-                        <div className="bg-slate-50/80 p-6 rounded-3xl border border-slate-100 hover:border-slate-200 transition-colors">
-                            <h3 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-5 flex items-center gap-2">
-                                <Shield size={14} className="text-slate-400" /> הגדרות ואבטחה
-                            </h3>
-                            <div className="space-y-4">
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-400 mb-1.5">סטטוס</label>
-                                    {isEditing ? (
-                                        <select className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-sm font-medium outline-none" value={editForm.status || 'active'} onChange={e => setEditForm(prev => ({...prev, status: e.target.value}))}>
-                                            <option value="active">פעיל</option>
-                                            <option value="inactive">חסום</option>
-                                        </select>
-                                    ) : (
-                                        <span className={`inline-flex px-3 py-1 rounded-lg text-xs font-black ${selectedUser.status === 'active' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
-                                            {selectedUser.status === 'active' ? 'חשבון פעיל' : 'חשבון חסום'}
-                                        </span>
-                                    )}
+                         {/* Right Column Layout */}
+                        <div className="col-span-12 md:col-span-5 space-y-6 flex flex-col h-full">
+                             {/* Stats - Hero Cards */}
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="bg-gradient-to-br from-sky-50 to-white p-6 rounded-2xl border border-sky-100 flex flex-col items-center justify-center text-center shadow-sm">
+                                    <div className="text-xs font-bold text-sky-500 uppercase tracking-wide mb-2">בוטים פעילים</div>
+                                    <div className="text-4xl font-black text-sky-700">{selectedUser.stats?.bots || 0}</div>
                                 </div>
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-400 mb-1.5">תוכנית מנוי</label>
-                                    {isEditing ? (
-                                        <select className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-sm font-medium outline-none" value={editForm.account_type || 'Basic'} onChange={e => setEditForm(prev => ({...prev, account_type: e.target.value}))}>
-                                            <option value="Basic">Basic (בסיסי)</option>
-                                            <option value="Premium">Premium (מתקדם)</option>
-                                        </select>
-                                    ) : (
-                                        <div className="text-slate-800 font-bold text-sm">{selectedUser.account_type}</div>
-                                    )}
+                                <div className="bg-gradient-to-br from-sky-50 to-white p-6 rounded-2xl border border-sky-100 flex flex-col items-center justify-center text-center shadow-sm">
+                                    <div className="text-xs font-bold text-sky-500 uppercase tracking-wide mb-2">זרימות שיחה</div>
+                                    <div className="text-4xl font-black text-sky-700">{selectedUser.stats?.flows || 0}</div>
+                                </div>
+                            </div>
+
+                            {/* Settings & Security - Adjusted Card */}
+                            <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm flex-1 flex flex-col justify-center">
+                                <h3 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-6 flex items-center gap-2 border-b border-slate-50 pb-4">
+                                    <Shield size={16} className="text-slate-400" /> הגדרות חשבון
+                                </h3>
+                                <div className="space-y-6">
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-400 mb-2">סטטוס משתמש</label>
+                                        {isEditing ? (
+                                            <select className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none cursor-pointer" value={editForm.status || 'active'} onChange={e => setEditForm(prev => ({...prev, status: e.target.value}))}>
+                                                <option value="active">פעיל</option>
+                                                <option value="inactive">חסום</option>
+                                            </select>
+                                        ) : (
+                                            <div className={`inline-flex items-center gap-2 px-4 py-3 rounded-xl text-sm font-bold w-full border ${selectedUser.status === 'active' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-rose-50 text-rose-600 border-rose-100'}`}>
+                                                <div className={`w-2 h-2 rounded-full ${selectedUser.status === 'active' ? 'bg-emerald-500' : 'bg-rose-500'}`}></div>
+                                                {selectedUser.status === 'active' ? 'חשבון פעיל' : 'חשבון חסום'}
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-400 mb-2">סוג מנוי</label>
+                                        {isEditing ? (
+                                            <select className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none cursor-pointer" value={editForm.account_type || 'Basic'} onChange={e => setEditForm(prev => ({...prev, account_type: e.target.value}))}>
+                                                <option value="Basic">Basic (בסיסי)</option>
+                                                <option value="Premium">Premium (מתקדם)</option>
+                                            </select>
+                                        ) : (
+                                            <div className="w-full bg-slate-50 px-4 py-3 rounded-xl border border-slate-100 text-slate-800 font-bold text-sm flex justify-between items-center">
+                                                {selectedUser.account_type}
+                                                <Star size={16} className="text-amber-400 fill-amber-400" />
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
                         </div>
-                      </div>
 
-                      {/* Stats & Limits */}
-                      <div className="space-y-6">
-                         <h3 className="text-sm font-black text-slate-800 mb-4 px-1">שימוש ומגבלות</h3>
-                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                            <div className="bg-indigo-50/50 p-5 rounded-2xl border border-indigo-100/50">
-                                <div className="text-xs font-bold text-indigo-400 mb-1 uppercase tracking-wide">בוטים</div>
-                                <div className="text-3xl font-black text-indigo-700">{selectedUser.stats?.bots || 0}</div>
-                            </div>
-                            <div className="bg-indigo-50/50 p-5 rounded-2xl border border-indigo-100/50">
-                                <div className="text-xs font-bold text-indigo-400 mb-1 uppercase tracking-wide">זרימות</div>
-                                <div className="text-3xl font-black text-indigo-700">{selectedUser.stats?.flows || 0}</div>
-                            </div>
-                         </div>
-
-                         {/* Custom Limits */}
-                         {(isEditing || selectedUser.custom_limits) && (
-                            <div className={`p-6 rounded-2xl border transition-all duration-300 ${isEditing ? 'bg-amber-50 border-amber-200 shadow-sm' : 'bg-slate-50 border-slate-200'}`}>
-                               <div className="flex items-center gap-2 mb-3">
-                                  <Settings size={18} className="text-amber-600" />
-                                  <h3 className="text-sm font-black text-amber-900">הגדרות מכסה אישיות (Override)</h3>
-                               </div>
-                               <p className="text-xs font-medium text-amber-700/70 mb-6 max-w-2xl leading-relaxed">
-                                  ערכים אלו גוברים על הגדרות ברירת המחדל. שדות ריקים = רגיל.
-                               </p>
-                               
-                               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                                  {[
-                                    { k: 'max_bots', label: 'Max Bots', ph: 3 },
-                                    { k: 'max_versions', label: 'Max Vers', ph: 5 },
-                                    { k: 'version_price', label: 'Ver Price (₪)', ph: 5 },
-                                    { k: 'bot_price', label: 'Bot Price (₪)', ph: 30 },
-                                  ].map(field => (
-                                    <div key={field.k}>
-                                      <label className="block text-[10px] font-black uppercase text-amber-800/60 mb-1.5 tracking-wider">{field.label}</label>
-                                      {isEditing ? (
-                                        <input 
-                                          type="number"
-                                          className="w-full p-2.5 border border-amber-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-amber-400 focus:border-amber-400 font-bold outline-none shadow-sm"
-                                          placeholder={String(field.ph)}
-                                          value={editForm.custom_limits?.[field.k as keyof typeof editForm.custom_limits] ?? ''}
-                                          onChange={e => setEditForm(prev => ({
-                                            ...prev, 
-                                            custom_limits: { ...prev.custom_limits, [field.k]: e.target.value } 
-                                          } as any))}
-                                        />
-                                      ) : (
-                                        <div className="font-bold text-lg bg-white/60 p-2.5 rounded-lg border border-amber-100 text-amber-900">
-                                          {selectedUser.custom_limits?.[field.k as keyof typeof editForm.custom_limits] !== undefined 
-                                            ? selectedUser.custom_limits?.[field.k as keyof typeof editForm.custom_limits] ?? <span className="text-xs opacity-50 font-normal">Auto</span> 
-                                            : <span className="text-xs opacity-50 font-normal">Auto</span>}
-                                        </div>
-                                      )}
+                         {/* Custom Limits - Full Width */}
+                        {(isEditing || selectedUser.custom_limits) && (
+                            <div className={`col-span-12 p-8 rounded-3xl border transition-all ${isEditing ? 'bg-amber-50 border-amber-200' : 'bg-white border-slate-200 shadow-sm'}`}>
+                                 <div className="flex items-center gap-3 mb-6">
+                                    <div className="w-12 h-12 rounded-2xl bg-amber-100 flex items-center justify-center text-amber-600 shadow-sm border border-amber-200">
+                                        <Settings size={24} />
                                     </div>
-                                  ))}
-                               </div>
+                                    <div>
+                                        <h3 className="text-lg font-black text-amber-900">הגדרות מכסה אישיות</h3>
+                                        <p className="text-sm text-amber-800/60 font-medium">הגדרות אלו גוברות על הגדרות ברירת המחדל של המערכת</p>
+                                    </div>
+                                 </div>
+                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+                                      {[
+                                        { k: 'max_bots', label: 'Max Bots', ph: 3 },
+                                        { k: 'max_versions', label: 'Max Versions', ph: 5 },
+                                        { k: 'version_price', label: 'Version Cost', ph: 5 },
+                                        { k: 'bot_price', label: 'Bot Cost', ph: 30 },
+                                      ].map(field => (
+                                        <div key={field.k} className="bg-white/60 rounded-2xl border border-amber-100/50 p-5 flex flex-col gap-3 shadow-sm hover:shadow-md transition-all">
+                                          <span className="text-[10px] font-black text-amber-900/40 uppercase tracking-wider">{field.label}</span>
+                                          {isEditing ? (
+                                            <input 
+                                              type="number"
+                                              className="w-full p-2 text-2xl border border-amber-200 rounded-xl bg-white font-black outline-none focus:ring-2 focus:ring-amber-300 transition-all text-center text-amber-800"
+                                              placeholder={String(field.ph)}
+                                              value={editForm.custom_limits?.[field.k as keyof typeof editForm.custom_limits] ?? ''}
+                                              onChange={e => setEditForm(prev => ({
+                                                ...prev, 
+                                                custom_limits: { ...prev.custom_limits, [field.k]: e.target.value } 
+                                              } as any))}
+                                            />
+                                          ) : (
+                                            <span className="text-3xl font-black text-amber-800 tracking-tight">
+                                                {selectedUser.custom_limits?.[field.k as keyof typeof editForm.custom_limits] ?? <span className="text-sm opacity-30 font-bold">AUTO</span>}
+                                            </span>
+                                          )}
+                                        </div>
+                                      ))}
+                                 </div>
                             </div>
-                         )}
+                        )}
                       </div>
                     </div>
+
                   </div>
                 ) : (
                   <div className="h-full flex flex-col items-center justify-center text-slate-400 p-8 text-center bg-slate-50/30">
@@ -826,64 +800,51 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
 
           {/* TEMPLATES TAB */}
           {activeTab === 'templates' && (
-            <div className="space-y-8 animate-fade-in-up">
-              <div className="relative bg-indigo-900 rounded-[2rem] p-10 shadow-2xl overflow-hidden flex flex-col md:flex-row items-center justify-between gap-8 py-12">
-                 {/* Background decoration */}
-                 <div className="absolute top-0 right-0 w-full h-full opacity-20 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-indigo-400 via-violet-900 to-transparent"></div>
-                 <div className="absolute -bottom-24 -left-24 w-64 h-64 bg-violet-600 rounded-full blur-[80px] opacity-40"></div>
-
-                 <div className="relative z-10 text-white max-w-xl">
-                    <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-800/50 border border-indigo-700 text-indigo-200 text-xs font-bold mb-4">
-                       <FileText size={12} /> ספריית תבניות
-                    </div>
-                    <h2 className="text-3xl md:text-4xl font-black mb-4 leading-tight">ניהול תבניות מערכת</h2>
-                    <p className="text-indigo-100/80 text-lg leading-relaxed font-medium">
-                      צור תבניות התחלה חכמות כדי לעזור למשתמשים שלך לבנות בוטים במהירות. תבניות ציבוריות חשופות לכלל הלקוחות.
-                    </p>
-                 </div>
+            <div className="space-y-6 animate-fade-in-up">
+              <div className="flex flex-col md:flex-row items-center justify-between gap-4 pb-6 border-b border-slate-200">
                  <button 
                    onClick={onCreateTemplate}
-                   className="relative z-10 bg-white text-indigo-900 px-8 py-4 rounded-2xl hover:bg-indigo-50 font-black shadow-lg shadow-indigo-900/20 transition-all transform hover:scale-105 active:scale-95 flex items-center gap-3 group"
+                   className="bg-sky-600 text-white px-5 py-2.5 rounded-lg border border-sky-700 hover:bg-sky-700 font-bold shadow-sm transition-all flex items-center gap-2"
                  >
-                   <div className="bg-indigo-100 p-1.5 rounded-full group-hover:bg-indigo-200 transition-colors"><Plus size={18} /></div>
+                   <Plus size={18} />
                    <span>צור תבנית חדשה</span>
                  </button>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {templates.map(tpl => (
-                  <div key={tpl._id} className="group bg-white p-7 rounded-[2rem] shadow-sm border border-slate-100 hover:shadow-[0_20px_40px_-5px_rgba(0,0,0,0.05)] hover:border-slate-200 transition-all duration-300 flex flex-col hover:-translate-y-1">
-                    <div className="flex justify-between items-start mb-6">
-                      <div className="p-4 bg-indigo-50 text-indigo-600 rounded-2xl shadow-inner group-hover:bg-indigo-600 group-hover:text-white transition-all duration-300 group-hover:scale-110 group-hover:shadow-lg group-hover:shadow-indigo-200">
-                        <FileText size={28} strokeWidth={1.5} />
+                  <div key={tpl._id} className="group bg-white p-5 rounded-xl shadow-sm border border-slate-200 hover:border-sky-300 hover:shadow-md transition-all duration-200 flex flex-col">
+                    <div className="flex justify-between items-start mb-4">
+                      <div className="p-2.5 bg-sky-50 text-sky-600 rounded-lg group-hover:bg-sky-600 group-hover:text-white transition-colors">
+                        <FileText size={20} />
                       </div>
-                      <div className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity translate-y-2 group-hover:translate-y-0 duration-300">
+                      <div className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity translate-y-2 group-hover:translate-y-0 duration-200">
                          {/* Action Buttons */}
-                         <button onClick={() => toggleTemplateVisibility(tpl)} className={`p-2.5 rounded-xl transition-colors ${tpl.isPublic ? 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`} title="שנה נראות">
-                            {tpl.isPublic ? <Eye size={18} /> : <EyeOff size={18} />}
+                         <button onClick={() => toggleTemplateVisibility(tpl)} className={`p-2 rounded-lg transition-colors ${tpl.isPublic ? 'text-emerald-600 hover:bg-emerald-50' : 'text-slate-400 hover:bg-slate-100'}`} title="שנה נראות">
+                            {tpl.isPublic ? <Eye size={16} /> : <EyeOff size={16} />}
                          </button>
-                         <button onClick={() => onEditTemplate(tpl._id)} className="p-2.5 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-xl transition-colors" title="ערוך">
-                            <Edit2 size={18} />
+                         <button onClick={() => onEditTemplate(tpl._id)} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="ערוך">
+                            <Edit2 size={16} />
                          </button>
-                         <button onClick={() => deleteTemplate(tpl._id)} className="p-2.5 bg-rose-50 text-rose-600 hover:bg-rose-100 rounded-xl transition-colors" title="מחק">
-                            <Trash2 size={18} />
+                         <button onClick={() => deleteTemplate(tpl._id)} className="p-2 text-rose-600 hover:bg-rose-50 rounded-lg transition-colors" title="מחק">
+                            <Trash2 size={16} />
                          </button>
                       </div>
                     </div>
                     
                     <div className="mb-auto">
-                      <div className="flex items-center gap-3 mb-2">
-                         <h3 className="font-black text-xl text-slate-800">{tpl.name}</h3>
-                         {!tpl.isPublic && <span className="bg-slate-100 text-slate-500 text-[10px] uppercase font-bold px-2 py-0.5 rounded border border-slate-200">טיוטה</span>}
+                      <div className="flex items-center gap-2 mb-1.5">
+                         <h3 className="font-bold text-base text-slate-800">{tpl.name}</h3>
+                         {!tpl.isPublic && <span className="bg-slate-100 text-slate-500 text-[10px] font-bold px-1.5 py-0.5 rounded border border-slate-200">טיוטה</span>}
                       </div>
-                      <p className="text-sm text-slate-500 leading-relaxed line-clamp-3 mb-4 font-medium">
+                      <p className="text-xs text-slate-500 leading-relaxed line-clamp-2 mb-3">
                         {tpl.description || 'ללא תיאור'}
                       </p>
                     </div>
 
-                    <div className="border-t border-slate-50 pt-5 mt-4 flex justify-between items-center text-xs text-slate-400 font-bold uppercase tracking-wider">
-                      <span className="bg-slate-50 px-2.5 py-1 rounded-md text-slate-500">{new Date(tpl.createdAt).toLocaleDateString()}</span>
-                      <span className="font-mono text-[10px] opacity-70">ID: {tpl.template_id}</span>
+                    <div className="border-t border-slate-50 pt-3 mt-2 flex justify-between items-center text-[10px] text-slate-400 font-medium">
+                      <span>{new Date(tpl.createdAt).toLocaleDateString()}</span>
+                      <span className="font-mono opacity-70">ID: {tpl.template_id}</span>
                     </div>
                   </div>
                 ))}
@@ -906,60 +867,60 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
 
           {/* SETTINGS TAB */}
           {activeTab === 'settings' && systemConfig && (
-            <div className="space-y-10 animate-fade-in-up max-w-6xl mx-auto">
-               <div className="bg-white p-8 rounded-3xl shadow-sm border border-slate-200 flex flex-col md:flex-row justify-between items-center gap-6 sticky top-0 z-20">
+            <div className="space-y-6 animate-fade-in-up max-w-6xl mx-auto">
+               <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col md:flex-row justify-between items-center gap-6 sticky top-0 z-20">
                  <div>
-                   <h2 className="text-2xl font-black text-slate-800 tracking-tight">הגדרות ליבה ומחירים</h2>
-                   <p className="text-slate-500 mt-2 font-medium">
+                   <h2 className="text-xl font-black text-slate-800 tracking-tight">הגדרות ליבה ומחירים</h2>
+                   <p className="text-slate-500 mt-1 font-medium text-sm">
                      שינויים גלובליים ישפיעו על כל המשתמשים (למעט חריגים).
                    </p>
                  </div>
                  <button 
                    onClick={updateSystemConfig}
-                   className="flex items-center gap-2 bg-slate-900 text-white px-8 py-4 rounded-xl font-bold hover:bg-slate-800 transition-all shadow-xl hover:shadow-2xl hover:-translate-y-1 active:scale-95 duration-200"
+                   className="flex items-center gap-2 bg-sky-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-sky-700 transition-all shadow-lg shadow-sky-200 hover:-translate-y-1 active:scale-95 duration-200 text-sm"
                  >
-                   <Save size={20} />
+                   <Save size={18} />
                    שמור הגדרות
                  </button>
                </div>
 
-               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                  {['Basic', 'Premium'].map(plan => (
-                   <div key={plan} className="bg-white rounded-[2.5rem] shadow-sm border border-slate-200 overflow-hidden hover:shadow-xl transition-shadow duration-300 group">
+                   <div key={plan} className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-xl transition-shadow duration-300 group">
                      {/* Header */}
-                     <div className={`p-10 border-b border-slate-100 relative overflow-hidden ${plan === 'Premium' ? 'bg-gradient-to-br from-indigo-600 to-violet-700 text-white' : 'bg-slate-50 text-slate-800'}`}>
+                     <div className={`p-6 border-b border-slate-100 relative overflow-hidden ${plan === 'Premium' ? 'bg-gradient-to-br from-sky-500 to-blue-600 text-white' : 'bg-slate-50 text-slate-800'}`}>
                         {plan === 'Premium' && (
                             <div className="absolute top-0 right-0 w-full h-full opacity-20 bg-[url('https://grainy-gradients.vercel.app/noise.svg')]"></div>
                         )}
-                        <span className={`inline-block px-3 py-1 rounded-lg text-xs font-black uppercase tracking-wider mb-4 shadow-sm ${plan === 'Premium' ? 'bg-white/20 text-white backdrop-blur-md' : 'bg-white text-slate-600 border border-slate-200'}`}>
+                        <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider mb-2 shadow-sm ${plan === 'Premium' ? 'bg-white/20 text-white backdrop-blur-md' : 'bg-white text-slate-600 border border-slate-200'}`}>
                           {plan.toUpperCase()}
                         </span>
-                        <h3 className="text-4xl font-black mb-2">{plan === 'Basic' ? 'בסיסי' : 'פרימיום'}</h3>
-                        <p className={`text-sm font-medium opacity-80 ${plan === 'Premium' ? 'text-indigo-100' : 'text-slate-500'}`}>
+                        <h3 className="text-2xl font-black mb-1">{plan === 'Basic' ? 'בסיסי' : 'פרימיום'}</h3>
+                        <p className={`text-xs font-medium opacity-80 ${plan === 'Premium' ? 'text-sky-100' : 'text-slate-500'}`}>
                             {plan === 'Basic' ? 'הגדרות ברירת מחדל למשתמשים החדשים' : 'הגדרות למשתמשים משדרגים בתוכנית מלאה'}
                         </p>
                      </div>
                      
-                     <div className="p-10 space-y-10">
-                       <div className="space-y-6">
-                         <h4 className="text-xs font-black text-slate-400 uppercase tracking-wider flex items-center gap-2 border-b border-slate-100 pb-3">
-                            <Bot size={16} /> מגבלות ומשאבים
+                     <div className="p-6 space-y-6">
+                       <div className="space-y-4">
+                         <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-wider flex items-center gap-1.5 border-b border-slate-100 pb-2">
+                            <Bot size={14} /> מגבלות ומשאבים
                          </h4>
-                         <div className="grid grid-cols-2 gap-6">
+                         <div className="grid grid-cols-2 gap-4">
                            <div>
-                             <label className="block text-xs font-bold text-slate-500 mb-2">מקסימום בוטים</label>
+                             <label className="block text-[10px] font-bold text-slate-500 mb-1">מקסימום בוטים</label>
                              <input 
                                 type="number" 
-                                className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-xl text-center focus:ring-4 focus:ring-indigo-100 focus:border-indigo-400 outline-none transition-all text-slate-800"
+                                className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-black text-lg text-center focus:ring-2 focus:ring-sky-200 focus:border-sky-500 outline-none transition-all text-slate-800"
                                 value={systemConfig[plan]?.maxBots || 0}
                                 onChange={e => handleConfigChange(plan, 'maxBots', e.target.value)}
                               />
                            </div>
                            <div>
-                             <label className="block text-xs font-bold text-slate-500 mb-2">גרסאות לבוט</label>
+                             <label className="block text-[10px] font-bold text-slate-500 mb-1">גרסאות לבוט</label>
                              <input 
                                 type="number" 
-                                className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-xl text-center focus:ring-4 focus:ring-indigo-100 focus:border-indigo-400 outline-none transition-all text-slate-800"
+                                className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-black text-lg text-center focus:ring-2 focus:ring-sky-200 focus:border-sky-500 outline-none transition-all text-slate-800"
                                 value={systemConfig[plan]?.maxVersions || 0}
                                 onChange={e => handleConfigChange(plan, 'maxVersions', e.target.value)}
                               />
@@ -967,30 +928,30 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                          </div>
                        </div>
 
-                       <div className="space-y-6">
-                         <h4 className="text-xs font-black text-slate-400 uppercase tracking-wider flex items-center gap-2 border-b border-slate-100 pb-3">
-                            <CreditCard size={16} /> תמחור הרחבות (בש"ח)
+                       <div className="space-y-4">
+                         <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-wider flex items-center gap-1.5 border-b border-slate-100 pb-2">
+                            <CreditCard size={14} /> תמחור הרחבות (בש"ח)
                          </h4>
-                         <div className="space-y-4">
-                           <div className="flex items-center justify-between p-4 rounded-2xl bg-slate-50 border border-slate-100 hover:border-slate-200 transition-colors">
-                             <label className="text-sm font-bold text-slate-600">מחיר לבוט נוסף</label>
-                             <div className="flex items-center gap-2">
-                                <span className="text-slate-400 font-bold">₪</span>
+                         <div className="space-y-3">
+                           <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-100 hover:border-slate-200 transition-colors">
+                             <label className="text-xs font-bold text-slate-600">מחיר לבוט נוסף</label>
+                             <div className="flex items-center gap-1.5">
+                                <span className="text-slate-400 font-bold text-xs">₪</span>
                                 <input 
                                   type="number" 
-                                  className="w-24 p-2 bg-white border border-slate-200 rounded-xl font-bold text-center focus:ring-2 focus:ring-indigo-500 outline-none text-lg"
+                                  className="w-20 p-1.5 bg-white border border-slate-200 rounded-lg font-bold text-center focus:ring-2 focus:ring-sky-500 outline-none text-sm"
                                   value={systemConfig[plan]?.botPrice || 0}
                                   onChange={e => handleConfigChange(plan, 'botPrice', e.target.value)}
                                 />
                              </div>
                            </div>
-                           <div className="flex items-center justify-between p-4 rounded-2xl bg-slate-50 border border-slate-100 hover:border-slate-200 transition-colors">
-                             <label className="text-sm font-bold text-slate-600">מחיר לגרסה נוספת</label>
-                             <div className="flex items-center gap-2">
-                                <span className="text-slate-400 font-bold">₪</span>
+                           <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-100 hover:border-slate-200 transition-colors">
+                             <label className="text-xs font-bold text-slate-600">מחיר לגרסה נוספת</label>
+                             <div className="flex items-center gap-1.5">
+                                <span className="text-slate-400 font-bold text-xs">₪</span>
                                 <input 
                                   type="number" 
-                                  className="w-24 p-2 bg-white border border-slate-200 rounded-xl font-bold text-center focus:ring-2 focus:ring-indigo-500 outline-none text-lg"
+                                  className="w-20 p-1.5 bg-white border border-slate-200 rounded-lg font-bold text-center focus:ring-2 focus:ring-sky-500 outline-none text-sm"
                                   value={systemConfig[plan]?.versionPrice || 0}
                                   onChange={e => handleConfigChange(plan, 'versionPrice', e.target.value)}
                                 />

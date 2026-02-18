@@ -312,17 +312,50 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
           carouselItems.push({ title: item.title, subtitle: item.subtitle, image: item.image, url: item.url, options: item.options });
           j++;
         }
-        setIsBotTyping(true); await new Promise(r => setTimeout(r, 400));
+        setIsBotTyping(false); 
         addMessage({ sender: 'bot', type: 'carousel', carouselItems: carouselItems });
-        setIsBotTyping(false); shouldPauseForInput = true; i = j; continue;
+        shouldPauseForInput = true; i = j; continue;
       }
       switch (action.type) {
         case 'SetParameter': updateParam(action.name, action.value); break;
-        case 'SendMessage': setIsBotTyping(true); await new Promise(r => setTimeout(r, 300)); addMessage({ sender: 'bot', type: 'text', content: action.text }); setIsBotTyping(false); break;
-        case 'SendImage': setIsBotTyping(true); await new Promise(r => setTimeout(r, 400)); addMessage({ sender: 'bot', type: 'image', url: action.url }); setIsBotTyping(false); break;
-        case 'SendWebpage': setIsBotTyping(true); await new Promise(r => setTimeout(r, 300)); addMessage({ sender: 'bot', type: 'link', content: action.text, url: action.url }); setIsBotTyping(false); break;
-        case 'InputText': setIsBotTyping(true); await new Promise(r => setTimeout(r, 300)); if (action.text) { addMessage({ sender: 'bot', type: action.options && action.options.length > 0 ? 'menu' : 'input_text', content: action.text, options: action.options }); } setIsBotTyping(false); shouldPauseForInput = true; break;
-        case 'Goto': const targetNode = instance.getNodes().find((n: any) => n.data.label === action.name); if (targetNode) { processNext(targetNode.id, instance, 0, stack); return { paused: true }; } break;
+        case 'SendMessage': 
+          setIsBotTyping(false); 
+          addMessage({ sender: 'bot', type: 'text', content: action.text }); 
+          if (i < actions.length - 1) { 
+             await new Promise(r => setTimeout(r, 500)); 
+             setIsBotTyping(true); 
+          }
+          break;
+        case 'SendImage': 
+          setIsBotTyping(false); 
+          addMessage({ sender: 'bot', type: 'image', url: action.url }); 
+          if (i < actions.length - 1) {
+             await new Promise(r => setTimeout(r, 500)); 
+             setIsBotTyping(true);
+          } 
+          break;
+        case 'SendWebpage': 
+          setIsBotTyping(false); 
+          addMessage({ sender: 'bot', type: 'link', content: action.text, url: action.url }); 
+          if (i < actions.length - 1) {
+             await new Promise(r => setTimeout(r, 500)); 
+             setIsBotTyping(true);
+          }
+          break;
+        case 'InputText': 
+          setIsBotTyping(false); 
+          if (action.text) { 
+            addMessage({ sender: 'bot', type: action.options && action.options.length > 0 ? 'menu' : 'input_text', content: action.text, options: action.options }); 
+          } 
+          shouldPauseForInput = true; 
+          break;
+        case 'Goto': 
+          const targetNode = instance.getNodes().find((n: any) => n.data.label === action.name); 
+          if (targetNode) { 
+            processNext(targetNode.id, instance, 0, stack); 
+            return { paused: true }; 
+          } 
+          break;
         case 'Return': foundReturnValue = action.value; updateParam('last_return', action.value); break;
         case 'ChangeState': addMessage({ sender: 'bot', type: 'text', content: `[מצב בוט שונה ל: ${action.value}]` }); break;
       }
@@ -397,11 +430,8 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
           });
           const data = await response.json(); 
           
-          setIsBotTyping(false); 
-          await new Promise(r => setTimeout(r, 100));
-          
           setLastUserValue({ string: null, number: null }); setCurrentCommand(null);
-          if (data.actions && Array.isArray(data.actions)) {
+          if (data.actions && Array.isArray(data.actions) && data.actions.length > 0) {
             const result = await executeServerActions(data.actions, instance, stack);
             if (result.paused) { setIsWaitingForWebserviceResponse(true); return; }
             
@@ -423,7 +453,10 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
               }
             }
             return processNext(findNextNodeId(nodeId, instance), instance, depth + 1, stack);
-          } else { return processNext(findNextNodeId(nodeId, instance), instance, depth + 1, stack); }
+          } else { 
+            setIsBotTyping(false);
+            return processNext(findNextNodeId(nodeId, instance), instance, depth + 1, stack); 
+          }
         } catch (error) { 
           setIsBotTyping(false); 
           addMessage({ sender: 'bot', type: 'text', content: `❌ שגיאה בחיבור לשרת ה-Webservice` }); 
