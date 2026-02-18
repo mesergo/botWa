@@ -19,6 +19,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ id, title, icon, children, type, se
   const isStart = type === NodeType.START;
   const isAutomaticResponses = type === NodeType.AUTOMATIC_RESPONSES;
   const isBranchingNode = type === NodeType.OUTPUT_MENU || type === NodeType.ACTION_WEB_SERVICE || type === NodeType.AUTOMATIC_RESPONSES || type === NodeType.ACTION_TIME_ROUTING;
+  const isMediaNode = type === NodeType.OUTPUT_IMAGE;
 
   const getNodeTheme = (nodeType: NodeType) => {
     switch (nodeType) {
@@ -47,7 +48,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ id, title, icon, children, type, se
   const theme = getNodeTheme(type);
 
   return (
-    <div className={`min-w-[280px] bg-white border-2 border-slate-200 rounded-[2.5rem] shadow-[0_15px_40px_-10px_rgba(0,0,0,0.06)] transition-all duration-400 ${
+    <div className={`${isMediaNode ? 'min-w-[380px] max-w-[450px]' : 'min-w-[280px]'} bg-white border-2 border-slate-200 rounded-[2.5rem] shadow-[0_15px_40px_-10px_rgba(0,0,0,0.06)] transition-all duration-400 ${
       selected ? `ring-8 ${theme.ring} !border-slate-400 scale-[1.01]` : ''
     }`}>
       {/* Top indicator bar with rounded corners to match the parent */}

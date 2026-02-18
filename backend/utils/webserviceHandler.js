@@ -74,178 +74,262 @@ export const handleWebService = async (node, session, userInput = null) => {
 
   console.log('[WS] Final URL:', url);
 
-  try {
-    // Build payload similar to PHP version
-    const payload = {
-      campaign: {
-        id: 50000,
-        name: "FlowBot Campaign"
-      },
-      chat: {
-        created: new Date().toISOString().replace('T', ' ').split('.')[0],
-        source: "FlowBot_Node",
-        sender: session.sender,
-        control: node.id
-      },
-      parameters: Object.entries(params).map(([name, value]) => ({ name, value })),
-      value: userInput ? {
-        string: userInput,
-        number: isNaN(Number(userInput)) ? null : Number(userInput)
-      } : null,
-      process_history: session.process_history || []
-    };
+  // Retry mechanism with exponential backoff
+  let lastError = null;
+  const maxRetries = 3;
+  const timeoutMs = 15000; // 15 seconds timeout
+  
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      console.log(`[WS] Attempt ${attempt}/${maxRetries}`);
+      
+      // Build payload similar to PHP version
+      const payload = {
+        campaign: {
+          id: 50000,
+          name: "FlowBot Campaign"
+        },
+        chat: {
+          created: new Date().toISOString().replace('T', ' ').split('.')[0],
+          source: "FlowBot_Node",
+          sender: session.sender,
+          control: node.id
+        },
+        parameters: Object.entries(params).map(([name, value]) => ({ name, value })),
+        value: userInput || null,
+        process_history: session.process_history || []
+      };
 
-    // Make HTTP request
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'User-Agent': 'ChatBot/1.0',
-        'Accept': 'application/json'
-      },
-      body: JSON.stringify(payload)
-    });
+      // Create abort controller for timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-    if (!response.ok) {
-      throw new Error(`API returned status ${response.status}`);
-    }
+      try {
+        // Make HTTP request with timeout
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'User-Agent': 'ChatBot/1.0',
+            'Accept': 'application/json'
+          },
+          body: JSON.stringify(payload),
+          signal: controller.signal
+        });
 
-    const data = await response.json();
-    console.log('[WS] Received response:', JSON.stringify(data).substring(0, 200));
+        clearTimeout(timeoutId);
 
-    const actions = data.actions || [];
-    let returnValue = null;
-    let waitingInput = false;
+        if (!response.ok) {
+          const errorText = await response.text().catch(() => 'No error details');
+          throw new Error(`API returned status ${response.status}: ${errorText}`);
+        }
 
-    // Process each action
-    for (const action of actions) {
-      const actionType = action.type;
-      console.log('[WS] Processing action:', actionType);
+        const contentType = response.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+          const text = await response.text();
+          console.error('[WS] Non-JSON response:', text.substring(0, 500));
+          throw new Error('Response is not JSON format');
+        }
 
-      switch (actionType) {
-        case 'SetParameter':
-          params[action.name] = action.value;
-          console.log(`[WS] Set parameter ${action.name} = ${action.value}`);
-          break;
+        const data = await response.json();
+        console.log('[WS] Received response:', JSON.stringify(data).substring(0, 200));
+        
+        // Validate response structure
+        if (!data || typeof data !== 'object') {
+          throw new Error('Invalid response structure');
+        }
 
-        case 'SendMessage':
-          messages.push({
-            type: 'Text',
-            text: action.text,
-            created: new Date().toISOString()
-          });
-          break;
+        const actions = data.actions || [];
+        let returnValue = null;
+        let waitingInput = false;
 
-        case 'SendWebpage':
-          messages.push({
-            type: 'URL',
-            text: action.text || 'קישור',
-            url: action.url || action.text,
-            created: new Date().toISOString()
-          });
-          break;
+        // Process each action
+        for (const action of actions) {
+          const actionType = action.type;
+          console.log('[WS] Processing action:', actionType);
 
-        case 'SendImage':
-          messages.push({
-            type: 'Image',
-            url: action.value || action.url,
-            created: new Date().toISOString()
-          });
-          break;
+          switch (actionType) {
+            case 'SetParameter':
+              params[action.name] = action.value;
+              console.log(`[WS] Set parameter ${action.name} = ${action.value}`);
+              break;
 
-        case 'SendItem':
-          messages.push({
-            type: 'SendItem',
-            title: action.title || '',
-            subtitle: action.subtitle || '',
-            image: action.image || null,
-            url: action.url || null,
-            options: action.options || [],
-            created: new Date().toISOString()
-          });
-          break;
+            case 'SendMessage':
+              messages.push({
+                type: 'Text',
+                text: action.text,
+                created: new Date().toISOString()
+              });
+              break;
 
-        case 'InputText':
-          console.log('[WS] Waiting for user input');
-          waitingInput = true;
-          
-          // If there are buttons/options, send them
-          if (action.options && Array.isArray(action.options) && action.options.length > 0) {
-            messages.push({
-              type: 'Options',
-              text: action.text || '',
-              options: action.options.map(opt => ({
-                label: typeof opt === 'string' ? opt : opt.label || opt.text,
-                value: typeof opt === 'string' ? opt : opt.value || opt.text
-              })),
-              created: new Date().toISOString()
-            });
-          } else if (action.text) {
-            messages.push({
-              type: 'Text',
-              text: action.text,
-              created: new Date().toISOString()
-            });
+            case 'SendWebpage':
+              messages.push({
+                type: 'URL',
+                text: action.text || 'קישור',
+                url: action.url || action.text,
+                created: new Date().toISOString()
+              });
+              break;
+
+            case 'SendImage':
+              messages.push({
+                type: 'Image',
+                url: action.value || action.url,
+                created: new Date().toISOString()
+              });
+              break;
+
+            case 'SendItem':
+              messages.push({
+                type: 'SendItem',
+                title: action.title || '',
+                subtitle: action.subtitle || '',
+                image: action.image || null,
+                url: action.url || null,
+                options: action.options || [],
+                created: new Date().toISOString()
+              });
+              break;
+
+            case 'InputText':
+              console.log('[WS] ⚠️ Waiting for user input');
+              waitingInput = true;
+              
+              // If there are buttons/options, send them as menu with text
+              if (action.options && Array.isArray(action.options) && action.options.length > 0) {
+                console.log('[WS] 🔵 InputText has options:', action.options);
+                const optionsList = action.options.map(opt => 
+                  typeof opt === 'string' ? opt : opt.label || opt.text || String(opt)
+                );
+                
+                // Only send text message if there's actual text
+                if (action.text && action.text.trim()) {
+                  console.log('[WS] 🔵 Sending Text message:', action.text);
+                  messages.push({
+                    type: 'Text',
+                    text: action.text,
+                    created: new Date().toISOString()
+                  });
+                }
+                
+                console.log('[WS] 🔵 Sending Options message:', optionsList);
+                messages.push({
+                  type: 'Options',
+                  options: optionsList, 
+                  created: new Date().toISOString()
+                });
+              } else if (action.text) {
+                // No options - just text input
+                console.log('[WS] 🔵 InputText without options, text:', action.text);
+                messages.push({
+                  type: 'Text',
+                  text: action.text,
+                  created: new Date().toISOString()
+                });
+              }
+              
+              // IMMEDIATE BREAK FROM LOOP - Don't process Return or other actions after InputText
+              console.log('[WS] 🛑 BREAK: Stopping action loop immediately - waiting for user input');
+              break;
+ 
+            case 'Return':
+              returnValue = action.value;
+              console.log('[WS] Return value:', returnValue);
+              break;
+
+            case 'ChangeState':
+              messages.push({
+                type: 'Text',
+                text: `[מצב בוט שונה ל: ${action.value}]`,
+                created: new Date().toISOString()
+              });
+              break;
+
+            default:
+              console.log(`[WS] Unknown action type: ${actionType}`);
           }
-          break;
+          
+          // CRITICAL: Stop processing remaining actions if waiting for input
+          // This check must come AFTER the switch to catch InputText
+          if (waitingInput) {
+            console.log('[WS] 🛑 EXITING action loop - waitingInput = true, skipping remaining actions');
+            break;
+          }
+        }
 
-        case 'Return':
-          returnValue = action.value;
-          console.log('[WS] Return value:', returnValue);
-          break;
+        // Update session parameters
+        session.parameters = params;
+        
+        // Update waiting status
+        session.waiting_text_input = waitingInput;
+        session.waiting_webservice = waitingInput;
 
-        case 'ChangeState':
-          messages.push({
-            type: 'Text',
-            text: `[מצב בוט שונה ל: ${action.value}]`,
-            created: new Date().toISOString()
-          });
-          break;
+        console.log('[WS] 📤 Returning result:', {
+          messageCount: messages.length,
+          messageTypes: messages.map(m => m.type),
+          returnValue,
+          waitingInput,
+          session_waiting_text_input: session.waiting_text_input,
+          session_waiting_webservice: session.waiting_webservice
+        });
 
-        default:
-          console.log(`[WS] Unknown action type: ${actionType}`);
+        // Success! Return the result
+        return {
+          messages,
+          returnValue,
+          waitingInput
+        };
+
+      } catch (fetchError) {
+        clearTimeout(timeoutId);
+        throw fetchError;
       }
+
+    } catch (error) {
+      lastError = error;
+      const errorMsg = error.name === 'AbortError' ? 'Connection timeout' : error.message;
+      console.error(`[WS] Attempt ${attempt} failed:`, errorMsg);
+      
+      // If this is the last attempt or a non-retryable error, break
+      if (attempt === maxRetries || 
+          error.message.includes('Invalid response structure') ||
+          error.message.includes('not JSON format')) {
+        break;
+      }
+      
+      // Wait before retry with exponential backoff
+      const waitTime = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
+      console.log(`[WS] Waiting ${waitTime}ms before retry...`);
+      await new Promise(resolve => setTimeout(resolve, waitTime));
     }
-
-    // Update session parameters
-    session.parameters = params;
-    
-    // Update waiting status
-    session.waiting_text_input = waitingInput;
-    session.waiting_webservice = waitingInput;
-
-    return {
-      messages,
-      returnValue,
-      waitingInput
-    };
-
-  } catch (error) {
-    console.error('[WS] Error:', error.message);
-    return {
-      messages: [{
-        type: 'Text',
-        text: '❌ שגיאה בחיבור לשרת ה-Webservice',
-        created: new Date().toISOString()
-      }],
-      returnValue: null,
-      waitingInput: false
-    };
   }
+
+  // All retries failed - return error with detailed message
+  const errorDetails = lastError?.name === 'AbortError' 
+    ? 'השרת לא מגיב (timeout)'
+    : lastError?.message || 'שגיאה לא ידועה';
+  
+  console.error('[WS] All retries failed. Last error:', errorDetails);
+  
+  return {
+    messages: [{
+      type: 'Text',
+      text: `❌ שגיאה בחיבור לשרת ה-Webservice: ${errorDetails}`,
+      created: new Date().toISOString()
+    }],
+    returnValue: null,
+    waitingInput: false
+  };
 };
 
 /**
  * Find matching option based on return value
  * @param {Object} node - The webservice node
  * @param {*} returnValue - Value returned from webservice
- * @returns {Number} Index of matching option, or -2 for default option
+ * @returns {Number} Index of matching option or -1
  */
 export const findMatchingOption = (node, returnValue) => {
-  if (returnValue === null || returnValue === undefined) {
-    // Always use default option when no return value
-    console.log('[WS] No return value, using default option');
-    return -2; // Special value to indicate default option
-  }
+  if (returnValue === null || returnValue === undefined) return -1;
   
   const options = node.data.options || [];
   const operators = node.data.optionOperators || options.map(() => 'eq');
@@ -257,7 +341,5 @@ export const findMatchingOption = (node, returnValue) => {
     }
   }
   
-  // If no match found, always use default option
-  console.log('[WS] No match found, using default option');
-  return -2; // Special value to indicate default option
+  return -1;
 };

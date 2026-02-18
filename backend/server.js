@@ -5,6 +5,7 @@ import dotenv from 'dotenv';
 import connectDB from './config/db.js';
 import authRoutes from './routes/authRoutes.js';
 import botRoutes from './routes/botRoutes.js';
+import chatRoutes from './routes/chatRoutes.js';
 import flowRoutes from './routes/flowRoutes.js';
 import processRoutes from './routes/processRoutes.js';
 import proxyRoutes from './routes/proxyRoutes.js';
@@ -44,6 +45,7 @@ async function startServer() {
     // Register routes AFTER database connection
     app.use('/api/auth', authRoutes);
     app.use('/api/bots', botRoutes);
+    app.use('/api/chat', chatRoutes);
     app.use('/api/flow', flowRoutes);
     app.use('/api/processes', processRoutes);
     app.use('/api/proxy', proxyRoutes);

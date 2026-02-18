@@ -70,6 +70,8 @@ const Carousel: React.FC<{ items: CarouselItem[], onSelect: (text: string, idx: 
   return (
     <div className="w-full flex flex-col items-end gap-2 group/carousel relative">
       <div className="flex gap-3 items-center flex-row-reverse mb-1 mr-1">
+         <div className="w-7 h-7 rounded-lg bg-white border border-slate-100 flex items-center justify-center shadow-sm text-slate-400"><Bot size={14} /></div>
+         <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">תוצאות חיפוש</span>
       </div>
       <div className="relative w-full">
         <button onClick={() => scroll('left')} className="absolute left-0 top-1/2 -translate-y-1/2 z-10 p-2 bg-white/90 border border-slate-100 rounded-full shadow-lg opacity-0 group-hover/carousel:opacity-100 transition-all"><ChevronLeft size={20} /></button>
@@ -114,7 +116,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
   const scrollRef = useRef<HTMLDivElement>(null);
   const simulatorFileInputRef = useRef<HTMLInputElement>(null);
   const initialStartRef = useRef(false);
-  const updateTimeoutRef = useRef<number | null>(null);
+  const updateTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => { 
     if (isOpen && nodes && nodes.length > 0 && !initialStartRef.current) {
@@ -284,6 +286,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
   };
 
   const addMessage = (msg: Omit<ChatMessage, 'id' | 'timestamp'>) => {
+    console.log('[Simulator] 💬 Adding message:', { type: msg.type, sender: msg.sender, options: msg.options });
     const interpolatedContent= msg.sender === 'bot' ? interpolate(msg.content) : msg.content;
     const interpolatedContentNoNull = interpolatedContent?.replace(/null/g, '');
     const interpolatedOptions = msg.sender === 'bot' ? msg.options?.map(opt => interpolate(opt)) : msg.options;
@@ -301,9 +304,11 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
   };
 
   const executeServerActions = async (actions: any[], instance: any, stack: StackItem[]) => {
+    console.log('[Simulator] 🎬 Executing server actions:', actions.map(a => a.type));
     let i = 0; let foundReturnValue: any = null; let shouldPauseForInput = false;
     while (i < actions.length) {
       const action = actions[i];
+      console.log('[Simulator] 🔄 Processing action:', action.type, action);
       if (action.type === 'SendItem') {
         const carouselItems: CarouselItem[] = [];
         let j = i;
@@ -321,13 +326,29 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
         case 'SendMessage': setIsBotTyping(true); await new Promise(r => setTimeout(r, 300)); addMessage({ sender: 'bot', type: 'text', content: action.text }); setIsBotTyping(false); break;
         case 'SendImage': setIsBotTyping(true); await new Promise(r => setTimeout(r, 400)); addMessage({ sender: 'bot', type: 'image', url: action.url }); setIsBotTyping(false); break;
         case 'SendWebpage': setIsBotTyping(true); await new Promise(r => setTimeout(r, 300)); addMessage({ sender: 'bot', type: 'link', content: action.text, url: action.url }); setIsBotTyping(false); break;
-        case 'InputText': setIsBotTyping(true); await new Promise(r => setTimeout(r, 300)); if (action.text) { addMessage({ sender: 'bot', type: action.options && action.options.length > 0 ? 'menu' : 'input_text', content: action.text, options: action.options }); } setIsBotTyping(false); shouldPauseForInput = true; break;
+        case 'InputText': 
+          console.log('[Simulator] ⏸️ InputText action received:', { text: action.text, options: action.options });
+          setIsBotTyping(true); 
+          await new Promise(r => setTimeout(r, 300)); 
+          // Add message if there's text OR options
+          if (action.text || (action.options && action.options.length > 0)) { 
+            addMessage({ sender: 'bot', type: action.options && action.options.length > 0 ? 'menu' : 'input_text', content: action.text || '', options: action.options }); 
+          } 
+          setIsBotTyping(false); 
+          shouldPauseForInput = true; 
+          console.log('[Simulator] ⏸️ shouldPauseForInput set to TRUE');
+          break;
         case 'Goto': const targetNode = instance.getNodes().find((n: any) => n.data.label === action.name); if (targetNode) { processNext(targetNode.id, instance, 0, stack); return { paused: true }; } break;
-        case 'Return': foundReturnValue = action.value; updateParam('last_return', action.value); break;
+        case 'Return': 
+          foundReturnValue = action.value; 
+          updateParam('last_return', action.value); 
+          console.log('[Simulator] 🔙 Return value:', foundReturnValue);
+          break;
         case 'ChangeState': addMessage({ sender: 'bot', type: 'text', content: `[מצב בוט שונה ל: ${action.value}]` }); break;
       }
       i++;
     }
+    console.log('[Simulator] 📊 Execute actions result:', { paused: shouldPauseForInput, returnValue: foundReturnValue });
     return { paused: shouldPauseForInput, returnValue: foundReturnValue };
   };
 
@@ -383,9 +404,12 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
         } catch (e) { console.error(e); }
         return processNext(findNextNodeId(nodeId, instance), instance, depth + 1, stack);
       case NodeType.ACTION_WEB_SERVICE:
+        console.log('[Simulator] 🌐 Starting webservice call');
         setIsBotTyping(true); setIsWaitingForWebserviceResponse(false);
         try {
-          const payload = { campaign: { id: 50000, name: "FlowBot Campaign" }, chat: { created: new Date().toISOString().replace('T', ' ').split('.')[0], source: "FlowBot_Studio", sender: "SimUser_123", control: nodeId }, parameters: Object.entries(sessionParamsRef.current).map(([name, value]) => ({ name, value })), value: forcedValue || lastUserValue, command: forcedCommand !== undefined ? forcedCommand : currentCommand };
+          const payload = { campaign: { id: 50000, name: "FlowBot Campaign" }, chat: { created: new Date().toISOString().replace('T', ' ').split('.')[0], source: "FlowBot_Studio", sender: "SimUser_123", control: nodeId }, parameters: Object.entries(sessionParamsRef.current).map(([name, value]) => ({ name, value })), value: (forcedValue?.string || lastUserValue?.string) || null, command: forcedCommand !== undefined ? forcedCommand : currentCommand };
+          
+          console.log('[Simulator] 🌐 Payload:', payload);
           
           const headers: Record<string, string> = { 'Content-Type': 'application/json' };
           if (token) headers['Authorization'] = `Bearer ${token}`;
@@ -397,13 +421,21 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
           });
           const data = await response.json(); 
           
+          console.log('[Simulator] 🌐 WS Response received:', data);
+          
           setIsBotTyping(false); 
           await new Promise(r => setTimeout(r, 100));
           
           setLastUserValue({ string: null, number: null }); setCurrentCommand(null);
           if (data.actions && Array.isArray(data.actions)) {
+            console.log('[Simulator] 🌐 Processing', data.actions.length, 'actions');
             const result = await executeServerActions(data.actions, instance, stack);
-            if (result.paused) { setIsWaitingForWebserviceResponse(true); return; }
+            console.log('[Simulator] 🌐 Actions result:', result);
+            if (result.paused) { 
+              console.log('[Simulator] ⏸️ PAUSED - waiting for webservice response'); 
+              setIsWaitingForWebserviceResponse(true); 
+              return; 
+            }
             
             if (result.returnValue !== null && result.returnValue !== undefined) {
               const returnValue = result.returnValue;
@@ -419,19 +451,39 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
               }
               
               if (foundIndex !== -1) {
+                console.log('[Simulator] 🌐 Matched option', foundIndex, '- taking conditional exit');
                 return processNext(findNextNodeId(nodeId, instance, `option-${foundIndex}`), instance, depth + 1, stack);
               }
             }
-            return processNext(findNextNodeId(nodeId, instance), instance, depth + 1, stack);
-          } else { return processNext(findNextNodeId(nodeId, instance), instance, depth + 1, stack); }
+            // No match found - take default exit
+            console.log('[Simulator] 🌐 No match - taking default exit');
+            return processNext(findNextNodeId(nodeId, instance, 'default'), instance, depth + 1, stack);
+          } else { 
+            // No actions - take default exit
+            console.log('[Simulator] 🌐 No actions - taking default exit');
+            return processNext(findNextNodeId(nodeId, instance, 'default'), instance, depth + 1, stack); 
+          }
         } catch (error) { 
           setIsBotTyping(false); 
           addMessage({ sender: 'bot', type: 'text', content: `❌ שגיאה בחיבור לשרת ה-Webservice` }); 
-          return processNext(findNextNodeId(nodeId, instance), instance, depth + 1, stack); 
+          console.log('[Simulator] 🌐 Error - taking default exit');
+          return processNext(findNextNodeId(nodeId, instance, 'default'), instance, depth + 1, stack); 
         }
         break;
       case NodeType.OUTPUT_TEXT: setIsBotTyping(true); await new Promise(r => setTimeout(r, 400)); addMessage({ sender: 'bot', type: 'text', content: node.data.content || "..." }); setIsBotTyping(false); return processNext(findNextNodeId(nodeId, instance), instance, depth + 1, stack);
-      case NodeType.OUTPUT_IMAGE: setIsBotTyping(true); await new Promise(r => setTimeout(r, 500)); addMessage({ sender: 'bot', type: 'image', url: node.data.url }); setIsBotTyping(false); return processNext(findNextNodeId(nodeId, instance), instance, depth + 1, stack);
+      case NodeType.OUTPUT_IMAGE: {
+        setIsBotTyping(true); 
+        await new Promise(r => setTimeout(r, 500)); 
+        const mediaType = node.data.mediaType || 'image';
+        const messageType = mediaType === 'video' ? 'video' : mediaType === 'pdf' ? 'document' : 'image';
+        addMessage({ sender: 'bot', type: messageType, url: node.data.url }); 
+        if (node.data.caption && node.data.caption.trim()) {
+          await new Promise(r => setTimeout(r, 200));
+          addMessage({ sender: 'bot', type: 'text', content: node.data.caption });
+        }
+        setIsBotTyping(false); 
+        return processNext(findNextNodeId(nodeId, instance), instance, depth + 1, stack);
+      }
       case NodeType.OUTPUT_LINK: setIsBotTyping(true); await new Promise(r => setTimeout(r, 400)); addMessage({ sender: 'bot', type: 'link', content: node.data.linkLabel || 'קישור חיצוני', url: node.data.url }); setIsBotTyping(false); return processNext(findNextNodeId(nodeId, instance), instance, depth + 1, stack);
       case NodeType.OUTPUT_MENU: setIsBotTyping(true); await new Promise(r => setTimeout(r, 400)); addMessage({ sender: 'bot', type: 'menu', content: node.data.content, options: node.data.options, optionImages: node.data.optionImages }); setIsBotTyping(false); break;
       case NodeType.INPUT_TEXT: case NodeType.INPUT_DATE: case NodeType.INPUT_FILE: setIsBotTyping(true); await new Promise(r => setTimeout(r, 300)); if (node.data.label) { addMessage({ sender: 'bot', type: node.type as any, content: node.data.label }); } setIsBotTyping(false); break;
@@ -563,14 +615,26 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
   };
 
   const handleMenuSelect = async (option: string, index: number, optionValue?: string) => {
+    console.log('[Simulator] 🔘 Menu option selected:', { option, index, optionValue });
+    console.log('[Simulator] 🔘 State:', { 
+      currentNodeId, 
+      isWaitingForWebserviceResponse,
+      hasInstance: !!currentInstance 
+    });
+    
     if (!currentNodeId || !currentInstance) return;
     const nodesList = currentInstance.getNodes() || [];
     const node = nodesList.find((n: any) => n.id === currentNodeId);
+    
+    console.log('[Simulator] 🔘 Current node:', { id: node?.id, type: node?.type });
+    
     addMessage({ sender: 'user', type: 'text', content: option });
     if (isWaitingForWebserviceResponse && node.type === NodeType.ACTION_WEB_SERVICE) {
+      console.log('[Simulator] 🔘 Responding to webservice with option');
       const cmd = optionValue || option; setCurrentCommand(cmd);
       await processNext(currentNodeId, currentInstance, 0, executionStack, { string: option, number: null }, cmd);
     } else {
+      console.log('[Simulator] 🔘 Regular menu selection, moving to option', index);
       setLastUserValue({ string: option, number: null });
       await processNext(findNextNodeId(currentNodeId, currentInstance, `option-${index}`), currentInstance, 0, executionStack);
     }
@@ -666,6 +730,13 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
                 <div className={`p-4 rounded-3xl shadow-sm text-sm font-bold text-right ${msg.sender === 'bot' ? 'bg-white text-black border border-slate-100 rounded-tr-none' : 'bg-blue-600 text-white rounded-tl-none'}`}>
                   {msg.type === 'text' && <div className="whitespace-pre-wrap">{msg.content}</div>}
                   {msg.type === 'image' && <img src={msg.url} className="rounded-xl w-full h-auto mt-2" alt="Bot message" />}
+                  {msg.type === 'video' && <video src={msg.url} controls className="rounded-xl w-full h-auto mt-2" />}
+                  {msg.type === 'document' && (
+                    <a href={msg.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 mt-2 p-3 bg-slate-50 rounded-xl hover:bg-slate-100 transition-colors">
+                      <ExternalLink size={20} />
+                      <span>פתח מסמך PDF</span>
+                    </a>
+                  )}
                   {msg.type === 'link' && (
                     <div className="space-y-2">
                       <p>{msg.content}</p>
@@ -674,8 +745,8 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
                         <span className="inline-flex items-center gap-1">{msg.url} <ExternalLink size={14} className="flex-shrink-0" /></span>
                       </a>
                     </div>
-                  )}
-                  {msg.type === 'menu' && (
+                  )} 
+                  {(msg.type === 'menu' || msg.type === 'Options') && (
                     <div className="space-y-4 min-w-[180px]">
                       <p className="font-bold text-slate-400 text-[10px] uppercase tracking-widest text-right">{msg.content}</p>
                       <div className="flex flex-col gap-2">

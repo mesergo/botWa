@@ -4,6 +4,11 @@ import Widget from '../models/Widget.js';
 import Version from '../models/Version.js';
 import { getUserLimits } from '../utils/limits.js';
 
+const ACCOUNTS_CONFIG = {
+  Basic: { maxBots: 3, maxVersions: 5, versionPrice: 5, botPrice: 30 },
+  Premium: { maxBots: 6, maxVersions: 10, versionPrice: 5, botPrice: 30 }
+};
+
 export const createBot = async (req, res) => {
   const { name } = req.body;
   const userId = req.user.id;

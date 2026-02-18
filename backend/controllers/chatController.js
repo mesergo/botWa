@@ -233,19 +233,35 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
         let url = replaceParameters(nodeData.url || '', params);
         // Convert base64 to URL if needed
         url = convertBase64ToUrl(url, req);
-        const msg = { type: 'Image', url, created: new Date().toISOString() };
-        messages.push(msg);
-        addToHistory(session, msg, currentNodeId);
+        
+        const mediaType = nodeData.mediaType || 'image';
+        const caption = replaceParameters(nodeData.caption || '', params);
+        
+        // Send media message
+        const mediaMsg = { 
+          type: mediaType === 'video' ? 'Video' : mediaType === 'pdf' ? 'Document' : 'Image', 
+          url, 
+          created: new Date().toISOString() 
+        };
+        messages.push(mediaMsg);
+        addToHistory(session, mediaMsg, currentNodeId);
+        
+        // Send caption as separate text message if exists
+        if (caption && caption.trim()) {
+          const textMsg = { type: 'Text', text: caption, created: new Date().toISOString() };
+          messages.push(textMsg);
+          addToHistory(session, textMsg, currentNodeId);
+        }
         
         // Check if this is the last node (no outgoing edges)
         const nextNode = findNextNode(currentNodeId, edges);
         if (!nextNode) {
-          console.log('[BOT] ✅ Last node (image) reached - closing session immediately');
+          console.log('[BOT] ✅ Last node (media) reached - closing session immediately');
           session.is_active = false;
           session.current_node_id = null;
           session.waiting_text_input = false;
           await session.save();
-          console.log('[BOT] ✅ Session saved as inactive after image');
+          console.log('[BOT] ✅ Session saved as inactive after media');
           return messages;
         }
         currentNodeId = nextNode;
@@ -369,40 +385,73 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
       }
 
       case 'action_web_service': {
-        console.log('[BOT] Web service node - calling API');
+        console.log('[BOT] 🌐 Web service node - calling API');
         
         // If we're continuing from a previous webservice call with user input
         const userInput = session.waiting_webservice ? session.last_user_input : null;
+        console.log('[BOT] 🌐 User input for WS:', userInput);
+        console.log('[BOT] 🌐 Session before WS call:', {
+          waiting_webservice: session.waiting_webservice,
+          waiting_text_input: session.waiting_text_input,
+          current_node: session.current_node_id
+        });
         
         // Call webservice
         const wsResult = await handleWebService(node, session, userInput);
+        
+        console.log('[BOT] 🌐 WS Result received:', {
+          messageCount: wsResult.messages.length,
+          messageTypes: wsResult.messages.map(m => m.type),
+          returnValue: wsResult.returnValue,
+          waitingInput: wsResult.waitingInput
+        });
         
         // Add messages to response
         messages.push(...wsResult.messages);
         wsResult.messages.forEach(msg => addToHistory(session, msg, currentNodeId));
         
-        // If waiting for input, stop here
+        // If waiting for input, stop here (even if this is the last node)
         if (wsResult.waitingInput) {
+          console.log('[BOT] ⏸️ Web service waiting for input - session stays active');
+          console.log('[BOT] ⏸️ Setting session state:', {
+            current_node_id: currentNodeId,
+            waiting_webservice: true,
+            waiting_text_input: true
+          });
           session.current_node_id = currentNodeId;
           session.waiting_webservice = true;
           session.waiting_text_input = true;
+          console.log('[BOT] ⏸️ Returning', messages.length, 'messages');
           return messages;
         }
         
         // If we have a return value, find matching option
-        const matchedIdx = findMatchingOption(node, wsResult.returnValue);
-        if (matchedIdx === -2) {
-          // Use default option
-          currentNodeId = findNextNode(currentNodeId, edges, 'option-default');
-        } else if (matchedIdx !== -1) {
-          // Use matched option
-          currentNodeId = findNextNode(currentNodeId, edges, `option-${matchedIdx}`);
-        } else {
-          // No match and no default (shouldn't happen anymore)
-          currentNodeId = findNextNode(currentNodeId, edges);
+        if (wsResult.returnValue !== null && wsResult.returnValue !== undefined) {
+          const matchedIdx = findMatchingOption(node, wsResult.returnValue);
+          if (matchedIdx !== -1) {
+            console.log(`[BOT] ✅ Return value matched option ${matchedIdx} - taking conditional exit`);
+            currentNodeId = findNextNode(currentNodeId, edges, `option-${matchedIdx}`);
+            session.waiting_webservice = false;
+            break;
+          }
         }
         
+        // No match or no return value - take default exit
+        console.log('[BOT] ✅ No match - taking default exit');
         session.waiting_webservice = false;
+        const nextNode = findNextNode(currentNodeId, edges, 'default');
+        
+        if (!nextNode) {
+          // No default exit - close session
+          console.log('[BOT] ⚠️ No default exit found - closing session');
+          session.is_active = false;
+          session.current_node_id = null;
+          session.waiting_text_input = false;
+          await session.save();
+          return messages;
+        }
+        
+        currentNodeId = nextNode;
         break;
       }
 
@@ -669,6 +718,15 @@ export const respondToMessage = async (req, res) => {
       if (nextNodeId) {
         messages = await walkChain(nextNodeId, flowData.nodes, flowData.edges, session, session.flow_id, req);
       }
+    } else if (session.waiting_webservice && currentNode.type === 'action_web_service') {
+      // User is responding to a webservice InputText request
+      console.log('[BOT] Handling webservice InputText response');
+      
+      // Save user input
+      session.last_user_input = text;
+      
+      // Re-call the webservice with the user input
+      messages = await walkChain(currentNode.id, flowData.nodes, flowData.edges, session, session.flow_id, req);
     } else if (currentNode.type === 'input_text' || currentNode.type === 'input_date' || currentNode.type === 'input_file') {
       // Save input to parameters
       const varName = currentNode.data.variableName;
@@ -748,7 +806,17 @@ export const respondToMessage = async (req, res) => {
       };
     }
 
-    console.log(`[BOT] Returning ${messages.length} messages`);
+    console.log('[BOT] 📨 Final response:', {
+      messageCount: messages.length,
+      messageTypes: messages.map(m => m.type),
+      control: control,
+      session_state: {
+        current_node_id: session.current_node_id,
+        waiting_text_input: session.waiting_text_input,
+        waiting_webservice: session.waiting_webservice,
+        is_active: session.is_active
+      }
+    });
 
     return res.json({
       StatusId: 1,

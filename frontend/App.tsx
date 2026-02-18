@@ -7,10 +7,9 @@ import AuthScreen from './components/AuthScreen';
 import Editor from './components/Editor';
 import TemplateSelection from './components/TemplateSelection';
 import TemplateForm from './components/TemplateForm';
-import AdminPanel from './components/AdminPanel';
 import { StartNode, InputTextNode, InputDateNode, InputFileNode, OutputTextNode, OutputImageNode, OutputLinkNode, OutputMenuNode, ActionWebServiceNode, ActionWaitNode, ActionTimeRoutingNode, FixedProcessNode, AutomaticResponsesNode } from './components/nodes/CustomNodes';
 import ButtonEdge from './components/edges/ButtonEdge';
-import { CloudUpload, RotateCcw, Plus, AlertTriangle, Copy, X, Lock, Wallet } from 'lucide-react';
+import { CloudUpload, RotateCcw, Plus, AlertTriangle, Copy, X, Lock } from 'lucide-react';
 import Simulator from './components/Simulator';
 
 const API_BASE = window.location.hostname === 'localhost' 
@@ -452,14 +451,16 @@ const FlowBuilder: React.FC = () => {
       });
 
       if (res.ok) {
-        // Update bots list - remove default from all, set it on the selected one
-        setBots(prev => prev.map(b => ({
-          ...b,
-          is_default: b.id === id
-        })));
+        // Refresh bots list from server to ensure sync
+        await loadBots();
+      } else {
+        const errorData = await res.json();
+        console.error('Failed to set default bot:', errorData);
+        alert('שגיאה בהגדרת ברירת מחדל: ' + (errorData.error || 'שגיאה לא ידועה'));
       }
     } catch (error) {
       console.error('Error setting default bot:', error);
+      alert('שגיאה בהגדרת ברירת מחדל');
     }
   };
  

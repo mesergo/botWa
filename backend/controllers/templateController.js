@@ -147,7 +147,7 @@ export const seedTemplates = async () => {
   for (const template of INITIAL_TEMPLATES) {
     await Template.updateOne(
       { template_id: template.template_id },
-      { $set: { ...template, isPublic: true } },
+      { $set: template },
       { upsert: true }
     );
   }

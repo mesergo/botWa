@@ -226,6 +226,10 @@ export const OutputTextNode = (props: any) => (
 
 export const OutputImageNode = (props: any) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploadMode, setUploadMode] = useState<'file' | 'url'>(props.data.url && !props.data.url.startsWith('data:') ? 'url' : 'file');
+  
+  const mediaType = props.data.mediaType || 'image';
+  
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
@@ -234,26 +238,146 @@ export const OutputImageNode = (props: any) => {
       reader.readAsDataURL(file);
     }
   };
-  return (
-    <BaseNode id={props.id} title="תמונת בוט" icon={<ImageIcon size={20} />} type={NodeType.OUTPUT_IMAGE} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId}>
-      <InputFieldWrapper>
-        <div className="space-y-3">
-          {props.data.url ? (
-            <div className="relative group rounded-2xl overflow-hidden border border-slate-100 shadow-sm w-full h-40 bg-slate-50 flex items-center justify-center">
-              <img src={props.data.url} alt="Bot upload" className="max-w-full h-full object-contain" />
-              <div className="absolute inset-0 bg-slate-900/60 opacity-0 group-hover:opacity-100 transition-all flex items-center justify-center gap-2 backdrop-blur-[2px]">
-                <button onClick={() => fileInputRef.current?.click()} className="p-2.5 bg-white text-slate-900 rounded-xl shadow-xl hover:bg-slate-100 transition-all"><Upload size={18} /></button>
-                <button onClick={() => props.data.onChange({ url: '' })} className="p-2.5 bg-red-500 text-white rounded-xl shadow-xl hover:bg-red-600 transition-all"><X size={18} /></button>
-              </div>
-            </div>
-          ) : (
-            <button onClick={() => fileInputRef.current?.click()} className="w-full h-40 border-2 border-dashed border-slate-200 rounded-2xl flex flex-col items-center justify-center gap-3 text-slate-400 hover:border-blue-500 hover:text-blue-500 hover:bg-blue-50/50 transition-all nodrag">
-              <Upload size={32} strokeWidth={1.5} />
-              <span className="text-[14px] font-bold uppercase tracking-widest">העלה מדיה</span>
-            </button>
-          )}
+  
+  const getAcceptTypes = () => {
+    switch(mediaType) {
+      case 'image': return 'image/*';
+      case 'video': return 'video/*';
+      case 'pdf': return 'application/pdf';
+      default: return 'image/*,video/*,application/pdf';
+    }
+  };
+  
+  const getMediaIcon = (type: string) => {
+    switch(type) {
+      case 'image': return <ImageIcon size={14} className="inline" />;
+      case 'video': return <PlayCircle size={14} className="inline" />;
+      case 'pdf': return <ExternalLink size={14} className="inline" />;
+      default: return <ImageIcon size={14} className="inline" />;
+    }
+  };
+  
+  const renderMediaPreview = () => {
+    if (!props.data.url) return null;
+    
+    if (mediaType === 'video') {
+      return <video src={props.data.url} controls className="max-w-full h-full object-contain" />;
+    } else if (mediaType === 'pdf') {
+      return (
+        <div className="flex flex-col items-center justify-center gap-2 text-slate-600">
+          <ExternalLink size={40} />
+          <span className="text-sm">קובץ PDF</span>
         </div>
-        <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleFileUpload} />
+      );
+    } else {
+      return <img src={props.data.url} alt="Bot upload" className="max-w-full h-full object-contain" />;
+    }
+  };
+  
+  return (
+    <BaseNode id={props.id} title="הודעת מדיה" icon={<ImageIcon size={20} />} type={NodeType.OUTPUT_IMAGE} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId}>
+      <InputFieldWrapper label="סוג מדיה">
+        <div className="relative">
+          <select 
+            className="w-full appearance-none border border-slate-200 rounded-lg px-3.5 py-2 pr-9 text-right bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent focus:outline-none transition-all nodrag cursor-pointer text-slate-700 text-[13px] font-medium shadow-sm hover:border-slate-300 hover:shadow"
+            value={mediaType}
+            onChange={(e) => props.data.onChange({ mediaType: e.target.value, url: '' })}
+          >
+            <option value="image">תמונה</option>
+            <option value="video">וידאו</option>
+            <option value="pdf">PDF</option>
+          </select>
+          <div className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
+            <ChevronDown size={16} />
+          </div>
+          <div className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-500">
+            {getMediaIcon(mediaType)}
+          </div>
+        </div>
+      </InputFieldWrapper>
+      
+      <InputFieldWrapper label="אופן העלאה">
+        <div className="flex gap-1.5 mb-3 bg-slate-100/80 p-1.5 rounded-lg border border-slate-200/60">
+          <button 
+            type="button"
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); setUploadMode('file'); }}
+            className={`flex-1 px-2.5 py-1.5 rounded-md transition-all duration-150 font-medium text-[13px] nodrag select-none outline-none whitespace-nowrap ${
+              uploadMode === 'file' 
+                ? 'bg-white text-blue-600 shadow-sm border border-slate-200/50' 
+                : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50/50'
+            }`}
+          >
+            <Upload size={13} className="inline ml-1 -mt-0.5" />
+            העלאת קובץ
+          </button>
+          <button 
+            type="button"
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); setUploadMode('url'); }}
+            className={`flex-1 px-2.5 py-1.5 rounded-md transition-all duration-150 font-medium text-[13px] nodrag select-none outline-none whitespace-nowrap ${
+              uploadMode === 'url' 
+                ? 'bg-white text-blue-600 shadow-sm border border-slate-200/50' 
+                : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50/50'
+            }`}
+          >
+            <Globe size={13} className="inline ml-1 -mt-0.5" />
+            הוספת קישור
+          </button>
+        </div>
+        
+        {uploadMode === 'url' ? (
+          <SearchableInput 
+            value={props.data.url} 
+            onChange={(v: string) => props.data.onChange({ url: v })} 
+            placeholder={`הכנס קישור ל${mediaType === 'image' ? 'תמונה' : mediaType === 'video' ? 'וידאו' : 'PDF'}`}
+            searchQuery={props.data.searchQuery} 
+            isCurrentMatch={props.data.isCurrentMatch} 
+          />
+        ) : (
+          <div className="space-y-3">
+            {props.data.url ? (
+              <div className="relative group rounded-xl overflow-hidden border border-slate-200 shadow-sm w-full h-40 bg-slate-50 flex items-center justify-center">
+                {renderMediaPreview()}
+                <div className="absolute inset-0 bg-slate-900/60 opacity-0 group-hover:opacity-100 transition-all flex items-center justify-center gap-2 backdrop-blur-[2px]">
+                  <button 
+                    type="button" 
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); fileInputRef.current?.click(); }} 
+                    className="p-2.5 bg-white text-slate-900 rounded-lg shadow-xl hover:bg-slate-100 transition-all outline-none"
+                  >
+                    <Upload size={18} />
+                  </button>
+                  <button 
+                    type="button" 
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); props.data.onChange({ url: '' }); }} 
+                    className="p-2.5 bg-red-500 text-white rounded-lg shadow-xl hover:bg-red-600 transition-all outline-none"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button 
+                type="button" 
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); fileInputRef.current?.click(); }} 
+                className="w-full h-40 border-2 border-dashed border-slate-300 rounded-xl flex flex-col items-center justify-center gap-3 text-slate-400 hover:border-blue-400 hover:text-blue-500 hover:bg-blue-50/30 transition-all nodrag outline-none"
+              >
+                <Upload size={28} strokeWidth={1.5} />
+                <span className="text-xs font-semibold uppercase tracking-wider">העלה {mediaType === 'image' ? 'תמונה' : mediaType === 'video' ? 'וידאו' : 'PDF'}</span>
+              </button>
+            )}
+          </div>
+        )}
+        <input type="file" ref={fileInputRef} className="hidden" accept={getAcceptTypes()} onChange={handleFileUpload} />
+      </InputFieldWrapper>
+      
+      <InputFieldWrapper label="טקסט (אופציונלי)">
+        <SearchableInput 
+          value={props.data.caption} 
+          onChange={(v: string) => props.data.onChange({ caption: v })} 
+          placeholder="הוסף טקסט מתחת למדיה"
+          searchQuery={props.data.searchQuery} 
+          isCurrentMatch={props.data.isCurrentMatch}
+          isTextArea={true}
+        />
       </InputFieldWrapper>
     </BaseNode>
   );
@@ -406,36 +530,40 @@ export const ActionWebServiceNode = (props: any) => {
       <InputFieldWrapper label="כתובת Webhook">
         <SearchableInput value={props.data.url} onChange={(v: string) => props.data.onChange({ url: v })} placeholder="https://api.yourdomain.com" searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
       </InputFieldWrapper>
+      
       <div className="space-y-3 mt-4 text-right">
-        <div className="flex items-center justify-between mb-2 flex-row-reverse">
-          <label className="block text-[14px] font-bold text-slate-400 uppercase tracking-widest">פיצול לפי תשובה (Return)</label>
-          <button onClick={addBranch} className="p-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-600 hover:text-white transition-all"><Plus size={16} /></button>
-        </div>
-        
-        {/* Default option - always visible */}
-        <div className="flex items-center gap-2 p-3 bg-slate-50 border border-slate-200 rounded-2xl relative">
-          <Handle type="source" position={Position.Right} id="option-default" style={{ top: '50%', right: -16 }} className="w-4 h-4 bg-slate-400 border-2 border-white rounded-full shadow-lg" />
-          <div className="flex-1 text-center py-1">
-            <span className="text-sm font-bold text-slate-600">ברירת מחדל (אם אין התאמה)</span>
-          </div>
-        </div>
-        
-        {branches.map((branch: string, i: number) => (
-          <div key={i} className="flex flex-col gap-2 p-3 bg-slate-50 border border-slate-100 rounded-2xl group/branch relative transition-colors hover:bg-white hover:border-blue-100">
-            <Handle type="source" position={Position.Right} id={`option-${i}`} style={{ top: '50%', right: -16 }} className="w-4 h-4 bg-slate-400 border-2 border-white rounded-full shadow-lg" />
-            
-            <div className="flex items-center gap-2 flex-row-reverse">
-              <OperatorSelector value={operators[i]} onChange={(op) => updateOperator(i, op)} />
-              <div className="flex-1">
-                <SearchableInput value={branch} onChange={(v: string) => updateBranch(i, v)} placeholder="ערך להשוואה..." searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
-              </div>
-              <button onClick={() => removeBranch(i)} className="p-2 text-slate-300 hover:text-red-500 opacity-0 group-hover/branch:opacity-100 transition-all nodrag"><X size={18} /></button>
+        {/* Default exit - always present */}
+        <div>
+          <label className="block text-[14px] font-bold text-slate-400 uppercase tracking-widest mb-2">יציאה ברירת מחדל</label>
+          <div className="flex items-center gap-2 p-3 bg-slate-50 border border-slate-100 rounded-2xl relative">
+            <Handle type="source" position={Position.Right} id="default" style={{ top: '50%', right: -16 }} className="w-4 h-4 bg-slate-400 border-2 border-white rounded-full shadow-lg" />
+            <div className="flex-1 text-center">
+              <span className="text-sm font-bold text-slate-600">default</span>
             </div>
           </div>
-        ))}
-        {branches.length === 0 && (
-          <div className="text-[11px] text-slate-400 font-bold uppercase tracking-tighter text-center py-2 border border-dashed border-slate-100 rounded-xl">ללא פיצול לוגי (ממשיך הלאה)</div>
-        )}
+        </div>
+
+        {/* Conditional exits based on Return value */}
+        <div>
+          <label className="block text-[14px] font-bold text-slate-400 uppercase tracking-widest mb-2">יציאות מותנות לפי Return</label>
+          {branches.map((branch: string, i: number) => (
+            <div key={i} className="flex flex-col gap-2 p-3 bg-slate-50 border border-slate-100 rounded-2xl group/branch relative transition-colors hover:bg-white hover:border-blue-100 mb-3">
+              <Handle type="source" position={Position.Right} id={`option-${i}`} style={{ top: '50%', right: -16 }} className="w-4 h-4 bg-slate-400 border-2 border-white rounded-full shadow-lg" />
+              
+              <div className="flex items-center gap-2 flex-row-reverse">
+                <OperatorSelector value={operators[i]} onChange={(op) => updateOperator(i, op)} />
+                <div className="flex-1">
+                  <SearchableInput value={branch} onChange={(v: string) => updateBranch(i, v)} placeholder="ערך להשוואה..." searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
+                </div>
+                <button onClick={() => removeBranch(i)} className="p-2 text-slate-300 hover:text-red-500 opacity-0 group-hover/branch:opacity-100 transition-all nodrag"><X size={18} /></button>
+              </div>
+            </div>
+          ))}
+          {branches.length === 0 && (
+            <div className="text-[11px] text-slate-400 font-bold uppercase tracking-tighter text-center py-2 border border-dashed border-slate-100 rounded-xl mb-3">ללא יציאות מותנות - רק ברירת מחדל</div>
+          )}
+          <button onClick={addBranch} className="w-full p-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-600 hover:text-white transition-all flex items-center justify-center gap-2"><Plus size={16} /> הוסף תנאי</button>
+        </div>
       </div>
     </BaseNode>
   );

@@ -24,6 +24,8 @@ export interface NodeData {
   content?: string;
   url?: string;
   linkLabel?: string;
+  mediaType?: 'image' | 'video' | 'pdf';
+  caption?: string;
   waitTime?: number;
   options?: string[];
   optionOperators?: string[];
@@ -113,7 +115,7 @@ export interface CarouselItem {
 export interface ChatMessage {
   id: string;
   sender: 'bot' | 'user';
-  type: 'text' | 'image' | 'link' | 'menu' | 'input_text' | 'input_date' | 'input_file' | 'carousel';
+  type: 'text' | 'image' | 'video' | 'document' | 'link' | 'menu' | 'input_text' | 'input_date' | 'input_file' | 'carousel' | 'Options';
   content?: string;
   url?: string;
   options?: string[];
