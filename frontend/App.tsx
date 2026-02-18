@@ -4,6 +4,7 @@ import { ReactFlowProvider, addEdge, Node, Edge, applyNodeChanges, applyEdgeChan
 import { NodeType, NodeData, User, FixedProcess, Version, BotFlow, PredefinedTemplate, RestorableVersionsData } from './types';
 import Dashboard from './components/Dashboard';
 import AuthScreen from './components/AuthScreen';
+import RegisterPage from './components/RegisterPage';
 import Editor from './components/Editor';
 import TemplateSelection from './components/TemplateSelection';
 import TemplateForm from './components/TemplateForm';
@@ -1027,6 +1028,12 @@ const FlowBuilder: React.FC = () => {
     setNewVersionName(`גרסה מ-${dateStr} ${timeStr}`);
     setIsPublishModalOpen(true);
   }, []);
+
+  // Show standalone registration page when ?register=1 is in the URL
+  const isRegisterPage = new URLSearchParams(window.location.search).get('register') === '1';
+  if (isRegisterPage) {
+    return <RegisterPage />;
+  }
 
   if (!currentUser && viewMode !== 'simulator-only') {
     return <AuthScreen mode={authMode} form={authForm} errors={authErrors} onFormChange={setAuthForm} onAuth={handleAuth} onSwitchMode={() => setAuthMode(m => m === 'login' ? 'register' : 'login')} />;

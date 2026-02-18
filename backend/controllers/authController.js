@@ -85,6 +85,18 @@ export const login = async (req, res) => {
   }
 };
 
+// Check if email already exists in the system
+export const checkEmail = async (req, res) => {
+  const { email } = req.query;
+  if (!email) return res.status(400).json({ error: 'Email is required' });
+  try {
+    const existing = await User.findOne({ email: email.toLowerCase().trim() });
+    res.json({ exists: !!existing });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
 // Get API token for authenticated user
 export const getApiToken = async (req, res) => {
   try {
