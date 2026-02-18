@@ -9,8 +9,9 @@ import TemplateSelection from './components/TemplateSelection';
 import TemplateForm from './components/TemplateForm';
 import { StartNode, InputTextNode, InputDateNode, InputFileNode, OutputTextNode, OutputImageNode, OutputLinkNode, OutputMenuNode, ActionWebServiceNode, ActionWaitNode, ActionTimeRoutingNode, FixedProcessNode, AutomaticResponsesNode } from './components/nodes/CustomNodes';
 import ButtonEdge from './components/edges/ButtonEdge';
-import { CloudUpload, RotateCcw, Plus, AlertTriangle, Copy, X, Lock } from 'lucide-react';
+import { CloudUpload, RotateCcw, Plus, AlertTriangle, Copy, X, Lock, Wallet } from 'lucide-react';
 import Simulator from './components/Simulator';
+import AdminPanel from './components/AdminPanel';
 
 const API_BASE = window.location.hostname === 'localhost' 
   ? 'http://localhost:3001/api' 

@@ -11,7 +11,6 @@ import processRoutes from './routes/processRoutes.js';
 import proxyRoutes from './routes/proxyRoutes.js';
 import sessionRoutes from './routes/sessionRoutes.js';
 import versionRoutes from './routes/versionRoutes.js';
-import chatRoutes from './routes/chatRoutes.js';
 import templateRoutes from './routes/templateRoutes.js';
 import adminRoutes from './routes/adminRoutes.js';
 import { seedTemplates } from './controllers/templateController.js';
@@ -51,7 +50,6 @@ async function startServer() {
     app.use('/api/proxy', proxyRoutes);
     app.use('/api/sessions', sessionRoutes);
     app.use('/api/versions', versionRoutes);
-    app.use('/api/chat', chatRoutes);
     app.use('/api/templates', templateRoutes);
     app.use('/api/admin', adminRoutes);
 
