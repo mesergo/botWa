@@ -363,7 +363,7 @@ const FlowBuilder: React.FC = () => {
         case NodeType.INPUT_DATE: height += 80; break;
         case NodeType.INPUT_FILE: height += 80; break;
         case NodeType.OUTPUT_TEXT: height += 120; break;
-        case NodeType.OUTPUT_IMAGE: height += 80 + 160; break;
+        case NodeType.OUTPUT_IMAGE: height += 80 + 240; break;
         case NodeType.OUTPUT_LINK: height += 160; break;
         case NodeType.OUTPUT_MENU:
           height += 80 + 40; 
