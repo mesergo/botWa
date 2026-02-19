@@ -338,8 +338,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
   return (
     <div className="flex h-screen bg-[#F8FAFC] text-slate-900 font-sans selection:bg-indigo-100 selection:text-indigo-900" dir="rtl" style={{ fontFamily: "'Heebo', sans-serif" }}>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;700;900&display=swap');
-        
         @keyframes fadeIn {
           from { opacity: 0; }
           to { opacity: 1; }
@@ -870,7 +868,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
             <div className="space-y-6 animate-fade-in-up max-w-6xl mx-auto">
                <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col md:flex-row justify-between items-center gap-6 sticky top-0 z-20">
                  <div>
-                   <h2 className="text-xl font-black text-slate-800 tracking-tight">הגדרות ליבה ומחירים</h2>
+                   <h2 className="text-xl font-black text-slate-800 tracking-tight">הגדרות ומחירים</h2>
                    <p className="text-slate-500 mt-1 font-medium text-sm">
                      שינויים גלובליים ישפיעו על כל המשתמשים (למעט חריגים).
                    </p>

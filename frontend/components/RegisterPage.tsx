@@ -196,28 +196,33 @@ const RegisterPage: React.FC = () => {
   // ── Success screen ──────────────────────────────────────────────────────────
   if (submitted) {
     return (
-      <div className="min-h-screen bg-slate-100 flex items-center justify-center p-6" dir="rtl">
-        <div className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-lg p-12 text-center border border-slate-100">
+      <div className="min-h-screen flex items-center justify-center p-6 bg-slate-50" dir="rtl">
+        <div className="bg-white rounded-3xl shadow-xl w-full max-w-lg p-12 text-center border border-slate-100">
           <div className="flex justify-center mb-8">
-            <img src="/images/mesergo-logo.png" alt="Logo" className="h-20 w-auto" />
+            <div className="w-20 h-20 bg-green-50 rounded-full flex items-center justify-center">
+              <CheckCircle className="w-10 h-10 text-green-600" strokeWidth={2} />
+            </div>
           </div>
-          <div className="flex justify-center mb-6">
-            <CheckCircle className="w-20 h-20 text-green-500" strokeWidth={1.5} />
-          </div>
-          <h2 className="text-2xl font-bold text-slate-800 mb-3">ההרשמה הושלמה בהצלחה!</h2>
-          <p className="text-slate-500 mb-2">חשבון נוצר עבור כתובת האימייל:</p>
-          <p className="text-blue-600 font-bold text-lg mb-4">{registeredEmail}</p>
-          <p className="text-slate-400 text-xs mb-8">
-            סוג חשבון: <span className="font-bold text-slate-600">{form.accountType}</span>
-          </p>
-          <p className="text-slate-500 text-sm mb-8 leading-relaxed">
-            מעכשיו תוכל להתחבר למערכת עם כתובת האימייל והסיסמה שבחרת.
+          <h2 className="text-3xl font-bold text-slate-800 mb-4">ההרשמה הושלמה!</h2>
+          <p className="text-slate-500 mb-6">
+            חשבון חדש נוצר עבור
             <br />
-            בכל שאלה ניתן לפנות לצוות החברה.
+            <span className="font-semibold text-slate-900">{registeredEmail}</span>
           </p>
+          
+          <div className="bg-slate-50 rounded-xl p-4 mb-8 text-right">
+            <p className="text-xs text-slate-500 uppercase tracking-wider font-semibold mb-1">פרטי תוכנית</p>
+            <div className="flex items-center justify-between">
+              <span className="font-bold text-slate-900 text-lg">{form.accountType === 'Basic' ? 'Basic' : 'Premium'}</span>
+              <span className={`px-2 py-1 rounded text-xs font-bold ${form.accountType === 'Basic' ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'}`}>
+                {form.accountType === 'Basic' ? 'בסיסי' : 'מתקדם'}
+              </span>
+            </div>
+          </div>
+
           <a
             href="/"
-            className="inline-block w-full bg-blue-600 text-white py-4 rounded-2xl font-bold shadow-lg shadow-blue-600/20 hover:bg-blue-700 transition-all uppercase tracking-widest"
+            className="block w-full bg-slate-900 text-white py-4 rounded-xl font-medium shadow-lg shadow-slate-900/20 hover:bg-slate-800 transition-all"
           >
             מעבר לכניסה למערכת
           </a>
@@ -226,272 +231,217 @@ const RegisterPage: React.FC = () => {
     );
   }
 
-  // ── Registration form ───────────────────────────────────────────────────────
+  // ── Registration layout ───────────────────────────────────────────────────────
   return (
-    <div className="bg-slate-100 min-h-screen py-10 px-4" dir="rtl">
-      <div className="w-full max-w-lg mx-auto space-y-6">
-
-        {/* Header card */}
-        <div className="bg-white rounded-[2rem] shadow-xl border border-slate-100 p-10 text-center">
-          <div className="flex justify-center mb-6">
-            <img src="/images/mesergo-logo.png" alt="Logo" className="h-20 w-auto" />
-          </div>
-          <h1 className="text-2xl font-extrabold text-slate-800 mb-2">טופס הצטרפות למערכת</h1>
-          <p className="text-slate-500 text-sm leading-relaxed">
-            ברוכים הבאים! קיבלתם קישור זה מצוות החברה.
-            <br />
-            אנא מלאו את הפרטים הבאים ליצירת חשבונכם האישי.
+    <div className="min-h-screen bg-white flex flex-col items-center justify-center p-6" dir="rtl">
+      
+      <div className="w-full max-w-4xl mx-auto space-y-12">
+        {/* Header / Logo Section */}
+        <div className="text-center space-y-4">
+          <img
+            className="mx-auto h-12 w-auto"
+            src="/images/mesergo-logo.png"
+            alt="MeserGo"
+          />
+          <h2 className="text-4xl font-extrabold text-slate-900 tracking-tight">
+            הצטרפות למערכת
+          </h2>
+          <p className="text-lg text-slate-500 max-w-xl mx-auto">
+            מלא את הפרטים הבאים כדי לפתוח חשבון חדש ולהתחיל לנהל את הבוטים שלך בצורה חכמה.
           </p>
         </div>
 
-        {/* Form card */}
-        <form onSubmit={handleSubmit} noValidate>
-          <div className="bg-white rounded-[2rem] shadow-xl border border-slate-100 p-8 space-y-5">
-
-            {/* Company */}
-            <div>
-              <label className="block text-sm font-bold text-slate-600 mb-1.5">
-                שם החברה / עסק <span className="text-red-500">*</span>
-              </label>
-              <div className="relative">
-                <span className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none">
-                  <Building2 className="w-5 h-5 text-slate-400" />
-                </span>
-                <input
-                  type="text"
-                  value={form.company}
-                  onBlur={() => handleBlur('company')}
-                  onChange={(e) => handleChange('company', e.target.value)}
-                  placeholder="שם החברה או העסק"
-                  className={`w-full pr-12 pl-4 py-4 bg-slate-50 border rounded-2xl outline-none focus:ring-4 focus:ring-blue-600/10 focus:border-blue-600 text-right transition-all font-medium text-slate-800 placeholder:text-slate-400 placeholder:font-normal ${
-                    touched.company && errors.company ? 'border-red-400 bg-red-50/30'
-                    : touched.company && !errors.company ? 'border-green-400 bg-green-50/20'
-                    : 'border-slate-200'
-                  }`}
-                />
-              </div>
-              {touched.company && errors.company && (
-                <p className="flex items-center gap-1 text-red-500 text-[11px] mt-1.5 mr-1 font-bold">
-                  <AlertCircle className="w-3 h-3 flex-shrink-0" />{errors.company}
-                </p>
-              )}
-            </div>
-
-            {/* Phone */}
-            <div>
-              <label className="block text-sm font-bold text-slate-600 mb-1.5">
-                מספר טלפון <span className="text-red-500">*</span>
-              </label>
-              <div className="relative">
-                <span className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none">
-                  <Phone className="w-5 h-5 text-slate-400" />
-                </span>
-                <input
-                  type="tel"
-                  value={form.phone}
-                  onBlur={() => handleBlur('phone')}
-                  onChange={(e) => handleChange('phone', e.target.value)}
-                  placeholder="050-0000000"
-                  className={`w-full pr-12 pl-4 py-4 bg-slate-50 border rounded-2xl outline-none focus:ring-4 focus:ring-blue-600/10 focus:border-blue-600 text-right transition-all font-medium text-slate-800 placeholder:text-slate-400 placeholder:font-normal ${
-                    touched.phone && errors.phone ? 'border-red-400 bg-red-50/30'
-                    : touched.phone && !errors.phone ? 'border-green-400 bg-green-50/20'
-                    : 'border-slate-200'
-                  }`}
-                />
-              </div>
-              {touched.phone && errors.phone && (
-                <p className="flex items-center gap-1 text-red-500 text-[11px] mt-1.5 mr-1 font-bold">
-                  <AlertCircle className="w-3 h-3 flex-shrink-0" />{errors.phone}
-                </p>
-              )}
-            </div>
-
-            {/* Email */}
-            <div>
-              <label className="block text-sm font-bold text-slate-600 mb-1.5">
-                כתובת אימייל <span className="text-red-500">*</span>
-              </label>
-              <div className="relative">
-                <span className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none">
-                  <Mail className="w-5 h-5 text-slate-400" />
-                </span>
-                <input
-                  type="email"
-                  value={form.email}
-                  onBlur={() => handleBlur('email')}
-                  onChange={(e) => handleChange('email', e.target.value)}
-                  placeholder="your@email.com"
-                  className={`w-full pr-12 pl-10 py-4 bg-slate-50 border rounded-2xl outline-none focus:ring-4 focus:ring-blue-600/10 focus:border-blue-600 text-right transition-all font-medium text-slate-800 placeholder:text-slate-400 placeholder:font-normal ${
-                    touched.email && errors.email ? 'border-red-400 bg-red-50/30'
-                    : touched.email && !errors.email ? 'border-green-400 bg-green-50/20'
-                    : 'border-slate-200'
-                  }`}
-                />
-                <span className="absolute left-4 top-1/2 -translate-y-1/2">
-                  {emailChecking ? (
-                    <svg className="animate-spin w-4 h-4 text-blue-500" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
-                    </svg>
-                  ) : touched.email && !errors.email ? (
-                    <CheckCircle className="w-4 h-4 text-green-500" />
-                  ) : null}
-                </span>
-              </div>
-              {touched.email && errors.email && (
-                <p className="flex items-center gap-1 text-red-500 text-[11px] mt-1.5 mr-1 font-bold">
-                  <AlertCircle className="w-3 h-3 flex-shrink-0" />{errors.email}
-                </p>
-              )}
-            </div>
-
-            {/* Password */}
-            <div>
-              <label className="block text-sm font-bold text-slate-600 mb-1.5">
-                סיסמה <span className="text-red-500">*</span>
-              </label>
-              <div className="relative">
-                <span className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none">
-                  <Lock className="w-5 h-5 text-slate-400" />
-                </span>
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  value={form.password}
-                  onBlur={() => handleBlur('password')}
-                  onChange={(e) => handleChange('password', e.target.value)}
-                  placeholder="לפחות 6 תווים + מספר"
-                  className={`w-full pr-12 pl-12 py-4 bg-slate-50 border rounded-2xl outline-none focus:ring-4 focus:ring-blue-600/10 focus:border-blue-600 text-right transition-all font-medium text-slate-800 placeholder:text-slate-400 placeholder:font-normal ${
-                    touched.password && errors.password ? 'border-red-400 bg-red-50/30'
-                    : touched.password && !errors.password ? 'border-green-400 bg-green-50/20'
-                    : 'border-slate-200'
-                  }`}
-                />
-                <button
-                  type="button"
-                  className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-blue-600 transition-colors"
-                  onClick={() => setShowPassword((v) => !v)}
-                  tabIndex={-1}
-                >
-                  {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                </button>
-              </div>
-              {touched.password && errors.password && (
-                <p className="flex items-center gap-1 text-red-500 text-[11px] mt-1.5 mr-1 font-bold">
-                  <AlertCircle className="w-3 h-3 flex-shrink-0" />{errors.password}
-                </p>
-              )}
-              {form.password && (
-                <div className="mt-2 flex gap-1.5">
-                  {[
-                    { label: '6+ תווים', ok: form.password.length >= 6 },
-                    { label: 'אות', ok: /[A-Za-z]/.test(form.password) },
-                    { label: 'ספרה', ok: /[0-9]/.test(form.password) },
-                  ].map(({ label, ok }) => (
-                    <span key={label} className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${ok ? 'bg-green-100 text-green-600' : 'bg-slate-100 text-slate-400'}`}>
-                      {label}
-                    </span>
-                  ))}
+        {/* Form Section - Clean & Flat */}
+        <form onSubmit={handleSubmit} noValidate className="w-full">
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-8">
+            
+            {/* Column 1 */}
+            <div className="space-y-8">
+                {/* Company */}
+                <div className="space-y-2">
+                <label className="text-base font-bold text-slate-900">שם העסק</label>
+                <div className="relative group">
+                  <div className="absolute inset-y-0 right-0 pr-0 flex items-center pointer-events-none">
+                     <Building2 className="h-5 w-5 text-slate-400 group-focus-within:text-blue-600 transition-colors" />
+                  </div>
+                  <input
+                    type="text"
+                    value={form.company}
+                    onBlur={() => handleBlur('company')}
+                    onChange={(e) => handleChange('company', e.target.value)}
+                    className={`block w-full pr-8 pl-0 py-3 bg-transparent border-b-2 outline-none transition-all placeholder:text-slate-300 font-medium text-lg ${
+                      touched.company && errors.company 
+                        ? 'border-red-300 focus:border-red-500' 
+                        : 'border-slate-200 focus:border-blue-600'
+                    }`}
+                    placeholder="שם החברה בע״מ"
+                  />
+                  {touched.company && errors.company && (
+                    <p className="text-red-500 text-sm mt-1 font-medium">{errors.company}</p>
+                  )}
                 </div>
-              )}
+              </div>
+
+              {/* Email */}
+              <div className="space-y-2">
+                <label className="text-base font-bold text-slate-900">כתובת אימייל</label>
+                <div className="relative group">
+                  <div className="absolute inset-y-0 right-0 pr-0 flex items-center pointer-events-none">
+                    <Mail className="h-5 w-5 text-slate-400 group-focus-within:text-blue-600 transition-colors" />
+                  </div>
+                  <input
+                    type="email"
+                    value={form.email}
+                    onBlur={() => handleBlur('email')}
+                    onChange={(e) => handleChange('email', e.target.value)}
+                    className={`block w-full pr-8 pl-8 py-3 bg-transparent border-b-2 outline-none transition-all placeholder:text-slate-300 font-medium text-lg ${
+                      touched.email && errors.email 
+                        ? 'border-red-300 focus:border-red-500' 
+                        : 'border-slate-200 focus:border-blue-600'
+                    }`}
+                    placeholder="name@company.com"
+                  />
+                  <div className="absolute inset-y-0 left-0 pl-0 flex items-center">
+                      {emailChecking ? (
+                      <svg className="animate-spin w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+                      </svg>
+                    ) : touched.email && !errors.email ? (
+                      <CheckCircle className="w-4 h-4 text-green-500" />
+                    ) : null}
+                  </div>
+                </div>
+                {touched.email && errors.email && (
+                  <p className="text-red-500 text-sm mt-1 font-medium">{errors.email}</p>
+                )}
+              </div>
             </div>
 
-            {/* Account type */}
-            <div>
-              <label className="block text-sm font-bold text-slate-600 mb-3">
-                סוג חשבון <span className="text-red-500">*</span>
-              </label>
-              <div className="grid grid-cols-2 gap-3">
-                {ACCOUNT_PLANS.map((plan) => {
-                  const selected = form.accountType === plan.id;
-                  const isBlue = plan.color === 'blue';
-                  return (
-                    <button
-                      key={plan.id}
-                      type="button"
-                      onClick={() => setForm((f) => ({ ...f, accountType: plan.id }))}
-                      className={`relative rounded-2xl border-2 p-4 text-right transition-all ${
-                        selected
-                          ? isBlue
-                            ? 'border-blue-500 bg-blue-50 shadow-md shadow-blue-100'
-                            : 'border-amber-500 bg-amber-50 shadow-md shadow-amber-100'
-                          : 'border-slate-200 bg-white hover:border-slate-300'
-                      }`}
-                    >
-                      {selected && (
-                        <span className={`absolute top-2 left-2 text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                          isBlue ? 'bg-blue-500 text-white' : 'bg-amber-500 text-white'
+            {/* Column 2 */}
+            <div className="space-y-8">
+              {/* Phone */}
+              <div className="space-y-2">
+                <label className="text-base font-bold text-slate-900">טלפון נייד</label>
+                <div className="relative group">
+                  <div className="absolute inset-y-0 right-0 pr-0 flex items-center pointer-events-none">
+                    <Phone className="h-5 w-5 text-slate-400 group-focus-within:text-blue-600 transition-colors" />
+                  </div>
+                  <input
+                    type="tel"
+                    value={form.phone}
+                    onBlur={() => handleBlur('phone')}
+                    onChange={(e) => handleChange('phone', e.target.value)}
+                    className={`block w-full pr-8 pl-0 py-3 bg-transparent border-b-2 outline-none transition-all placeholder:text-slate-300 font-medium text-lg ${
+                      touched.phone && errors.phone 
+                        ? 'border-red-300 focus:border-red-500' 
+                        : 'border-slate-200 focus:border-blue-600'
+                    }`}
+                    placeholder="050-0000000"
+                  />
+                  {touched.phone && errors.phone && (
+                    <p className="text-red-500 text-sm mt-1 font-medium">{errors.phone}</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Password */}
+              <div className="space-y-2">
+                <label className="text-base font-bold text-slate-900">סיסמה</label>
+                <div className="relative group">
+                  <div className="absolute inset-y-0 right-0 pr-0 flex items-center pointer-events-none">
+                    <Lock className="h-5 w-5 text-slate-400 group-focus-within:text-blue-600 transition-colors" />
+                  </div>
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    value={form.password}
+                    onBlur={() => handleBlur('password')}
+                    onChange={(e) => handleChange('password', e.target.value)}
+                    className={`block w-full pr-8 pl-10 py-3 bg-transparent border-b-2 outline-none transition-all placeholder:text-slate-300 font-medium text-lg ${
+                      touched.password && errors.password 
+                        ? 'border-red-300 focus:border-red-500' 
+                        : 'border-slate-200 focus:border-blue-600'
+                    }`}
+                    placeholder="••••••••"
+                  />
+                  <button
+                    type="button"
+                    className="absolute inset-y-0 left-0 pl-0 flex items-center text-slate-400 hover:text-slate-600 transition-colors"
+                    onClick={() => setShowPassword((v) => !v)}
+                    tabIndex={-1}
+                  >
+                    {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                  </button>
+                </div>
+                
+                {/* Indicators */}
+                {form.password && (
+                  <div className="flex flex-wrap gap-3 pt-2">
+                    {[
+                      { label: '6+ תווים', ok: form.password.length >= 6 },
+                      { label: 'אות באנגלית', ok: /[A-Za-z]/.test(form.password) },
+                      { label: 'ספרה', ok: /[0-9]/.test(form.password) },
+                    ].map(({ label, ok }) => (
+                        <span key={label} className={`text-xs font-semibold transition-colors ${
+                          ok ? 'text-green-600' : 'text-slate-300'
                         }`}>
-                          נבחר ✓
+                          {ok ? '✓' : '•'} {label}
                         </span>
-                      )}
-                      <div className={`flex items-center gap-2 mb-3 ${
-                        selected ? (isBlue ? 'text-blue-600' : 'text-amber-600') : 'text-slate-500'
-                      }`}>
-                        {plan.icon}
-                        <span className="font-extrabold text-base">{plan.label}</span>
-                      </div>
-                      <p className={`text-xs font-bold mb-3 ${
-                        selected ? (isBlue ? 'text-blue-500' : 'text-amber-500') : 'text-slate-400'
-                      }`}>
-                        {plan.price}
-                      </p>
-                      <ul className="space-y-1.5">
-                        {plan.features.map((f) => (
-                          <li key={f} className="flex items-start gap-1.5 text-[11px] text-slate-600">
-                            <CheckCircle className="w-3 h-3 flex-shrink-0 mt-0.5 text-green-500" />
-                            {f}
-                          </li>
-                        ))}
-                        {plan.missing.map((f) => (
-                          <li key={f} className="flex items-start gap-1.5 text-[11px] text-slate-400">
-                            <span className="w-3 h-3 flex-shrink-0 mt-0.5 text-center leading-none">✕</span>
-                            {f}
-                          </li>
-                        ))}
-                      </ul>
-                    </button>
-                  );
-                })}
+                    ))}
+                  </div>
+                )}
+
+                {touched.password && errors.password && (
+                  <p className="text-red-500 text-sm mt-1 font-medium">{errors.password}</p>
+                )}
               </div>
             </div>
+          </div>
 
-            {/* General error */}
-            {errors.general && (
-              <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-red-600 text-sm font-bold">
-                <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                {errors.general}
-              </div>
-            )}
+          {/* General Error */}
+          {errors.general && (
+            <div className="mt-8 bg-red-50 text-red-600 p-4 rounded-xl text-sm font-bold flex items-center justify-center gap-2 border border-red-100 max-w-xl mx-auto">
+              <AlertCircle className="w-5 h-5 flex-shrink-0" />
+              {errors.general}
+            </div>
+          )}
 
-            {/* Submit */}
+          {/* Submit Button */}
+          <div className="mt-12 max-w-sm mx-auto">
             <button
               type="submit"
               disabled={isSubmitting || emailChecking}
-              className="w-full mt-2 bg-blue-600 text-white py-5 rounded-2xl font-bold shadow-lg shadow-blue-600/20 uppercase tracking-widest hover:bg-blue-700 active:scale-[0.98] transition-all disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              className="w-full bg-blue-600 text-white py-5 rounded-full font-bold text-xl shadow-xl shadow-blue-600/20 hover:bg-blue-700 hover:shadow-blue-600/30 active:scale-[0.98] disabled:opacity-70 disabled:cursor-not-allowed transition-all flex justify-center items-center gap-3"
             >
               {isSubmitting ? (
                 <>
-                  <svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24">
+                  <svg className="animate-spin w-5 h-5 text-white/50" fill="none" viewBox="0 0 24 24">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
                   </svg>
-                  מבצע הרשמה...
+                  יוצר חשבון...
                 </>
               ) : (
-                'הרשמה ויצירת חשבון'
+                'צור חשבון חדש'
               )}
             </button>
 
-            <p className="text-center text-slate-400 text-xs">
+            <p className="text-center mt-6 text-sm text-slate-500">
               כבר יש לך חשבון?{' '}
-              <a href="/" className="text-blue-600 font-bold hover:underline">כניסה למערכת</a>
+              <a href="/" className="text-blue-600 font-bold hover:text-blue-700 hover:underline transition-colors">
+                התחבר כאן
+              </a>
             </p>
           </div>
         </form>
-
-        <p className="text-center text-slate-400 text-xs pb-4">
-          לכל שאלה ניתן לפנות לצוות החברה
-        </p>
+        
+        {/* Footer info */}
+        <div className="pt-8 border-t border-slate-100 text-center">
+           <p className="text-slate-400 text-xs">
+            &copy; {new Date().getFullYear()} MeserGo. מערכת מאובטחת ע״י הצפנה מתקדמת.
+          </p>
+        </div>
       </div>
     </div>
   );

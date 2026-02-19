@@ -70,8 +70,6 @@ const Carousel: React.FC<{ items: CarouselItem[], onSelect: (text: string, idx: 
   return (
     <div className="w-full flex flex-col items-end gap-2 group/carousel relative">
       <div className="flex gap-3 items-center flex-row-reverse mb-1 mr-1">
-         <div className="w-7 h-7 rounded-lg bg-white border border-slate-100 flex items-center justify-center shadow-sm text-slate-400"><Bot size={14} /></div>
-         <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">תוצאות חיפוש</span>
       </div>
       <div className="relative w-full">
         <button onClick={() => scroll('left')} className="absolute left-0 top-1/2 -translate-y-1/2 z-10 p-2 bg-white/90 border border-slate-100 rounded-full shadow-lg opacity-0 group-hover/carousel:opacity-100 transition-all"><ChevronLeft size={20} /></button>
