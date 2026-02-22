@@ -9,6 +9,7 @@ import Editor from './components/Editor';
 import TemplateSelection from './components/TemplateSelection';
 import TemplateForm from './components/TemplateForm';
 import ContactsPage from './components/ContactsPage';
+import SessionsPage from './components/SessionsPage';
 import { StartNode, InputTextNode, InputDateNode, InputFileNode, OutputTextNode, OutputImageNode, OutputLinkNode, OutputMenuNode, ActionWebServiceNode, ActionWaitNode, ActionTimeRoutingNode, FixedProcessNode, AutomaticResponsesNode } from './components/nodes/CustomNodes';
 import ButtonEdge from './components/edges/ButtonEdge';
 import { CloudUpload, RotateCcw, Plus, AlertTriangle, Copy, X, Lock, Wallet } from 'lucide-react';
@@ -36,7 +37,7 @@ const nodeTypes = {
 const edgeTypes = { button: ButtonEdge };
 const DEFAULT_EDGE_STYLE = { stroke: '#3b82f6', strokeWidth: 2, strokeDasharray: '6,4' };
  
-type ViewMode = 'dashboard' | 'editor' | 'editing-process' | 'viewing-process' | 'simulator-only' | 'template-selection' | 'template-form' | 'admin-panel' | 'editing-template' | 'creating-template' | 'contacts';
+type ViewMode = 'dashboard' | 'editor' | 'editing-process' | 'viewing-process' | 'simulator-only' | 'template-selection' | 'template-form' | 'admin-panel' | 'editing-template' | 'creating-template' | 'contacts' | 'sessions';
 
 const FlowBuilder: React.FC = () => {
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
@@ -106,6 +107,7 @@ const FlowBuilder: React.FC = () => {
 
   // Change Template State
   const [isChangeTemplateModalOpen, setIsChangeTemplateModalOpen] = useState(false);
+  const [sessionsOwnOnly, setSessionsOwnOnly] = useState(false);
 
   // --- Edge Delete Listener ---
   useEffect(() => {
@@ -343,7 +345,7 @@ const FlowBuilder: React.FC = () => {
   };
 
   useEffect(() => {
-    if (viewMode !== 'dashboard' && viewMode !== 'template-selection' && viewMode !== 'template-form' && viewMode !== 'simulator-only' && viewMode !== 'admin-panel' && viewMode !== 'contacts' && (selectedBot || activeProcessId || editingTemplateId)) {
+    if (viewMode !== 'dashboard' && viewMode !== 'template-selection' && viewMode !== 'template-form' && viewMode !== 'simulator-only' && viewMode !== 'admin-panel' && viewMode !== 'contacts' && viewMode !== 'sessions' && (selectedBot || activeProcessId || editingTemplateId)) {
       const timer = setTimeout(syncFlow, 1500);
       return () => clearTimeout(timer);
     }
@@ -1049,6 +1051,20 @@ const FlowBuilder: React.FC = () => {
         currentUser={currentUser}
         onBack={() => setViewMode('dashboard')}
         onLogout={() => { localStorage.clear(); window.location.reload(); }}
+        onOpenSessions={() => { setSessionsOwnOnly(true); setViewMode('sessions'); }}
+      />
+    );
+  }
+
+  if (viewMode === 'sessions') {
+    return (
+      <SessionsPage
+        token={token}
+        currentUser={currentUser}
+        onBack={() => setViewMode('dashboard')}
+        onLogout={() => { localStorage.clear(); window.location.reload(); }}
+        onOpenContacts={() => setViewMode('contacts')}
+        ownOnly={sessionsOwnOnly}
       />
     );
   }
@@ -1066,6 +1082,7 @@ const FlowBuilder: React.FC = () => {
           currentUser={currentUser}
           onOpenAdminPanel={() => setViewMode('admin-panel')}
           onOpenContacts={() => setViewMode('contacts')}
+          onOpenSessions={() => { setSessionsOwnOnly(true); setViewMode('sessions'); }}
           onStopImpersonation={handleStopImpersonation}
         />
         {quotaError && quotaError.type === 'bots' && (
@@ -1165,6 +1182,7 @@ const FlowBuilder: React.FC = () => {
           onDuplicate={() => {}}
           onChangeTemplate={() => {}}
           onOpenContacts={() => setViewMode('contacts')}
+          onOpenSessions={() => { setSessionsOwnOnly(true); setViewMode('sessions'); }}
           sidebarProps={{
             fixedProcesses,
             versions: [],
@@ -1248,6 +1266,7 @@ const FlowBuilder: React.FC = () => {
         onDuplicate={() => { setDuplicateName(`${fixedProcesses.find(p => p.id.toString() === activeProcessId)?.name || ''} (עותק)`); setIsDuplicateModalOpen(true); }}
         onChangeTemplate={() => setIsChangeTemplateModalOpen(true)}
         onOpenContacts={() => setViewMode('contacts')}
+        onOpenSessions={() => { setSessionsOwnOnly(true); setViewMode('sessions'); }}
         sidebarProps={{
           fixedProcesses,
           versions,

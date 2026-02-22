@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Plus, Bot, ArrowLeft, Trash2, Calendar, LogOut, Shield, UserCog } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { Plus, Bot, ArrowLeft, Trash2, Calendar, LogOut, Shield, UserCog, Users, List } from 'lucide-react';
 import { BotFlow } from '../types';
 
 interface DashboardProps {
@@ -13,11 +13,24 @@ interface DashboardProps {
   onOpenAdminPanel?: () => void;
   onStopImpersonation?: () => void;
   onOpenContacts?: () => void;
+  onOpenSessions?: () => void;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, onDeleteBot, onSetDefaultBot, onLogout, currentUser, onOpenAdminPanel, onStopImpersonation, onOpenContacts }) => {
+const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, onDeleteBot, onSetDefaultBot, onLogout, currentUser, onOpenAdminPanel, onStopImpersonation, onOpenContacts, onOpenSessions }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newBotName, setNewBotName] = useState('');
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const profileMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (profileMenuRef.current && !profileMenuRef.current.contains(e.target as Node)) {
+        setProfileMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const handleCreate = () => {
     if (!newBotName.trim()) return;
@@ -69,16 +82,38 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
               פאנל ניהול
             </button>
           )}
-          {/* User Avatar - navigates to contacts page */}
-          {onOpenContacts && (
+          {/* User Avatar - dropdown menu */}
+          <div className="relative" ref={profileMenuRef}>
             <button
-              onClick={onOpenContacts}
-              title="אנשי קשר"
+              onClick={() => setProfileMenuOpen(v => !v)}
+              title="תפריט פרופיל"
               className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-sm hover:scale-110 transition-transform shadow-md select-none"
             >
               {(currentUser?.name?.charAt(0) || currentUser?.email?.charAt(0) || '?').toUpperCase()}
             </button>
-          )}
+            {profileMenuOpen && (
+              <div className="absolute right-0 top-12 bg-white border border-slate-100 rounded-2xl shadow-xl z-50 min-w-[180px] overflow-hidden" dir="rtl">
+                {onOpenContacts && (
+                  <button
+                    onClick={() => { setProfileMenuOpen(false); onOpenContacts(); }}
+                    className="w-full flex items-center gap-3 px-5 py-3.5 text-sm font-bold text-slate-700 hover:bg-slate-50 transition-colors"
+                  >
+                    <Users size={16} className="text-blue-500 flex-shrink-0" />
+                    אנשי קשר
+                  </button>
+                )}
+                {onOpenSessions && (
+                  <button
+                    onClick={() => { setProfileMenuOpen(false); onOpenSessions(); }}
+                    className="w-full flex items-center gap-3 px-5 py-3.5 text-sm font-bold text-slate-700 hover:bg-slate-50 transition-colors"
+                  >
+                    <List size={16} className="text-indigo-500 flex-shrink-0" />
+                    שיחות שלי
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
           <button onClick={onLogout} className="p-2.5 text-slate-300 hover:text-red-500 transition-colors rounded-xl hover:bg-red-50"><LogOut size={22} /></button>
         </div>
       </nav>

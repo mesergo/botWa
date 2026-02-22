@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { ArrowRight, Phone, Clock, MessageSquare, Search, Bot, Users, LogOut } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Phone, Clock, MessageSquare, Search, Bot, Users, LogOut, List } from 'lucide-react';
 
 interface Contact {
   phone: string;
@@ -13,16 +13,29 @@ interface ContactsPageProps {
   currentUser?: { name?: string; email?: string; role?: string } | null;
   onBack: () => void;
   onLogout: () => void;
+  onOpenSessions?: () => void;
 }
 
 const API_BASE = window.location.hostname === 'localhost'
   ? 'http://localhost:3001/api'
   : `${window.location.origin}/api`;
 
-const ContactsPage: React.FC<ContactsPageProps> = ({ token, currentUser, onBack, onLogout }) => {
+const ContactsPage: React.FC<ContactsPageProps> = ({ token, currentUser, onBack, onLogout, onOpenSessions }) => {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const profileMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (profileMenuRef.current && !profileMenuRef.current.contains(e.target as Node)) {
+        setProfileMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   useEffect(() => {
     const fetchContacts = async () => {
@@ -65,18 +78,41 @@ const ContactsPage: React.FC<ContactsPageProps> = ({ token, currentUser, onBack,
       {/* Navbar */}
       <nav className="h-20 bg-white border-b border-slate-100 flex items-center justify-between px-10 z-20 flex-shrink-0">
         <div className="flex items-center gap-4">
-          <img src="/images/mesergo-logo.png" alt="Logo" className="h-10 w-auto" />
+          <img src="/images/mesergo-logo.png" alt="Logo" className="h-10 w-auto cursor-pointer" onClick={onBack} />
         </div>
         <div className="flex items-center gap-4">
           {currentUser && (
             <span className="text-sm font-bold text-slate-600">שלום, {currentUser.name || currentUser.email}</span>
           )}
-          {/* User Avatar */}
-          <div
-            className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-sm cursor-pointer shadow-md select-none"
-            title="אנשי קשר"
-          >
-            {firstName}
+          {/* User Avatar - dropdown menu */}
+          <div className="relative" ref={profileMenuRef}>
+            <button
+              onClick={() => setProfileMenuOpen(v => !v)}
+              title="תפריט פרופיל"
+              className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-sm hover:scale-110 transition-transform shadow-md select-none"
+            >
+              {firstName}
+            </button>
+            {profileMenuOpen && (
+              <div className="absolute right-0 top-12 bg-white border border-slate-100 rounded-2xl shadow-xl z-50 min-w-[180px] overflow-hidden" dir="rtl">
+                <button
+                  onClick={() => setProfileMenuOpen(false)}
+                  className="w-full flex items-center gap-3 px-5 py-3.5 text-sm font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 transition-colors"
+                >
+                  <Users size={16} className="text-blue-500 flex-shrink-0" />
+                  אנשי קשר
+                </button>
+                {onOpenSessions && (
+                  <button
+                    onClick={() => { setProfileMenuOpen(false); onOpenSessions(); }}
+                    className="w-full flex items-center gap-3 px-5 py-3.5 text-sm font-bold text-slate-700 hover:bg-slate-50 transition-colors"
+                  >
+                    <List size={16} className="text-indigo-500 flex-shrink-0" />
+                    שיחות שלי
+                  </button>
+                )}
+              </div>
+            )}
           </div>
           <button onClick={onLogout} className="p-2.5 text-slate-300 hover:text-red-500 transition-colors rounded-xl hover:bg-red-50">
             <LogOut size={22} />
@@ -88,7 +124,7 @@ const ContactsPage: React.FC<ContactsPageProps> = ({ token, currentUser, onBack,
       <div className="flex-1 overflow-y-auto p-10">
         <div className="max-w-5xl mx-auto">
           {/* Header */}
-          <div className="flex items-center justify-between mb-8 flex-row-reverse">
+          <div className="flex items-center mb-8">
             <div className="flex items-center gap-4">
               <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center">
                 <Users size={26} />
@@ -96,17 +132,10 @@ const ContactsPage: React.FC<ContactsPageProps> = ({ token, currentUser, onBack,
               <div>
                 <h1 className="text-3xl font-black text-slate-900">אנשי קשר</h1>
                 <p className="text-slate-400 text-sm font-semibold mt-0.5">
-                  {contacts.length} איש קשר {contacts.length !== 1 ? '' : ''}
+                  {contacts.length} איש קשר
                 </p>
               </div>
             </div>
-            <button
-              onClick={onBack}
-              className="flex items-center gap-2 px-5 py-2.5 bg-white border border-slate-200 text-slate-600 rounded-xl font-bold text-sm hover:bg-slate-50 transition-colors"
-            >
-              <ArrowRight size={16} />
-              חזרה לדשבורד
-            </button>
           </div>
 
           {/* Search */}

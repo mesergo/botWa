@@ -3,7 +3,8 @@ import {
   Users, UserCog, LogOut, ArrowLeft, AlertCircle, Shield, Activity, 
   Search, Trash2, Edit2, Ban, CheckCircle, BarChart2, Settings, 
   FileText, Save, Plus, Eye, EyeOff, Bot, ChevronRight, LayoutDashboard,
-  CreditCard, MoreVertical, X, Star, Globe, Lock, Copy
+  CreditCard, MoreVertical, X, Star, Globe, Lock, Copy, List, Phone, Clock,
+  ChevronDown, ChevronUp
 } from 'lucide-react';
 
 interface User {
@@ -70,7 +71,7 @@ const API_BASE = window.location.hostname === 'localhost'
   : `${window.location.origin}/api`;
 
 const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onImpersonate, onEditTemplate, onCreateTemplate }) => {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'users' | 'templates' | 'settings'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'users' | 'templates' | 'settings' | 'sessions'>('dashboard');
   const [users, setUsers] = useState<User[]>([]);
   const [stats, setStats] = useState<SystemStats | null>(null);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
@@ -100,6 +101,16 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState('all');
 
+  // Sessions state
+  const [sessions, setSessions] = useState<any[]>([]);
+  const [sessionsLoading, setSessionsLoading] = useState(false);
+  const [sessionsSearch, setSessionsSearch] = useState('');
+  const [sessionsSearchInput, setSessionsSearchInput] = useState('');
+  const [expandedSessionId, setExpandedSessionId] = useState<string | null>(null);
+  const [sessionsPage, setSessionsPage] = useState(1);
+  const [sessionsTotalPages, setSessionsTotalPages] = useState(1);
+  const [sessionsTotal, setSessionsTotal] = useState(0);
+
   // Edit Mode
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState<Partial<User>>({});
@@ -109,7 +120,13 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
     if (activeTab === 'users') fetchAllUsers();
     if (activeTab === 'templates') fetchTemplates();
     if (activeTab === 'settings') fetchSystemConfig();
+    if (activeTab === 'sessions') fetchAllSessions(1, sessionsSearch);
   }, [activeTab]);
+
+  // Refetch when page changes
+  useEffect(() => {
+    if (activeTab === 'sessions') fetchAllSessions(sessionsPage, sessionsSearch);
+  }, [sessionsPage]);
 
   const fetchStats = async () => {
     try {
@@ -122,6 +139,27 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
       }
     } catch (err) {
       console.error('Failed to fetch stats', err);
+    }
+  };
+
+  const fetchAllSessions = async (page = 1, search = '') => {
+    try {
+      setSessionsLoading(true);
+      const params = new URLSearchParams({ page: String(page), search });
+      const response = await fetch(`${API_BASE}/sessions/all-sessions?${params}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setSessions(data.sessions);
+        setSessionsTotalPages(data.totalPages);
+        setSessionsTotal(data.total);
+        setSessionsPage(data.page);
+      }
+    } catch (err) {
+      console.error('Failed to fetch sessions', err);
+    } finally {
+      setSessionsLoading(false);
     }
   };
 
@@ -463,8 +501,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
           
           <nav className="space-y-1.5">
             {[
-              { id: 'dashboard', label: 'סקירה כללית', icon: LayoutDashboard },
+                          { id: 'dashboard', label: 'סקירה כללית', icon: LayoutDashboard },
               { id: 'users', label: 'ניהול משתמשים', icon: Users },
+              { id: 'sessions', label: 'סשנים', icon: List },
               { id: 'templates', label: 'מאגר תבניות', icon: FileText },
               { id: 'settings', label: 'הגדרות מערכת', icon: Settings },
             ].map(item => (
@@ -507,12 +546,14 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
             <h2 className="text-2xl font-black text-slate-800 tracking-tight">
               {activeTab === 'dashboard' && 'לוח בקרה'}
               {activeTab === 'users' && 'ניהול משתמשים'}
+              {activeTab === 'sessions' && 'כל הסשנים'}
               {activeTab === 'templates' && 'ניהול תבניות'}
               {activeTab === 'settings' && 'הגדרות מערכת'}
             </h2>
             <p className="text-sm font-medium text-slate-400 mt-1">
               {activeTab === 'dashboard' && 'סקירה מקיפה על נתוני וביצועי המערכת'}
               {activeTab === 'users' && 'צפייה, עריכה וניהול הרשאות משתמשים מתקדם'}
+              {activeTab === 'sessions' && 'צפייה בכל הסשנים של כל המשתמשים במערכת'}
               {activeTab === 'templates' && 'ניהול ותחזוקת מאגר התבניות הגלובלי'}
               {activeTab === 'settings' && 'הגדרת מגבלות, מחירים ופרמטרים למערכת'}
             </p>
@@ -528,6 +569,169 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
               <div className="p-2 bg-red-100 rounded-full text-red-600 group-hover:bg-red-200 transition-colors"><AlertCircle className="w-5 h-5" /></div>
               <p className="text-red-700 font-bold">{error}</p>
               <button onClick={() => setError(null)} className="mr-auto p-2 hover:bg-red-200 rounded-full text-red-400 hover:text-red-700 transition-all"><X size={18} /></button>
+            </div>
+          )}
+
+          {/* SESSIONS TAB */}
+          {activeTab === 'sessions' && (
+            <div className="space-y-4 animate-fade-in-up" dir="rtl">
+              {/* Search bar with submit */}
+              <form
+                className="relative max-w-md mb-6 flex gap-2"
+                onSubmit={e => {
+                  e.preventDefault();
+                  setSessionsSearch(sessionsSearchInput);
+                  fetchAllSessions(1, sessionsSearchInput);
+                }}
+              >
+                <div className="relative flex-1">
+                  <Search size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-300" />
+                  <input
+                    type="text"
+                    value={sessionsSearchInput}
+                    onChange={e => setSessionsSearchInput(e.target.value)}
+                    placeholder="חיפוש לפי טלפון, בוט או משתמש..."
+                    className="w-full pr-10 pl-4 py-3 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700 placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all shadow-sm"
+                    dir="rtl"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  className="px-4 py-3 bg-blue-50 text-blue-500 rounded-xl text-sm font-bold hover:bg-blue-100 hover:text-blue-600 transition-colors flex-shrink-0 border border-blue-100"
+                >
+                  חפש
+                </button>
+              </form>
+
+              {sessionsLoading ? (
+                <div className="flex items-center justify-center py-24 text-slate-400 font-bold">
+                  <div className="animate-spin rounded-full h-8 w-8 border-2 border-blue-500 border-t-transparent ml-3" />
+                  טוען סשנים...
+                </div>
+              ) : sessions.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-24 text-slate-300 gap-4">
+                  <List size={64} strokeWidth={1} />
+                  <p className="text-xl font-bold">לא נמצאו סשנים</p>
+                </div>
+              ) : (
+                <>
+                  {/* Counter */}
+                  <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2">
+                    {sessionsTotal} סשנים · עמוד {sessionsPage} מתוך {sessionsTotalPages}
+                  </p>
+
+                  {/* Table header */}
+                  <div className="grid grid-cols-[1fr_1fr_1fr_160px_40px] gap-4 px-5 py-2 text-xs font-black text-slate-400 uppercase tracking-widest">
+                    <span>טלפון</span><span>משתמש</span><span>בוט</span><span>תאריך</span><span></span>
+                  </div>
+
+                  {/* Rows */}
+                  {sessions.map(session => {
+                    const isExpanded = expandedSessionId === session.id;
+                    const paramEntries = Object.entries(session.parameters || {}).filter(([, v]) => v !== null && v !== '' && v !== undefined);
+                    const formatD = (d: string | null) => {
+                      if (!d) return 'לא ידוע';
+                      const dt = new Date(d);
+                      if (isNaN(dt.getTime())) return 'לא ידוע';
+                      return dt.toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+                    };
+                    return (
+                      <div key={session.id} className="bg-white border border-slate-100 rounded-2xl shadow-sm hover:shadow-md transition-all overflow-hidden">
+                        <div
+                          className="grid grid-cols-[1fr_1fr_1fr_160px_40px] gap-4 px-5 py-4 cursor-pointer items-center"
+                          onClick={() => setExpandedSessionId(isExpanded ? null : session.id)}
+                        >
+                          <div className="flex items-center gap-2">
+                            <Phone size={13} className="text-slate-300 flex-shrink-0" />
+                            <span className="font-bold text-slate-700 text-sm truncate" dir="ltr">{session.phone}</span>
+                          </div>
+                          <div className="text-sm font-bold text-indigo-600 truncate">{session.user_name || 'לא ידוע'}</div>
+                          <div className="flex items-center gap-2">
+                            <Bot size={13} className="text-blue-400 flex-shrink-0" />
+                            <span className="text-sm font-bold text-slate-600 truncate">{session.bot_name}</span>
+                          </div>
+                          <div className="flex items-center gap-1.5 text-slate-400">
+                            <Clock size={12} className="flex-shrink-0" />
+                            <span className="text-xs font-bold">{formatD(session.created_at)}</span>
+                          </div>
+                          <div className="flex items-center justify-center text-slate-300">
+                            {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                          </div>
+                        </div>
+                        {isExpanded && (
+                          <div className="border-t border-slate-50 px-5 py-4 bg-slate-50/50">
+                            {paramEntries.length > 0 ? (
+                              <>
+                                <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3">פרמטרים שנאספו</p>
+                                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                                  {paramEntries.map(([key, value]) => (
+                                    <div key={key} className="bg-white border border-slate-100 rounded-xl p-3">
+                                      <p className="text-xs font-black text-slate-400 mb-1">{key}</p>
+                                      <p className="text-sm font-bold text-slate-700 truncate">{typeof value === 'object' ? JSON.stringify(value) : String(value)}</p>
+                                    </div>
+                                  ))}
+                                </div>
+                              </>
+                            ) : (
+                              <p className="text-sm text-slate-400 font-bold">אין פרמטרים שנאספו בסשן זה</p>
+                            )}
+                            {session.process_history?.length > 0 && (
+                              <p className="text-xs font-bold text-slate-400 mt-3">שלבים שבוצעו: <span className="text-blue-500">{session.process_history.length}</span></p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+
+                  {/* Pagination */}
+                  {sessionsTotalPages > 1 && (
+                    <div className="flex items-center justify-center gap-1 pt-4">
+                      <button
+                        onClick={() => { setSessionsPage(p => Math.max(1, p - 1)); }}
+                        disabled={sessionsPage <= 1 || sessionsLoading}
+                        className="px-2.5 py-1 text-slate-400 rounded-lg text-xs font-bold hover:text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                      >
+                        ‹ הקודם
+                      </button>
+
+                      {Array.from({ length: sessionsTotalPages }, (_, i) => i + 1)
+                        .filter(p => p === 1 || p === sessionsTotalPages || Math.abs(p - sessionsPage) <= 2)
+                        .reduce<(number | '...')[]>((acc, p, idx, arr) => {
+                          if (idx > 0 && typeof arr[idx - 1] === 'number' && (p as number) - (arr[idx - 1] as number) > 1) acc.push('...');
+                          acc.push(p);
+                          return acc;
+                        }, [])
+                        .map((item, idx) =>
+                          item === '...' ? (
+                            <span key={`dot-${idx}`} className="px-1 text-slate-300 text-xs">…</span>
+                          ) : (
+                            <button
+                              key={item}
+                              onClick={() => { setSessionsPage(item as number); }}
+                              disabled={sessionsLoading}
+                              className={`w-7 h-7 rounded-lg text-xs font-bold transition-all ${
+                                sessionsPage === item
+                                  ? 'bg-blue-50 text-blue-600 border border-blue-200'
+                                  : 'text-slate-400 hover:bg-slate-100 hover:text-slate-600'
+                              }`}
+                            >
+                              {item}
+                            </button>
+                          )
+                        )}
+
+                      <button
+                        onClick={() => { setSessionsPage(p => Math.min(sessionsTotalPages, p + 1)); }}
+                        disabled={sessionsPage >= sessionsTotalPages || sessionsLoading}
+                        className="px-2.5 py-1 text-slate-400 rounded-lg text-xs font-bold hover:text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                      >
+                        הבא ›
+                      </button>
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           )}
 

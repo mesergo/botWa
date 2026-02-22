@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useRef, useState } from 'react';
 import ReactFlow, { 
   Background, 
   BackgroundVariant,
@@ -14,7 +14,7 @@ import ReactFlow, {
 import Sidebar from './Sidebar';
 import Simulator from './Simulator';
 import { NodeType, FixedProcess, Version, User, BotFlow } from '../types';
-import { Wand2, Search, ChevronUp, ChevronDown, X, Copy, CloudUpload, AlertTriangle } from 'lucide-react';
+import { Wand2, Search, ChevronUp, ChevronDown, X, Copy, CloudUpload, AlertTriangle, Users, List } from 'lucide-react';
 
 interface EditorProps {
   selectedBot: BotFlow | null;
@@ -53,6 +53,7 @@ interface EditorProps {
   onSaveTemplate?: (name: string, description: string, isPublic: boolean) => void;
   existingTemplateData?: { name: string; description: string; isPublic: boolean } | null;
   onOpenContacts?: () => void;
+  onOpenSessions?: () => void;
 }
 
 const Editor: React.FC<EditorProps> = ({
@@ -60,12 +61,24 @@ const Editor: React.FC<EditorProps> = ({
   searchQuery, searchResults, currentSearchIndex, reactFlowWrapper, nodeTypes, edgeTypes, isSimulatorOpen,
   onNodesChange, onEdgesChange, onConnect, onInit, onDrop, onSearchChange, onSearchNav, onTidy, onPublish,
   onCloseEditor, onHome, onSimulatorOpen, onSimulatorClose, onDuplicate, onChangeTemplate, sidebarProps,
-  isEditingTemplate, onSaveTemplate, existingTemplateData, onOpenContacts
+  isEditingTemplate, onSaveTemplate, existingTemplateData, onOpenContacts, onOpenSessions
 }) => {
   const [showSaveModal, setShowSaveModal] = React.useState(false);
   const [templateName, setTemplateName] = React.useState(existingTemplateData?.name || '');
   const [templateDescription, setTemplateDescription] = React.useState(existingTemplateData?.description || '');
   const [templateIsPublic, setTemplateIsPublic] = React.useState(existingTemplateData?.isPublic ?? true);
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const profileMenuRef = useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (profileMenuRef.current && !profileMenuRef.current.contains(e.target as unknown as globalThis.Node)) {
+        setProfileMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   React.useEffect(() => {
     if (existingTemplateData) {
@@ -181,15 +194,39 @@ const Editor: React.FC<EditorProps> = ({
           )}
           <button onClick={onTidy} className="flex items-center gap-2 px-6 py-2.5 bg-white border border-slate-200 rounded-full text-xs font-bold shadow-sm hover:border-blue-600 hover:text-blue-600 transition-all"><Wand2 size={16} /> סדר הכל</button>
           <div className="h-8 w-px bg-slate-100 mx-1"></div>
-          {/* User Avatar - navigates to contacts */}
-          {onOpenContacts && (
-            <button
-              onClick={onOpenContacts}
-              title="אנשי קשר"
-              className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-sm hover:scale-110 transition-transform shadow-md select-none"
-            >
-              {(currentUser?.name?.charAt(0) || currentUser?.email?.charAt(0) || '?').toUpperCase()}
-            </button>
+          {/* User Avatar - dropdown menu */}
+          {(onOpenContacts || onOpenSessions) && (
+            <div className="relative" ref={profileMenuRef}>
+              <button
+                onClick={() => setProfileMenuOpen(v => !v)}
+                title="תפריט פרופיל"
+                className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-sm hover:scale-110 transition-transform shadow-md select-none"
+              >
+                {(currentUser?.name?.charAt(0) || currentUser?.email?.charAt(0) || '?').toUpperCase()}
+              </button>
+              {profileMenuOpen && (
+                <div className="absolute right-0 top-12 bg-white border border-slate-100 rounded-2xl shadow-xl z-50 min-w-[180px] overflow-hidden" dir="rtl">
+                  {onOpenContacts && (
+                    <button
+                      onClick={() => { setProfileMenuOpen(false); onOpenContacts(); }}
+                      className="w-full flex items-center gap-3 px-5 py-3.5 text-sm font-bold text-slate-700 hover:bg-slate-50 transition-colors"
+                    >
+                      <Users size={16} className="text-blue-500 flex-shrink-0" />
+                      אנשי קשר
+                    </button>
+                  )}
+                  {onOpenSessions && (
+                    <button
+                      onClick={() => { setProfileMenuOpen(false); onOpenSessions(); }}
+                      className="w-full flex items-center gap-3 px-5 py-3.5 text-sm font-bold text-slate-700 hover:bg-slate-50 transition-colors"
+                    >
+                      <List size={16} className="text-indigo-500 flex-shrink-0" />
+                      שיחות שלי
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
           )}
           <button onClick={onHome} className="p-2 text-slate-300 hover:text-blue-600 transition-colors"><X size={22} /></button>
         </div>
