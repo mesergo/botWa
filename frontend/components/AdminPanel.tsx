@@ -3,7 +3,7 @@ import {
   Users, UserCog, LogOut, ArrowLeft, AlertCircle, Shield, Activity, 
   Search, Trash2, Edit2, Ban, CheckCircle, BarChart2, Settings, 
   FileText, Save, Plus, Eye, EyeOff, Bot, ChevronRight, LayoutDashboard,
-  CreditCard, MoreVertical, X, Star
+  CreditCard, MoreVertical, X, Star, Globe, Lock, Copy
 } from 'lucide-react';
 
 interface User {
@@ -41,6 +41,8 @@ interface Template {
   name: string;
   description?: string;
   isPublic: boolean;
+  type: 'public' | 'public_paid' | 'admin';
+  price?: number;
   createdAt: string;
 }
 
@@ -84,6 +86,15 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
   const [newTemplateData, setNewTemplateData] = useState({ name: '', description: '', botId: '' });
   const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false);
   const [availableBots, setAvailableBots] = useState<any[]>([]); // For "Create from Bot"
+
+  // New: Create choice modal
+  const [isCreateChoiceModalOpen, setIsCreateChoiceModalOpen] = useState(false);
+  const [allSystemBots, setAllSystemBots] = useState<any[]>([]);
+  const [createFromBotStep, setCreateFromBotStep] = useState<'choice' | 'pick-bot' | 'name'>('choice');
+  const [selectedSystemBot, setSelectedSystemBot] = useState<any>(null);
+  const [newAdminTplName, setNewAdminTplName] = useState('');
+  const [newAdminTplDesc, setNewAdminTplDesc] = useState('');
+  const [creatingAdminTpl, setCreatingAdminTpl] = useState(false);
 
   // Search & Filter
   const [searchQuery, setSearchQuery] = useState('');
@@ -279,6 +290,39 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
       alert('שגיאה ביצירת תבנית');
     }
   };
+
+  const fetchAllSystemBots = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/templates/admin/all-bots`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) setAllSystemBots(await res.json());
+    } catch (e) { console.error(e); }
+  };
+
+  const createAdminTemplateFromBot = async () => {
+    if (!selectedSystemBot || !newAdminTplName.trim()) return;
+    setCreatingAdminTpl(true);
+    try {
+      const res = await fetch(`${API_BASE}/templates/from-bot`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ botId: selectedSystemBot.id, name: newAdminTplName, description: newAdminTplDesc })
+      });
+      if (!res.ok) throw new Error('Failed');
+      await fetchTemplates();
+      setIsCreateChoiceModalOpen(false);
+      setCreateFromBotStep('choice');
+      setSelectedSystemBot(null);
+      setNewAdminTplName('');
+      setNewAdminTplDesc('');
+      alert('תבנית מנהל נוצרה בהצלחה!');
+    } catch (e) {
+      alert('שגיאה ביצירת תבנית');
+    } finally {
+      setCreatingAdminTpl(false);
+    }
+  };
   
   const deleteTemplate = async (id: string) => {
     if (!window.confirm('האם למחוק תבנית זו?')) return;
@@ -290,6 +334,26 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
       fetchTemplates();
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  const cycleTemplateType = async (template: any) => {
+    const typeOrder: Array<'public' | 'public_paid' | 'admin'> = ['public', 'public_paid', 'admin'];
+    const currentType = template.type || (template.isPublic ? 'public' : 'admin');
+    const nextIndex = (typeOrder.indexOf(currentType) + 1) % typeOrder.length;
+    const nextType = typeOrder[nextIndex];
+    try {
+        await fetch(`${API_BASE}/templates/${template._id}`, {
+            method: 'PUT',
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}` 
+            },
+            body: JSON.stringify({ type: nextType })
+        });
+        fetchTemplates();
+    } catch (err) {
+        console.error(err);
     }
   };
 
@@ -801,7 +865,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
             <div className="space-y-6 animate-fade-in-up">
               <div className="flex flex-col md:flex-row items-center justify-between gap-4 pb-6 border-b border-slate-200">
                  <button 
-                   onClick={onCreateTemplate}
+                   onClick={() => { setIsCreateChoiceModalOpen(true); setCreateFromBotStep('choice'); fetchAllSystemBots(); }}
                    className="bg-sky-600 text-white px-5 py-2.5 rounded-lg border border-sky-700 hover:bg-sky-700 font-bold shadow-sm transition-all flex items-center gap-2"
                  >
                    <Plus size={18} />
@@ -810,16 +874,24 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {templates.map(tpl => (
+                {templates.map(tpl => {
+                  const tplType = tpl.type || (tpl.isPublic ? 'public' : 'admin');
+                  const typeConfig = {
+                    public: { label: 'ציבורי', icon: Globe, color: 'text-emerald-600 bg-emerald-50 border-emerald-200' },
+                    public_paid: { label: 'בתשלום', icon: CreditCard, color: 'text-blue-600 bg-blue-50 border-blue-200' },
+                    admin: { label: 'מנהל', icon: Shield, color: 'text-violet-600 bg-violet-50 border-violet-200' }
+                  }[tplType] || { label: 'ציבורי', icon: Globe, color: 'text-emerald-600 bg-emerald-50 border-emerald-200' };
+                  const TypeIcon = typeConfig.icon;
+                  return (
                   <div key={tpl._id} className="group bg-white p-5 rounded-xl shadow-sm border border-slate-200 hover:border-sky-300 hover:shadow-md transition-all duration-200 flex flex-col">
                     <div className="flex justify-between items-start mb-4">
                       <div className="p-2.5 bg-sky-50 text-sky-600 rounded-lg group-hover:bg-sky-600 group-hover:text-white transition-colors">
                         <FileText size={20} />
                       </div>
                       <div className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity translate-y-2 group-hover:translate-y-0 duration-200">
-                         {/* Action Buttons */}
-                         <button onClick={() => toggleTemplateVisibility(tpl)} className={`p-2 rounded-lg transition-colors ${tpl.isPublic ? 'text-emerald-600 hover:bg-emerald-50' : 'text-slate-400 hover:bg-slate-100'}`} title="שנה נראות">
-                            {tpl.isPublic ? <Eye size={16} /> : <EyeOff size={16} />}
+                         {/* Cycle type button */}
+                         <button onClick={() => cycleTemplateType(tpl)} className={`p-2 rounded-lg transition-colors border ${typeConfig.color}`} title="שנה סוג">
+                            <TypeIcon size={14} />
                          </button>
                          <button onClick={() => onEditTemplate(tpl._id)} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="ערוך">
                             <Edit2 size={16} />
@@ -831,9 +903,15 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                     </div>
                     
                     <div className="mb-auto">
-                      <div className="flex items-center gap-2 mb-1.5">
+                      <div className="flex items-center gap-2 mb-1.5 flex-wrap">
                          <h3 className="font-bold text-base text-slate-800">{tpl.name}</h3>
-                         {!tpl.isPublic && <span className="bg-slate-100 text-slate-500 text-[10px] font-bold px-1.5 py-0.5 rounded border border-slate-200">טיוטה</span>}
+                         <span className={`flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded border ${typeConfig.color}`}>
+                           <TypeIcon size={10} />
+                           {typeConfig.label}
+                         </span>
+                         {tplType === 'public_paid' && tpl.price && (
+                           <span className="text-[10px] font-bold text-blue-600 bg-blue-100 px-1.5 py-0.5 rounded">{tpl.price}₪</span>
+                         )}
                       </div>
                       <p className="text-xs text-slate-500 leading-relaxed line-clamp-2 mb-3">
                         {tpl.description || 'ללא תיאור'}
@@ -845,7 +923,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                       <span className="font-mono opacity-70">ID: {tpl.template_id}</span>
                     </div>
                   </div>
-                ))}
+                  );
+                })}
 
                 {templates.length === 0 && (
                   <div className="col-span-full py-24 text-center text-slate-300 bg-white rounded-[2rem] border-2 border-dashed border-slate-200 flex flex-col items-center justify-center">
@@ -854,7 +933,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                     </div>
                     <h3 className="text-xl font-black text-slate-600 mb-1">הספרייה ריקה כרגע</h3>
                     <p className="text-sm max-w-xs mx-auto mb-6 text-slate-400 font-medium">יצירת תבניות עוזרת למשתמשים שלך להבין את הערך של המערכת מהר יותר.</p>
-                    <button onClick={onCreateTemplate} className="text-indigo-600 font-bold hover:text-indigo-800 flex items-center gap-2 hover:bg-indigo-50 px-4 py-2 rounded-lg transition-colors">
+                    <button onClick={() => { setIsCreateChoiceModalOpen(true); setCreateFromBotStep('choice'); fetchAllSystemBots(); }} className="text-indigo-600 font-bold hover:text-indigo-800 flex items-center gap-2 hover:bg-indigo-50 px-4 py-2 rounded-lg transition-colors">
                       <Plus size={16} /> צור תבנית ראשונה
                     </button>
                   </div>
@@ -961,6 +1040,125 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                    </div>
                  ))}
                </div>
+            </div>
+          )}
+
+          {/* Modal: Create Template Choice */}
+          {isCreateChoiceModalOpen && (
+            <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-md z-50 flex items-center justify-center p-6">
+              <div className="bg-white p-10 rounded-[2.5rem] w-full max-w-xl shadow-2xl animate-fade-in-up border border-white/50">
+                <div className="flex justify-between items-center mb-8">
+                  <h3 className="text-2xl font-black text-slate-800 tracking-tight">יצירת תבנית חדשה</h3>
+                  <button onClick={() => { setIsCreateChoiceModalOpen(false); setCreateFromBotStep('choice'); setSelectedSystemBot(null); setNewAdminTplName(''); setNewAdminTplDesc(''); }} className="p-3 bg-slate-100 rounded-full hover:bg-slate-200 transition-colors"><X size={20} /></button>
+                </div>
+
+                {createFromBotStep === 'choice' && (
+                  <div className="space-y-4">
+                    <p className="text-slate-500 text-sm mb-6">בחר כיצד ליצור את התבנית החדשה:</p>
+                    <button
+                      onClick={() => { setIsCreateChoiceModalOpen(false); onCreateTemplate(); }}
+                      className="w-full flex items-center gap-5 p-5 bg-slate-50 hover:bg-sky-50 border border-slate-200 hover:border-sky-400 rounded-2xl transition-all text-right group"
+                    >
+                      <div className="w-12 h-12 bg-white text-slate-400 group-hover:bg-sky-600 group-hover:text-white rounded-2xl flex items-center justify-center flex-shrink-0 transition-all border border-slate-200 shadow-sm">
+                        <Plus size={24} />
+                      </div>
+                      <div>
+                        <h4 className="font-black text-slate-800 mb-1">תבנית ריקה</h4>
+                        <p className="text-xs text-slate-500 font-medium">בנה תבנית חדשה מאפס בעורך הוויזואלי</p>
+                      </div>
+                    </button>
+                    <button
+                      onClick={() => setCreateFromBotStep('pick-bot')}
+                      className="w-full flex items-center gap-5 p-5 bg-slate-50 hover:bg-violet-50 border border-slate-200 hover:border-violet-400 rounded-2xl transition-all text-right group"
+                    >
+                      <div className="w-12 h-12 bg-white text-slate-400 group-hover:bg-violet-600 group-hover:text-white rounded-2xl flex items-center justify-center flex-shrink-0 transition-all border border-slate-200 shadow-sm">
+                        <Copy size={24} />
+                      </div>
+                      <div>
+                        <h4 className="font-black text-slate-800 mb-1">מבוט קיים במערכת</h4>
+                        <p className="text-xs text-slate-500 font-medium">בחר בוט ממאגר המערכת ויצור ממנו תבנית מנהל</p>
+                      </div>
+                    </button>
+                  </div>
+                )}
+
+                {createFromBotStep === 'pick-bot' && (
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-3 mb-4">
+                      <button onClick={() => setCreateFromBotStep('choice')} className="p-2 hover:bg-slate-100 rounded-lg text-slate-400 transition-colors"><ArrowLeft size={18} /></button>
+                      <p className="text-slate-600 font-bold text-sm">בחר בוט מהמערכת</p>
+                    </div>
+                    <div className="max-h-72 overflow-y-auto space-y-2 pr-1">
+                      {allSystemBots.length === 0 ? (
+                        <p className="text-center text-slate-400 py-8 text-sm">אין בוטים במערכת</p>
+                      ) : (
+                        allSystemBots.map(bot => (
+                          <div
+                            key={bot.id}
+                            onClick={() => { setSelectedSystemBot(bot); setNewAdminTplName(`תבנית מ-${bot.name}`); setCreateFromBotStep('name'); }}
+                            className="flex items-center gap-4 p-4 bg-slate-50 hover:bg-violet-50 border border-slate-200 hover:border-violet-300 rounded-xl cursor-pointer transition-all group"
+                          >
+                            <div className="w-10 h-10 bg-white text-slate-400 group-hover:bg-violet-600 group-hover:text-white rounded-xl flex items-center justify-center border border-slate-200 transition-all">
+                              <Bot size={18} />
+                            </div>
+                            <div className="flex-1 text-right">
+                              <p className="font-bold text-slate-800 text-sm">{bot.name}</p>
+                              <p className="text-xs text-slate-400">ID: {bot.id.slice(-6)}</p>
+                            </div>
+                            <ChevronRight size={16} className="text-slate-300 group-hover:text-violet-500 transition-colors" />
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {createFromBotStep === 'name' && selectedSystemBot && (
+                  <div className="space-y-5">
+                    <div className="flex items-center gap-3 mb-2">
+                      <button onClick={() => setCreateFromBotStep('pick-bot')} className="p-2 hover:bg-slate-100 rounded-lg text-slate-400 transition-colors"><ArrowLeft size={18} /></button>
+                      <p className="text-slate-600 font-bold text-sm">פרטי התבנית</p>
+                    </div>
+                    <div className="p-3 bg-violet-50 border border-violet-200 rounded-xl flex items-center gap-3">
+                      <Bot size={16} className="text-violet-600" />
+                      <span className="text-sm font-bold text-violet-800">{selectedSystemBot.name}</span>
+                      <span className="text-xs text-violet-500 bg-violet-100 px-2 py-0.5 rounded">מנהל</span>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-bold text-slate-700 mb-2">שם התבנית</label>
+                      <input
+                        type="text"
+                        className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-4 focus:ring-violet-100 focus:border-violet-500 outline-none transition-all font-medium"
+                        value={newAdminTplName}
+                        onChange={e => setNewAdminTplName(e.target.value)}
+                        placeholder="שם לתבנית..."
+                        autoFocus
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-bold text-slate-700 mb-2">תיאור <span className="text-slate-400 font-normal">(רשות)</span></label>
+                      <textarea
+                        className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-4 focus:ring-violet-100 focus:border-violet-500 outline-none resize-none h-24 transition-all font-medium"
+                        value={newAdminTplDesc}
+                        onChange={e => setNewAdminTplDesc(e.target.value)}
+                        placeholder="תיאור קצר..."
+                      />
+                    </div>
+                    <div className="flex gap-4 pt-4 border-t border-slate-100">
+                      <button
+                        onClick={createAdminTemplateFromBot}
+                        disabled={!newAdminTplName.trim() || creatingAdminTpl}
+                        className="flex-1 bg-violet-600 text-white py-4 rounded-xl font-bold shadow-lg hover:bg-violet-700 transition-all disabled:opacity-50 text-sm"
+                      >
+                        {creatingAdminTpl ? 'יוצר...' : 'צור תבנית מנהל'}
+                      </button>
+                      <button onClick={() => setIsCreateChoiceModalOpen(false)} className="px-6 py-4 bg-white border border-slate-200 text-slate-600 rounded-xl font-bold hover:bg-slate-50 transition-colors text-sm">
+                        ביטול
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 

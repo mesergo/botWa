@@ -9,17 +9,21 @@ import {
   createTemplate, 
   updateTemplate, 
   deleteTemplate,
-  createTemplateFromBot 
+  createTemplateFromBot,
+  getAllSystemBots,
+  cloneBotFlow
 } from '../controllers/templateController.js';
-import { authenticateToken, requireAdmin } from '../middleware/auth.js';
+import { authenticateToken, requireAdmin, optionalAuthToken } from '../middleware/auth.js';
 
 
 const router = express.Router();
 
 router.post('/initialize', authenticateToken, initializeFromTemplate);
+router.post('/clone-bot', authenticateToken, cloneBotFlow);
 
 // Template Management
-router.get('/public', getPublicTemplates); // Public templates (no auth required)
+router.get('/public', optionalAuthToken, getPublicTemplates); // Public templates (optional auth for impersonation detection)
+router.get('/admin/all-bots', authenticateToken, requireAdmin, getAllSystemBots); // All system bots for admin template creation
 router.get('/', authenticateToken, getAllTemplates); // Allow all authenticated users to view
 router.get('/:id', authenticateToken, getTemplate);
 router.get('/:id/flow', authenticateToken, getTemplateFlow);

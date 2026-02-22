@@ -147,7 +147,7 @@ export const seedTemplates = async () => {
   for (const template of INITIAL_TEMPLATES) {
     await Template.updateOne(
       { template_id: template.template_id },
-      { $set: template },
+      { $set: { ...template, type: 'public', isPublic: true } },
       { upsert: true }
     );
   }
@@ -159,7 +159,14 @@ export const initializeFromTemplate = async (req, res) => {
   const { bot_id, template_id, values } = req.body;
 
   try {
-    const template = await Template.findOne({ template_id });
+    // Support lookup by MongoDB _id (ObjectId) or by template_id string
+    let template = null;
+    try {
+      template = await Template.findById(template_id);
+    } catch (_) {}
+    if (!template) {
+      template = await Template.findOne({ template_id });
+    }
     if (!template) {
       return res.status(404).json({ error: 'Template not found in DB' });
     }
@@ -192,7 +199,8 @@ export const initializeFromTemplate = async (req, res) => {
 
     for (const node of processedNodes) {
       const isFirst = (node.type === 'start' || node.type === 'automatic_responses') ? 1 : 0;
-      const isBranching = node.type === 'output_menu' || node.type === 'action_web_service' || node.type === 'automatic_responses';
+      const isTimeRouting = node.type === 'action_time_routing';
+      const isBranching = node.type === 'output_menu' || node.type === 'action_web_service' || node.type === 'automatic_responses' || isTimeRouting;
       
       const nextEdge = !isBranching ? processedEdges.find(e => e.source === node.id && !e.sourceHandle) : null;
       const nextId = nextEdge ? nextEdge.target : null;
@@ -219,7 +227,30 @@ export const initializeFromTemplate = async (req, res) => {
 
       await Option.deleteMany({ widget_id: node.id });
 
-      if (isBranching && node.data.options) {
+      if (isTimeRouting) {
+        const timeRanges = node.data.timeRanges || [];
+        for (let i = 0; i < timeRanges.length; i++) {
+          const range = timeRanges[i];
+          const optionEdge = processedEdges.find(e => e.source === node.id && e.sourceHandle === `option-${i}`);
+          await Option.create({
+            widget_id: node.id,
+            value: `${range.fromHour}-${range.toHour}`,
+            next: optionEdge ? optionEdge.target : null,
+            image_url: null,
+            operator: 'time_range'
+          });
+        }
+        const defaultEdge = processedEdges.find(e => e.source === node.id && e.sourceHandle === 'option-default');
+        if (defaultEdge) {
+          await Option.create({
+            widget_id: node.id,
+            value: 'default',
+            next: defaultEdge.target,
+            image_url: null,
+            operator: 'default'
+          });
+        }
+      } else if (isBranching && node.data.options) {
         for (let i = 0; i < node.data.options.length; i++) {
           const branchValue = node.data.options[i];
           const branchOperator = node.data.optionOperators?.[i] || 'eq';
@@ -265,8 +296,29 @@ export const getAllTemplates = async (req, res) => {
 
 export const getPublicTemplates = async (req, res) => {
   try {
-    const templates = await Template.find({ isPublic: true });
+    // Base: show public and public_paid to everyone
+    const query = { type: { $in: ['public', 'public_paid'] } };
+    // If request comes from an impersonating admin session, also include admin templates
+    if (req.user && req.user.isImpersonating) {
+      query.type.$in.push('admin');
+    }
+    const templates = await Template.find(query);
     res.json(templates);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const getAllSystemBots = async (req, res) => {
+  try {
+    const bots = await BotFlow.find({}).sort({ created_at: -1 });
+    res.json(bots.map(b => ({
+      id: b._id.toString(),
+      name: b.name,
+      user_id: b.user_id,
+      public_id: b.public_id,
+      created_at: b.created_at
+    })));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -315,13 +367,16 @@ export const updateTemplateFlow = async (req, res) => {
 };
 
 export const createTemplate = async (req, res) => {
-  const { name, description, nodes, edges, template_id, isPublic } = req.body;
+  const { name, description, nodes, edges, template_id, isPublic, type, price } = req.body;
   try {
+    const templateType = type || 'public';
     const newTemplate = new Template({
       template_id: template_id || `tpl_${Date.now()}`,
       name,
       description,
-      isPublic: isPublic !== undefined ? isPublic : true,
+      isPublic: templateType === 'public' || templateType === 'public_paid',
+      type: templateType,
+      price: price || 0,
       nodes,
       edges
     });
@@ -333,13 +388,19 @@ export const createTemplate = async (req, res) => {
 };
 
 export const updateTemplate = async (req, res) => {
-  const { name, description, nodes, edges, template_id, isPublic } = req.body;
+  const { name, description, nodes, edges, template_id, isPublic, type, price } = req.body;
   
   // Build update object dynamically
   const updateData = {};
   if (name) updateData.name = name;
-  if (description) updateData.description = description;
-  if (isPublic !== undefined) updateData.isPublic = isPublic;
+  if (description !== undefined) updateData.description = description;
+  if (type !== undefined) {
+    updateData.type = type;
+    updateData.isPublic = type === 'public' || type === 'public_paid';
+  } else if (isPublic !== undefined) {
+    updateData.isPublic = isPublic;
+  }
+  if (price !== undefined) updateData.price = price;
   if (nodes) updateData.nodes = nodes;
   if (edges) updateData.edges = edges;
   if (template_id) updateData.template_id = template_id; // Allow updating ID if needed, but be careful
@@ -369,23 +430,169 @@ export const createTemplateFromBot = async (req, res) => {
   const { botId, name, description } = req.body; 
   
   try {
-    // Check if it's a flow ID/version
-    const latestVersion = await Version.findOne({ flow_id: botId }).sort({ created_at: -1 });
+    // Fetch the current live flow (widgets) for this bot
+    // Use .lean() so w.id returns the custom schema field, not Mongoose's _id virtual
+    const widgets = await Widget.find({ flow_id: botId, standard_process_id: null }).lean();
 
-    if (!latestVersion) {
-        return res.status(404).json({ error: 'No version found for this bot to create template from' });
+    let nodes = [];
+    let edges = [];
+
+    if (widgets.length > 0) {
+      // Fetch options for all widgets
+      const options = await Option.find({ widget_id: { $in: widgets.map(w => w.id) } }).lean();
+
+      // Build nodes with full data including options
+      nodes = widgets.map(w => {
+        const nodeOptions = options.filter(o => o.widget_id === w.id);
+        const metadata = w.image_file || {};
+
+        if (w.type === 'action_time_routing') {
+          const timeRanges = nodeOptions
+            .filter(o => o.operator === 'time_range')
+            .map(o => {
+              const [fromHour, toHour] = o.value.split('-').map(Number);
+              return { fromHour, toHour };
+            });
+          return {
+            id: w.id,
+            type: w.type,
+            position: { x: w.pos_x || 0, y: w.pos_y || 0 },
+            data: { ...metadata, timeRanges }
+          };
+        }
+
+        return {
+          id: w.id,
+          type: w.type,
+          position: { x: w.pos_x || 0, y: w.pos_y || 0 },
+          data: {
+            ...metadata,
+            label: metadata.label !== undefined ? metadata.label : (w.value || ''),
+            content: metadata.content !== undefined ? metadata.content : (w.value || ''),
+            options: nodeOptions.length > 0 ? nodeOptions.map(o => o.value) : undefined,
+            optionOperators: nodeOptions.length > 0 ? nodeOptions.map(o => o.operator || 'eq') : undefined,
+            optionImages: nodeOptions.length > 0 ? nodeOptions.map(o => o.image_url) : undefined
+          }
+        };
+      });
+
+      // Build edges from widget.next and options.next
+      widgets.forEach(w => {
+        if (w.next) {
+          edges.push({ id: `e-${w.id}-${w.next}`, source: w.id, target: w.next, type: 'button' });
+        }
+        const wOptions = options.filter(o => o.widget_id === w.id);
+        if (w.type === 'action_time_routing') {
+          let timeRangeIndex = 0;
+          wOptions.forEach(o => {
+            if (o.next) {
+              const sourceHandle = o.operator === 'default' ? 'option-default' : `option-${timeRangeIndex}`;
+              edges.push({ id: `e-${w.id}-${sourceHandle}-${o.next}`, source: w.id, sourceHandle, target: o.next, type: 'button' });
+              if (o.operator === 'time_range') timeRangeIndex++;
+            } else if (o.operator === 'time_range') {
+              timeRangeIndex++;
+            }
+          });
+        } else {
+          wOptions.forEach((o, i) => {
+            if (o.next) {
+              edges.push({ id: `e-${w.id}-opt-${i}`, source: w.id, sourceHandle: `option-${i}`, target: o.next, type: 'button' });
+            }
+          });
+        }
+      });
+    } else {
+      // Fallback to latest version data
+      const latestVersion = await Version.findOne({ flow_id: botId }).sort({ created_at: -1 });
+      if (latestVersion) {
+        nodes = latestVersion.data.nodes || [];
+        edges = latestVersion.data.edges || [];
+      }
     }
 
+    const botInfo = await BotFlow.findById(botId);
     const newTemplate = new Template({
       template_id: `tpl_${Date.now()}`,
-      name: name || `Template from ${latestVersion.name}`,
+      name: name || (botInfo ? `תבנית מ-${botInfo.name}` : 'תבנית חדשה'),
       description,
-      nodes: latestVersion.data.nodes,
-      edges: latestVersion.data.edges
+      isPublic: false,
+      type: 'admin',
+      nodes,
+      edges
     });
 
     await newTemplate.save();
     res.json(newTemplate);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const cloneBotFlow = async (req, res) => {
+  const userId = req.user.id;
+  const { sourceBotId, targetBotId } = req.body;
+
+  try {
+    // Verify both bots belong to this user
+    const [sourceBot, targetBot] = await Promise.all([
+      BotFlow.findOne({ _id: sourceBotId, user_id: userId }),
+      BotFlow.findOne({ _id: targetBotId, user_id: userId })
+    ]);
+
+    if (!sourceBot || !targetBot) {
+      return res.status(404).json({ error: 'Bot not found or access denied' });
+    }
+
+    // Get source flow data (nodes/edges stored in sync)
+    // Use .lean() so that w.id returns the custom schema field, not Mongoose's _id virtual
+    const sourceWidgets = await Widget.find({ flow_id: sourceBotId, user_id: userId }).lean();
+    const sourceOptions = await Option.find({ widget_id: { $in: sourceWidgets.map(w => w.id) } }).lean();
+
+    // Clear target bot
+    const targetWidgetIds = (await Widget.find({ flow_id: targetBotId, user_id: userId }).lean()).map(w => w.id);
+    await Option.deleteMany({ widget_id: { $in: targetWidgetIds } });
+    await Widget.deleteMany({ flow_id: targetBotId, user_id: userId });
+
+    // Create id map for cloning
+    const idMap = {};
+    sourceWidgets.forEach(w => {
+      idMap[w.id] = new ObjectId().toString();
+    });
+
+    // Clone widgets
+    for (const widget of sourceWidgets) {
+      const newId = idMap[widget.id];
+      await Widget.create({
+        id: newId,
+        user_id: userId,
+        flow_id: targetBotId,
+        is_first: widget.is_first,
+        type: widget.type,
+        value: widget.value,
+        pos_x: widget.pos_x,
+        pos_y: widget.pos_y,
+        next: widget.next ? (idMap[widget.next] || widget.next) : null,
+        image_file: widget.image_file,
+        target_variable: widget.target_variable || null,
+        input_variable: widget.input_variable || null,
+        standard_process_id: null,
+        isStandardProcess: 0
+      });
+
+      // Clone options
+      const opts = sourceOptions.filter(o => o.widget_id === widget.id);
+      for (const opt of opts) {
+        await Option.create({
+          widget_id: newId,
+          value: opt.value,
+          next: opt.next ? (idMap[opt.next] || opt.next) : null,
+          image_url: opt.image_url,
+          operator: opt.operator
+        });
+      }
+    }
+
+    res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

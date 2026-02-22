@@ -33,4 +33,18 @@ export const requireAdmin = async (req, res, next) => {
 // Alias for authenticate
 export const authenticate = authenticateToken;
 
+// Optional auth - sets req.user if token is valid, but doesn't block if no token
+export const optionalAuthToken = (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+  if (!token) return next();
+  jwt.verify(token, SECRET_KEY, (err, user) => {
+    if (!err) {
+      req.user = user;
+      req.userId = user.id;
+    }
+    next();
+  });
+};
+
 export { SECRET_KEY };

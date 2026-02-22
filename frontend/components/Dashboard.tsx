@@ -12,9 +12,10 @@ interface DashboardProps {
   currentUser?: { name?: string; email?: string; role?: string; isImpersonating?: boolean } | null;
   onOpenAdminPanel?: () => void;
   onStopImpersonation?: () => void;
+  onOpenContacts?: () => void;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, onDeleteBot, onSetDefaultBot, onLogout, currentUser, onOpenAdminPanel, onStopImpersonation }) => {
+const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, onDeleteBot, onSetDefaultBot, onLogout, currentUser, onOpenAdminPanel, onStopImpersonation, onOpenContacts }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newBotName, setNewBotName] = useState('');
 
@@ -66,6 +67,16 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
             >
               <Shield size={18} />
               פאנל ניהול
+            </button>
+          )}
+          {/* User Avatar - navigates to contacts page */}
+          {onOpenContacts && (
+            <button
+              onClick={onOpenContacts}
+              title="אנשי קשר"
+              className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-sm hover:scale-110 transition-transform shadow-md select-none"
+            >
+              {(currentUser?.name?.charAt(0) || currentUser?.email?.charAt(0) || '?').toUpperCase()}
             </button>
           )}
           <button onClick={onLogout} className="p-2.5 text-slate-300 hover:text-red-500 transition-colors rounded-xl hover:bg-red-50"><LogOut size={22} /></button>

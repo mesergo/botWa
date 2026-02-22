@@ -8,6 +8,7 @@ import RegisterPage from './components/RegisterPage';
 import Editor from './components/Editor';
 import TemplateSelection from './components/TemplateSelection';
 import TemplateForm from './components/TemplateForm';
+import ContactsPage from './components/ContactsPage';
 import { StartNode, InputTextNode, InputDateNode, InputFileNode, OutputTextNode, OutputImageNode, OutputLinkNode, OutputMenuNode, ActionWebServiceNode, ActionWaitNode, ActionTimeRoutingNode, FixedProcessNode, AutomaticResponsesNode } from './components/nodes/CustomNodes';
 import ButtonEdge from './components/edges/ButtonEdge';
 import { CloudUpload, RotateCcw, Plus, AlertTriangle, Copy, X, Lock, Wallet } from 'lucide-react';
@@ -35,7 +36,7 @@ const nodeTypes = {
 const edgeTypes = { button: ButtonEdge };
 const DEFAULT_EDGE_STYLE = { stroke: '#3b82f6', strokeWidth: 2, strokeDasharray: '6,4' };
  
-type ViewMode = 'dashboard' | 'editor' | 'editing-process' | 'viewing-process' | 'simulator-only' | 'template-selection' | 'template-form' | 'admin-panel' | 'editing-template' | 'creating-template';
+type ViewMode = 'dashboard' | 'editor' | 'editing-process' | 'viewing-process' | 'simulator-only' | 'template-selection' | 'template-form' | 'admin-panel' | 'editing-template' | 'creating-template' | 'contacts';
 
 const FlowBuilder: React.FC = () => {
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
@@ -342,7 +343,7 @@ const FlowBuilder: React.FC = () => {
   };
 
   useEffect(() => {
-    if (viewMode !== 'dashboard' && viewMode !== 'template-selection' && viewMode !== 'template-form' && viewMode !== 'simulator-only' && viewMode !== 'admin-panel' && (selectedBot || activeProcessId || editingTemplateId)) {
+    if (viewMode !== 'dashboard' && viewMode !== 'template-selection' && viewMode !== 'template-form' && viewMode !== 'simulator-only' && viewMode !== 'admin-panel' && viewMode !== 'contacts' && (selectedBot || activeProcessId || editingTemplateId)) {
       const timer = setTimeout(syncFlow, 1500);
       return () => clearTimeout(timer);
     }
@@ -1041,6 +1042,17 @@ const FlowBuilder: React.FC = () => {
     return <AuthScreen mode={authMode} form={authForm} errors={authErrors} onFormChange={setAuthForm} onAuth={handleAuth} onSwitchMode={() => setAuthMode(m => m === 'login' ? 'register' : 'login')} />;
   }
 
+  if (viewMode === 'contacts') {
+    return (
+      <ContactsPage
+        token={token}
+        currentUser={currentUser}
+        onBack={() => setViewMode('dashboard')}
+        onLogout={() => { localStorage.clear(); window.location.reload(); }}
+      />
+    );
+  }
+
   if (viewMode === 'dashboard') {
     return (
       <>
@@ -1053,6 +1065,7 @@ const FlowBuilder: React.FC = () => {
           onLogout={() => { localStorage.clear(); window.location.reload(); }} 
           currentUser={currentUser}
           onOpenAdminPanel={() => setViewMode('admin-panel')}
+          onOpenContacts={() => setViewMode('contacts')}
           onStopImpersonation={handleStopImpersonation}
         />
         {quotaError && quotaError.type === 'bots' && (
@@ -1088,6 +1101,8 @@ const FlowBuilder: React.FC = () => {
   if (viewMode === 'template-selection') {
     return <TemplateSelection 
       token={token}
+      selectedBotId={selectedBot?.id || null}
+      currentUser={currentUser}
       onSelect={(template) => { 
         if (!template) {
           setViewMode('editor');
@@ -1149,6 +1164,7 @@ const FlowBuilder: React.FC = () => {
           onSimulatorClose={() => {}}
           onDuplicate={() => {}}
           onChangeTemplate={() => {}}
+          onOpenContacts={() => setViewMode('contacts')}
           sidebarProps={{
             fixedProcesses,
             versions: [],
@@ -1231,6 +1247,7 @@ const FlowBuilder: React.FC = () => {
         onSimulatorClose={() => setIsSimulatorOpen(false)}
         onDuplicate={() => { setDuplicateName(`${fixedProcesses.find(p => p.id.toString() === activeProcessId)?.name || ''} (עותק)`); setIsDuplicateModalOpen(true); }}
         onChangeTemplate={() => setIsChangeTemplateModalOpen(true)}
+        onOpenContacts={() => setViewMode('contacts')}
         sidebarProps={{
           fixedProcesses,
           versions,
