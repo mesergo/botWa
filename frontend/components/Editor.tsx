@@ -184,6 +184,10 @@ const Editor: React.FC<EditorProps> = ({
             <button onClick={() => setShowSaveModal(true)} className="flex items-center gap-2 px-6 py-2.5 bg-green-600 text-white border border-green-600 rounded-full text-xs font-bold shadow-sm hover:bg-green-700 transition-all">
               <CloudUpload size={16} /> שמור תבנית
             </button>
+          ) : currentUser?.account_type === 'Trial' ? (
+            <div className="flex items-center gap-2 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-full text-xs font-bold text-amber-700 cursor-not-allowed select-none" title="בחשבון ניסיוני לא ניתן לפרסם גרסאות">
+              <CloudUpload size={16} className="opacity-50" /> ניסיוני — ללא פרסום
+            </div>
           ) : (
             <button onClick={onPublish} className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 text-white border border-indigo-600 rounded-full text-xs font-bold shadow-sm hover:bg-indigo-700 transition-all">
               <CloudUpload size={16} /> פרסם גרסה

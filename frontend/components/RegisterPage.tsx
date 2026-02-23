@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { CheckCircle, Mail, Phone, Lock, Eye, EyeOff, AlertCircle, Building2, Zap, Star } from 'lucide-react';
+import { CheckCircle, Mail, Phone, Lock, Eye, EyeOff, AlertCircle, Building2, Clock, ShieldCheck } from 'lucide-react';
 
 const API_BASE = window.location.hostname === 'localhost'
   ? 'http://localhost:3001/api'
@@ -10,7 +10,6 @@ interface RegisterForm {
   phone: string;
   email: string;
   password: string;
-  accountType: 'Basic' | 'Premium';
 }
 
 interface FieldErrors {
@@ -24,34 +23,12 @@ interface FieldErrors {
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PHONE_REGEX = /^[\d\s\-+()]{7,15}$/;
 
-const ACCOUNT_PLANS = [
-  {
-    id: 'Basic' as const,
-    label: 'Basic',
-    icon: <Zap className="w-5 h-5" />,
-    color: 'blue',
-    price: 'חינם / בסיסי',
-    features: ['עד 3 בוטים', 'עד 5 גרסאות לבוט', 'תמיכה בסיסית', 'ממשק ניהול מלא'],
-    missing: ['ללא תמיכה מועדפת', 'ללא גרסאות ארכיון'],
-  },
-  {
-    id: 'Premium' as const,
-    label: 'Premium',
-    icon: <Star className="w-5 h-5" />,
-    color: 'amber',
-    price: 'תוכנית מתקדמת',
-    features: ['בוטים ללא הגבלה', 'גרסאות ללא הגבלה', 'ארכיון גרסאות', 'תמיכה מועדפת', 'כל אפשרויות ה-Basic'],
-    missing: [],
-  },
-];
-
 const RegisterPage: React.FC = () => {
   const [form, setForm] = useState<RegisterForm>({
     company: '',
     phone: '',
     email: '',
     password: '',
-    accountType: 'Basic',
   });
 
   const [errors, setErrors] = useState<FieldErrors>({});
@@ -170,7 +147,7 @@ const RegisterPage: React.FC = () => {
         email: form.email.trim().toLowerCase(),
         phone: form.phone.trim(),
         password: form.password,
-        account_type: form.accountType,
+        account_type: 'Trial',
       };
 
       const res = await fetch(`${API_BASE}/auth/register`, {
@@ -210,14 +187,16 @@ const RegisterPage: React.FC = () => {
             <span className="font-semibold text-slate-900">{registeredEmail}</span>
           </p>
           
-          <div className="bg-slate-50 rounded-xl p-4 mb-8 text-right">
-            <p className="text-xs text-slate-500 uppercase tracking-wider font-semibold mb-1">פרטי תוכנית</p>
-            <div className="flex items-center justify-between">
-              <span className="font-bold text-slate-900 text-lg">{form.accountType === 'Basic' ? 'Basic' : 'Premium'}</span>
-              <span className={`px-2 py-1 rounded text-xs font-bold ${form.accountType === 'Basic' ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'}`}>
-                {form.accountType === 'Basic' ? 'בסיסי' : 'מתקדם'}
-              </span>
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-8 text-right">
+            <div className="flex items-center gap-2 mb-2">
+              <Clock className="w-4 h-4 text-amber-600" />
+              <span className="text-xs text-amber-700 uppercase tracking-wider font-black">חשבון ניסיוני</span>
             </div>
+            <ul className="text-sm text-amber-800 space-y-1 font-medium">
+              <li>• בוט אחד בלבד</li>
+              <li>• תוקף חשבון: 30 יום</li>
+              <li>• גישה לסימולטור בלבד (ללא פרסום)</li>
+            </ul>
           </div>
 
           <a
@@ -249,6 +228,14 @@ const RegisterPage: React.FC = () => {
           <p className="text-lg text-slate-500 max-w-xl mx-auto">
             מלא את הפרטים הבאים כדי לפתוח חשבון חדש ולהתחיל לנהל את הבוטים שלך בצורה חכמה.
           </p>
+          {/* Trial account notice */}
+          <div className="inline-flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-2xl px-6 py-3 mt-2">
+            <Clock className="w-5 h-5 text-amber-600 flex-shrink-0" />
+            <div className="text-right">
+              <p className="text-sm font-black text-amber-800">חשבון ניסיוני חינמי — 30 יום</p>
+              <p className="text-xs text-amber-600 font-medium">בוט אחד · סימולטור בלבד · ללא פרסום</p>
+            </div>
+          </div>
         </div>
 
         {/* Form Section - Clean & Flat */}

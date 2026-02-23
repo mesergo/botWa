@@ -283,7 +283,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
       });
       if (!response.ok) throw new Error('Failed to fetch settings');
       const data = await response.json();
-      setSystemConfig(data);
+      // Ensure Trial plan exists in config (merge defaults if missing)
+      const defaultTrial = { maxBots: 1, maxVersions: 0, versionPrice: 0, botPrice: 0, canPublish: false, trialDays: 30 };
+      setSystemConfig({ Trial: defaultTrial, ...data });
     } catch (err) {
       console.error(err);
     } finally {
@@ -430,6 +432,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
       
     if (filterType === 'all') return matchesSearch;
     if (filterType === 'admin') return matchesSearch && user.role === 'admin';
+    if (filterType === 'trial') return matchesSearch && user.account_type === 'Trial';
     if (filterType === 'premium') return matchesSearch && user.account_type === 'Premium';
     if (filterType === 'inactive') return matchesSearch && user.status !== 'active';
     
@@ -807,6 +810,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                     {[
                       { id: 'all', label: 'הכל' },
                       { id: 'admin', label: 'מנהלים' },
+                      { id: 'trial', label: 'ניסיון' },
                       { id: 'premium', label: 'פרימיום' },
                       { id: 'inactive', label: 'חסומים' }
                     ].map(f => (
@@ -857,8 +861,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                             <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${user.status === 'active' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-rose-50 text-rose-600 border border-rose-100'}`}>
                                 {user.status === 'active' ? 'פעיל' : 'חסום'}
                             </span>
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${user.account_type === 'Premium' ? 'bg-amber-50 text-amber-600 border-amber-100' : 'bg-slate-50 text-slate-500 border-slate-100'}`}>
-                                {user.account_type}
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
+                              user.account_type === 'Premium' ? 'bg-amber-50 text-amber-600 border-amber-100'
+                              : user.account_type === 'Trial' ? 'bg-orange-50 text-orange-600 border-orange-100'
+                              : 'bg-slate-50 text-slate-500 border-slate-100'}`}>
+                                {user.account_type === 'Trial' ? 'ניסיוני' : user.account_type}
                             </span>
                           </div>
                           <ChevronRight size={14} className={`transition-transform duration-300 ${selectedUser?.id === user.id ? 'text-sky-500 translate-x-1' : 'text-slate-300 opacity-0 group-hover:opacity-100'}`} />
@@ -991,6 +998,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                                         <label className="block text-xs font-bold text-slate-400 mb-2">סוג מנוי</label>
                                         {isEditing ? (
                                             <select className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none cursor-pointer" value={editForm.account_type || 'Basic'} onChange={e => setEditForm(prev => ({...prev, account_type: e.target.value}))}>
+                                                <option value="Trial">Trial (ניסיוני)</option>
                                                 <option value="Basic">Basic (בסיסי)</option>
                                                 <option value="Premium">Premium (מתקדם)</option>
                                             </select>
@@ -1165,20 +1173,26 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                  </button>
                </div>
 
-               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                 {['Basic', 'Premium'].map(plan => (
+               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                 {(['Trial', 'Basic', 'Premium'] as const).map(plan => (
                    <div key={plan} className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-xl transition-shadow duration-300 group">
                      {/* Header */}
-                     <div className={`p-6 border-b border-slate-100 relative overflow-hidden ${plan === 'Premium' ? 'bg-gradient-to-br from-sky-500 to-blue-600 text-white' : 'bg-slate-50 text-slate-800'}`}>
-                        {plan === 'Premium' && (
+                     <div className={`p-6 border-b border-slate-100 relative overflow-hidden ${
+                       plan === 'Premium' ? 'bg-gradient-to-br from-sky-500 to-blue-600 text-white'
+                       : plan === 'Trial' ? 'bg-gradient-to-br from-amber-400 to-orange-500 text-white'
+                       : 'bg-slate-50 text-slate-800'}`}>
+                        {(plan === 'Premium' || plan === 'Trial') && (
                             <div className="absolute top-0 right-0 w-full h-full opacity-20 bg-[url('https://grainy-gradients.vercel.app/noise.svg')]"></div>
                         )}
-                        <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider mb-2 shadow-sm ${plan === 'Premium' ? 'bg-white/20 text-white backdrop-blur-md' : 'bg-white text-slate-600 border border-slate-200'}`}>
+                        <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider mb-2 shadow-sm ${
+                          plan === 'Premium' ? 'bg-white/20 text-white backdrop-blur-md'
+                          : plan === 'Trial' ? 'bg-white/20 text-white backdrop-blur-md'
+                          : 'bg-white text-slate-600 border border-slate-200'}`}>
                           {plan.toUpperCase()}
                         </span>
-                        <h3 className="text-2xl font-black mb-1">{plan === 'Basic' ? 'בסיסי' : 'פרימיום'}</h3>
-                        <p className={`text-xs font-medium opacity-80 ${plan === 'Premium' ? 'text-sky-100' : 'text-slate-500'}`}>
-                            {plan === 'Basic' ? 'הגדרות ברירת מחדל למשתמשים החדשים' : 'הגדרות למשתמשים משדרגים בתוכנית מלאה'}
+                        <h3 className="text-2xl font-black mb-1">{plan === 'Basic' ? 'בסיסי' : plan === 'Premium' ? 'פרימיום' : 'ניסיוני'}</h3>
+                        <p className={`text-xs font-medium opacity-80 ${plan === 'Premium' ? 'text-sky-100' : plan === 'Trial' ? 'text-orange-100' : 'text-slate-500'}`}>
+                            {plan === 'Basic' ? 'הגדרות ברירת מחדל למשתמשים החדשים' : plan === 'Premium' ? 'הגדרות למשתמשים משדרגים בתוכנית מלאה' : 'חשבון ניסיוני בתוקף 30 יום'}
                         </p>
                      </div>
                      
@@ -1193,7 +1207,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                              <input 
                                 type="number" 
                                 className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-black text-lg text-center focus:ring-2 focus:ring-sky-200 focus:border-sky-500 outline-none transition-all text-slate-800"
-                                value={systemConfig[plan]?.maxBots || 0}
+                                value={systemConfig[plan]?.maxBots ?? 0}
                                 onChange={e => handleConfigChange(plan, 'maxBots', e.target.value)}
                               />
                            </div>
@@ -1202,13 +1216,25 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                              <input 
                                 type="number" 
                                 className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-black text-lg text-center focus:ring-2 focus:ring-sky-200 focus:border-sky-500 outline-none transition-all text-slate-800"
-                                value={systemConfig[plan]?.maxVersions || 0}
+                                value={systemConfig[plan]?.maxVersions ?? 0}
                                 onChange={e => handleConfigChange(plan, 'maxVersions', e.target.value)}
                               />
                            </div>
                          </div>
+                         {plan === 'Trial' && (
+                           <div>
+                             <label className="block text-[10px] font-bold text-slate-500 mb-1">תוקף ניסיון (בימים)</label>
+                             <input 
+                                type="number" 
+                                className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-black text-lg text-center focus:ring-2 focus:ring-amber-200 focus:border-amber-500 outline-none transition-all text-slate-800"
+                                value={systemConfig[plan]?.trialDays ?? 30}
+                                onChange={e => handleConfigChange(plan, 'trialDays', e.target.value)}
+                              />
+                           </div>
+                         )}
                        </div>
 
+                       {plan !== 'Trial' && (
                        <div className="space-y-4">
                          <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-wider flex items-center gap-1.5 border-b border-slate-100 pb-2">
                             <CreditCard size={14} /> תמחור הרחבות (בש"ח)
@@ -1221,7 +1247,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                                 <input 
                                   type="number" 
                                   className="w-20 p-1.5 bg-white border border-slate-200 rounded-lg font-bold text-center focus:ring-2 focus:ring-sky-500 outline-none text-sm"
-                                  value={systemConfig[plan]?.botPrice || 0}
+                                  value={systemConfig[plan]?.botPrice ?? 0}
                                   onChange={e => handleConfigChange(plan, 'botPrice', e.target.value)}
                                 />
                              </div>
@@ -1233,13 +1259,19 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                                 <input 
                                   type="number" 
                                   className="w-20 p-1.5 bg-white border border-slate-200 rounded-lg font-bold text-center focus:ring-2 focus:ring-sky-500 outline-none text-sm"
-                                  value={systemConfig[plan]?.versionPrice || 0}
+                                  value={systemConfig[plan]?.versionPrice ?? 0}
                                   onChange={e => handleConfigChange(plan, 'versionPrice', e.target.value)}
                                 />
                              </div>
                            </div>
                          </div>
                        </div>
+                       )}
+                       {plan === 'Trial' && (
+                         <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
+                           <p className="text-xs font-bold text-amber-700 text-right">חשבון ניסיוני: גישה לסימולטור בלבד, ללא פרסום וללא גרסאות. לאחר התוקף הבוט ייחסם.</p>
+                         </div>
+                       )}
                      </div>
                    </div>
                  ))}

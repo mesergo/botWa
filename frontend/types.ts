@@ -97,9 +97,10 @@ export interface User {
   email: string;
   role?: 'admin' | 'user';
   public_id: string;
-  account_type: 'Basic' | 'Premium';
+  account_type: 'Trial' | 'Basic' | 'Premium';
   status: 'active' | 'inActive' | 'pause';
   password?: string;
+  trial_expires_at?: string | null;
   isImpersonating?: boolean;
   impersonatedBy?: string;
 }

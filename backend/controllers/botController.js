@@ -17,6 +17,14 @@ export const createBot = async (req, res) => {
     const limits = await getUserLimits(user);
     const accountType = user.account_type || 'Basic';
 
+    // Block expired trial users
+    if (limits.trialExpired) {
+      return res.status(403).json({
+        error: 'TRIAL_EXPIRED',
+        message: 'תקופת הניסיון שלך הסתיימה. אנא שדרג את החשבון כדי להמשיך.'
+      });
+    }
+
     const currentBotsCount = await BotFlow.countDocuments({ user_id: userId });
 
     if (currentBotsCount >= limits.maxBots) {

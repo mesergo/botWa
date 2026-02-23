@@ -16,6 +16,48 @@ import { CloudUpload, RotateCcw, Plus, AlertTriangle, Copy, X, Lock, Wallet } fr
 import Simulator from './components/Simulator';
 import AdminPanel from './components/AdminPanel';
 
+// ── Trial Expired Screen ─────────────────────────────────────────────────────
+const TrialExpiredScreen: React.FC<{ userName: string; onLogout: () => void }> = ({ userName, onLogout }) => (
+  <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6" dir="rtl">
+    <div className="bg-white rounded-3xl shadow-xl w-full max-w-md p-12 text-center border border-slate-100">
+      <div className="flex justify-center mb-8">
+        <div className="w-20 h-20 bg-red-50 rounded-full flex items-center justify-center">
+          <Lock className="w-10 h-10 text-red-500" strokeWidth={2} />
+        </div>
+      </div>
+      <h2 className="text-3xl font-black text-slate-800 mb-3">תקופת הניסיון הסתיימה</h2>
+      <p className="text-slate-500 mb-2 font-medium">
+        שלום <span className="font-bold text-slate-700">{userName}</span>,
+      </p>
+      <p className="text-slate-500 mb-8 text-sm leading-relaxed">
+        תקופת הניסיון החינמי שלך של 30 יום הסתיימה.<br />
+        כדי להמשיך להשתמש במערכת, אנא שדרג את חשבונך לתוכנית Basic או Premium.
+      </p>
+      <div className="bg-slate-50 rounded-2xl p-5 mb-8 text-right space-y-2">
+        <p className="text-xs font-black text-slate-400 uppercase tracking-wider mb-3">מה כלול בתוכנית Basic</p>
+        {['עד 3 בוטים פעילים', 'עד 5 גרסאות לבוט', 'פרסום ושיתוף הבוט', 'ממשק ניהול מלא'].map(f => (
+          <div key={f} className="flex items-center gap-2 text-sm text-slate-600 font-medium">
+            <span className="w-4 h-4 bg-green-100 text-green-600 rounded-full flex items-center justify-center text-[10px] font-black flex-shrink-0">✓</span>
+            {f}
+          </div>
+        ))}
+      </div>
+      <button
+        onClick={() => { alert('ליצירת קשר לשדרוג: contact@mesergo.com'); }}
+        className="w-full bg-blue-600 text-white py-4 rounded-xl font-bold text-lg shadow-lg shadow-blue-600/20 hover:bg-blue-700 transition-all mb-3"
+      >
+        שדרג עכשיו
+      </button>
+      <button
+        onClick={onLogout}
+        className="w-full text-slate-400 py-2 text-sm font-medium hover:text-slate-600 transition-colors"
+      >
+        התנתק
+      </button>
+    </div>
+  </div>
+);
+
 const API_BASE = window.location.hostname === 'localhost' 
   ? 'http://localhost:3001/api' 
   : `${window.location.origin}/api`;
@@ -74,7 +116,6 @@ const FlowBuilder: React.FC = () => {
   const [currentSearchIndex, setCurrentSearchIndex] = useState(-1);
   const lastSearchQueryRef = useRef('');
 
-  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [authForm, setAuthForm] = useState({ name: '', email: '', password: '' });
   const [authErrors, setAuthErrors] = useState<Record<string, string>>({});
 
@@ -500,7 +541,8 @@ const FlowBuilder: React.FC = () => {
   };
  
   const handleAuth = async () => {
-    const endpoint = authMode === 'login' ? '/auth/login' : '/auth/register';
+    setAuthErrors({});
+    const endpoint = '/auth/login';
     const res = await fetch(`${API_BASE}${endpoint}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -514,7 +556,7 @@ const FlowBuilder: React.FC = () => {
       localStorage.setItem('flowbot_user', JSON.stringify(data.user));
       setViewMode('dashboard');
     } else {
-      setAuthErrors({ general: data.error || 'Invalid credentials' });
+      setAuthErrors({ general: data.error === 'Invalid credentials' ? 'שם משתמש או סיסמה שגויים' : (data.error || 'שם משתמש או סיסמה שגויים') });
     }
   };
 
@@ -1041,7 +1083,23 @@ const FlowBuilder: React.FC = () => {
   }
 
   if (!currentUser && viewMode !== 'simulator-only') {
-    return <AuthScreen mode={authMode} form={authForm} errors={authErrors} onFormChange={setAuthForm} onAuth={handleAuth} onSwitchMode={() => setAuthMode(m => m === 'login' ? 'register' : 'login')} />;
+    return <AuthScreen form={authForm} errors={authErrors} onFormChange={(data) => { setAuthErrors({}); setAuthForm(data); }} onAuth={handleAuth} />;
+  }
+
+  // Trial expiry check — show blocking screen if trial has expired
+  if (
+    currentUser &&
+    currentUser.account_type === 'Trial' &&
+    currentUser.trial_expires_at &&
+    new Date() > new Date(currentUser.trial_expires_at) &&
+    viewMode !== 'simulator-only'
+  ) {
+    return (
+      <TrialExpiredScreen
+        userName={currentUser.name}
+        onLogout={() => { localStorage.clear(); window.location.reload(); }}
+      />
+    );
   }
 
   if (viewMode === 'contacts') {

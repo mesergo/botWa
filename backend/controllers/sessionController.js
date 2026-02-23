@@ -151,6 +151,10 @@ export const getContacts = async (req, res) => {
 export const getUserSessions = async (req, res) => {
   const userId = req.user.id;
   try {
+    const PAGE_SIZE = 10;
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const search = (req.query.search || '').trim().toLowerCase();
+
     const userBots = await BotFlow.find({ user_id: userId });
     const botNameMap = {};
     userBots.forEach(b => { botNameMap[b._id.toString()] = b.name; });
@@ -170,15 +174,15 @@ export const getUserSessions = async (req, res) => {
 
     const collection = mongoose.connection.collection('BotSession');
 
-    const sessions = await collection.find({
+    const allSessions = await collection.find({
       $or: [
         { user_id: userId },
         { user_id: userId.toString() },
         { widget_id: { $in: widgetIds } }
       ]
-    }).sort({ created_at: -1 }).limit(200).toArray();
+    }).sort({ created_at: -1 }).toArray();
 
-    const result = sessions.map(s => {
+    const mapped = allSessions.map(s => {
       const flowId = widgetFlowMap[s.widget_id];
       const botName = flowId ? botNameMap[flowId] : null;
       return {
@@ -192,7 +196,19 @@ export const getUserSessions = async (req, res) => {
       };
     });
 
-    res.json(result);
+    const filtered = search
+      ? mapped.filter(s =>
+          s.phone.toLowerCase().includes(search) ||
+          s.bot_name.toLowerCase().includes(search)
+        )
+      : mapped;
+
+    const total = filtered.length;
+    const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+    const safePage = Math.min(page, totalPages);
+    const sessions = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+
+    res.json({ sessions, total, page: safePage, totalPages });
   } catch (err) {
     console.error('getUserSessions error:', err);
     res.status(500).json({ error: err.message });

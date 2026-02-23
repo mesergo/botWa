@@ -55,34 +55,24 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [userPage, setUserPage] = useState(1);
+  const PAGE_SIZE = 10;
 
   const fetchSessions = async (p = 1, q = '') => {
     if (!token) return;
     setLoading(true);
     try {
-      if (showAll) {
-        const params = new URLSearchParams({ page: String(p), search: q });
-        const res = await fetch(`${API_BASE}/sessions/all-sessions?${params}`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        if (res.ok) {
-          const data: PaginatedResponse = await res.json();
-          setSessions(data.sessions);
-          setTotal(data.total);
-          setTotalPages(data.totalPages);
-          setPage(data.page);
-        }
-      } else {
-        const res = await fetch(`${API_BASE}/sessions/my-sessions`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        if (res.ok) {
-          const data: Session[] = await res.json();
-          setSessions(data);
-          setTotal(data.length);
-          setTotalPages(1);
-          setPage(1);
-        }
+      const params = new URLSearchParams({ page: String(p), search: q });
+      const endpoint = showAll ? 'all-sessions' : 'my-sessions';
+      const res = await fetch(`${API_BASE}/sessions/${endpoint}?${params}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data: PaginatedResponse = await res.json();
+        setSessions(data.sessions);
+        setTotal(data.total);
+        setTotalPages(data.totalPages);
+        setPage(data.page);
       }
     } catch (e) {
       console.error('Failed to load sessions', e);
@@ -95,19 +85,13 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
     fetchSessions(1, search);
   }, [token]);
 
-  // Debounced search for admin
+  // Debounced search
   useEffect(() => {
-    if (!showAll) return;
     const timer = setTimeout(() => fetchSessions(1, search), 400);
     return () => clearTimeout(timer);
   }, [search]);
 
-  const filteredSessions = showAll
-    ? sessions
-    : sessions.filter(s =>
-        s.phone.toLowerCase().includes(search.toLowerCase()) ||
-        s.bot_name.toLowerCase().includes(search.toLowerCase())
-      );
+  const filteredSessions = sessions;
 
   const formatDate = (dateStr: string | null) => {
     if (!dateStr) return 'לא ידוע';
@@ -290,8 +274,8 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
             </div>
           )}
 
-          {/* Pagination (admin only) */}
-          {showAll && totalPages > 1 && (
+          {/* Pagination */}
+          {totalPages > 1 && (
             <div className="flex items-center justify-center gap-3 mt-8">
               <button
                 disabled={page <= 1}

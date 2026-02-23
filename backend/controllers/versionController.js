@@ -13,6 +13,14 @@ export const publishVersion = async (req, res) => {
     const limits = await getUserLimits(user);
     const normalizedProcessId = (standard_process_id === "null" || !standard_process_id) ? null : standard_process_id;
 
+    // Block Trial accounts from publishing versions
+    if (limits.canPublish === false) {
+      return res.status(403).json({
+        error: 'TRIAL_NO_PUBLISH',
+        message: 'בחשבון ניסיוני לא ניתן לפרסם גרסאות. שדרג את החשבון להמשיך.'
+      });
+    }
+
     // Get all existing versions for this flow/process combination
     const existingVersions = await Version.find({ 
       user_id: userId, 
