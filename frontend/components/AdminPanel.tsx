@@ -4,7 +4,7 @@ import {
   Search, Trash2, Edit2, Ban, CheckCircle, BarChart2, Settings, 
   FileText, Save, Plus, Eye, EyeOff, Bot, ChevronRight, LayoutDashboard,
   CreditCard, MoreVertical, X, Star, Globe, Lock, Copy, List, Phone, Clock,
-  ChevronDown, ChevronUp
+  ChevronDown, ChevronUp, ToggleLeft, ToggleRight, XCircle
 } from 'lucide-react';
 
 interface User {
@@ -139,6 +139,23 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
       }
     } catch (err) {
       console.error('Failed to fetch stats', err);
+    }
+  };
+
+  const toggleSessionActive = async (sessionId: string, currentActive: boolean) => {
+    try {
+      const response = await fetch(`${API_BASE}/sessions/${sessionId}/toggle-active`, {
+        method: 'PATCH',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setSessions(prev => prev.map(s =>
+          s.id === sessionId ? { ...s, is_active: data.is_active } : s
+        ));
+      }
+    } catch (err) {
+      console.error('Failed to toggle session active state', err);
     }
   };
 
@@ -624,8 +641,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                   </p>
 
                   {/* Table header */}
-                  <div className="grid grid-cols-[1fr_1fr_1fr_160px_40px] gap-4 px-5 py-2 text-xs font-black text-slate-400 uppercase tracking-widest">
-                    <span>טלפון</span><span>משתמש</span><span>בוט</span><span>תאריך</span><span></span>
+                  <div className="grid grid-cols-[1fr_1fr_1fr_140px_90px_40px] gap-4 px-5 py-2 text-xs font-black text-slate-400 uppercase tracking-widest">
+                    <span>טלפון</span><span>משתמש</span><span>בוט</span><span>תאריך</span><span>סטטוס</span><span></span>
                   </div>
 
                   {/* Rows */}
@@ -639,9 +656,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                       return dt.toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
                     };
                     return (
-                      <div key={session.id} className="bg-white border border-slate-100 rounded-2xl shadow-sm hover:shadow-md transition-all overflow-hidden">
+                      <div key={session.id} className={`border rounded-2xl shadow-sm hover:shadow-md transition-all overflow-hidden ${session.is_active ? 'bg-white border-slate-100' : 'bg-slate-50/80 border-slate-200'}`}>
                         <div
-                          className="grid grid-cols-[1fr_1fr_1fr_160px_40px] gap-4 px-5 py-4 cursor-pointer items-center"
+                          className="grid grid-cols-[1fr_1fr_1fr_140px_90px_40px] gap-4 px-5 py-4 cursor-pointer items-center"
                           onClick={() => setExpandedSessionId(isExpanded ? null : session.id)}
                         >
                           <div className="flex items-center gap-2">
@@ -656,6 +673,22 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                           <div className="flex items-center gap-1.5 text-slate-400">
                             <Clock size={12} className="flex-shrink-0" />
                             <span className="text-xs font-bold">{formatD(session.created_at)}</span>
+                          </div>
+                          {/* Status toggle – stops row expand on click */}
+                          <div className="flex items-center" onClick={e => e.stopPropagation()}>
+                            <button
+                              onClick={() => toggleSessionActive(session.id, session.is_active)}
+                              title={session.is_active ? 'לחץ להשבית' : 'לחץ להפעיל'}
+                              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold border transition-all ${
+                                session.is_active
+                                  ? 'bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-100'
+                                  : 'bg-slate-100 text-slate-400 border-slate-200 hover:bg-red-50 hover:text-red-500 hover:border-red-200'
+                              }`}
+                            >
+                              {session.is_active
+                                ? <><ToggleRight size={14} /><span>פעיל</span></>
+                                : <><ToggleLeft size={14} /><span>כבוי</span></>}
+                            </button>
                           </div>
                           <div className="flex items-center justify-center text-slate-300">
                             {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}

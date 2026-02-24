@@ -178,19 +178,20 @@ export const getUserSessions = async (req, res) => {
       $or: [
         { user_id: userId },
         { user_id: userId.toString() },
-        { widget_id: { $in: widgetIds } }
+        { widget_id: { $in: widgetIds } },
+        { flow_id: { $in: botIds } }
       ]
-    }).sort({ created_at: -1 }).toArray();
+    }).sort({ createdAt: -1 }).toArray();
 
     const mapped = allSessions.map(s => {
-      const flowId = widgetFlowMap[s.widget_id];
+      const flowId = widgetFlowMap[s.widget_id] || s.flow_id;
       const botName = flowId ? botNameMap[flowId] : null;
       return {
         id: s._id.toString(),
         phone: s.customer_phone || s.sender || 'לא ידוע',
         widget_id: s.widget_id,
         bot_name: botName || 'לא ידוע',
-        created_at: s.created_at,
+        created_at: s.createdAt || s.created_at,
         parameters: s.parameters || {},
         process_history: s.process_history || []
       };
@@ -249,13 +250,13 @@ export const getAllSessions = async (req, res) => {
     // we fetch in batches until we have enough matching records.
     // Simple approach: fetch all IDs + phone fields, filter, then paginate.
     const allRaw = await collection
-      .find({}, { projection: { customer_phone: 1, sender: 1, widget_id: 1, user_id: 1, created_at: 1, parameters: 1, process_history: 1 } })
-      .sort({ created_at: -1 })
+      .find({}, { projection: { customer_phone: 1, sender: 1, widget_id: 1, flow_id: 1, user_id: 1, createdAt: 1, created_at: 1, parameters: 1, process_history: 1, is_active: 1 } })
+      .sort({ createdAt: -1 })
       .toArray();
 
     // Map and filter
     const mapped = allRaw.map(s => {
-      const flowId = widgetFlowMap[s.widget_id];
+      const flowId = widgetFlowMap[s.widget_id] || s.flow_id;
       const botName = flowId ? botNameMap[flowId] : null;
       const ownerId = flowId ? botUserMap[flowId] : s.user_id?.toString();
       const ownerName = ownerId ? userNameMap[ownerId] : null;
@@ -265,9 +266,10 @@ export const getAllSessions = async (req, res) => {
         widget_id: s.widget_id,
         bot_name: botName || 'לא ידוע',
         user_name: ownerName || 'לא ידוע',
-        created_at: s.created_at,
+        created_at: s.createdAt || s.created_at,
         parameters: s.parameters || {},
-        process_history: s.process_history || []
+        process_history: s.process_history || [],
+        is_active: s.is_active !== false // default true if field missing
       };
     });
 
@@ -287,6 +289,29 @@ export const getAllSessions = async (req, res) => {
     res.json({ sessions, total, page: safePage, totalPages });
   } catch (err) {
     console.error('getAllSessions error:', err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+export const toggleSessionActive = async (req, res) => {
+  // Admin-only: toggle is_active for a session
+  try {
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ error: 'Invalid session ID' });
+    }
+    const collection = mongoose.connection.collection('BotSession');
+    const session = await collection.findOne({ _id: new mongoose.Types.ObjectId(id) });
+    if (!session) return res.status(404).json({ error: 'Session not found' });
+
+    const newActive = session.is_active === false ? true : false;
+    await collection.updateOne(
+      { _id: new mongoose.Types.ObjectId(id) },
+      { $set: { is_active: newActive } }
+    );
+    res.json({ success: true, is_active: newActive });
+  } catch (err) {
+    console.error('toggleSessionActive error:', err);
     res.status(500).json({ error: err.message });
   }
 };
