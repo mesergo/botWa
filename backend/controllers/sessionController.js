@@ -189,6 +189,7 @@ export const getUserSessions = async (req, res) => {
       return {
         id: s._id.toString(),
         phone: s.customer_phone || s.sender || 'לא ידוע',
+        sender: s.sender || null,
         widget_id: s.widget_id,
         bot_name: botName || 'לא ידוע',
         created_at: s.createdAt || s.created_at,
@@ -200,7 +201,8 @@ export const getUserSessions = async (req, res) => {
     const filtered = search
       ? mapped.filter(s =>
           s.phone.toLowerCase().includes(search) ||
-          s.bot_name.toLowerCase().includes(search)
+          s.bot_name.toLowerCase().includes(search) ||
+          (s.sender || '').toLowerCase().includes(search)
         )
       : mapped;
 
@@ -263,6 +265,7 @@ export const getAllSessions = async (req, res) => {
       return {
         id: s._id.toString(),
         phone: s.customer_phone || s.sender || 'לא ידוע',
+        sender: s.sender || null,
         widget_id: s.widget_id,
         bot_name: botName || 'לא ידוע',
         user_name: ownerName || 'לא ידוע',
@@ -277,7 +280,8 @@ export const getAllSessions = async (req, res) => {
       ? mapped.filter(s =>
           s.phone.toLowerCase().includes(search) ||
           s.bot_name.toLowerCase().includes(search) ||
-          s.user_name.toLowerCase().includes(search)
+          s.user_name.toLowerCase().includes(search) ||
+          (s.sender || '').toLowerCase().includes(search)
         )
       : mapped;
 

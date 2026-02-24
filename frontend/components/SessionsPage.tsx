@@ -4,6 +4,7 @@ import { Clock, MessageSquare, Search, Bot, LogOut, ChevronDown, ChevronUp, User
 interface Session {
   id: string;
   phone: string;
+  sender?: string;
   widget_id: string;
   bot_name: string;
   user_name?: string;
@@ -229,6 +230,12 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                             <Bot size={12} className="text-sky-400" />
                             {session.bot_name}
                           </span>
+                          {session.sender && session.sender !== session.phone && (
+                            <span className="flex items-center gap-1">
+                              <User size={12} className="text-indigo-400" />
+                              {session.sender}
+                            </span>
+                          )}
                           {showAll && session.user_name && (
                             <span className="flex items-center gap-1">
                               <User size={12} className="text-slate-400" />

@@ -640,85 +640,107 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                     {sessionsTotal} סשנים · עמוד {sessionsPage} מתוך {sessionsTotalPages}
                   </p>
 
-                  {/* Table header */}
-                  <div className="grid grid-cols-[1fr_1fr_1fr_140px_90px_40px] gap-4 px-5 py-2 text-xs font-black text-slate-400 uppercase tracking-widest">
-                    <span>טלפון</span><span>משתמש</span><span>בוט</span><span>תאריך</span><span>סטטוס</span><span></span>
-                  </div>
-
-                  {/* Rows */}
-                  {sessions.map(session => {
-                    const isExpanded = expandedSessionId === session.id;
-                    const paramEntries = Object.entries(session.parameters || {}).filter(([, v]) => v !== null && v !== '' && v !== undefined);
-                    const formatD = (d: string | null) => {
-                      if (!d) return 'לא ידוע';
-                      const dt = new Date(d);
-                      if (isNaN(dt.getTime())) return 'לא ידוע';
-                      return dt.toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-                    };
-                    return (
-                      <div key={session.id} className={`border rounded-2xl shadow-sm hover:shadow-md transition-all overflow-hidden ${session.is_active ? 'bg-white border-slate-100' : 'bg-slate-50/80 border-slate-200'}`}>
-                        <div
-                          className="grid grid-cols-[1fr_1fr_1fr_140px_90px_40px] gap-4 px-5 py-4 cursor-pointer items-center"
-                          onClick={() => setExpandedSessionId(isExpanded ? null : session.id)}
-                        >
-                          <div className="flex items-center gap-2">
-                            <Phone size={13} className="text-slate-300 flex-shrink-0" />
-                            <span className="font-bold text-slate-700 text-sm truncate" dir="ltr">{session.phone}</span>
-                          </div>
-                          <div className="text-sm font-bold text-indigo-600 truncate">{session.user_name || 'לא ידוע'}</div>
-                          <div className="flex items-center gap-2">
-                            <Bot size={13} className="text-blue-400 flex-shrink-0" />
-                            <span className="text-sm font-bold text-slate-600 truncate">{session.bot_name}</span>
-                          </div>
-                          <div className="flex items-center gap-1.5 text-slate-400">
-                            <Clock size={12} className="flex-shrink-0" />
-                            <span className="text-xs font-bold">{formatD(session.created_at)}</span>
-                          </div>
-                          {/* Status toggle – stops row expand on click */}
-                          <div className="flex items-center" onClick={e => e.stopPropagation()}>
-                            <button
-                              onClick={() => toggleSessionActive(session.id, session.is_active)}
-                              title={session.is_active ? 'לחץ להשבית' : 'לחץ להפעיל'}
-                              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold border transition-all ${
-                                session.is_active
-                                  ? 'bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-100'
-                                  : 'bg-slate-100 text-slate-400 border-slate-200 hover:bg-red-50 hover:text-red-500 hover:border-red-200'
-                              }`}
+                  {/* Table */}
+                  <div className="overflow-x-auto bg-white rounded-2xl border border-slate-100 shadow-sm">
+                    <table className="w-full text-sm border-collapse" dir="rtl">
+                      <thead>
+                        <tr className="border-b border-slate-100">
+                          <th className="text-right px-5 py-3 text-xs font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">טלפון</th>
+                          <th className="text-right px-5 py-3 text-xs font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">Sender</th>
+                          <th className="text-right px-5 py-3 text-xs font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">משתמש</th>
+                          <th className="text-right px-5 py-3 text-xs font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">בוט</th>
+                          <th className="text-right px-5 py-3 text-xs font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">תאריך</th>
+                          <th className="text-right px-5 py-3 text-xs font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">סטטוס</th>
+                          <th className="px-3 py-3"></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                      {sessions.map(session => {
+                        const isExpanded = expandedSessionId === session.id;
+                        const paramEntries = Object.entries(session.parameters || {}).filter(([, v]) => v !== null && v !== '' && v !== undefined);
+                        const formatD = (d: string | null) => {
+                          if (!d) return 'לא ידוע';
+                          const dt = new Date(d);
+                          if (isNaN(dt.getTime())) return 'לא ידוע';
+                          return dt.toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+                        };
+                        return (
+                          <React.Fragment key={session.id}>
+                            <tr
+                              className={`border-b border-slate-50 cursor-pointer transition-colors ${session.is_active ? 'hover:bg-sky-50/40' : 'bg-slate-50/60 hover:bg-slate-100/60'}`}
+                              onClick={() => setExpandedSessionId(isExpanded ? null : session.id)}
                             >
-                              {session.is_active
-                                ? <><ToggleRight size={14} /><span>פעיל</span></>
-                                : <><ToggleLeft size={14} /><span>כבוי</span></>}
-                            </button>
-                          </div>
-                          <div className="flex items-center justify-center text-slate-300">
-                            {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                          </div>
-                        </div>
-                        {isExpanded && (
-                          <div className="border-t border-slate-50 px-5 py-4 bg-slate-50/50">
-                            {paramEntries.length > 0 ? (
-                              <>
-                                <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3">פרמטרים שנאספו</p>
-                                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                                  {paramEntries.map(([key, value]) => (
-                                    <div key={key} className="bg-white border border-slate-100 rounded-xl p-3">
-                                      <p className="text-xs font-black text-slate-400 mb-1">{key}</p>
-                                      <p className="text-sm font-bold text-slate-700 truncate">{typeof value === 'object' ? JSON.stringify(value) : String(value)}</p>
-                                    </div>
-                                  ))}
+                              <td className="px-5 py-3.5 whitespace-nowrap">
+                                <div className="flex items-center gap-2">
+                                  <Phone size={13} className="text-slate-300 flex-shrink-0" />
+                                  <span className="font-bold text-slate-700" dir="ltr">{session.phone}</span>
                                 </div>
-                              </>
-                            ) : (
-                              <p className="text-sm text-slate-400 font-bold">אין פרמטרים שנאספו בסשן זה</p>
+                              </td>
+                              <td className="px-5 py-3.5 whitespace-nowrap">
+                                <span className="font-mono font-bold text-slate-500" dir="ltr">{session.sender || '—'}</span>
+                              </td>
+                              <td className="px-5 py-3.5 whitespace-nowrap font-bold text-indigo-600">{session.user_name || 'לא ידוע'}</td>
+                              <td className="px-5 py-3.5 whitespace-nowrap">
+                                <div className="flex items-center gap-2">
+                                  <Bot size={13} className="text-blue-400 flex-shrink-0" />
+                                  <span className="font-bold text-slate-600">{session.bot_name}</span>
+                                </div>
+                              </td>
+                              <td className="px-5 py-3.5 whitespace-nowrap">
+                                <div className="flex items-center gap-1.5 text-slate-400">
+                                  <Clock size={12} className="flex-shrink-0" />
+                                  <span className="text-xs font-bold">{formatD(session.created_at)}</span>
+                                </div>
+                              </td>
+                              <td className="px-5 py-3.5 whitespace-nowrap" onClick={e => e.stopPropagation()}>
+                                <button
+                                  onClick={() => toggleSessionActive(session.id, session.is_active)}
+                                  title={session.is_active ? 'לחץ להשבית' : 'לחץ להפעיל'}
+                                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold border transition-all ${
+                                    session.is_active
+                                      ? 'bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-100'
+                                      : 'bg-slate-100 text-slate-400 border-slate-200 hover:bg-red-50 hover:text-red-500 hover:border-red-200'
+                                  }`}
+                                >
+                                  {session.is_active
+                                    ? <><ToggleRight size={14} /><span>פעיל</span></>
+                                    : <><ToggleLeft size={14} /><span>כבוי</span></>}
+                                </button>
+                              </td>
+                              <td className="px-3 py-3.5 text-slate-300">
+                                {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                              </td>
+                            </tr>
+                            {isExpanded && (
+                              <tr className="border-b border-slate-100">
+                                <td colSpan={7} className="px-5 py-4 bg-slate-50/70">
+                                  {paramEntries.length > 0 ? (
+                                    <>
+                                      <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3">פרמטרים שנאספו</p>
+                                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                        {paramEntries.map(([key, value]) => (
+                                          <div key={key} className="bg-white border border-slate-100 rounded-xl p-3">
+                                            <p className="text-xs font-black text-slate-400 mb-1">{key}</p>
+                                            <p className="text-sm font-bold text-slate-700 truncate">{typeof value === 'object' ? JSON.stringify(value) : String(value)}</p>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </>
+                                  ) : (
+                                    <p className="text-sm text-slate-400 font-bold">אין פרמטרים שנאספו בסשן זה</p>
+                                  )}
+                                  {session.process_history?.length > 0 && (
+                                    <p className="text-xs font-bold text-slate-400 mt-3">שלבים שבוצעו: <span className="text-blue-500">{session.process_history.length}</span></p>
+                                  )}
+                                </td>
+                              </tr>
                             )}
-                            {session.process_history?.length > 0 && (
-                              <p className="text-xs font-bold text-slate-400 mt-3">שלבים שבוצעו: <span className="text-blue-500">{session.process_history.length}</span></p>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
+                          </React.Fragment>
+                        );
+                      })}
+                      </tbody>
+                    </table>
+                  </div>
 
                   {/* Pagination */}
                   {sessionsTotalPages > 1 && (
