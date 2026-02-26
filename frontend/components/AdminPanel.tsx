@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Users, UserCog, LogOut, ArrowLeft, AlertCircle, Shield, Activity, 
   Search, Trash2, Edit2, Ban, CheckCircle, BarChart2, Settings, 
   FileText, Save, Plus, Eye, EyeOff, Bot, ChevronRight, LayoutDashboard,
   CreditCard, MoreVertical, X, Star, Globe, Lock, Copy, List, Phone, Clock,
-  ChevronDown, ChevronUp, ToggleLeft, ToggleRight, XCircle
+  ChevronDown, ChevronUp, ToggleLeft, ToggleRight, XCircle, MessageSquare,
+  User as UserIcon, ExternalLink
 } from 'lucide-react';
 
 interface User {
@@ -107,9 +108,12 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
   const [sessionsSearch, setSessionsSearch] = useState('');
   const [sessionsSearchInput, setSessionsSearchInput] = useState('');
   const [expandedSessionId, setExpandedSessionId] = useState<string | null>(null);
+  const [adminHistoryOpenId, setAdminHistoryOpenId] = useState<string | null>(null);
   const [sessionsPage, setSessionsPage] = useState(1);
   const [sessionsTotalPages, setSessionsTotalPages] = useState(1);
   const [sessionsTotal, setSessionsTotal] = useState(0);
+  const adminHistoryScrollRef = useRef<HTMLDivElement>(null);
+  const adminActiveSession = sessions.find(s => s.id === adminHistoryOpenId) ?? null;
 
   // Edit Mode
   const [isEditing, setIsEditing] = useState(false);
@@ -127,6 +131,13 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
   useEffect(() => {
     if (activeTab === 'sessions') fetchAllSessions(sessionsPage, sessionsSearch);
   }, [sessionsPage]);
+
+  // Scroll history panel to bottom when it opens/changes
+  useEffect(() => {
+    if (adminHistoryScrollRef.current) {
+      adminHistoryScrollRef.current.scrollTop = adminHistoryScrollRef.current.scrollHeight;
+    }
+  }, [adminHistoryOpenId]);
 
   const fetchStats = async () => {
     try {
@@ -582,7 +593,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
         </header>
 
         {/* Content Scroll Area */}
-        <div className="flex-1 overflow-y-auto px-10 pb-10 pt-2 z-10">
+        <div className={`flex-1 z-10 ${activeTab === 'sessions' ? 'overflow-hidden' : 'overflow-y-auto px-10 pb-10 pt-2'}`}>
           
           {error && (
             <div className="bg-red-50 border-r-4 border-red-500 p-4 mb-8 rounded-xl shadow-sm flex items-center gap-4 animate-fade-in group hover:bg-red-100/50 transition-colors">
@@ -594,180 +605,390 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
 
           {/* SESSIONS TAB */}
           {activeTab === 'sessions' && (
-            <div className="space-y-4 animate-fade-in-up" dir="rtl">
-              {/* Search bar with submit */}
-              <form
-                className="relative max-w-md mb-6 flex gap-2"
-                onSubmit={e => {
-                  e.preventDefault();
-                  setSessionsSearch(sessionsSearchInput);
-                  fetchAllSessions(1, sessionsSearchInput);
-                }}
-              >
-                <div className="relative flex-1">
-                  <Search size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-300" />
-                  <input
-                    type="text"
-                    value={sessionsSearchInput}
-                    onChange={e => setSessionsSearchInput(e.target.value)}
-                    placeholder="חיפוש לפי טלפון, בוט או משתמש..."
-                    className="w-full pr-10 pl-4 py-3 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700 placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all shadow-sm"
-                    dir="rtl"
-                  />
-                </div>
-                <button
-                  type="submit"
-                  className="px-4 py-3 bg-blue-50 text-blue-500 rounded-xl text-sm font-bold hover:bg-blue-100 hover:text-blue-600 transition-colors flex-shrink-0 border border-blue-100"
-                >
-                  חפש
-                </button>
-              </form>
+            <div className="flex flex-row h-full overflow-hidden">
 
-              {sessionsLoading ? (
-                <div className="flex items-center justify-center py-24 text-slate-400 font-bold">
-                  <div className="animate-spin rounded-full h-8 w-8 border-2 border-blue-500 border-t-transparent ml-3" />
-                  טוען סשנים...
-                </div>
-              ) : sessions.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-24 text-slate-300 gap-4">
-                  <List size={64} strokeWidth={1} />
-                  <p className="text-xl font-bold">לא נמצאו סשנים</p>
-                </div>
-              ) : (
-                <>
-                  {/* Counter */}
-                  <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2">
-                    {sessionsTotal} סשנים · עמוד {sessionsPage} מתוך {sessionsTotalPages}
-                  </p>
+              {/* LEFT: Sessions list (flex-1, scrollable) */}
+              <div className="flex-1 overflow-y-auto px-10 pb-10 pt-2">
+                <div className="space-y-4 animate-fade-in-up" dir="rtl">
+                  {/* Search bar with submit */}
+                  <form
+                    className="relative max-w-md mb-6 flex gap-2"
+                    onSubmit={e => {
+                      e.preventDefault();
+                      setSessionsSearch(sessionsSearchInput);
+                      fetchAllSessions(1, sessionsSearchInput);
+                    }}
+                  >
+                    <div className="relative flex-1">
+                      <Search size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-300" />
+                      <input
+                        type="text"
+                        value={sessionsSearchInput}
+                        onChange={e => setSessionsSearchInput(e.target.value)}
+                        placeholder="חיפוש לפי טלפון, בוט או משתמש..."
+                        className="w-full pr-10 pl-4 py-3 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700 placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all shadow-sm"
+                        dir="rtl"
+                      />
+                    </div>
+                    <button
+                      type="submit"
+                      className="px-4 py-3 bg-blue-50 text-blue-500 rounded-xl text-sm font-bold hover:bg-blue-100 hover:text-blue-600 transition-colors flex-shrink-0 border border-blue-100"
+                    >
+                      חפש
+                    </button>
+                  </form>
 
-                  {/* Table header */}
-                  <div className="grid grid-cols-[1fr_1fr_1fr_140px_90px_40px] gap-4 px-5 py-2 text-xs font-black text-slate-400 uppercase tracking-widest">
-                    <span>טלפון</span><span>משתמש</span><span>בוט</span><span>תאריך</span><span>סטטוס</span><span></span>
-                  </div>
+                  {sessionsLoading ? (
+                    <div className="flex items-center justify-center py-24 text-slate-400 font-bold">
+                      <div className="animate-spin rounded-full h-8 w-8 border-2 border-blue-500 border-t-transparent ml-3" />
+                      טוען סשנים...
+                    </div>
+                  ) : sessions.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-24 text-slate-300 gap-4">
+                      <List size={64} strokeWidth={1} />
+                      <p className="text-xl font-bold">לא נמצאו סשנים</p>
+                    </div>
+                  ) : (
+                    <>
+                      {/* Counter */}
+                      <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3">
+                        {sessionsTotal} סשנים · עמוד {sessionsPage} מתוך {sessionsTotalPages}
+                      </p>
 
-                  {/* Rows */}
-                  {sessions.map(session => {
-                    const isExpanded = expandedSessionId === session.id;
-                    const paramEntries = Object.entries(session.parameters || {}).filter(([, v]) => v !== null && v !== '' && v !== undefined);
-                    const formatD = (d: string | null) => {
-                      if (!d) return 'לא ידוע';
-                      const dt = new Date(d);
-                      if (isNaN(dt.getTime())) return 'לא ידוע';
-                      return dt.toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-                    };
-                    return (
-                      <div key={session.id} className={`border rounded-2xl shadow-sm hover:shadow-md transition-all overflow-hidden ${session.is_active ? 'bg-white border-slate-100' : 'bg-slate-50/80 border-slate-200'}`}>
-                        <div
-                          className="grid grid-cols-[1fr_1fr_1fr_140px_90px_40px] gap-4 px-5 py-4 cursor-pointer items-center"
-                          onClick={() => setExpandedSessionId(isExpanded ? null : session.id)}
-                        >
-                          <div className="flex items-center gap-2">
-                            <Phone size={13} className="text-slate-300 flex-shrink-0" />
-                            <span className="font-bold text-slate-700 text-sm truncate" dir="ltr">{session.phone}</span>
-                          </div>
-                          <div className="text-sm font-bold text-indigo-600 truncate">{session.user_name || 'לא ידוע'}</div>
-                          <div className="flex items-center gap-2">
-                            <Bot size={13} className="text-blue-400 flex-shrink-0" />
-                            <span className="text-sm font-bold text-slate-600 truncate">{session.bot_name}</span>
-                          </div>
-                          <div className="flex items-center gap-1.5 text-slate-400">
-                            <Clock size={12} className="flex-shrink-0" />
-                            <span className="text-xs font-bold">{formatD(session.created_at)}</span>
-                          </div>
-                          {/* Status toggle – stops row expand on click */}
-                          <div className="flex items-center" onClick={e => e.stopPropagation()}>
-                            <button
-                              onClick={() => toggleSessionActive(session.id, session.is_active)}
-                              title={session.is_active ? 'לחץ להשבית' : 'לחץ להפעיל'}
-                              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold border transition-all ${
-                                session.is_active
-                                  ? 'bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-100'
-                                  : 'bg-slate-100 text-slate-400 border-slate-200 hover:bg-red-50 hover:text-red-500 hover:border-red-200'
-                              }`}
-                            >
-                              {session.is_active
-                                ? <><ToggleRight size={14} /><span>פעיל</span></>
-                                : <><ToggleLeft size={14} /><span>כבוי</span></>}
-                            </button>
-                          </div>
-                          <div className="flex items-center justify-center text-slate-300">
-                            {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                          </div>
-                        </div>
-                        {isExpanded && (
-                          <div className="border-t border-slate-50 px-5 py-4 bg-slate-50/50">
-                            {paramEntries.length > 0 ? (
-                              <>
-                                <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3">פרמטרים שנאספו</p>
-                                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                                  {paramEntries.map(([key, value]) => (
-                                    <div key={key} className="bg-white border border-slate-100 rounded-xl p-3">
-                                      <p className="text-xs font-black text-slate-400 mb-1">{key}</p>
-                                      <p className="text-sm font-bold text-slate-700 truncate">{typeof value === 'object' ? JSON.stringify(value) : String(value)}</p>
-                                    </div>
-                                  ))}
-                                </div>
-                              </>
-                            ) : (
-                              <p className="text-sm text-slate-400 font-bold">אין פרמטרים שנאספו בסשן זה</p>
-                            )}
-                            {session.process_history?.length > 0 && (
-                              <p className="text-xs font-bold text-slate-400 mt-3">שלבים שבוצעו: <span className="text-blue-500">{session.process_history.length}</span></p>
-                            )}
-                          </div>
-                        )}
+                      {/* Table */}
+                      <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
+                        <table className="w-full text-sm" dir="rtl">
+                          <thead>
+                            <tr className="border-b border-slate-100 bg-slate-50/80">
+                              <th className="text-right px-4 py-3 text-xs font-black text-slate-400 uppercase tracking-widest">טלפון</th>
+                              <th className="text-right px-4 py-3 text-xs font-black text-slate-400 uppercase tracking-widest">משתמש</th>
+                              <th className="text-right px-4 py-3 text-xs font-black text-slate-400 uppercase tracking-widest">בוט</th>
+                              <th className="text-right px-4 py-3 text-xs font-black text-slate-400 uppercase tracking-widest">תאריך</th>
+                              <th className="text-right px-4 py-3 text-xs font-black text-slate-400 uppercase tracking-widest">סטטוס</th>
+                              <th className="text-right px-4 py-3 text-xs font-black text-slate-400 uppercase tracking-widest">פעולות</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {sessions.map(session => {
+                              const isExpanded = expandedSessionId === session.id;
+                              const isHistoryOpen = adminHistoryOpenId === session.id;
+                              const paramEntries = Object.entries(session.parameters || {}).filter(([, v]) => v !== null && v !== '' && v !== undefined);
+                              const hasHistory = (session.process_history || []).length > 0;
+                              const formatD = (d: string | null) => {
+                                if (!d) return 'לא ידוע';
+                                const dt = new Date(d);
+                                if (isNaN(dt.getTime())) return 'לא ידוע';
+                                return dt.toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+                              };
+                              return (
+                                <React.Fragment key={session.id}>
+                                  <tr className={`transition-colors ${isHistoryOpen ? 'bg-sky-50/60' : session.is_active ? 'hover:bg-slate-50/60' : 'bg-slate-50/40 hover:bg-slate-50'}`}>
+                                    {/* Phone */}
+                                    <td className="px-4 py-3">
+                                      <div className="flex items-center gap-2">
+                                        <Phone size={13} className="text-slate-300 flex-shrink-0" />
+                                        <span className="font-bold text-slate-700 text-sm" dir="ltr">{session.phone}</span>
+                                      </div>
+                                    </td>
+                                    {/* User */}
+                                    <td className="px-4 py-3">
+                                      <span className="text-sm font-bold text-indigo-600">{session.user_name || 'לא ידוע'}</span>
+                                    </td>
+                                    {/* Bot */}
+                                    <td className="px-4 py-3">
+                                      <div className="flex items-center gap-1.5">
+                                        <Bot size={13} className="text-blue-400 flex-shrink-0" />
+                                        <span className="text-sm font-bold text-slate-600">{session.bot_name}</span>
+                                      </div>
+                                    </td>
+                                    {/* Date */}
+                                    <td className="px-4 py-3">
+                                      <div className="flex items-center gap-1.5 text-slate-400">
+                                        <Clock size={12} className="flex-shrink-0" />
+                                        <span className="text-xs font-bold">{formatD(session.created_at)}</span>
+                                      </div>
+                                    </td>
+                                    {/* Status */}
+                                    <td className="px-4 py-3">
+                                      <button
+                                        onClick={() => toggleSessionActive(session.id, session.is_active)}
+                                        title={session.is_active ? 'לחץ להשבית' : 'לחץ להפעיל'}
+                                        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold border transition-all ${
+                                          session.is_active
+                                            ? 'bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-100'
+                                            : 'bg-slate-100 text-slate-400 border-slate-200 hover:bg-red-50 hover:text-red-500 hover:border-red-200'
+                                        }`}
+                                      >
+                                        {session.is_active
+                                          ? <><ToggleRight size={14} /><span>פעיל</span></>
+                                          : <><ToggleLeft size={14} /><span>כבוי</span></>}
+                                      </button>
+                                    </td>
+                                    {/* Actions */}
+                                    <td className="px-4 py-3">
+                                      <div className="flex items-center gap-1.5">
+                                        {paramEntries.length > 0 && (
+                                          <button
+                                            onClick={() => setExpandedSessionId(isExpanded ? null : session.id)}
+                                            className={`flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold rounded-xl transition-colors ${
+                                              isExpanded
+                                                ? 'bg-slate-200 text-slate-700'
+                                                : 'bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-slate-700'
+                                            }`}
+                                          >
+                                            {isExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                                            פרמטרים
+                                          </button>
+                                        )}
+                                        {hasHistory && (
+                                          <button
+                                            onClick={() => setAdminHistoryOpenId(isHistoryOpen ? null : session.id)}
+                                            className={`flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold rounded-xl transition-colors ${
+                                              isHistoryOpen
+                                                ? 'bg-sky-100 text-sky-600'
+                                                : 'bg-sky-50 text-sky-500 hover:bg-sky-100 hover:text-sky-600'
+                                            }`}
+                                          >
+                                            <MessageSquare size={13} />
+                                            היסטוריה
+                                            <span className="bg-sky-500 text-white text-[9px] font-black rounded-full px-1.5 py-0.5 leading-none">
+                                              {session.process_history.length}
+                                            </span>
+                                          </button>
+                                        )}
+                                      </div>
+                                    </td>
+                                  </tr>
+                                  {/* Expanded parameters row */}
+                                  {isExpanded && paramEntries.length > 0 && (
+                                    <tr className="bg-slate-50/70">
+                                      <td colSpan={6} className="px-6 py-4 border-t border-slate-100">
+                                        <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3">פרמטרים שנאספו</p>
+                                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                          {paramEntries.map(([key, value]) => (
+                                            <div key={key} className="bg-white border border-slate-100 rounded-xl p-3">
+                                              <p className="text-xs font-black text-slate-400 mb-1">{key}</p>
+                                              <p className="text-sm font-bold text-slate-700 truncate">{typeof value === 'object' ? JSON.stringify(value) : String(value)}</p>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  )}
+                                </React.Fragment>
+                              );
+                            })}
+                          </tbody>
+                        </table>
                       </div>
-                    );
-                  })}
 
-                  {/* Pagination */}
-                  {sessionsTotalPages > 1 && (
-                    <div className="flex items-center justify-center gap-1 pt-4">
+                      {/* Pagination */}
+                      {sessionsTotalPages > 1 && (
+                        <div className="flex items-center justify-center gap-1 pt-4">
+                          <button
+                            onClick={() => { setSessionsPage(p => Math.max(1, p - 1)); }}
+                            disabled={sessionsPage <= 1 || sessionsLoading}
+                            className="px-2.5 py-1 text-slate-400 rounded-lg text-xs font-bold hover:text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                          >
+                            ‹ הקודם
+                          </button>
+
+                          {Array.from({ length: sessionsTotalPages }, (_, i) => i + 1)
+                            .filter(p => p === 1 || p === sessionsTotalPages || Math.abs(p - sessionsPage) <= 2)
+                            .reduce<(number | '...')[]>((acc, p, idx, arr) => {
+                              if (idx > 0 && typeof arr[idx - 1] === 'number' && (p as number) - (arr[idx - 1] as number) > 1) acc.push('...');
+                              acc.push(p);
+                              return acc;
+                            }, [])
+                            .map((item, idx) =>
+                              item === '...' ? (
+                                <span key={`dot-${idx}`} className="px-1 text-slate-300 text-xs">…</span>
+                              ) : (
+                                <button
+                                  key={item}
+                                  onClick={() => { setSessionsPage(item as number); }}
+                                  disabled={sessionsLoading}
+                                  className={`w-7 h-7 rounded-lg text-xs font-bold transition-all ${
+                                    sessionsPage === item
+                                      ? 'bg-blue-50 text-blue-600 border border-blue-200'
+                                      : 'text-slate-400 hover:bg-slate-100 hover:text-slate-600'
+                                  }`}
+                                >
+                                  {item}
+                                </button>
+                              )
+                            )}
+
+                          <button
+                            onClick={() => { setSessionsPage(p => Math.min(sessionsTotalPages, p + 1)); }}
+                            disabled={sessionsPage >= sessionsTotalPages || sessionsLoading}
+                            className="px-2.5 py-1 text-slate-400 rounded-lg text-xs font-bold hover:text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                          >
+                            הבא ›
+                          </button>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* RIGHT: History side panel (1/4 width) */}
+              {adminHistoryOpenId && adminActiveSession && (() => {
+                const session = adminActiveSession;
+                const fmtMsgDate = (dateStr: string) => {
+                  if (!dateStr) return '';
+                  const d = new Date(dateStr);
+                  if (isNaN(d.getTime())) return '';
+                  return d.toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit' }) + ' ' +
+                    d.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+                };
+                return (
+                  <div className="w-1/4 flex-shrink-0 border-l border-slate-200 flex flex-col overflow-hidden bg-white shadow-lg">
+                    {/* Panel header */}
+                    <div className="flex-shrink-0 px-4 py-3.5 bg-slate-900 text-white flex items-center justify-between">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-xl bg-sky-500 flex items-center justify-center shadow">
+                          <Bot size={16} />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-xs font-bold text-white leading-tight truncate max-w-[130px]">{session.bot_name}</p>
+                          <p className="text-[10px] text-slate-400 font-semibold truncate max-w-[130px]">{session.phone}</p>
+                        </div>
+                      </div>
                       <button
-                        onClick={() => { setSessionsPage(p => Math.max(1, p - 1)); }}
-                        disabled={sessionsPage <= 1 || sessionsLoading}
-                        className="px-2.5 py-1 text-slate-400 rounded-lg text-xs font-bold hover:text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                        onClick={() => setAdminHistoryOpenId(null)}
+                        className="p-1.5 hover:bg-white/10 rounded-xl transition-colors flex-shrink-0"
+                        title="סגור"
                       >
-                        ‹ הקודם
-                      </button>
-
-                      {Array.from({ length: sessionsTotalPages }, (_, i) => i + 1)
-                        .filter(p => p === 1 || p === sessionsTotalPages || Math.abs(p - sessionsPage) <= 2)
-                        .reduce<(number | '...')[]>((acc, p, idx, arr) => {
-                          if (idx > 0 && typeof arr[idx - 1] === 'number' && (p as number) - (arr[idx - 1] as number) > 1) acc.push('...');
-                          acc.push(p);
-                          return acc;
-                        }, [])
-                        .map((item, idx) =>
-                          item === '...' ? (
-                            <span key={`dot-${idx}`} className="px-1 text-slate-300 text-xs">…</span>
-                          ) : (
-                            <button
-                              key={item}
-                              onClick={() => { setSessionsPage(item as number); }}
-                              disabled={sessionsLoading}
-                              className={`w-7 h-7 rounded-lg text-xs font-bold transition-all ${
-                                sessionsPage === item
-                                  ? 'bg-blue-50 text-blue-600 border border-blue-200'
-                                  : 'text-slate-400 hover:bg-slate-100 hover:text-slate-600'
-                              }`}
-                            >
-                              {item}
-                            </button>
-                          )
-                        )}
-
-                      <button
-                        onClick={() => { setSessionsPage(p => Math.min(sessionsTotalPages, p + 1)); }}
-                        disabled={sessionsPage >= sessionsTotalPages || sessionsLoading}
-                        className="px-2.5 py-1 text-slate-400 rounded-lg text-xs font-bold hover:text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
-                      >
-                        הבא ›
+                        <X size={16} />
                       </button>
                     </div>
-                  )}
-                </>
-              )}
+                    {/* Messages */}
+                    <div
+                      ref={adminHistoryScrollRef}
+                      className="flex-1 overflow-y-auto p-3 space-y-4 bg-[#fcfcfc]"
+                      dir="rtl"
+                    >
+                      {session.process_history.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center h-full gap-3 text-slate-300">
+                          <MessageSquare size={36} strokeWidth={1} />
+                          <p className="text-xs font-bold">אין הודעות</p>
+                        </div>
+                      ) : (() => {
+                        const grouped: any[] = [];
+                        let hi = 0;
+                        while (hi < session.process_history.length) {
+                          const cur = session.process_history[hi];
+                          if (cur.type === 'waitingwebservice') { hi++; continue; }
+                          if (cur.type === 'SendItem') {
+                            const cards: any[] = [];
+                            const created = cur.created;
+                            while (hi < session.process_history.length && session.process_history[hi].type === 'SendItem') {
+                              cards.push(session.process_history[hi]); hi++;
+                            }
+                            grouped.push({ type: '_carousel', carouselItems: cards, created });
+                          } else {
+                            grouped.push(cur); hi++;
+                          }
+                        }
+                        return grouped.map((item: any, idx: number) => {
+                        const sender: 'bot' | 'user' = item.sender
+                          ? item.sender
+                          : item.type === 'UserInput' ? 'user' : 'bot';
+                        const isBot = sender === 'bot';
+                        const text = item.text ?? item.content ?? '';
+                        const msgDate = item.created ? fmtMsgDate(item.created) : '';
+                        return (
+                          <div key={idx} className={`flex w-full ${isBot ? 'justify-start' : 'justify-end'}`}>
+                            <div className={`flex gap-1.5 max-w-[90%] ${isBot ? 'flex-row-reverse' : 'flex-row'}`}>
+                              <div className={`w-7 h-7 rounded-xl flex-shrink-0 flex items-center justify-center shadow-sm ${
+                                isBot ? 'bg-white border border-slate-100 text-slate-700' : 'bg-sky-500 text-white'
+                              }`}>
+                                {isBot ? <Bot size={13} /> : <UserIcon size={13} />}
+                              </div>
+                              <div className={`flex flex-col gap-0.5 ${isBot ? 'items-end' : 'items-start'}`}>
+                                <div className={`px-3 py-2 rounded-2xl text-xs font-semibold shadow-sm text-right ${
+                                  isBot
+                                    ? 'bg-white border border-slate-100 text-slate-900 rounded-tr-none'
+                                    : 'bg-sky-500 text-white rounded-tl-none'
+                                }`}>
+                                  {(item.type === 'Text' || item.type === 'UserInput' || !item.type || item.type.startsWith('input_')) && text && (
+                                    <p className="whitespace-pre-wrap leading-relaxed">{text}</p>
+                                  )}
+                                  {item.type === 'Image' && item.url && (
+                                    <img src={item.url} alt="תמונה" className="rounded-xl max-w-[160px] h-auto" />
+                                  )}
+                                  {item.type === 'Document' && item.url && (
+                                    <a href={item.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-sky-600 underline text-[11px]">
+                                      <ExternalLink size={10} /> פתח מסמך
+                                    </a>
+                                  )}
+                                  {item.type === 'URL' && (
+                                    <div>
+                                      {text && <p>{text}</p>}
+                                      {item.url && (
+                                        <a href={item.url} target="_blank" rel="noopener noreferrer" className="text-[11px] underline opacity-80 break-all flex items-center gap-1">
+                                          {item.url} <ExternalLink size={10} />
+                                        </a>
+                                      )}
+                                    </div>
+                                  )}
+                                  {item.type === 'Options' && (
+                                    <div>
+                                      {text && <p className="mb-1 text-[10px] text-slate-400 font-black uppercase tracking-widest">{text}</p>}
+                                      {Array.isArray(item.options) && (
+                                        <div className="flex flex-col gap-1">
+                                          {item.options.filter((o: string) => o !== 'default').map((opt: string, i: number) => (
+                                            <div key={i} className="px-2 py-1 bg-slate-50 border border-slate-200 rounded-lg text-[11px] font-bold text-slate-700">{opt}</div>
+                                          ))}
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+                                  {/* Carousel (SendItem) */}
+                                  {item.type === '_carousel' && Array.isArray(item.carouselItems) && (
+                                    <div className="flex gap-2 overflow-x-auto pb-1 max-w-[220px]">
+                                      {item.carouselItems.map((card: any, ci: number) => (
+                                        <div key={ci} className="flex-shrink-0 w-36 bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+                                          {card.image && <img src={card.image} alt={card.title || ''} className="w-full h-20 object-cover" />}
+                                          <div className="p-2">
+                                            {card.title && <p className="text-[11px] font-black text-slate-800 leading-tight">{card.title}</p>}
+                                            {card.subtitle && <p className="text-[9px] text-slate-500 mt-0.5 leading-snug">{card.subtitle}</p>}
+                                            {card.url && (
+                                              <a href={card.url} target="_blank" rel="noopener noreferrer"
+                                                className="mt-1 flex items-center gap-1 text-[9px] text-sky-600 font-bold hover:underline">
+                                                <ExternalLink size={8} /> פתח
+                                              </a>
+                                            )}
+                                            {Array.isArray(card.options) && card.options.length > 0 && (
+                                              <div className="mt-1 flex flex-col gap-0.5">
+                                                {card.options.map((opt: any, oi: number) => (
+                                                  <div key={oi} className="px-1.5 py-0.5 bg-slate-50 border border-slate-100 rounded text-[9px] font-bold text-slate-700 text-center">
+                                                    {typeof opt === 'object' ? opt.text : opt}
+                                                  </div>
+                                                ))}
+                                              </div>
+                                            )}
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                                {msgDate && (
+                                  <span className="text-[9px] text-slate-400 font-semibold px-0.5">{msgDate}</span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                        });
+                      })()}
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           )}
 

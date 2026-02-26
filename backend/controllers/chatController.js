@@ -169,9 +169,12 @@ const findNextNode = (nodeId, edges, handleId = null) => {
 // Helper: Add to history
 const addToHistory = (session, message, nodeId) => {
   const history = session.process_history || [];
+  const isUser = nodeId === 'user';
   history.push({
     ...message,
     node_id: nodeId,
+    sender: isUser ? 'user' : 'bot',
+    name: isUser ? 'משתמש' : 'בוט',
     created: new Date().toISOString()
   });
   session.process_history = history;

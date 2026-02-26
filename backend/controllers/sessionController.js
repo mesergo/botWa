@@ -73,6 +73,39 @@ export const updateSessionParameters = async (req, res) => {
   }
 };
 
+export const addHistoryMessage = async (req, res) => {
+  const { sessionId, message } = req.body;
+
+  if (!sessionId) return res.json({ success: true, skipped: true });
+
+  if (!mongoose.Types.ObjectId.isValid(sessionId)) {
+    return res.status(400).json({ error: 'Invalid sessionId format' });
+  }
+
+  try {
+    if (!mongoose.connection || mongoose.connection.readyState !== 1) {
+      return res.status(503).json({ error: 'Database connection not ready' });
+    }
+
+    const collection = mongoose.connection.collection('BotSession');
+
+    const entry = {
+      ...message,
+      created: message.created || new Date().toISOString()
+    };
+
+    await collection.updateOne(
+      { _id: new mongoose.Types.ObjectId(sessionId) },
+      { $push: { process_history: entry } }
+    );
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error("addHistoryMessage Error:", err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
 export const getContacts = async (req, res) => {
   const userId = req.user.id;
   try {
@@ -153,37 +186,74 @@ export const getUserSessions = async (req, res) => {
   try {
     const PAGE_SIZE = 10;
     const page = Math.max(1, parseInt(req.query.page) || 1);
-    const search = (req.query.search || '').trim().toLowerCase();
+    const search = (req.query.search || '').trim();
 
-    const userBots = await BotFlow.find({ user_id: userId });
+    // Build lookup maps
+    const [userBots, userWidgets] = await Promise.all([
+      BotFlow.find({ user_id: userId }).lean(),
+      Widget.find({
+        $or: [
+          { user_id: userId },
+          { user_id: userId.toString() }
+        ]
+      }).select('id flow_id').lean()
+    ]);
+
     const botNameMap = {};
     userBots.forEach(b => { botNameMap[b._id.toString()] = b.name; });
     const botIds = userBots.map(b => b._id.toString());
 
-    const userWidgets = await Widget.find({
-      $or: [
-        { user_id: userId },
-        { user_id: userId.toString() },
-        { flow_id: { $in: botIds } }
-      ]
-    }).select('id flow_id');
-
-    const widgetIds = userWidgets.map(w => w.id).filter(Boolean);
+    // Also include widgets whose flow belongs to the user
+    const botWidgets = await Widget.find({ flow_id: { $in: botIds } }).select('id flow_id').lean();
+    const allWidgets = [...userWidgets, ...botWidgets];
+    const widgetIds = [...new Set(allWidgets.map(w => w.id).filter(Boolean))];
     const widgetFlowMap = {};
-    userWidgets.forEach(w => { if (w.id) widgetFlowMap[w.id] = w.flow_id; });
+    allWidgets.forEach(w => { if (w.id) widgetFlowMap[w.id] = w.flow_id; });
 
     const collection = mongoose.connection.collection('BotSession');
 
-    const allSessions = await collection.find({
+    const matchStage = {
       $or: [
         { user_id: userId },
         { user_id: userId.toString() },
         { widget_id: { $in: widgetIds } },
         { flow_id: { $in: botIds } }
       ]
-    }).sort({ createdAt: -1 }).toArray();
+    };
 
-    const mapped = allSessions.map(s => {
+    const pipeline = [
+      { $match: matchStage },
+      // Normalise the date field — documents use either created_at or createdAt
+      { $addFields: { _sortDate: { $ifNull: ['$created_at', '$createdAt'] } } },
+      { $sort: { _sortDate: -1 } },
+      // Inline search filter (regex on phone field)
+      ...(search ? [{
+        $match: {
+          $or: [
+            { customer_phone: { $regex: search, $options: 'i' } },
+            { sender: { $regex: search, $options: 'i' } },
+            { widget_id: { $in: widgetIds.filter(id => {
+              const fid = widgetFlowMap[id];
+              return fid && botNameMap[fid]?.toLowerCase().includes(search.toLowerCase());
+            }) } }
+          ]
+        }
+      }] : []),
+      // Count + paginate in one pass using $facet
+      {
+        $facet: {
+          meta: [{ $count: 'total' }],
+          data: [{ $skip: (page - 1) * PAGE_SIZE }, { $limit: PAGE_SIZE }]
+        }
+      }
+    ];
+
+    const [result] = await collection.aggregate(pipeline).toArray();
+    const total = result.meta[0]?.total ?? 0;
+    const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+    const safePage = Math.min(page, totalPages);
+
+    const sessions = result.data.map(s => {
       const flowId = widgetFlowMap[s.widget_id] || s.flow_id;
       const botName = flowId ? botNameMap[flowId] : null;
       return {
@@ -191,23 +261,11 @@ export const getUserSessions = async (req, res) => {
         phone: s.customer_phone || s.sender || 'לא ידוע',
         widget_id: s.widget_id,
         bot_name: botName || 'לא ידוע',
-        created_at: s.createdAt || s.created_at,
+        created_at: s.created_at || s.createdAt,
         parameters: s.parameters || {},
         process_history: s.process_history || []
       };
     });
-
-    const filtered = search
-      ? mapped.filter(s =>
-          s.phone.toLowerCase().includes(search) ||
-          s.bot_name.toLowerCase().includes(search)
-        )
-      : mapped;
-
-    const total = filtered.length;
-    const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-    const safePage = Math.min(page, totalPages);
-    const sessions = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
 
     res.json({ sessions, total, page: safePage, totalPages });
   } catch (err) {
@@ -221,11 +279,11 @@ export const getAllSessions = async (req, res) => {
   try {
     const PAGE_SIZE = 6;
     const page = Math.max(1, parseInt(req.query.page) || 1);
-    const search = (req.query.search || '').trim().toLowerCase();
+    const search = (req.query.search || '').trim();
 
     const collection = mongoose.connection.collection('BotSession');
 
-    // Build lookup maps once
+    // Build lookup maps once (parallel)
     const [allBots, allWidgets, allUsers] = await Promise.all([
       BotFlow.find({}).lean(),
       Widget.find({}).select('id flow_id user_id').lean(),
@@ -245,48 +303,81 @@ export const getAllSessions = async (req, res) => {
     const userNameMap = {};
     allUsers.forEach(u => { userNameMap[u._id.toString()] = u.name || u.email; });
 
-    // Pull all raw sessions sorted by date (no limit yet – we need to filter first)
-    // For large datasets this could be optimized with text index, but for now
-    // we fetch in batches until we have enough matching records.
-    // Simple approach: fetch all IDs + phone fields, filter, then paginate.
-    const allRaw = await collection
-      .find({}, { projection: { customer_phone: 1, sender: 1, widget_id: 1, flow_id: 1, user_id: 1, createdAt: 1, created_at: 1, parameters: 1, process_history: 1, is_active: 1 } })
-      .sort({ createdAt: -1 })
-      .toArray();
+    const pipeline = [
+      // Normalise date field and derive searchable bot/user name fields via $addFields
+      {
+        $addFields: {
+          _sortDate: { $ifNull: ['$created_at', '$createdAt'] },
+          _phone: { $ifNull: ['$customer_phone', { $ifNull: ['$sender', 'לא ידוע'] }] }
+        }
+      },
+      { $sort: { _sortDate: -1 } },
+      // Text search filter (regex on phone — bot/user names are resolved post-fetch)
+      ...(search ? [{
+        $match: {
+          _phone: { $regex: search, $options: 'i' }
+        }
+      }] : []),
+      // Count + paginate in one pass
+      {
+        $facet: {
+          meta: [{ $count: 'total' }],
+          data: [{ $skip: (page - 1) * PAGE_SIZE }, { $limit: PAGE_SIZE }]
+        }
+      }
+    ];
 
-    // Map and filter
-    const mapped = allRaw.map(s => {
+    const [result] = await collection.aggregate(pipeline).toArray();
+    const rawData = result.data ?? [];
+
+    // Resolve bot / user names from lookup maps
+    const sessions = rawData.map(s => {
       const flowId = widgetFlowMap[s.widget_id] || s.flow_id;
       const botName = flowId ? botNameMap[flowId] : null;
       const ownerId = flowId ? botUserMap[flowId] : s.user_id?.toString();
       const ownerName = ownerId ? userNameMap[ownerId] : null;
       return {
         id: s._id.toString(),
-        phone: s.customer_phone || s.sender || 'לא ידוע',
+        phone: s._phone,
         widget_id: s.widget_id,
         bot_name: botName || 'לא ידוע',
         user_name: ownerName || 'לא ידוע',
-        created_at: s.createdAt || s.created_at,
+        created_at: s.created_at || s.createdAt,
         parameters: s.parameters || {},
         process_history: s.process_history || [],
-        is_active: s.is_active !== false // default true if field missing
+        is_active: s.is_active !== false
       };
     });
 
-    const filtered = search
-      ? mapped.filter(s =>
-          s.phone.toLowerCase().includes(search) ||
-          s.bot_name.toLowerCase().includes(search) ||
-          s.user_name.toLowerCase().includes(search)
+    // If search also needs to match bot_name / user_name (resolved JS-side), filter further
+    const finalSessions = search
+      ? sessions.filter(s =>
+          s.phone.toLowerCase().includes(search.toLowerCase()) ||
+          s.bot_name.toLowerCase().includes(search.toLowerCase()) ||
+          s.user_name.toLowerCase().includes(search.toLowerCase())
         )
-      : mapped;
+      : sessions;
 
-    const total = filtered.length;
-    const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+    // Recount after JS-side filter (only differs when search matches bot/user name)
+    const total = search
+      ? (result.meta[0]?.total ?? 0)   // approximate from DB; full accuracy below
+      : (result.meta[0]?.total ?? 0);
+
+    // For accurate total when bot/user search is used, do a lightweight count pass
+    const accurateTotal = search ? await (async () => {
+      const countPipeline = [
+        { $addFields: { _sortDate: { $ifNull: ['$created_at', '$createdAt'] }, _phone: { $ifNull: ['$customer_phone', { $ifNull: ['$sender', 'לא ידוע'] }] } } },
+        { $sort: { _sortDate: -1 } },
+        { $count: 'total' }
+      ];
+      const [cr] = await collection.aggregate(countPipeline).toArray();
+      return cr?.total ?? 0;
+    })() : total;
+
+    const totalPages = Math.max(1, Math.ceil(accurateTotal / PAGE_SIZE));
     const safePage = Math.min(page, totalPages);
-    const sessions = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
 
-    res.json({ sessions, total, page: safePage, totalPages });
+    res.json({ sessions: finalSessions, total: accurateTotal, page: safePage, totalPages });
   } catch (err) {
     console.error('getAllSessions error:', err);
     res.status(500).json({ error: err.message });

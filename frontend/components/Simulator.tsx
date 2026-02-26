@@ -106,6 +106,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
   const [sessionId, setSessionId] = useState<number | null>(null);
   const [isWaitingForWebserviceResponse, setIsWaitingForWebserviceResponse] = useState(false);
   const sessionParamsRef = useRef<Record<string, any>>({});
+  const sessionIdRef = useRef<string | null>(null);
   const [sessionParameters, setSessionParameters] = useState<Record<string, any>>({});
   const [lastUserValue, setLastUserValue] = useState<{ string: string | null, number: number | null }>({ string: null, number: null });
   const [currentCommand, setCurrentCommand] = useState<string | null>(null);
@@ -189,7 +190,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
     }
     
     setMessages([]); setExecutionStack([]); sessionParamsRef.current = {}; setSessionParameters({});
-    setLastUserValue({ string: null, number: null }); setCurrentCommand(null); setIsWaitingForWebserviceResponse(false); setSessionId(null);
+    setLastUserValue({ string: null, number: null }); setCurrentCommand(null); setIsWaitingForWebserviceResponse(false); setSessionId(null); sessionIdRef.current = null;
     const instance = getActiveInstance();
     const startNode = instance?.getNodes().find((n: any) => n.type === NodeType.START || n.type === NodeType.AUTOMATIC_RESPONSES);
     
@@ -211,6 +212,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
 
         const data = await res.json();
         setSessionId(data.sessionId);
+        sessionIdRef.current = data.sessionId;
       } catch (e) { 
         console.error("Failed to start session:", e); 
         // Optional: show user friendly error
@@ -293,6 +295,32 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
       options: item.options?.map(opt => ({ ...opt, text: interpolate(opt.text) }))
     })) : msg.carouselItems;
     setMessages(prev => [...prev, { ...msg, content: interpolatedContentNoNull, options: interpolatedOptions, carouselItems: interpolatedCarousel, id: Math.random().toString(36).substr(2, 9), timestamp: new Date() }]);
+
+    // Persist message to session history in the background
+    const sid = sessionIdRef.current;
+    if (sid) {
+      const typeMap: Record<string, string> = {
+        text: 'Text', image: 'Image', video: 'Video', document: 'Document',
+        link: 'URL', menu: 'Options', carousel: 'Carousel', input_text: 'Text',
+        input_date: 'Text', input_file: 'Text'
+      };
+      const historyEntry: Record<string, any> = {
+        type: typeMap[msg.type] || msg.type,
+        sender: msg.sender,
+        name: msg.sender === 'bot' ? 'בוט' : 'משתמש',
+        created: new Date().toISOString(),
+        text: interpolatedContentNoNull,
+        url: msg.url,
+        options: interpolatedOptions,
+      };
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      fetch(`${API_BASE}/sessions/add-history`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ sessionId: sid, message: historyEntry })
+      }).catch(e => console.error('[Simulator] Failed to save message to history:', e));
+    }
   };
 
   const findNextNodeId = (id: string, instance: any, handleId?: string) => {
