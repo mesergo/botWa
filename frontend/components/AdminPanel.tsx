@@ -1559,9 +1559,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                     </button>
                     <button
                       onClick={() => setCreateFromBotStep('pick-bot')}
-                      className="w-full flex items-center gap-5 p-5 bg-slate-50 hover:bg-violet-50 border border-slate-200 hover:border-violet-400 rounded-2xl transition-all text-right group"
+                      className="w-full flex items-center gap-5 p-5 bg-slate-50 hover:bg-pink-50 border border-slate-200 hover:border-pink-400 rounded-2xl transition-all text-right group"
                     >
-                      <div className="w-12 h-12 bg-white text-slate-400 group-hover:bg-violet-600 group-hover:text-white rounded-2xl flex items-center justify-center flex-shrink-0 transition-all border border-slate-200 shadow-sm">
+                      <div className="w-12 h-12 bg-white text-slate-400 group-hover:bg-pink-600 group-hover:text-white rounded-2xl flex items-center justify-center flex-shrink-0 transition-all border border-slate-200 shadow-sm">
                         <Copy size={24} />
                       </div>
                       <div>
@@ -1582,22 +1582,41 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                       {allSystemBots.length === 0 ? (
                         <p className="text-center text-slate-400 py-8 text-sm">אין בוטים במערכת</p>
                       ) : (
-                        allSystemBots.map(bot => (
-                          <div
-                            key={bot.id}
-                            onClick={() => { setSelectedSystemBot(bot); setNewAdminTplName(`תבנית מ-${bot.name}`); setCreateFromBotStep('name'); }}
-                            className="flex items-center gap-4 p-4 bg-slate-50 hover:bg-violet-50 border border-slate-200 hover:border-violet-300 rounded-xl cursor-pointer transition-all group"
-                          >
-                            <div className="w-10 h-10 bg-white text-slate-400 group-hover:bg-violet-600 group-hover:text-white rounded-xl flex items-center justify-center border border-slate-200 transition-all">
-                              <Bot size={18} />
+                        (() => {
+                          const groups: { userName: string; bots: any[] }[] = [];
+                          allSystemBots.forEach(bot => {
+                            const uName = bot.user_name || 'לא ידוע';
+                            const existing = groups.find(g => g.userName === uName);
+                            if (existing) existing.bots.push(bot);
+                            else groups.push({ userName: uName, bots: [bot] });
+                          });
+                          return groups.map(group => (
+                            <div key={group.userName}>
+                              <div className="flex items-center gap-2 px-2 py-1.5 mb-1 mt-2">
+                                <UserIcon size={13} className="text-pink-500" />
+                                <span className="text-xs font-black text-pink-700 tracking-wide">{group.userName}</span>
+                                <div className="flex-1 h-px bg-pink-100" />
+                                <span className="text-xs text-slate-400">{group.bots.length} בוטים</span>
+                              </div>
+                              {group.bots.map(bot => (
+                                <div
+                                  key={bot.id}
+                                  onClick={() => { setSelectedSystemBot(bot); setNewAdminTplName(`תבנית מ-${bot.name}`); setCreateFromBotStep('name'); }}
+                                  className="flex items-center gap-4 p-4 bg-slate-50 hover:bg-pink-50 border border-slate-200 hover:border-pink-300 rounded-xl cursor-pointer transition-all group mb-1.5"
+                                >
+                                  <div className="w-10 h-10 bg-white text-slate-400 group-hover:bg-pink-600 group-hover:text-white rounded-xl flex items-center justify-center border border-slate-200 transition-all">
+                                    <Bot size={18} />
+                                  </div>
+                                  <div className="flex-1 text-right">
+                                    <p className="font-bold text-slate-800 text-sm">{bot.name}</p>
+                                    <p className="text-xs text-slate-400">ID: {bot.id.slice(-6)}</p>
+                                  </div>
+                                  <ChevronRight size={16} className="text-slate-300 group-hover:text-pink-500 transition-colors" />
+                                </div>
+                              ))}
                             </div>
-                            <div className="flex-1 text-right">
-                              <p className="font-bold text-slate-800 text-sm">{bot.name}</p>
-                              <p className="text-xs text-slate-400">ID: {bot.id.slice(-6)}</p>
-                            </div>
-                            <ChevronRight size={16} className="text-slate-300 group-hover:text-violet-500 transition-colors" />
-                          </div>
-                        ))
+                          ));
+                        })()
                       )}
                     </div>
                   </div>
@@ -1609,16 +1628,16 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                       <button onClick={() => setCreateFromBotStep('pick-bot')} className="p-2 hover:bg-slate-100 rounded-lg text-slate-400 transition-colors"><ArrowLeft size={18} /></button>
                       <p className="text-slate-600 font-bold text-sm">פרטי התבנית</p>
                     </div>
-                    <div className="p-3 bg-violet-50 border border-violet-200 rounded-xl flex items-center gap-3">
-                      <Bot size={16} className="text-violet-600" />
-                      <span className="text-sm font-bold text-violet-800">{selectedSystemBot.name}</span>
-                      <span className="text-xs text-violet-500 bg-violet-100 px-2 py-0.5 rounded">מנהל</span>
+                    <div className="p-3 bg-pink-50 border border-pink-200 rounded-xl flex items-center gap-3">
+                      <Bot size={16} className="text-pink-600" />
+                      <span className="text-sm font-bold text-pink-800">{selectedSystemBot.name}</span>
+                      <span className="text-xs text-pink-500 bg-pink-100 px-2 py-0.5 rounded">מנהל</span>
                     </div>
                     <div>
                       <label className="block text-sm font-bold text-slate-700 mb-2">שם התבנית</label>
                       <input
                         type="text"
-                        className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-4 focus:ring-violet-100 focus:border-violet-500 outline-none transition-all font-medium"
+                        className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-4 focus:ring-pink-100 focus:border-pink-500 outline-none transition-all font-medium"
                         value={newAdminTplName}
                         onChange={e => setNewAdminTplName(e.target.value)}
                         placeholder="שם לתבנית..."
@@ -1628,7 +1647,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                     <div>
                       <label className="block text-sm font-bold text-slate-700 mb-2">תיאור <span className="text-slate-400 font-normal">(רשות)</span></label>
                       <textarea
-                        className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-4 focus:ring-violet-100 focus:border-violet-500 outline-none resize-none h-24 transition-all font-medium"
+                        className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-4 focus:ring-pink-100 focus:border-pink-500 outline-none resize-none h-24 transition-all font-medium"
                         value={newAdminTplDesc}
                         onChange={e => setNewAdminTplDesc(e.target.value)}
                         placeholder="תיאור קצר..."
@@ -1638,7 +1657,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                       <button
                         onClick={createAdminTemplateFromBot}
                         disabled={!newAdminTplName.trim() || creatingAdminTpl}
-                        className="flex-1 bg-violet-600 text-white py-4 rounded-xl font-bold shadow-lg hover:bg-violet-700 transition-all disabled:opacity-50 text-sm"
+                        className="flex-1 bg-pink-600 text-white py-4 rounded-xl font-bold shadow-lg hover:bg-pink-700 transition-all disabled:opacity-50 text-sm"
                       >
                         {creatingAdminTpl ? 'יוצר...' : 'צור תבנית מנהל'}
                       </button>

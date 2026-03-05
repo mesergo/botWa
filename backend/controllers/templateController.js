@@ -3,6 +3,7 @@ import Widget from '../models/Widget.js';
 import Option from '../models/Option.js';
 import BotFlow from '../models/BotFlow.js';
 import Version from '../models/Version.js';
+import User from '../models/User.js';
 import { ObjectId } from 'mongodb';
 
 /**
@@ -312,10 +313,15 @@ export const getPublicTemplates = async (req, res) => {
 export const getAllSystemBots = async (req, res) => {
   try {
     const bots = await BotFlow.find({}).sort({ created_at: -1 });
+    const userIds = [...new Set(bots.map(b => b.user_id).filter(Boolean))];
+    const users = await User.find({ _id: { $in: userIds } }, 'name email');
+    const userMap = {};
+    users.forEach(u => { userMap[u._id.toString()] = u.name || u.email || u._id.toString(); });
     res.json(bots.map(b => ({
       id: b._id.toString(),
       name: b.name,
-      user_id: b.user_id,
+      user_id: b.user_id ? b.user_id.toString() : null,
+      user_name: b.user_id ? (userMap[b.user_id.toString()] || 'לא ידוע') : 'לא ידוע',
       public_id: b.public_id,
       created_at: b.created_at
     })));

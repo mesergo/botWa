@@ -116,7 +116,7 @@ export interface CarouselItem {
 export interface ChatMessage {
   id: string;
   sender: 'bot' | 'user';
-  type: 'text' | 'image' | 'video' | 'document' | 'link' | 'menu' | 'input_text' | 'input_date' | 'input_file' | 'carousel' | 'Options';
+  type: 'text' | 'image' | 'video' | 'document' | 'link' | 'menu' | 'input_text' | 'input_date' | 'input_file' | 'carousel' | 'Options' | 'separator';
   content?: string;
   url?: string;
   options?: string[];
@@ -124,4 +124,5 @@ export interface ChatMessage {
   optionImages?: string[];
   carouselItems?: CarouselItem[];
   timestamp: Date;
+  sourceNodeId?: string;
 }

@@ -634,6 +634,7 @@ export const respondToMessage = async (req, res) => {
       }
       
       console.log('[BOT] ✅ Found automatic_responses node:', autoResponseNode.id);
+      console.log('[BOT] ✅ Found sender :', sender);
 
       session = await BotSession.create({
         user_id: user._id,
@@ -642,7 +643,7 @@ export const respondToMessage = async (req, res) => {
         sender,
         current_node_id: autoResponseNode.id,
         is_active: true,
-        parameters: {},
+        parameters: { waPhone: sender },
         process_history: []
       });
 
