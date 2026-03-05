@@ -106,6 +106,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
   const [sessionId, setSessionId] = useState<number | null>(null);
   const [isWaitingForWebserviceResponse, setIsWaitingForWebserviceResponse] = useState(false);
   const sessionParamsRef = useRef<Record<string, any>>({});
+  const sessionIdRef = useRef<string | null>(null);
   const [sessionParameters, setSessionParameters] = useState<Record<string, any>>({});
   const [lastUserValue, setLastUserValue] = useState<{ string: string | null, number: number | null }>({ string: null, number: null });
   const [currentCommand, setCurrentCommand] = useState<string | null>(null);
@@ -115,6 +116,8 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
   const simulatorFileInputRef = useRef<HTMLInputElement>(null);
   const initialStartRef = useRef(false);
   const updateTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Maps output_menu nodeId -> the flow instance that rendered it (for flow-interrupt support)
+  const menuInstanceMapRef = useRef<Record<string, any>>({});
 
   useEffect(() => { 
     if (isOpen && nodes && nodes.length > 0 && !initialStartRef.current) {
@@ -189,7 +192,8 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
     }
     
     setMessages([]); setExecutionStack([]); sessionParamsRef.current = {}; setSessionParameters({});
-    setLastUserValue({ string: null, number: null }); setCurrentCommand(null); setIsWaitingForWebserviceResponse(false); setSessionId(null);
+    menuInstanceMapRef.current = {};
+    setLastUserValue({ string: null, number: null }); setCurrentCommand(null); setIsWaitingForWebserviceResponse(false); setSessionId(null); sessionIdRef.current = null;
     const instance = getActiveInstance();
     const startNode = instance?.getNodes().find((n: any) => n.type === NodeType.START || n.type === NodeType.AUTOMATIC_RESPONSES);
     
@@ -211,6 +215,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
 
         const data = await res.json();
         setSessionId(data.sessionId);
+        sessionIdRef.current = data.sessionId;
       } catch (e) { 
         console.error("Failed to start session:", e); 
         // Optional: show user friendly error
@@ -293,6 +298,33 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
       options: item.options?.map(opt => ({ ...opt, text: interpolate(opt.text) }))
     })) : msg.carouselItems;
     setMessages(prev => [...prev, { ...msg, content: interpolatedContentNoNull, options: interpolatedOptions, carouselItems: interpolatedCarousel, id: Math.random().toString(36).substr(2, 9), timestamp: new Date() }]);
+
+    // Persist message to session history in the background (skip separator markers)
+    if (msg.type === 'separator') return;
+    const sid = sessionIdRef.current;
+    if (sid) {
+      const typeMap: Record<string, string> = {
+        text: 'Text', image: 'Image', video: 'Video', document: 'Document',
+        link: 'URL', menu: 'Options', carousel: 'Carousel', input_text: 'Text',
+        input_date: 'Text', input_file: 'Text'
+      };
+      const historyEntry: Record<string, any> = {
+        type: typeMap[msg.type] || msg.type,
+        sender: msg.sender,
+        name: msg.sender === 'bot' ? 'בוט' : 'משתמש',
+        created: new Date().toISOString(),
+        text: interpolatedContentNoNull,
+        url: msg.url,
+        options: interpolatedOptions,
+      };
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      fetch(`${API_BASE}/sessions/add-history`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ sessionId: sid, message: historyEntry })
+      }).catch(e => console.error('[Simulator] Failed to save message to history:', e));
+    }
   };
 
   const findNextNodeId = (id: string, instance: any, handleId?: string) => {
@@ -495,7 +527,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
         return processNext(findNextNodeId(nodeId, instance), instance, depth + 1, stack);
       }
       case NodeType.OUTPUT_LINK: setIsBotTyping(true); await new Promise(r => setTimeout(r, 400)); addMessage({ sender: 'bot', type: 'link', content: node.data.linkLabel || 'קישור חיצוני', url: node.data.url }); setIsBotTyping(false); return processNext(findNextNodeId(nodeId, instance), instance, depth + 1, stack);
-      case NodeType.OUTPUT_MENU: setIsBotTyping(true); await new Promise(r => setTimeout(r, 400)); addMessage({ sender: 'bot', type: 'menu', content: node.data.content, options: node.data.options, optionImages: node.data.optionImages }); setIsBotTyping(false); break;
+      case NodeType.OUTPUT_MENU: setIsBotTyping(true); await new Promise(r => setTimeout(r, 400)); menuInstanceMapRef.current[nodeId] = instance; addMessage({ sender: 'bot', type: 'menu', content: node.data.content, options: node.data.options, optionImages: node.data.optionImages, sourceNodeId: nodeId }); setIsBotTyping(false); break;
       case NodeType.INPUT_TEXT: case NodeType.INPUT_DATE: case NodeType.INPUT_FILE: setIsBotTyping(true); await new Promise(r => setTimeout(r, 300)); if (node.data.label) { addMessage({ sender: 'bot', type: node.type as any, content: node.data.label }); } setIsBotTyping(false); break;
       case NodeType.ACTION_WAIT: await new Promise(r => setTimeout(r, (node.data.waitTime || 1) * 1000)); return processNext(findNextNodeId(nodeId, instance), instance, depth + 1, stack);
       case NodeType.ACTION_TIME_ROUTING: {
@@ -624,7 +656,25 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
     await processNext(findNextNodeId(currentNodeId, currentInstance), currentInstance, 0, executionStack);
   };
 
-  const handleMenuSelect = async (option: string, index: number, optionValue?: string) => {
+  const handleMenuSelect = async (option: string, index: number, optionValue?: string, sourceNodeId?: string) => {
+    // ── Flow-interrupt: user clicked a menu button from an earlier point in the chat ──
+    if (sourceNodeId && sourceNodeId !== currentNodeId && !isWaitingForWebserviceResponse) {
+      const menuInstance = menuInstanceMapRef.current[sourceNodeId];
+      if (menuInstance) {
+        console.log('[Simulator] ⚡ Flow interrupt! Leaving', currentNodeId, '→ back to menu', sourceNodeId);
+        // Show a visual separator so the user understands the context switched
+        addMessage({ sender: 'bot', type: 'separator', content: '↩ חזרת לתפריט' });
+        addMessage({ sender: 'user', type: 'text', content: option });
+        setLastUserValue({ string: option, number: null });
+        setIsWaitingForWebserviceResponse(false);
+        // Pass empty stack so processNext clears executionStack (sub-flows abandoned)
+        const nextNodeId = findNextNodeId(sourceNodeId, menuInstance, `option-${index}`);
+        await processNext(nextNodeId, menuInstance, 0, []);
+        return;
+      }
+    }
+
+    // ── Normal flow ──
     console.log('[Simulator] 🔘 Menu option selected:', { option, index, optionValue });
     console.log('[Simulator] 🔘 State:', { 
       currentNodeId, 
@@ -731,6 +781,13 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
       </div>
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-6 bg-[#fcfcfc] space-y-6 scrollbar-hide">
         {messages.map((msg) => (
+          msg.type === 'separator' ? (
+            <div key={msg.id} className="flex items-center gap-3 my-1 px-2 animate-in slide-in-from-bottom-2">
+              <div className="flex-1 h-px bg-slate-200" />
+              <span className="text-[9px] text-slate-400 font-bold uppercase tracking-widest whitespace-nowrap">{msg.content}</span>
+              <div className="flex-1 h-px bg-slate-200" />
+            </div>
+          ) : (
           <div key={msg.id} className={`flex ${msg.sender === 'bot' ? 'justify-start' : 'justify-end'} animate-in slide-in-from-bottom-2 flex-row-reverse w-full`}>
             {msg.type === 'carousel' ? <Carousel items={msg.carouselItems || []} onSelect={handleMenuSelect} /> : (
               <div className={`flex gap-3 max-w-[85%] ${msg.sender === 'bot' ? 'flex-row-reverse' : 'flex-row'}`}>
@@ -761,7 +818,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
                       <p className="font-bold text-slate-400 text-[10px] uppercase tracking-widest text-right">{msg.content}</p>
                       <div className="flex flex-col gap-2">
                         {msg.options?.map((opt, i) => (
-                          <button key={i} onClick={() => handleMenuSelect(opt, i, msg.optionValues?.[i])} className="w-full text-right p-3 bg-slate-50 border border-slate-100 rounded-2xl hover:bg-blue-600 hover:text-white transition-all text-xs font-bold uppercase flex items-center gap-3 flex-row-reverse">
+                          <button key={i} onClick={() => handleMenuSelect(opt, i, msg.optionValues?.[i], msg.sourceNodeId)} className="w-full text-right p-3 bg-slate-50 border border-slate-100 rounded-2xl hover:bg-blue-600 hover:text-white transition-all text-xs font-bold uppercase flex items-center gap-3 flex-row-reverse">
                             {msg.optionImages?.[i] && <img src={msg.optionImages[i]} className="w-8 h-8 rounded-lg object-cover" alt="" />}
                             <span className="flex-1">{opt}</span>
                           </button>
@@ -785,6 +842,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
               </div>
             )}
           </div>
+          )
         ))}
         {isBotTyping && (
           <div className="flex gap-2 bg-white border border-slate-100 p-4 rounded-3xl rounded-tr-none shadow-sm w-fit mr-12 ml-auto">

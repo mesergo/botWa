@@ -169,9 +169,12 @@ const findNextNode = (nodeId, edges, handleId = null) => {
 // Helper: Add to history
 const addToHistory = (session, message, nodeId) => {
   const history = session.process_history || [];
+  const isUser = nodeId === 'user';
   history.push({
     ...message,
     node_id: nodeId,
+    sender: isUser ? 'user' : 'bot',
+    name: isUser ? 'משתמש' : 'בוט',
     created: new Date().toISOString()
   });
   session.process_history = history;
@@ -631,6 +634,7 @@ export const respondToMessage = async (req, res) => {
       }
       
       console.log('[BOT] ✅ Found automatic_responses node:', autoResponseNode.id);
+      console.log('[BOT] ✅ Found sender :', sender);
 
       session = await BotSession.create({
         user_id: user._id,
@@ -639,7 +643,7 @@ export const respondToMessage = async (req, res) => {
         sender,
         current_node_id: autoResponseNode.id,
         is_active: true,
-        parameters: {},
+        parameters: { waPhone: sender },
         process_history: []
       });
 
