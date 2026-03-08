@@ -63,6 +63,11 @@ const fetchFlowData = async (userId, flow_id, standard_process_id = null, versio
       };
     }
     
+    // For action_web_service: exclude the 'default' option from the conditional branches data
+    const conditionalOptions = w.type === 'action_web_service'
+      ? nodeOptions.filter(o => o.operator !== 'default')
+      : nodeOptions;
+
     return { 
       id: w.id, 
       type: w.type, 
@@ -71,9 +76,9 @@ const fetchFlowData = async (userId, flow_id, standard_process_id = null, versio
         ...metadata,
         label: metadata.label !== undefined ? metadata.label : (w.value || (w.type === 'start' ? 'תחילת תזרים' : '')), 
         content: metadata.content !== undefined ? metadata.content : (w.value || ''), 
-        options: nodeOptions.length > 0 ? nodeOptions.map(o => o.value) : undefined, 
-        optionOperators: nodeOptions.length > 0 ? nodeOptions.map(o => o.operator || 'eq') : undefined,
-        optionImages: nodeOptions.length > 0 ? nodeOptions.map(o => o.image_url) : undefined 
+        options: conditionalOptions.length > 0 ? conditionalOptions.map(o => o.value) : undefined, 
+        optionOperators: conditionalOptions.length > 0 ? conditionalOptions.map(o => o.operator || 'eq') : undefined,
+        optionImages: conditionalOptions.length > 0 ? conditionalOptions.map(o => o.image_url) : undefined 
       } 
     };
   });
@@ -105,10 +110,21 @@ const fetchFlowData = async (userId, flow_id, standard_process_id = null, versio
         }
       });
     } else {
-      wOptions.forEach((o, i) => { 
+      // For action_web_service: separate 'default' options from conditional ones
+      const defaultOpts = w.type === 'action_web_service' ? wOptions.filter(o => o.operator === 'default') : [];
+      const conditionalOpts = w.type === 'action_web_service' ? wOptions.filter(o => o.operator !== 'default') : wOptions;
+
+      conditionalOpts.forEach((o, i) => { 
         if (o.next) { 
           edges.push({ id: `e-${w.id}-opt-${i}`, source: w.id, sourceHandle: `option-${i}`, target: o.next, type: 'button', style: { stroke: '#3b82f6', strokeWidth: 2, strokeDasharray: '6,4' } }); 
         } 
+      });
+
+      // Reconstruct the 'default' exit edge for action_web_service
+      defaultOpts.forEach(o => {
+        if (o.next) {
+          edges.push({ id: `e-${w.id}-default-${o.next}`, source: w.id, sourceHandle: 'default', target: o.next, type: 'button', style: { stroke: '#3b82f6', strokeWidth: 2, strokeDasharray: '6,4' } });
+        }
       });
     }
   });
@@ -230,6 +246,31 @@ export const syncFlow = async (req, res) => {
             next: optionEdge ? optionEdge.target : null,
             image_url: node.data.optionImages?.[i] || null,
             operator: branchOperator
+          });
+        }
+        // For action_web_service: also save the 'default' exit edge
+        if (node.type === 'action_web_service') {
+          const defaultEdge = edges.find(e => e.source === node.id && e.sourceHandle === 'default');
+          if (defaultEdge) {
+            await Option.create({
+              widget_id: node.id,
+              value: 'default',
+              next: defaultEdge.target,
+              image_url: null,
+              operator: 'default'
+            });
+          }
+        }
+      } else if (isBranching && node.type === 'action_web_service') {
+        // No conditional options, but still save the default exit edge
+        const defaultEdge = edges.find(e => e.source === node.id && e.sourceHandle === 'default');
+        if (defaultEdge) {
+          await Option.create({
+            widget_id: node.id,
+            value: 'default',
+            next: defaultEdge.target,
+            image_url: null,
+            operator: 'default'
           });
         }
       }

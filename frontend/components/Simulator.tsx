@@ -118,6 +118,10 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
   const updateTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Maps output_menu nodeId -> the flow instance that rendered it (for flow-interrupt support)
   const menuInstanceMapRef = useRef<Record<string, any>>({});
+  // Cancellation: increment on every reset to invalidate all in-flight processNext calls
+  const runIdRef = useRef(0);
+  // AbortController for cancelling in-flight webservice fetch
+  const wsAbortControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => { 
     if (isOpen && nodes && nodes.length > 0 && !initialStartRef.current) {
@@ -189,6 +193,27 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
     if (updateTimeoutRef.current) {
       clearTimeout(updateTimeoutRef.current);
       updateTimeoutRef.current = null;
+    }
+
+    // Cancel any in-flight processNext / webservice calls from the previous chat
+    runIdRef.current += 1;
+    wsAbortControllerRef.current?.abort();
+    wsAbortControllerRef.current = null;
+    setIsBotTyping(false);
+
+    // Mark current session as inactive before starting a new one
+    const prevSessionId = sessionIdRef.current;
+    if (prevSessionId) {
+      try {
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+        await fetch(`${API_BASE}/sessions/${prevSessionId}/deactivate`, {
+          method: 'PATCH',
+          headers,
+        });
+      } catch (e) {
+        console.error('[Simulator] Failed to deactivate previous session:', e);
+      }
     }
     
     setMessages([]); setExecutionStack([]); sessionParamsRef.current = {}; setSessionParameters({});
@@ -401,6 +426,8 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
   };
 
   const processNext = async (nodeId: string | null, instance: any, depth: number = 0, stack: StackItem[] = [], forcedValue?: { string: string | null, number: number | null }, forcedCommand?: string | null) => {
+    const myRunId = runIdRef.current;
+    const cancelled = () => runIdRef.current !== myRunId;
     if (depth > 250) { addMessage({ sender: 'bot', type: 'text', content: "⚠️ חריגה ממורכבות המערכת המותרת." }); return; }
     setCurrentInstance(instance); setExecutionStack(stack);
     if (!nodeId) {
@@ -419,6 +446,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
     const node = nodesList.find((n: any) => n.id === nodeId);
     if (!node) return processNext(null, instance, depth + 1, stack);
     setCurrentNodeId(nodeId); await new Promise(r => setTimeout(r, 50));
+    if (cancelled()) return;
     switch (node.type) {
       case NodeType.START: return processNext(findNextNodeId(nodeId, instance), instance, depth + 1, stack);
       case NodeType.AUTOMATIC_RESPONSES:
@@ -462,16 +490,24 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
           const headers: Record<string, string> = { 'Content-Type': 'application/json' };
           if (token) headers['Authorization'] = `Bearer ${token}`;
 
+          const wsAbortCtrl = new AbortController();
+          wsAbortControllerRef.current = wsAbortCtrl;
+
           const response = await fetch(`${API_BASE}/proxy/webservice`, { 
             method: 'POST', 
             headers: headers, 
-            body: JSON.stringify({ url: interpolate(node.data.url), payload: payload }) 
+            body: JSON.stringify({ url: interpolate(node.data.url), payload: payload }),
+            signal: wsAbortCtrl.signal
           });
-          const data = await response.json(); 
+          const data = await response.json();
+
+          // If reset happened while awaiting, discard everything
+          if (cancelled()) return;
           
           setLastUserValue({ string: null, number: null }); setCurrentCommand(null);
           if (data.actions && Array.isArray(data.actions) && data.actions.length > 0) {
             const result = await executeServerActions(data.actions, instance, stack);
+            if (cancelled()) return;
             console.log('[Simulator] 🌐 Actions result:', result);
             if (result.paused) { 
               console.log('[Simulator] ⏸️ PAUSED - waiting for webservice response'); 
@@ -505,30 +541,34 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
             console.log('[Simulator] 🌐 No actions - taking default exit');
             return processNext(findNextNodeId(nodeId, instance, 'default'), instance, depth + 1, stack); 
           }
-        } catch (error) { 
+        } catch (error: any) {
+          // If the fetch was aborted due to reset, silently discard - do NOT output an error message
+          if (error?.name === 'AbortError' || cancelled()) return;
           setIsBotTyping(false); 
           addMessage({ sender: 'bot', type: 'text', content: `❌ שגיאה בחיבור לשרת ה-Webservice` }); 
           console.log('[Simulator] 🌐 Error - taking default exit');
           return processNext(findNextNodeId(nodeId, instance, 'default'), instance, depth + 1, stack); 
         }
         break;
-      case NodeType.OUTPUT_TEXT: setIsBotTyping(true); await new Promise(r => setTimeout(r, 400)); addMessage({ sender: 'bot', type: 'text', content: node.data.content || "..." }); setIsBotTyping(false); return processNext(findNextNodeId(nodeId, instance), instance, depth + 1, stack);
+      case NodeType.OUTPUT_TEXT: setIsBotTyping(true); await new Promise(r => setTimeout(r, 400)); if (cancelled()) return; addMessage({ sender: 'bot', type: 'text', content: node.data.content || "..." }); setIsBotTyping(false); return processNext(findNextNodeId(nodeId, instance), instance, depth + 1, stack);
       case NodeType.OUTPUT_IMAGE: {
         setIsBotTyping(true); 
-        await new Promise(r => setTimeout(r, 500)); 
+        await new Promise(r => setTimeout(r, 500));
+        if (cancelled()) return;
         const mediaType = node.data.mediaType || 'image';
         const messageType = mediaType === 'video' ? 'video' : mediaType === 'pdf' ? 'document' : 'image';
         addMessage({ sender: 'bot', type: messageType, url: node.data.url }); 
         if (node.data.caption && node.data.caption.trim()) {
           await new Promise(r => setTimeout(r, 200));
+          if (cancelled()) return;
           addMessage({ sender: 'bot', type: 'text', content: node.data.caption });
         }
         setIsBotTyping(false); 
         return processNext(findNextNodeId(nodeId, instance), instance, depth + 1, stack);
       }
-      case NodeType.OUTPUT_LINK: setIsBotTyping(true); await new Promise(r => setTimeout(r, 400)); addMessage({ sender: 'bot', type: 'link', content: node.data.linkLabel || 'קישור חיצוני', url: node.data.url }); setIsBotTyping(false); return processNext(findNextNodeId(nodeId, instance), instance, depth + 1, stack);
-      case NodeType.OUTPUT_MENU: setIsBotTyping(true); await new Promise(r => setTimeout(r, 400)); menuInstanceMapRef.current[nodeId] = instance; addMessage({ sender: 'bot', type: 'menu', content: node.data.content, options: node.data.options, optionImages: node.data.optionImages, sourceNodeId: nodeId }); setIsBotTyping(false); break;
-      case NodeType.INPUT_TEXT: case NodeType.INPUT_DATE: case NodeType.INPUT_FILE: setIsBotTyping(true); await new Promise(r => setTimeout(r, 300)); if (node.data.label) { addMessage({ sender: 'bot', type: node.type as any, content: node.data.label }); } setIsBotTyping(false); break;
+      case NodeType.OUTPUT_LINK: setIsBotTyping(true); await new Promise(r => setTimeout(r, 400)); if (cancelled()) return; addMessage({ sender: 'bot', type: 'link', content: node.data.linkLabel || 'קישור חיצוני', url: node.data.url }); setIsBotTyping(false); return processNext(findNextNodeId(nodeId, instance), instance, depth + 1, stack);
+      case NodeType.OUTPUT_MENU: setIsBotTyping(true); await new Promise(r => setTimeout(r, 400)); if (cancelled()) return; menuInstanceMapRef.current[nodeId] = instance; addMessage({ sender: 'bot', type: 'menu', content: node.data.content, options: node.data.options, optionImages: node.data.optionImages, sourceNodeId: nodeId }); setIsBotTyping(false); break;
+      case NodeType.INPUT_TEXT: case NodeType.INPUT_DATE: case NodeType.INPUT_FILE: setIsBotTyping(true); await new Promise(r => setTimeout(r, 300)); if (cancelled()) return; if (node.data.label) { addMessage({ sender: 'bot', type: node.type as any, content: node.data.label }); } setIsBotTyping(false); break;
       case NodeType.ACTION_WAIT: await new Promise(r => setTimeout(r, (node.data.waitTime || 1) * 1000)); return processNext(findNextNodeId(nodeId, instance), instance, depth + 1, stack);
       case NodeType.ACTION_TIME_ROUTING: {
         // Get current hour in Israel timezone

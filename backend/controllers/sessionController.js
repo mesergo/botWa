@@ -386,6 +386,26 @@ export const getAllSessions = async (req, res) => {
   }
 };
 
+export const deactivateSession = async (req, res) => {
+  // Public: mark a specific session as inactive (e.g., when user resets the simulator)
+  try {
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ error: 'Invalid session ID' });
+    }
+    const collection = mongoose.connection.collection('BotSession');
+    const result = await collection.updateOne(
+      { _id: new mongoose.Types.ObjectId(id) },
+      { $set: { is_active: false, ended_at: new Date() } }
+    );
+    if (result.matchedCount === 0) return res.status(404).json({ error: 'Session not found' });
+    res.json({ success: true });
+  } catch (err) {
+    console.error('deactivateSession error:', err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
 export const toggleSessionActive = async (req, res) => {
   // Admin-only: toggle is_active for a session
   try {
