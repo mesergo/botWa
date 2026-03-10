@@ -448,6 +448,9 @@ export const OutputMenuNode = (props: any) => {
       <InputFieldWrapper label="הנחיית בחירה">
         <SearchableInput value={props.data.content} onChange={(v: string) => props.data.onChange({ content: v })} placeholder="בחר בבקשה מהרשימה:" searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
       </InputFieldWrapper>
+      <InputFieldWrapper label="שמור בחירה במשתנה (אופציונלי)">
+        <SearchableInput value={props.data.variableName} onChange={(v: string) => props.data.onChange({ variableName: v })} placeholder="למשל: selected_option" searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
+      </InputFieldWrapper>
       <div className="space-y-4 relative text-right">
         <label className="block text-[14px] font-bold text-slate-400 uppercase tracking-widest">רשימת אפשרויות</label>
         {options.map((opt: string, i: number) => (

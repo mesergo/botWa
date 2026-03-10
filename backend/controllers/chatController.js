@@ -755,6 +755,7 @@ export const respondToMessage = async (req, res) => {
         if (currentNode.data.variableName) {
           params[currentNode.data.variableName] = selectedValue;
           session.parameters = params;
+          session.markModified('parameters');
         }
         
         const nextNodeId = findNextNode(currentNode.id, flowData.edges, `option-${selectedIdx}`);

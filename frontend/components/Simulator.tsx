@@ -759,6 +759,11 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
     } else {
       console.log('[Simulator] 🔘 Regular menu selection, moving to option', index);
       setLastUserValue({ string: option, number: null });
+      // Save selected option to session parameters if the menu node has a variableName defined
+      if (node && node.data && node.data.variableName) {
+        sessionParamsRef.current = { ...sessionParamsRef.current, [node.data.variableName]: option };
+        setSessionParameters({ ...sessionParamsRef.current });
+      }
       await processNext(findNextNodeId(currentNodeId, currentInstance, `option-${index}`), currentInstance, 0, executionStack);
     }
   };

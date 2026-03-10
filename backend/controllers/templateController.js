@@ -141,14 +141,15 @@ const INITIAL_TEMPLATES = [
 ];
 
 /**
- * Enhanced seeding: Use upsert to ensure all templates exist and are updated
+ * Seeding: Insert templates only if they don't already exist.
+ * Existing templates (even if modified by users) are never overwritten.
  */
 export const seedTemplates = async () => {
   console.log('Synchronizing predefined templates in DB...');
   for (const template of INITIAL_TEMPLATES) {
     await Template.updateOne(
       { template_id: template.template_id },
-      { $set: { ...template, type: 'public', isPublic: true } },
+      { $setOnInsert: { ...template, type: 'public', isPublic: true } },
       { upsert: true }
     );
   }
