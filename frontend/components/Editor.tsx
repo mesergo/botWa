@@ -14,7 +14,7 @@ import ReactFlow, {
 import Sidebar from './Sidebar';
 import Simulator from './Simulator';
 import { NodeType, FixedProcess, Version, User, BotFlow } from '../types';
-import { Wand2, Search, ChevronUp, ChevronDown, X, Copy, CloudUpload, AlertTriangle, Users, List } from 'lucide-react';
+import { Wand2, Search, ChevronUp, ChevronDown, X, Copy, CloudUpload, AlertTriangle, Users, List, Sliders } from 'lucide-react';
 
 interface EditorProps {
   selectedBot: BotFlow | null;
@@ -54,6 +54,10 @@ interface EditorProps {
   existingTemplateData?: { name: string; description: string; isPublic: boolean } | null;
   onOpenContacts?: () => void;
   onOpenSessions?: () => void;
+  /** Pre-filled parameter values from template form, passed to Simulator for --varName-- replacement */
+  initialParams?: Record<string, string>;
+  /** Opens the template params management modal (only when isEditingTemplate) */
+  onManageParams?: () => void;
 }
 
 const Editor: React.FC<EditorProps> = ({
@@ -61,7 +65,7 @@ const Editor: React.FC<EditorProps> = ({
   searchQuery, searchResults, currentSearchIndex, reactFlowWrapper, nodeTypes, edgeTypes, isSimulatorOpen,
   onNodesChange, onEdgesChange, onConnect, onInit, onDrop, onSearchChange, onSearchNav, onTidy, onPublish,
   onCloseEditor, onHome, onSimulatorOpen, onSimulatorClose, onDuplicate, onChangeTemplate, sidebarProps,
-  isEditingTemplate, onSaveTemplate, existingTemplateData, onOpenContacts, onOpenSessions
+  isEditingTemplate, onSaveTemplate, existingTemplateData, onOpenContacts, onOpenSessions, initialParams, onManageParams
 }) => {
   const [showSaveModal, setShowSaveModal] = React.useState(false);
   const [templateName, setTemplateName] = React.useState(existingTemplateData?.name || '');
@@ -181,9 +185,16 @@ const Editor: React.FC<EditorProps> = ({
         </div>
         <div className="flex items-center gap-6">
           {isEditingTemplate && onSaveTemplate ? (
-            <button onClick={() => setShowSaveModal(true)} className="flex items-center gap-2 px-6 py-2.5 bg-green-600 text-white border border-green-600 rounded-full text-xs font-bold shadow-sm hover:bg-green-700 transition-all">
-              <CloudUpload size={16} /> שמור תבנית
-            </button>
+            <div className="flex items-center gap-2">
+              {onManageParams && (
+                <button onClick={onManageParams} className="flex items-center gap-2 px-5 py-2.5 bg-white border border-amber-400 text-amber-600 rounded-full text-xs font-bold shadow-sm hover:bg-amber-50 transition-all">
+                  <Sliders size={15} /> ניהול פרמטרים
+                </button>
+              )}
+              <button onClick={() => setShowSaveModal(true)} className="flex items-center gap-2 px-6 py-2.5 bg-green-600 text-white border border-green-600 rounded-full text-xs font-bold shadow-sm hover:bg-green-700 transition-all">
+                <CloudUpload size={16} /> שמור תבנית
+              </button>
+            </div>
           ) : currentUser?.account_type === 'Trial' ? (
             <div className="flex items-center gap-2 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-full text-xs font-bold text-amber-700 cursor-not-allowed select-none" title="בחשבון ניסיוני לא ניתן לפרסם גרסאות">
               <CloudUpload size={16} className="opacity-50" /> ניסיוני — ללא פרסום
@@ -296,6 +307,7 @@ const Editor: React.FC<EditorProps> = ({
         token={token}
         currentUser={currentUser}
         flowId={selectedBot?.id}
+        initialParams={initialParams}
       />
     </div>
   );

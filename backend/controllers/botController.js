@@ -63,7 +63,8 @@ export const getBots = async (req, res) => {
       name: b.name,
       public_id: b.public_id,
       created_at: b.created_at,
-      is_default: b.is_default || false
+      is_default: b.is_default || false,
+      botParams: b.botParams ? Object.fromEntries(b.botParams) : {}
     })));
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -118,6 +119,25 @@ export const setDefaultBot = async (req, res) => {
     await bot.save();
 
     res.json({ success: true, message: 'הבוט הוגדר כברירת מחדל' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+/**
+ * Update bot parameters (values filled in from template form).
+ * Body: { params: { variableName: value, ... } }
+ */
+export const updateBotParams = async (req, res) => {
+  const { id } = req.params;
+  const userId = req.user.id;
+  const { params } = req.body;
+  try {
+    const bot = await BotFlow.findOne({ _id: id, user_id: userId });
+    if (!bot) return res.status(404).json({ error: 'Bot not found' });
+    bot.botParams = params || {};
+    await bot.save();
+    res.json({ success: true, botParams: Object.fromEntries(bot.botParams) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

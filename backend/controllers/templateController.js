@@ -268,6 +268,12 @@ export const initializeFromTemplate = async (req, res) => {
       }
     }
 
+    // Save the filled-in values as botParams on the BotFlow document so
+    // the simulator can pre-populate --variableName-- placeholders at runtime.
+    if (values && Object.keys(values).length > 0) {
+      await BotFlow.findByIdAndUpdate(bot_id, { botParams: values });
+    }
+
     res.json({ success: true });
   } catch (err) {
     console.error('Template Initialization Error:', err);
@@ -529,6 +535,28 @@ export const createTemplateFromBot = async (req, res) => {
 
     await newTemplate.save();
     res.json(newTemplate);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+/**
+ * Update (or replace) the params array of a template.
+ * Body: { params: [{ label, variableName }] }
+ */
+export const updateTemplateParams = async (req, res) => {
+  const { params } = req.body;
+  if (!Array.isArray(params)) {
+    return res.status(400).json({ error: 'params must be an array' });
+  }
+  try {
+    const template = await Template.findByIdAndUpdate(
+      req.params.id,
+      { params },
+      { new: true }
+    );
+    if (!template) return res.status(404).json({ error: 'Template not found' });
+    res.json({ success: true, params: template.params });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

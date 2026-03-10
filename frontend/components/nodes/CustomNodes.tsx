@@ -383,16 +383,21 @@ export const OutputImageNode = (props: any) => {
   );
 };
 
-export const OutputLinkNode = (props: any) => (
-  <BaseNode id={props.id} title="קישור חיצוני" icon={<ExternalLink size={20} />} type={NodeType.OUTPUT_LINK} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId}>
-    <InputFieldWrapper label="טקסט הקישור">
-      <SearchableInput value={props.data.linkLabel} onChange={(v: string) => props.data.onChange({ linkLabel: v })} placeholder="בקר באתר שלנו" searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
-    </InputFieldWrapper>
-    <InputFieldWrapper label="כתובת אינטרנט">
-      <SearchableInput value={props.data.url} onChange={(v: string) => props.data.onChange({ url: v })} placeholder="https://example.com" searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
-    </InputFieldWrapper>
-  </BaseNode>
-);
+export const OutputLinkNode = (props: any) => {
+  const urlValue: string = props.data.url || '';
+  const isVarSyntax = /--[^-]+--/.test(urlValue);
+
+  return (
+    <BaseNode id={props.id} title="קישור חיצוני" icon={<ExternalLink size={20} />} type={NodeType.OUTPUT_LINK} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId}>
+      <InputFieldWrapper label="טקסט הקישור">
+        <SearchableInput value={props.data.linkLabel} onChange={(v: string) => props.data.onChange({ linkLabel: v })} placeholder="בקר באתר שלנו" searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
+      </InputFieldWrapper>
+      <InputFieldWrapper label="כתובת אינטרנט">
+        <SearchableInput value={props.data.url} onChange={(v: string) => props.data.onChange({ url: v })} placeholder="https://example.com או --שם_משתנה--" searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
+      </InputFieldWrapper>
+    </BaseNode>
+  );
+};
 
 export const OutputMenuNode = (props: any) => {
   const options = props.data.options || [''];

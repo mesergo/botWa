@@ -6,6 +6,7 @@ import {
   getTemplate,
   getTemplateFlow,
   updateTemplateFlow,
+  updateTemplateParams,
   createTemplate, 
   updateTemplate, 
   deleteTemplate,
@@ -28,6 +29,7 @@ router.get('/', authenticateToken, getAllTemplates); // Allow all authenticated 
 router.get('/:id', authenticateToken, getTemplate);
 router.get('/:id/flow', authenticateToken, getTemplateFlow);
 router.put('/:id/flow', authenticateToken, requireAdmin, updateTemplateFlow);
+router.patch('/:id/params', authenticateToken, requireAdmin, updateTemplateParams);
 router.post('/', authenticateToken, requireAdmin, createTemplate);
 router.put('/:id', authenticateToken, requireAdmin, updateTemplate);
 router.delete('/:id', authenticateToken, requireAdmin, deleteTemplate);

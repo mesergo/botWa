@@ -29,7 +29,13 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
-app.use(express.json({ limit: '50mb' }));
+app.use(express.json({
+  limit: '50mb',
+  // Save the raw body so we can log it if JSON parse fails
+  verify: (req, _res, buf) => {
+    req.rawBody = buf.toString('utf8');
+  }
+}));
 
 // Connect to MongoDB before starting the server
 async function startServer() {
@@ -47,13 +53,31 @@ async function startServer() {
     app.use('/api/chat', chatRoutes);
     app.use('/api/flow', flowRoutes);
     app.use('/api/processes', processRoutes);
-    app.use('/api/proxy', proxyRoutes);
+    app.use('/api/xc', proxyRoutes);  // neutral path - avoids firewall URL-dictionary blocks on 'proxy'/'webservice'
     app.use('/api/sessions', sessionRoutes);
     app.use('/api/versions', versionRoutes);
     app.use('/api/templates', templateRoutes);
     app.use('/api/admin', adminRoutes);
 
-    // Start server
+    // ── Global error handler ─────────────────────────────────────────────────
+    // Catches body-parser JSON parse failures (and any other errors) and
+    // returns a proper JSON response so the client can understand what went wrong.
+    // eslint-disable-next-line no-unused-vars
+    app.use((err, req, res, next) => {
+      if (err.type === 'entity.parse.failed' || err instanceof SyntaxError) {
+        console.error('❌ [body-parser] Failed to parse JSON request body.');
+        console.error('   URL   :', req.method, req.originalUrl);
+        console.error('   Raw body (first 300 chars):', (req.rawBody || '').substring(0, 300));
+        console.error('   Error :', err.message);
+        return res.status(400).json({
+          error: 'Invalid JSON in request body',
+          details: err.message,
+          hint: 'The request body could not be parsed as JSON. Check for unescaped special characters.'
+        });
+      }
+      console.error('❌ Unhandled error:', err);
+      res.status(err.status || 500).json({ error: err.message || 'Internal server error' });
+    });
     app.listen(PORT, () => {
       console.log(`🚀 Backend server running on http://localhost:${PORT}`);
       console.log(`📝 Environment: ${process.env.NODE_ENV || 'development'}`);

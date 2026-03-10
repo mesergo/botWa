@@ -23,6 +23,7 @@ export interface NodeData {
   variableName?: string;
   content?: string;
   url?: string;
+  urlVariable?: string;   // variable name whose value is used as the URL (e.g. "link_var")
   linkLabel?: string;
   mediaType?: 'image' | 'video' | 'pdf';
   caption?: string;
@@ -46,6 +47,8 @@ export interface BotFlow {
   public_id: string;
   created_at: string;
   is_default?: boolean;
+  /** Parameter values filled by the user when this bot was created from a template */
+  botParams?: Record<string, string>;
 }
 
 export interface FixedProcess {
@@ -75,6 +78,14 @@ export interface RestorableVersionsData {
     created_at: string;
     isLocked: boolean;
   }>;
+}
+
+/** A parameter definition stored on a template - the admin defines label + variableName.
+ *  Users fill the value; the value is saved as botParams and shown via --variableName-- in nodes.
+ */
+export interface TemplateParam {
+  label: string;        // Display label shown to user, e.g. "שם החברה"
+  variableName: string; // Placeholder key used in content as --variableName--, e.g. "comp_name"
 }
 
 export interface TemplateField {

@@ -273,6 +273,7 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
 
       case 'output_link': {
         const text = replaceParameters(nodeData.linkLabel || 'קישור', params);
+        // --varName-- placeholders in url are resolved via replaceParameters
         const url = replaceParameters(nodeData.url || '', params);
         const msg = { type: 'URL', text, url, created: new Date().toISOString() };
         messages.push(msg);

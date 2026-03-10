@@ -17,6 +17,8 @@ interface SimulatorProps {
   isStandalone?: boolean;
   currentUser: UserType | null;
   flowId?: string | null;
+  /** Pre-filled bot parameter values (from template form) to inject at chat start */
+  initialParams?: Record<string, string>;
 }
 
 interface StackItem {
@@ -96,7 +98,7 @@ const Carousel: React.FC<{ items: CarouselItem[], onSelect: (text: string, idx: 
   );
 };
 
-const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, nodes, edges, fixedProcesses, versions, token, isStandalone, currentUser, flowId }) => {
+const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, nodes, edges, fixedProcesses, versions, token, isStandalone, currentUser, flowId, initialParams }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [userInput, setUserInput] = useState('');
   const [currentNodeId, setCurrentNodeId] = useState<string | null>(null);
@@ -216,7 +218,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
       }
     }
     
-    setMessages([]); setExecutionStack([]); sessionParamsRef.current = {}; setSessionParameters({});
+    setMessages([]); setExecutionStack([]); sessionParamsRef.current = { ...(initialParams || {}) }; setSessionParameters({ ...(initialParams || {}) });
     menuInstanceMapRef.current = {};
     setLastUserValue({ string: null, number: null }); setCurrentCommand(null); setIsWaitingForWebserviceResponse(false); setSessionId(null); sessionIdRef.current = null;
     const instance = getActiveInstance();
@@ -349,7 +351,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
         headers,
         body: JSON.stringify({ sessionId: sid, message: historyEntry })
       }).catch(e => console.error('[Simulator] Failed to save message to history:', e));
-    }
+    } 
   };
 
   const findNextNodeId = (id: string, instance: any, handleId?: string) => {
@@ -480,7 +482,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
         } catch (e) { console.error(e); }
         return processNext(findNextNodeId(nodeId, instance), instance, depth + 1, stack);
       case NodeType.ACTION_WEB_SERVICE:
-        console.log('[Simulator] 🌐 Starting webservice call');
+        console.log('[Simulator] 🌐 Starting ghjkjhgfghjkjhgfghjkjhg webservice call');
         setIsBotTyping(true); setIsWaitingForWebserviceResponse(false);
         try {
           const payload = { campaign: { id: 50000, name: "FlowBot Campaign" }, chat: { created: new Date().toISOString().replace('T', ' ').split('.')[0], source: "FlowBot_Studio", sender: "SimUser_123", control: nodeId }, parameters: Object.entries(sessionParamsRef.current).map(([name, value]) => ({ name, value })), value: (forcedValue?.string || lastUserValue?.string) || null, command: forcedCommand !== undefined ? forcedCommand : currentCommand };
@@ -489,23 +491,33 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
           
           const headers: Record<string, string> = { 'Content-Type': 'application/json' };
           if (token) headers['Authorization'] = `Bearer ${token}`;
-
           const wsAbortCtrl = new AbortController();
           wsAbortControllerRef.current = wsAbortCtrl;
+          const wsBody = JSON.stringify({ url: interpolate(node.data.url), payload: payload });
 
-          const response = await fetch(`${API_BASE}/proxy/webservice`, { 
+          const response = await fetch(`${API_BASE}/xc/call`, { 
             method: 'POST', 
             headers: headers, 
-            body: JSON.stringify({ url: interpolate(node.data.url), payload: payload }),
+            body: wsBody,
             signal: wsAbortCtrl.signal
           });
-          const data = await response.json();
+          const responseText = await response.text();
+          let data: any;
+          try {
+            data = JSON.parse(responseText);
+          } catch (parseErr) {
+            console.error('[Simulator] 🌐 Server returned non-JSON! Full response:', responseText.substring(0, 500));
+            throw new Error(`Server returned non-JSON response (${response.status} ${response.statusText}): ${responseText.substring(0, 200)}`);
+          }
 
           // If reset happened while awaiting, discard everything
           if (cancelled()) return;
-          
+
           setLastUserValue({ string: null, number: null }); setCurrentCommand(null);
+
           if (data.actions && Array.isArray(data.actions) && data.actions.length > 0) {
+            console.log('[Simulator] 🌐 Actions received:', data.actions.length, data.actions.map((a: any) => a.type));
+
             const result = await executeServerActions(data.actions, instance, stack);
             if (cancelled()) return;
             console.log('[Simulator] 🌐 Actions result:', result);
@@ -566,7 +578,18 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
         setIsBotTyping(false); 
         return processNext(findNextNodeId(nodeId, instance), instance, depth + 1, stack);
       }
-      case NodeType.OUTPUT_LINK: setIsBotTyping(true); await new Promise(r => setTimeout(r, 400)); if (cancelled()) return; addMessage({ sender: 'bot', type: 'link', content: node.data.linkLabel || 'קישור חיצוני', url: node.data.url }); setIsBotTyping(false); return processNext(findNextNodeId(nodeId, instance), instance, depth + 1, stack);
+      case NodeType.OUTPUT_LINK: {
+        setIsBotTyping(true);
+        await new Promise(r => setTimeout(r, 400));
+        if (cancelled()) return;
+        // Resolve --varName-- placeholders in url from session params
+        const resolvedUrl = (node.data.url || '').replace(/--([^-]+)--/g, (_: string, name: string) =>
+          sessionParamsRef.current[name] ?? ''
+        );
+        addMessage({ sender: 'bot', type: 'link', content: node.data.linkLabel || 'קישור חיצוני', url: resolvedUrl });
+        setIsBotTyping(false);
+        return processNext(findNextNodeId(nodeId, instance), instance, depth + 1, stack);
+      }
       case NodeType.OUTPUT_MENU: setIsBotTyping(true); await new Promise(r => setTimeout(r, 400)); if (cancelled()) return; menuInstanceMapRef.current[nodeId] = instance; addMessage({ sender: 'bot', type: 'menu', content: node.data.content, options: node.data.options, optionImages: node.data.optionImages, sourceNodeId: nodeId }); setIsBotTyping(false); break;
       case NodeType.INPUT_TEXT: case NodeType.INPUT_DATE: case NodeType.INPUT_FILE: setIsBotTyping(true); await new Promise(r => setTimeout(r, 300)); if (cancelled()) return; if (node.data.label) { addMessage({ sender: 'bot', type: node.type as any, content: node.data.label }); } setIsBotTyping(false); break;
       case NodeType.ACTION_WAIT: await new Promise(r => setTimeout(r, (node.data.waitTime || 1) * 1000)); return processNext(findNextNodeId(nodeId, instance), instance, depth + 1, stack);

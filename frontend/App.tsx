@@ -12,7 +12,7 @@ import ContactsPage from './components/ContactsPage';
 import SessionsPage from './components/SessionsPage';
 import { StartNode, InputTextNode, InputDateNode, InputFileNode, OutputTextNode, OutputImageNode, OutputLinkNode, OutputMenuNode, ActionWebServiceNode, ActionWaitNode, ActionTimeRoutingNode, FixedProcessNode, AutomaticResponsesNode } from './components/nodes/CustomNodes';
 import ButtonEdge from './components/edges/ButtonEdge';
-import { CloudUpload, RotateCcw, Plus, AlertTriangle, Copy, X, Lock, Wallet } from 'lucide-react';
+import { CloudUpload, RotateCcw, Plus, AlertTriangle, Copy, X, Lock, Wallet, Sliders, Save } from 'lucide-react';
 import Simulator from './components/Simulator';
 import AdminPanel from './components/AdminPanel';
 
@@ -145,6 +145,10 @@ const FlowBuilder: React.FC = () => {
   const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
   const [editingTemplateData, setEditingTemplateData] = useState<{ name: string; description: string; isPublic: boolean } | null>(null);
   const [creatingTemplate, setCreatingTemplate] = useState(false);
+  // Template Params Modal (accessible from editor)
+  const [isTemplateParamsModalOpen, setIsTemplateParamsModalOpen] = useState(false);
+  const [templateEditingParams, setTemplateEditingParams] = useState<Array<{ label: string; variableName: string }>>([]);
+  const [templateSavingParams, setTemplateSavingParams] = useState(false);
 
   // Change Template State
   const [isChangeTemplateModalOpen, setIsChangeTemplateModalOpen] = useState(false);
@@ -173,10 +177,10 @@ const FlowBuilder: React.FC = () => {
     const uniqueMatches = new Set<string>();
     
     nodes.forEach(node => {
-      const { label, content, variableName, linkLabel, options, url, serialId } = node.data;
+      const { label, content, variableName, linkLabel, options, url, urlVariable, serialId } = node.data;
       const check = (val?: string) => (val || '').toLowerCase().includes(q);
       
-      if (check(label) || check(content) || check(variableName) || check(linkLabel) || check(url) || check(serialId)) {
+      if (check(label) || check(content) || check(variableName) || check(linkLabel) || check(url) || check(urlVariable) || check(serialId)) {
         uniqueMatches.add(node.id);
       } else if (options && Array.isArray(options)) {
         if (options.some(opt => check(opt))) uniqueMatches.add(node.id);
@@ -289,7 +293,7 @@ const FlowBuilder: React.FC = () => {
       const data = await res.json();
       if (data.nodes?.length > 0) {
         setNodes(data.nodes.map((n: any) => bindNodeCallbacks(n)));
-        setEdges(data.edges.map((e: any) => ({ ...e, style: DEFAULT_EDGE_STYLE, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6' } })));
+        setEdges(data.edges.map((e: any, i: number) => ({ ...e, id: e.id || `edge-${i}-${Date.now()}`, style: DEFAULT_EDGE_STYLE, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6' } })));
       } else {
         const isSubProcess = !!processId;
         const start = bindNodeCallbacks({
@@ -408,7 +412,7 @@ const FlowBuilder: React.FC = () => {
         case NodeType.INPUT_FILE: height += 80; break;
         case NodeType.OUTPUT_TEXT: height += 120; break;
         case NodeType.OUTPUT_IMAGE: height += 80 + 360; break;
-        case NodeType.OUTPUT_LINK: height += 160; break;
+        case NodeType.OUTPUT_LINK: height += 180; break;
         case NodeType.OUTPUT_MENU:
           height += 80 + 40; 
           if (node.data.options) height += node.data.options.length * 85; 
@@ -472,7 +476,7 @@ const FlowBuilder: React.FC = () => {
         if (edgeA.source === edgeB.source) {
           const getHandleIdx = (h?: string | null) => {
             if (!h) return 1000;
-            if (h === 'option-default') return -1; // default comes first
+            if (h === 'option-default' || h === 'default') return -1; // default comes first
             if (h.startsWith('option-')) {
               const num = parseInt(h.split('-')[1]);
               return isNaN(num) ? 1000 : num;
@@ -716,8 +720,9 @@ const FlowBuilder: React.FC = () => {
       const { nodes: restoredNodes, edges: restoredEdges } = versionToRestore.data;
       
       const boundNodes = restoredNodes.map((n: any) => bindNodeCallbacks(n));
-      const formattedEdges = restoredEdges.map((e: any) => ({
+      const formattedEdges = restoredEdges.map((e: any, i: number) => ({
         ...e,
+        id: e.id || `edge-${i}-${Date.now()}`,
         style: DEFAULT_EDGE_STYLE,
         markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6' }
       }));
@@ -884,6 +889,12 @@ const FlowBuilder: React.FC = () => {
         })
       });
       if (res.ok) {
+        // Persist the user-filled values on selectedBot state so the simulator
+        // pre-loads them via initialParams (--variableName-- replacement)
+        if (Object.keys(values).length > 0) {
+          setSelectedBot(prev => prev ? { ...prev, botParams: values } : prev);
+          setBots(prev => prev.map(b => b.id === selectedBot.id ? { ...b, botParams: values } : b));
+        }
         loadFlow(selectedBot.id);
         setViewMode('editor');
       } else {
@@ -913,7 +924,7 @@ const FlowBuilder: React.FC = () => {
       const data = await res.json();
       if (data.nodes?.length > 0) {
         setNodes(data.nodes.map((n: any) => bindNodeCallbacks(n)));
-        setEdges(data.edges.map((e: any) => ({ ...e, style: DEFAULT_EDGE_STYLE, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6' } })));
+        setEdges(data.edges.map((e: any, i: number) => ({ ...e, id: e.id || `edge-${i}-${Date.now()}`, style: DEFAULT_EDGE_STYLE, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6' } })));
       } else {
         // Empty template - start with automatic responses node
         const start = bindNodeCallbacks({
@@ -1004,9 +1015,45 @@ const FlowBuilder: React.FC = () => {
     setEditingTemplateId(null);
     setEditingTemplateData(null);
     setCreatingTemplate(false);
+    setIsTemplateParamsModalOpen(false);
     setNodes([]);
     setEdges([]);
     setViewMode('admin-panel');
+  };
+
+  const openTemplateParamsModal = async () => {
+    if (!token || !editingTemplateId) return;
+    try {
+      const res = await fetch(`${API_BASE}/templates/${editingTemplateId}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const tpl = await res.json();
+      setTemplateEditingParams(tpl.params ? tpl.params.map((p: any) => ({ ...p })) : []);
+      setIsTemplateParamsModalOpen(true);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const saveTemplateParamsFromEditor = async () => {
+    if (!token || !editingTemplateId) return;
+    setTemplateSavingParams(true);
+    try {
+      const res = await fetch(`${API_BASE}/templates/${editingTemplateId}/params`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ params: templateEditingParams })
+      });
+      if (res.ok) {
+        setIsTemplateParamsModalOpen(false);
+      } else {
+        alert('שגיאה בשמירת הפרמטרים');
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setTemplateSavingParams(false);
+    }
   };
 
   const handleChangeTemplate = async () => {
@@ -1258,7 +1305,103 @@ const FlowBuilder: React.FC = () => {
           isEditingTemplate={true}
           onSaveTemplate={viewMode === 'creating-template' ? handleSaveNewTemplate : handleUpdateExistingTemplate}
           existingTemplateData={editingTemplateData}
+          onManageParams={viewMode === 'editing-template' ? openTemplateParamsModal : undefined}
         />
+
+        {/* Template Params Modal - accessible from within editor */}
+        {isTemplateParamsModalOpen && (
+          <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-md z-[300] flex items-center justify-center p-6" dir="rtl">
+            <div className="bg-white p-8 rounded-[2.5rem] w-full max-w-xl shadow-2xl border border-white/50 max-h-[90vh] flex flex-col">
+              {/* Header */}
+              <div className="flex justify-between items-center mb-6 flex-shrink-0">
+                <button onClick={() => setIsTemplateParamsModalOpen(false)} className="p-3 bg-slate-100 rounded-full hover:bg-slate-200 transition-colors">
+                  <X size={20} />
+                </button>
+                <div className="text-right">
+                  <h3 className="text-xl font-black text-slate-800">ניהול פרמטרים</h3>
+                  <p className="text-xs text-slate-400 font-medium mt-0.5">{editingTemplateData?.name}</p>
+                </div>
+              </div>
+
+              {/* Explanation */}
+              <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 mb-6 flex-shrink-0">
+                <p className="text-xs font-bold text-amber-800 leading-relaxed">
+                  הגדר כאן את השדות שיוצגו למשתמש בטופס לפני שימוש בתבנית.<br />
+                  בתוכן הרכיבים השתמש בתחביר <span className="font-black font-mono bg-amber-100 px-1 rounded">--שם_משתנה--</span> כדי להציג את הערך.
+                </p>
+              </div>
+
+              {/* Params list */}
+              <div className="flex-1 overflow-y-auto space-y-3 min-h-0">
+                {templateEditingParams.length === 0 && (
+                  <div className="text-center py-8 text-slate-400">
+                    <Sliders size={32} className="mx-auto mb-2 opacity-30" />
+                    <p className="text-sm font-medium">אין פרמטרים. לחץ &ldquo;הוסף פרמטר&rdquo; להתחיל.</p>
+                  </div>
+                )}
+                {templateEditingParams.map((param, idx) => (
+                  <div key={idx} className="flex items-center gap-3 p-4 bg-slate-50 border border-slate-200 rounded-2xl">
+                    <button
+                      onClick={() => setTemplateEditingParams(prev => prev.filter((_, i) => i !== idx))}
+                      className="p-1.5 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors flex-shrink-0"
+                    >
+                      <X size={15} />
+                    </button>
+                    <div className="flex-1 grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1">תווית למשתמש</label>
+                        <input
+                          type="text"
+                          placeholder="לדוגמה: שם החברה"
+                          value={param.label}
+                          onChange={e => setTemplateEditingParams(prev => prev.map((p, i) => i === idx ? { ...p, label: e.target.value } : p))}
+                          className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold text-right outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1">שם משתנה (ב‑--‑--)</label>
+                        <input
+                          type="text"
+                          placeholder="לדוגמה: comp_name"
+                          value={param.variableName}
+                          onChange={e => setTemplateEditingParams(prev => prev.map((p, i) => i === idx ? { ...p, variableName: e.target.value.replace(/\s/g, '_') } : p))}
+                          className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-mono font-bold text-right outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all"
+                          dir="ltr"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Actions */}
+              <div className="flex flex-col gap-3 pt-5 border-t border-slate-100 mt-5 flex-shrink-0">
+                <button
+                  onClick={() => setTemplateEditingParams(prev => [...prev, { label: '', variableName: '' }])}
+                  className="w-full py-3 border-2 border-dashed border-amber-300 text-amber-600 rounded-2xl font-bold text-sm hover:bg-amber-50 transition-colors flex items-center justify-center gap-2"
+                >
+                  <Plus size={18} /> הוסף פרמטר
+                </button>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setIsTemplateParamsModalOpen(false)}
+                    className="flex-1 py-3 border border-slate-200 text-slate-500 rounded-2xl font-bold text-sm hover:bg-slate-50 transition-colors"
+                  >
+                    ביטול
+                  </button>
+                  <button
+                    onClick={saveTemplateParamsFromEditor}
+                    disabled={templateSavingParams || templateEditingParams.some(p => !p.label.trim() || !p.variableName.trim())}
+                    className="flex-[2] py-3 bg-amber-500 text-white rounded-2xl font-bold text-sm shadow-lg hover:bg-amber-600 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    <Save size={16} />
+                    {templateSavingParams ? 'שומר...' : 'שמור פרמטרים'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </>
     );
   }
@@ -1325,6 +1468,7 @@ const FlowBuilder: React.FC = () => {
         onChangeTemplate={() => setIsChangeTemplateModalOpen(true)}
         onOpenContacts={() => setViewMode('contacts')}
         onOpenSessions={() => { setSessionsOwnOnly(true); setViewMode('sessions'); }}
+        initialParams={selectedBot?.botParams}
         sidebarProps={{
           fixedProcesses,
           versions,

@@ -64,6 +64,8 @@ interface DBTemplate {
   isPublic: boolean;
   type?: 'public' | 'public_paid' | 'admin';
   price?: number;
+  /** Parameters defined by the admin - fill the form --variableName-- placeholders */
+  params?: Array<{ label: string; variableName: string }>;
 }
 
 interface UserBot {
@@ -150,12 +152,23 @@ const TemplateSelection: React.FC<{
       setPaidConfirmTemplate(tpl);
       return;
     }
-    onSelect({ id: tpl._id, name: tpl.name, description: tpl.description || '', fields: [] } as PredefinedTemplate);
+    // Convert params (admin-defined) to TemplateField[] so the form is shown to the user
+    const fields: PredefinedTemplate['fields'] = (tpl.params || []).map(p => ({
+      id: p.variableName,
+      label: p.label,
+      type: 'text' as const
+    }));
+    onSelect({ id: tpl._id, name: tpl.name, description: tpl.description || '', fields } as PredefinedTemplate);
   };
 
   const handleConfirmPaidTemplate = () => {
     if (!paidConfirmTemplate) return;
-    onSelect({ id: paidConfirmTemplate._id, name: paidConfirmTemplate.name, description: paidConfirmTemplate.description || '', fields: [] } as PredefinedTemplate);
+    const fields: PredefinedTemplate['fields'] = (paidConfirmTemplate.params || []).map(p => ({
+      id: p.variableName,
+      label: p.label,
+      type: 'text' as const
+    }));
+    onSelect({ id: paidConfirmTemplate._id, name: paidConfirmTemplate.name, description: paidConfirmTemplate.description || '', fields } as PredefinedTemplate);
     setPaidConfirmTemplate(null);
   };
 

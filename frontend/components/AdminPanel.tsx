@@ -5,7 +5,7 @@ import {
   FileText, Save, Plus, Eye, EyeOff, Bot, ChevronRight, LayoutDashboard,
   CreditCard, MoreVertical, X, Star, Globe, Lock, Copy, List, Phone, Clock,
   ChevronDown, ChevronUp, ToggleLeft, ToggleRight, XCircle, MessageSquare,
-  User as UserIcon, ExternalLink
+  User as UserIcon, ExternalLink, Sliders
 } from 'lucide-react';
 
 interface User {
@@ -46,6 +46,8 @@ interface Template {
   type: 'public' | 'public_paid' | 'admin';
   price?: number;
   createdAt: string;
+  /** Parameters the admin has defined for this template */
+  params?: Array<{ label: string; variableName: string }>;
 }
 
 interface SystemStats {
@@ -97,6 +99,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
   const [newAdminTplName, setNewAdminTplName] = useState('');
   const [newAdminTplDesc, setNewAdminTplDesc] = useState('');
   const [creatingAdminTpl, setCreatingAdminTpl] = useState(false);
+
+  // Template Params modal
+  const [paramsModalTemplate, setParamsModalTemplate] = useState<Template | null>(null);
+  const [editingParams, setEditingParams] = useState<Array<{ label: string; variableName: string }>>([]);
+  const [savingParams, setSavingParams] = useState(false);
 
   // Search & Filter
   const [searchQuery, setSearchQuery] = useState('');
@@ -423,6 +430,47 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
     } catch (err) {
         console.error(err);
     }
+  };
+
+  /** Open the params management modal for a template */
+  const openParamsModal = (tpl: Template) => {
+    setParamsModalTemplate(tpl);
+    setEditingParams(tpl.params ? tpl.params.map(p => ({ ...p })) : []);
+  };
+
+  /** Save the current editingParams to the backend */
+  const saveTemplateParams = async () => {
+    if (!paramsModalTemplate) return;
+    setSavingParams(true);
+    try {
+      const res = await fetch(`${API_BASE}/templates/${paramsModalTemplate._id}/params`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ params: editingParams })
+      });
+      if (res.ok) {
+        fetchTemplates();
+        setParamsModalTemplate(null);
+      } else {
+        alert('שגיאה בשמירת הפרמטרים');
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setSavingParams(false);
+    }
+  };
+
+  const addParam = () => {
+    setEditingParams(prev => [...prev, { label: '', variableName: '' }]);
+  };
+
+  const removeParam = (idx: number) => {
+    setEditingParams(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  const updateParam = (idx: number, field: 'label' | 'variableName', value: string) => {
+    setEditingParams(prev => prev.map((p, i) => i === idx ? { ...p, [field]: value } : p));
   };
 
   const toggleTemplateVisibility = async (template: any) => {
@@ -1359,6 +1407,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                          <button onClick={() => cycleTemplateType(tpl)} className={`p-2 rounded-lg transition-colors border ${typeConfig.color}`} title="שנה סוג">
                             <TypeIcon size={14} />
                          </button>
+                         <button onClick={() => openParamsModal(tpl)} className="p-2 text-amber-600 hover:bg-amber-50 rounded-lg transition-colors border border-amber-200" title="ניהול פרמטרים לטופס">
+                            <Sliders size={16} />
+                         </button>
                          <button onClick={() => onEditTemplate(tpl._id)} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="ערוך">
                             <Edit2 size={16} />
                          </button>
@@ -1386,7 +1437,15 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
 
                     <div className="border-t border-slate-50 pt-3 mt-2 flex justify-between items-center text-[10px] text-slate-400 font-medium">
                       <span>{new Date(tpl.createdAt).toLocaleDateString()}</span>
-                      <span className="font-mono opacity-70">ID: {tpl.template_id}</span>
+                      <div className="flex items-center gap-2">
+                        {tpl.params && tpl.params.length > 0 && (
+                          <span className="flex items-center gap-1 text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded font-bold">
+                            <Sliders size={9} />
+                            {tpl.params.length} פרמטרים
+                          </span>
+                        )}
+                        <span className="font-mono opacity-70">ID: {tpl.template_id}</span>
+                      </div>
                     </div>
                   </div>
                   );
@@ -1404,6 +1463,104 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                     </button>
                   </div>
                 )}
+              </div>
+            </div>
+          )}
+
+          {/* ───────────────────────────────────────────────────────────────
+               PARAMS MODAL - Manage template parameters (for --varName-- filling)
+               ─────────────────────────────────────────────────────────────── */}
+          {paramsModalTemplate && (
+            <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-md z-50 flex items-center justify-center p-6" dir="rtl">
+              <div className="bg-white p-8 rounded-[2.5rem] w-full max-w-xl shadow-2xl animate-fade-in-up border border-white/50 max-h-[90vh] flex flex-col">
+                {/* Header */}
+                <div className="flex justify-between items-center mb-6 flex-shrink-0">
+                  <button onClick={() => setParamsModalTemplate(null)} className="p-3 bg-slate-100 rounded-full hover:bg-slate-200 transition-colors">
+                    <X size={20} />
+                  </button>
+                  <div className="text-right">
+                    <h3 className="text-xl font-black text-slate-800">ניהול פרמטרים</h3>
+                    <p className="text-xs text-slate-400 font-medium mt-0.5">{paramsModalTemplate.name}</p>
+                  </div>
+                </div>
+
+                {/* Explanation */}
+                <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 mb-6 flex-shrink-0">
+                  <p className="text-xs font-bold text-amber-800 leading-relaxed">
+                    הגדר כאן את השדות שיוצגו למשתמש בטופס לפני שימוש בתבנית.<br />
+                    בתוכן הרכיבים השתמש בתחביר <span className="font-black font-mono bg-amber-100 px-1 rounded">--שם_משתנה--</span> כדי להציג את הערך בסימולטור.
+                  </p>
+                </div>
+
+                {/* Params list */}
+                <div className="flex-1 overflow-y-auto space-y-3 min-h-0">
+                  {editingParams.length === 0 && (
+                    <div className="text-center py-8 text-slate-400">
+                      <Sliders size={32} className="mx-auto mb-2 opacity-30" />
+                      <p className="text-sm font-medium">אין פרמטרים. לחץ "הוסף פרמטר" להתחיל.</p>
+                    </div>
+                  )}
+                  {editingParams.map((param, idx) => (
+                    <div key={idx} className="flex items-center gap-3 p-4 bg-slate-50 border border-slate-200 rounded-2xl group">
+                      <button
+                        onClick={() => removeParam(idx)}
+                        className="p-1.5 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors flex-shrink-0"
+                        title="הסר פרמטר"
+                      >
+                        <X size={15} />
+                      </button>
+                      <div className="flex-1 grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1">תווית למשתמש</label>
+                          <input
+                            type="text"
+                            placeholder='לדוגמה: שם החברה'
+                            value={param.label}
+                            onChange={e => updateParam(idx, 'label', e.target.value)}
+                            className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold text-right outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1">שם משתנה (ב-‏--‍‍‍‏--)</label>
+                          <input
+                            type="text"
+                            placeholder='לדוגמה: comp_name'
+                            value={param.variableName}
+                            onChange={e => updateParam(idx, 'variableName', e.target.value.replace(/\s/g, '_'))}
+                            className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-mono font-bold text-right outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all"
+                            dir="ltr"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Actions */}
+                <div className="flex flex-col gap-3 pt-5 border-t border-slate-100 mt-5 flex-shrink-0">
+                  <button
+                    onClick={addParam}
+                    className="w-full py-3 border-2 border-dashed border-amber-300 text-amber-600 rounded-2xl font-bold text-sm hover:bg-amber-50 transition-colors flex items-center justify-center gap-2"
+                  >
+                    <Plus size={18} /> הוסף פרמטר
+                  </button>
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => setParamsModalTemplate(null)}
+                      className="flex-1 py-3 border border-slate-200 text-slate-500 rounded-2xl font-bold text-sm hover:bg-slate-50 transition-colors"
+                    >
+                      ביטול
+                    </button>
+                    <button
+                      onClick={saveTemplateParams}
+                      disabled={savingParams || editingParams.some(p => !p.label.trim() || !p.variableName.trim())}
+                      className="flex-[2] py-3 bg-amber-500 text-white rounded-2xl font-bold text-sm shadow-lg hover:bg-amber-600 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                    >
+                      <Save size={16} />
+                      {savingParams ? 'שומר...' : 'שמור פרמטרים'}
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           )}
