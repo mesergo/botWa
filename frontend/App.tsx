@@ -1460,7 +1460,7 @@ const FlowBuilder: React.FC = () => {
         onSearchNav={(dir) => setCurrentSearchIndex(i => dir === 'up' ? (i > 0 ? i - 1 : searchResults.length - 1) : (i + 1) % searchResults.length)}
         onTidy={tidyFlow}
         onPublish={openPublishModal}
-        onCloseEditor={() => { setActiveProcessId(null); setViewMode('editor'); loadFlow(selectedBot?.id || null); }}
+        onCloseEditor={() => { const zoom = reactFlowInstance?.getViewport().zoom ?? 1; setActiveProcessId(null); setViewMode('editor'); loadFlow(selectedBot?.id || null).then(() => { setTimeout(() => reactFlowInstance?.fitView({ padding: 0.5, duration: 0, minZoom: zoom, maxZoom: zoom }), 300); }); }}
         onHome={() => { setViewMode('dashboard'); setSelectedBot(null); setActiveProcessId(null); }}
         onSimulatorOpen={() => setIsSimulatorOpen(true)}
         onSimulatorClose={() => setIsSimulatorOpen(false)}
@@ -1475,8 +1475,8 @@ const FlowBuilder: React.FC = () => {
           restorableVersions,
           activeProcessId,
           onAddFixedProcess: () => setIsProcessModalOpen(true),
-          onEditFixedProcess: (id: string) => { setActiveProcessId(id); setViewMode('editing-process'); loadFlow(selectedBot?.id || null, id); },
-          onViewFixedProcess: (id: string) => { setActiveProcessId(id); setViewMode('viewing-process'); loadFlow(selectedBot?.id || null, id); },
+          onEditFixedProcess: (id: string) => { const zoom = reactFlowInstance?.getViewport().zoom ?? 1; setActiveProcessId(id); setViewMode('editing-process'); loadFlow(selectedBot?.id || null, id).then(() => { setTimeout(() => reactFlowInstance?.fitView({ padding: 0.5, duration: 0, minZoom: zoom, maxZoom: zoom }), 300); }); },
+          onViewFixedProcess: (id: string) => { const zoom = reactFlowInstance?.getViewport().zoom ?? 1; setActiveProcessId(id); setViewMode('viewing-process'); loadFlow(selectedBot?.id || null, id).then(() => { setTimeout(() => reactFlowInstance?.fitView({ padding: 0.5, duration: 0, minZoom: zoom, maxZoom: zoom }), 300); }); },
           onDeleteFixedProcess: openDeleteConfirmation,
           onRestoreVersion: (v: Version) => { setVersionToRestore(v); setIsRestoreModalOpen(true); },
           onDeleteVersion: handleDeleteVersion,

@@ -187,6 +187,24 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
   let depth = 0;
   const maxDepth = 250;
 
+  // Helper: end of sub-flow → return to automatic_responses (keep session alive)
+  // Mirrors simulator behaviour: flow end does NOT close the session.
+  const returnToMenu = () => {
+    const autoNode = nodes.find(n => n.type === 'automatic_responses');
+    if (autoNode) {
+      console.log('[BOT] ✅ End of flow - returning to automatic_responses (session stays active)');
+      session.current_node_id   = autoNode.id;
+      session.waiting_text_input = false;
+      session.waiting_webservice = false;
+      session.execution_stack   = [];
+    } else {
+      console.log('[BOT] ✅ End of flow - no automatic_responses node, closing session');
+      session.is_active         = false;
+      session.current_node_id   = null;
+      session.waiting_text_input = false;
+    }
+  };
+
   while (currentNodeId && depth < maxDepth) {
     depth++;
     
@@ -220,12 +238,7 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
         // Check if this is the last node (no outgoing edges)
         const nextNode = findNextNode(currentNodeId, edges);
         if (!nextNode) {
-          console.log('[BOT] ✅ Last node reached - closing session immediately');
-          session.is_active = false;
-          session.current_node_id = null;
-          session.waiting_text_input = false;
-          await session.save();
-          console.log('[BOT] ✅ Session saved as inactive');
+          returnToMenu();
           return messages;
         }
         currentNodeId = nextNode;
@@ -259,12 +272,7 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
         // Check if this is the last node (no outgoing edges)
         const nextNode = findNextNode(currentNodeId, edges);
         if (!nextNode) {
-          console.log('[BOT] ✅ Last node (media) reached - closing session immediately');
-          session.is_active = false;
-          session.current_node_id = null;
-          session.waiting_text_input = false;
-          await session.save();
-          console.log('[BOT] ✅ Session saved as inactive after media');
+          returnToMenu();
           return messages;
         }
         currentNodeId = nextNode;
@@ -282,12 +290,7 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
         // Check if this is the last node (no outgoing edges)
         const nextNode = findNextNode(currentNodeId, edges);
         if (!nextNode) {
-          console.log('[BOT] ✅ Last node (link) reached - closing session immediately');
-          session.is_active = false;
-          session.current_node_id = null;
-          session.waiting_text_input = false;
-          await session.save();
-          console.log('[BOT] ✅ Session saved as inactive after link');
+          returnToMenu();
           return messages;
         }
         currentNodeId = nextNode;
@@ -446,12 +449,8 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
         const nextNode = findNextNode(currentNodeId, edges, 'default');
         
         if (!nextNode) {
-          // No default exit - close session
-          console.log('[BOT] ⚠️ No default exit found - closing session');
-          session.is_active = false;
-          session.current_node_id = null;
-          session.waiting_text_input = false;
-          await session.save();
+          console.log('[BOT] ⚠️ No default exit found - returning to menu');
+          returnToMenu();
           return messages;
         }
         
@@ -502,12 +501,7 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
   if (depth >= maxDepth) {
     console.log('[BOT] ⚠️ Max depth reached');
   } else if (!currentNodeId) {
-    console.log('[BOT] ✅ End of flow reached - closing session immediately');
-    session.is_active = false;
-    session.current_node_id = null;
-    session.waiting_text_input = false;
-    await session.save();
-    console.log('[BOT] ✅ Session saved as inactive at end of flow');
+    returnToMenu();
   }
   
   return messages;
@@ -532,8 +526,8 @@ export const respondToMessage = async (req, res) => {
       });
     }
 
-    // Find user by token
-    const user = await User.findOne({ token });
+    // Find user by public_id (used as the API token)
+    const user = await User.findOne({ public_id: token });
     if (!user) {
       return res.status(404).json({ 
         StatusId: 0, 
@@ -690,6 +684,74 @@ export const respondToMessage = async (req, res) => {
     });
 
     const params = session.parameters || {};
+
+    // ── Flow interrupt (mirrors Simulator flow-interrupt) ──────────────────────
+    // If we are mid-flow (not a new session, not already at automatic_responses,
+    // ── Flow interrupt ────────────────────────────────────────────────────────
+    // Mirrors the simulator: any message that matches an option from a previously
+    // shown menu (output_menu) or automatic_responses jumps back to that node,
+    // even if the flow has already advanced or ended.
+    // Fired whenever we are NOT explicitly waiting for free-text input.
+    if (!isNewSession && text && !session.waiting_text_input) {
+
+      // 1. Check all output_menu nodes in the flow for a match
+      const interruptMenuNodes = flowData.nodes.filter(n => n.type === 'output_menu');
+      for (const menuNode of interruptMenuNodes) {
+        const menuOptions = (menuNode.data.options || []).filter(o => o !== 'default');
+        const matchedMenuIdx = menuOptions.findIndex(
+          opt => String(opt).trim().toLowerCase() === text.trim().toLowerCase()
+        );
+        if (matchedMenuIdx !== -1) {
+          console.log(`[BOT] ⚡ Flow interrupt via output_menu "${menuNode.id}" option ${matchedMenuIdx}`);
+          session.execution_stack    = [];
+          session.markModified('execution_stack');
+          session.waiting_webservice = false;
+          session.waiting_text_input = false;
+
+          const interruptNextId = findNextNode(menuNode.id, flowData.edges, `option-${matchedMenuIdx}`);
+          if (interruptNextId) {
+            addToHistory(session, { type: 'UserInput', text }, 'user');
+            messages = await walkChain(interruptNextId, flowData.nodes, flowData.edges, session, session.flow_id, req);
+            await session.save();
+            return res.json({ StatusId: 1, StatusDescription: 'Success', sender, messages, control: null });
+          }
+        }
+      }
+
+      // 2. Check automatic_responses options (only when not already at automatic_responses)
+      if (currentNode.type !== 'automatic_responses') {
+        const autoNode = flowData.nodes.find(n => n.type === 'automatic_responses');
+        if (autoNode) {
+          const arOptions   = autoNode.data.options         || [];
+          const arOperators = autoNode.data.optionOperators || arOptions.map(() => 'eq');
+
+          let interruptIdx = -1;
+          for (let i = 1; i < arOptions.length; i++) {
+            if (evaluateCondition(arOperators[i], text, arOptions[i])) {
+              interruptIdx = i;
+              break;
+            }
+          }
+
+          if (interruptIdx !== -1) {
+            console.log(`[BOT] ⚡ Flow interrupt via automatic_responses option ${interruptIdx}`);
+            session.execution_stack    = [];
+            session.markModified('execution_stack');
+            session.waiting_webservice = false;
+            session.waiting_text_input = false;
+
+            const interruptNextId = findNextNode(autoNode.id, flowData.edges, `option-${interruptIdx}`);
+            if (interruptNextId) {
+              addToHistory(session, { type: 'UserInput', text }, 'user');
+              messages = await walkChain(interruptNextId, flowData.nodes, flowData.edges, session, session.flow_id, req);
+              await session.save();
+              return res.json({ StatusId: 1, StatusDescription: 'Success', sender, messages, control: null });
+            }
+          }
+        }
+      }
+    }
+    // ─────────────────────────────────────────────────────────────────────────
 
     // Handle based on current node type
     if (isNewSession && currentNode.type === 'automatic_responses') {
