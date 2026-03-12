@@ -23,9 +23,16 @@ const fetchFlowData = async (userId, flow_id, standard_process_id = null, versio
   let query = { user_id: userId };
   
   if (standard_process_id) {
-    // When loading a standard process, we ONLY care about the process ID, not which bot it was opened from
-    query.standard_process_id = standard_process_id;
-    query.isStandardProcess = 0;
+    // When loading a standard process: get content widgets (isStandardProcess:0) AND
+    // nested fixed_process reference nodes that live inside this process.
+    // Supports two storage formats:
+    //   NEW: parent_process_id = this process, standard_process_id = child
+    //   OLD (legacy): standard_process_id = this process, isStandardProcess=1, flow_id=null
+    query.$or = [
+      { standard_process_id: standard_process_id, isStandardProcess: 0 },
+      { parent_process_id: standard_process_id },
+      { standard_process_id: standard_process_id, isStandardProcess: 1, flow_id: null }
+    ];
   } else {
     // When loading a bot flow, we filter by its flow_id
     query.flow_id = flow_id;
@@ -150,7 +157,11 @@ export const syncFlow = async (req, res) => {
   
   try {
     const cleanupQuery = standard_process_id 
-        ? { user_id: userId, standard_process_id: standard_process_id, isStandardProcess: 0 }
+        ? { user_id: userId, $or: [
+            { standard_process_id: standard_process_id, isStandardProcess: 0 },
+            { parent_process_id: standard_process_id },
+            { standard_process_id: standard_process_id, isStandardProcess: 1, flow_id: null }
+          ]}
         : { user_id: userId, flow_id: flow_id, $or: [{ standard_process_id: null }, { isStandardProcess: 1 }] };
 
     console.log('🗑️ מוחק widgets קיימים:', cleanupQuery);
@@ -166,12 +177,21 @@ export const syncFlow = async (req, res) => {
       const isBranching = node.type === 'output_menu' || node.type === 'action_web_service' || node.type === 'automatic_responses' || node.type === 'action_time_routing';
       const nextEdge = !isBranching ? edges.find(e => e.source === node.id && !e.sourceHandle) : null;
       const nextId = nextEdge ? nextEdge.target : null;
-      const isProxy = node.type === 'fixed_process' || node.data.isStandardProcess ? 1 : 0;
-      
-      // If we are editing a standard process, nodeProcessId is that process.
-      // If we are in a bot flow, it's either null or a reference in a proxy node.
-      const nodeProcessId = standard_process_id || node.data.processId || null;
-      
+      const isProxy = (node.type === 'fixed_process' || node.data.isStandardProcess) ? 1 : 0;
+
+      // A fixed_process reference node inside a standard process:
+      //   standard_process_id = child process being called (preserved for execution)
+      //   parent_process_id   = the standard process this node lives in (for ownership)
+      // A regular content node inside a standard process:
+      //   standard_process_id = the process it belongs to, parent_process_id = null
+      // A fixed_process reference in a main flow:
+      //   standard_process_id = child process, flow_id = main flow, parent_process_id = null
+      const isNestedProcessRef = !!standard_process_id && node.type === 'fixed_process';
+      const nodeProcessId = isNestedProcessRef
+        ? (node.data.processId || null)
+        : (standard_process_id || node.data.processId || null);
+      const nodeParentProcessId = isNestedProcessRef ? standard_process_id : null;
+
       // IMPORTANT: If editing a standard process, we save flow_id as null to make it global
       const finalFlowId = standard_process_id ? null : flow_id;
 
@@ -194,6 +214,7 @@ export const syncFlow = async (req, res) => {
         next: nextId,
         image_file: metadataObj,
         standard_process_id: nodeProcessId,
+        parent_process_id: nodeParentProcessId || null,
         isStandardProcess: isProxy
       };
       

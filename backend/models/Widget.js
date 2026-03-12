@@ -13,6 +13,7 @@ const widgetSchema = new mongoose.Schema({
   pos_y: Number,
   next: String,
   standard_process_id: String,
+  parent_process_id: String,
   isStandardProcess: { type: Number, default: 0 },
   image_file: mongoose.Schema.Types.Mixed,
   target_variable: String,

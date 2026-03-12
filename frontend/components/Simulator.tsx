@@ -19,6 +19,10 @@ interface SimulatorProps {
   flowId?: string | null;
   /** Pre-filled bot parameter values (from template form) to inject at chat start */
   initialParams?: Record<string, string>;
+  /** Called whenever the simulator moves to a different node (null = no active node) */
+  onNodeFocus?: (nodeId: string | null) => void;
+  /** Called when the simulator enters/exits a fixed-process sub-flow (passes the FixedProcess node ID from the main flow, or null when back in main flow) */
+  onFixedProcessActive?: (fixedProcessNodeId: string | null) => void;
 }
 
 interface StackItem {
@@ -98,9 +102,10 @@ const Carousel: React.FC<{ items: CarouselItem[], onSelect: (text: string, idx: 
   );
 };
 
-const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, nodes, edges, fixedProcesses, versions, token, isStandalone, currentUser, flowId, initialParams }) => {
+const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, nodes, edges, fixedProcesses, versions, token, isStandalone, currentUser, flowId, initialParams, onNodeFocus, onFixedProcessActive }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [userInput, setUserInput] = useState('');
+  const [dateInput, setDateInput] = useState('');
   const [currentNodeId, setCurrentNodeId] = useState<string | null>(null);
   const [currentInstance, setCurrentInstance] = useState<any>(null);
   const [executionStack, setExecutionStack] = useState<StackItem[]>([]);
@@ -124,6 +129,18 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
   const runIdRef = useRef(0);
   // AbortController for cancelling in-flight webservice fetch
   const wsAbortControllerRef = useRef<AbortController | null>(null);
+
+  // Notify parent whenever the active node changes
+  useEffect(() => {
+    onNodeFocus?.(currentNodeId);
+  }, [currentNodeId, onNodeFocus]);
+
+  // Notify parent of the active fixed-process node in the main flow (bottom of execution stack)
+  useEffect(() => {
+    // executionStack[0] is always the entry from the main flow into the first sub-flow
+    const fixedProcessNodeId = executionStack.length > 0 ? executionStack[0].nodeId : null;
+    onFixedProcessActive?.(fixedProcessNodeId);
+  }, [executionStack, onFixedProcessActive]);
 
   useEffect(() => { 
     if (isOpen && nodes && nodes.length > 0 && !initialStartRef.current) {
@@ -220,7 +237,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
     
     setMessages([]); setExecutionStack([]); sessionParamsRef.current = { ...(initialParams || {}) }; setSessionParameters({ ...(initialParams || {}) });
     menuInstanceMapRef.current = {};
-    setLastUserValue({ string: null, number: null }); setCurrentCommand(null); setIsWaitingForWebserviceResponse(false); setSessionId(null); sessionIdRef.current = null;
+    setLastUserValue({ string: null, number: null }); setCurrentCommand(null); setIsWaitingForWebserviceResponse(false); setSessionId(null); sessionIdRef.current = null; setDateInput('');
     const instance = getActiveInstance();
     const startNode = instance?.getNodes().find((n: any) => n.type === NodeType.START || n.type === NodeType.AUTOMATIC_RESPONSES);
     
@@ -703,6 +720,18 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
     }
   };
 
+  const handleDateSend = async () => {
+    if (!dateInput || !currentNodeId || !currentInstance) return;
+    const [year, month, day] = dateInput.split('-');
+    const formattedDate = `${day}/${month}/${year}`;
+    setDateInput('');
+    const nodesList = currentInstance.getNodes() || [];
+    const node = nodesList.find((n: any) => n.id === currentNodeId);
+    if (node && node.data.variableName) updateParam(node.data.variableName, formattedDate);
+    addMessage({ sender: 'user', type: 'text', content: formattedDate });
+    await processNext(findNextNodeId(currentNodeId, currentInstance), currentInstance, 0, executionStack);
+  };
+
   const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file || !currentNodeId || !currentInstance) return;
@@ -730,6 +759,13 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
         addMessage({ sender: 'user', type: 'text', content: option });
         setLastUserValue({ string: option, number: null });
         setIsWaitingForWebserviceResponse(false);
+        // Save the newly selected option to session parameters
+        const menuNodesList = menuInstance.getNodes() || [];
+        const sourceMenuNode = menuNodesList.find((n: any) => n.id === sourceNodeId);
+        if (sourceMenuNode && sourceMenuNode.data && sourceMenuNode.data.variableName) {
+          sessionParamsRef.current = { ...sessionParamsRef.current, [sourceMenuNode.data.variableName]: option };
+          setSessionParameters({ ...sessionParamsRef.current });
+        }
         // Pass empty stack so processNext clears executionStack (sub-flows abandoned)
         const nextNodeId = findNextNodeId(sourceNodeId, menuInstance, `option-${index}`);
         await processNext(nextNodeId, menuInstance, 0, []);
@@ -894,6 +930,25 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
                       </div>
                     </div>
                   )}
+                  {msg.type === 'input_date' && (
+                    <div className="flex flex-col items-end gap-3">
+                      <div className="text-slate-900">{msg.content}</div>
+                      <input
+                        type="date"
+                        value={dateInput}
+                        onChange={e => setDateInput(e.target.value)}
+                        className="border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold text-slate-900 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        dir="ltr"
+                      />
+                      <button
+                        onClick={handleDateSend}
+                        disabled={!dateInput}
+                        className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-xs transition-all shadow-lg active:scale-95 ${dateInput ? 'bg-blue-600 text-white shadow-blue-600/20 hover:bg-blue-700' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`}
+                      >
+                        <Check size={14} /> אשר תאריך
+                      </button>
+                    </div>
+                  )}
                   {msg.type === 'input_file' && (
                     <div className="flex flex-col items-end gap-3">
                        <div className="flex items-center justify-end gap-2 italic text-slate-400">{msg.content} <FileText size={16} /></div>
@@ -905,7 +960,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
                        </button>
                     </div>
                   )}
-                  {msg.type.startsWith('input_') && msg.type !== 'input_file' && <div className="text-slate-900">{msg.content}</div>}
+                  {msg.type.startsWith('input_') && msg.type !== 'input_file' && msg.type !== 'input_date' && <div className="text-slate-900">{msg.content}</div>}
                 </div>
               </div>
             )}
@@ -919,10 +974,29 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
         )}
       </div>
       <div className="p-6 bg-white border-t border-slate-50">
-        <div className="flex items-center gap-3 bg-slate-50 rounded-[1.5rem] p-2.5 pr-6 border border-slate-100 flex-row-reverse">
-          <input type="text" placeholder="הקלד תשובה..." dir="rtl" className="flex-1 bg-transparent border-none outline-none text-sm font-bold text-black h-10 text-right" value={userInput} onChange={e => setUserInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSend()} />
-          <button onClick={handleSend} disabled={!userInput.trim()} className={`p-3 rounded-2xl transition-all ${userInput.trim() ? 'bg-blue-600 text-white shadow-xl shadow-blue-600/20' : 'bg-slate-200 text-slate-400'}`}><Send size={20} className="transform rotate-180" /></button>
-        </div>
+        {(() => {
+          const _activeNodes = currentInstance?.getNodes() || [];
+          const _currentNode = _activeNodes.find((n: any) => n.id === currentNodeId);
+          const _isWaitingForDate = _currentNode?.type === NodeType.INPUT_DATE;
+          return _isWaitingForDate ? (
+            <div className="flex items-center gap-3 bg-slate-50 rounded-[1.5rem] p-2.5 pr-4 border border-slate-100 flex-row-reverse">
+              <input
+                type="date"
+                dir="ltr"
+                className="flex-1 bg-transparent border-none outline-none text-sm font-bold text-black h-10"
+                value={dateInput}
+                onChange={e => setDateInput(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleDateSend()}
+              />
+              <button onClick={handleDateSend} disabled={!dateInput} className={`p-3 rounded-2xl transition-all ${dateInput ? 'bg-blue-600 text-white shadow-xl shadow-blue-600/20' : 'bg-slate-200 text-slate-400'}`}><Check size={20} /></button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-3 bg-slate-50 rounded-[1.5rem] p-2.5 pr-6 border border-slate-100 flex-row-reverse">
+              <input type="text" placeholder="הקלד תשובה..." dir="rtl" className="flex-1 bg-transparent border-none outline-none text-sm font-bold text-black h-10 text-right" value={userInput} onChange={e => setUserInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSend()} />
+              <button onClick={handleSend} disabled={!userInput.trim()} className={`p-3 rounded-2xl transition-all ${userInput.trim() ? 'bg-blue-600 text-white shadow-xl shadow-blue-600/20' : 'bg-slate-200 text-slate-400'}`}><Send size={20} className="transform rotate-180" /></button>
+            </div>
+          );
+        })()}
       </div>
     </div>
   );

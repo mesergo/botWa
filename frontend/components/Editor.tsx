@@ -58,6 +58,10 @@ interface EditorProps {
   initialParams?: Record<string, string>;
   /** Opens the template params management modal (only when isEditingTemplate) */
   onManageParams?: () => void;
+  /** Called when the simulator moves to a node, so the canvas can highlight & center it */
+  onNodeFocus?: (nodeId: string | null) => void;
+  /** Called when the simulator enters/exits a fixed-process sub-flow */
+  onFixedProcessActive?: (fixedProcessNodeId: string | null) => void;
 }
 
 const Editor: React.FC<EditorProps> = ({
@@ -65,7 +69,7 @@ const Editor: React.FC<EditorProps> = ({
   searchQuery, searchResults, currentSearchIndex, reactFlowWrapper, nodeTypes, edgeTypes, isSimulatorOpen,
   onNodesChange, onEdgesChange, onConnect, onInit, onDrop, onSearchChange, onSearchNav, onTidy, onPublish,
   onCloseEditor, onHome, onSimulatorOpen, onSimulatorClose, onDuplicate, onChangeTemplate, sidebarProps,
-  isEditingTemplate, onSaveTemplate, existingTemplateData, onOpenContacts, onOpenSessions, initialParams, onManageParams
+  isEditingTemplate, onSaveTemplate, existingTemplateData, onOpenContacts, onOpenSessions, initialParams, onManageParams, onNodeFocus, onFixedProcessActive
 }) => {
   const [showSaveModal, setShowSaveModal] = React.useState(false);
   const [templateName, setTemplateName] = React.useState(existingTemplateData?.name || '');
@@ -308,6 +312,8 @@ const Editor: React.FC<EditorProps> = ({
         currentUser={currentUser}
         flowId={selectedBot?.id}
         initialParams={initialParams}
+        onNodeFocus={onNodeFocus}
+        onFixedProcessActive={onFixedProcessActive}
       />
     </div>
   );

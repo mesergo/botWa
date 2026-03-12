@@ -96,8 +96,15 @@ const getFlowData = async (flowId, processId = null) => {
   const flowIdStr = flowId ? String(flowId) : null;
   
   if (processId) {
-    query.standard_process_id = processId;
-    query.isStandardProcess = 0;
+    // Get content widgets of this process AND nested fixed_process references living inside it.
+    // Supports two storage formats:
+    //   NEW: parent_process_id = this process, standard_process_id = child
+    //   OLD (legacy): standard_process_id = this process, isStandardProcess=1, flow_id=null
+    query.$or = [
+      { standard_process_id: processId, isStandardProcess: 0 },
+      { parent_process_id: processId },
+      { standard_process_id: processId, isStandardProcess: 1, flow_id: null }
+    ];
   } else if (flowIdStr) {
     // When we have a specific flow_id, only get widgets for that flow
     query.flow_id = flowIdStr;
@@ -136,7 +143,9 @@ const getFlowData = async (flowId, processId = null) => {
         linkLabel: metadata.linkLabel,
         variableName: metadata.variableName,
         waitTime: metadata.waitTime,
-        processId: w.standard_process_id,
+        // For nested fixed_process refs: old format stores child processId in image_file,
+        // new format stores it in standard_process_id (parent_process_id holds the parent).
+        processId: (w.type === 'fixed_process' ? (metadata.processId || w.standard_process_id) : w.standard_process_id),
         isStandardProcess: w.isStandardProcess ? true : false
       } 
     };
@@ -566,6 +575,30 @@ export const respondToMessage = async (req, res) => {
           console.log(`[BOT] Updating phone from ${session.customer_phone} to ${phone}`);
           session.customer_phone = phone;
         }
+        // Merge botParams into existing session if missing (handles sessions created before this fix)
+        try {
+          const existingBot = await BotFlow.findById(session.flow_id);
+          if (existingBot && existingBot.botParams) {
+            const existingParams = session.parameters || {};
+            const enriched = { ...existingParams };
+            let changed = false;
+            const applyBotParams = (map) => {
+              if (typeof map.forEach === 'function') {
+                map.forEach((val, key) => { if (enriched[key] === undefined) { enriched[key] = val; changed = true; } });
+              } else if (typeof map === 'object') {
+                Object.keys(map).forEach(key => { if (enriched[key] === undefined) { enriched[key] = map[key]; changed = true; } });
+              }
+            };
+            applyBotParams(existingBot.botParams);
+            if (changed) {
+              session.parameters = enriched;
+              session.markModified('parameters');
+              console.log('[BOT] Merged missing botParams into existing session:', enriched);
+            }
+          }
+        } catch(e) {
+          console.error('[BOT] Failed to enrich existing session with botParams:', e);
+        }
       }
     }
 
@@ -631,6 +664,23 @@ export const respondToMessage = async (req, res) => {
       console.log('[BOT] ✅ Found automatic_responses node:', autoResponseNode.id);
       console.log('[BOT] ✅ Found sender :', sender);
 
+      // Merge bot-level template params (filled in the web form) into the session
+      // so that --variableName-- placeholders are resolved in all nodes.
+      const botParamsObj = {};
+      if (bot.botParams) {
+        try {
+          if (typeof bot.botParams.forEach === 'function') {
+            // Mongoose Map
+            bot.botParams.forEach((val, key) => { botParamsObj[key] = val; });
+          } else if (typeof bot.botParams === 'object') {
+            Object.assign(botParamsObj, bot.botParams);
+          }
+        } catch (e) {
+          console.error('[BOT] Failed to extract botParams:', e);
+        }
+      }
+      console.log('[BOT] botParams from BotFlow:', botParamsObj);
+
       session = await BotSession.create({
         user_id: user._id,
         flow_id: bot._id.toString(),
@@ -638,7 +688,7 @@ export const respondToMessage = async (req, res) => {
         sender,
         current_node_id: autoResponseNode.id,
         is_active: true,
-        parameters: { waPhone: sender },
+        parameters: { ...botParamsObj, waPhone: sender },
         process_history: []
       });
 
@@ -707,6 +757,14 @@ export const respondToMessage = async (req, res) => {
           session.markModified('execution_stack');
           session.waiting_webservice = false;
           session.waiting_text_input = false;
+
+          // Save the newly selected option to session parameters
+          if (menuNode.data.variableName) {
+            const interruptParams = session.parameters || {};
+            interruptParams[menuNode.data.variableName] = text.trim();
+            session.parameters = interruptParams;
+            session.markModified('parameters');
+          }
 
           const interruptNextId = findNextNode(menuNode.id, flowData.edges, `option-${matchedMenuIdx}`);
           if (interruptNextId) {
@@ -800,6 +858,7 @@ export const respondToMessage = async (req, res) => {
       if (varName) {
         params[varName] = text;
         session.parameters = params;
+        session.markModified('parameters');
       }
       
       const nextNodeId = findNextNode(currentNode.id, flowData.edges);

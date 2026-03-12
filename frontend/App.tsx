@@ -110,6 +110,8 @@ const FlowBuilder: React.FC = () => {
   const [activeProcessId, setActiveProcessId] = useState<string | null>(null);
   const [reactFlowInstance, setReactFlowInstance] = useState<ReactFlowInstance | null>(null);
   const [isSimulatorOpen, setIsSimulatorOpen] = useState(viewMode === 'simulator-only');
+  const [simulatorActiveNodeId, setSimulatorActiveNodeId] = useState<string | null>(null);
+  const [simulatorFixedProcessNodeId, setSimulatorFixedProcessNodeId] = useState<string | null>(null);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<string[]>([]);
@@ -293,7 +295,7 @@ const FlowBuilder: React.FC = () => {
       const data = await res.json();
       if (data.nodes?.length > 0) {
         setNodes(data.nodes.map((n: any) => bindNodeCallbacks(n)));
-        setEdges(data.edges.map((e: any, i: number) => ({ ...e, id: e.id || `edge-${i}-${Date.now()}`, style: DEFAULT_EDGE_STYLE, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6' } })));
+        setEdges(data.edges.map((e: any, i: number) => ({ ...e, type: 'button', id: e.id || `edge-${i}-${Date.now()}`, style: DEFAULT_EDGE_STYLE, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6' } })));
       } else {
         const isSubProcess = !!processId;
         const start = bindNodeCallbacks({
@@ -924,7 +926,7 @@ const FlowBuilder: React.FC = () => {
       const data = await res.json();
       if (data.nodes?.length > 0) {
         setNodes(data.nodes.map((n: any) => bindNodeCallbacks(n)));
-        setEdges(data.edges.map((e: any, i: number) => ({ ...e, id: e.id || `edge-${i}-${Date.now()}`, style: DEFAULT_EDGE_STYLE, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6' } })));
+        setEdges(data.edges.map((e: any, i: number) => ({ ...e, type: 'button', id: e.id || `edge-${i}-${Date.now()}`, style: DEFAULT_EDGE_STYLE, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6' } })));
       } else {
         // Empty template - start with automatic responses node
         const start = bindNodeCallbacks({
@@ -1111,9 +1113,22 @@ const FlowBuilder: React.FC = () => {
     setNodes((nds) => nds.concat(newNode));
   }, [reactFlowInstance, bindNodeCallbacks, nodes]);
 
+  // Center & zoom the canvas on the simulator's active node.
+  // When inside a fixed-process sub-flow, prefer centering on the FixedProcess node in the main canvas.
+  useEffect(() => {
+    const targetId = simulatorFixedProcessNodeId || simulatorActiveNodeId;
+    if (!targetId || !reactFlowInstance) return;
+    const node = nodes.find(n => n.id === targetId);
+    if (!node) return;
+    const x = node.position.x + (node.width ?? 300) / 2;
+    const y = node.position.y + (node.height ?? 150) / 2;
+    const currentZoom = reactFlowInstance.getViewport().zoom;
+    reactFlowInstance.setCenter(x, y, { zoom: currentZoom, duration: 500 });
+  }, [simulatorFixedProcessNodeId, simulatorActiveNodeId, reactFlowInstance, nodes]);
+
   const nodesWithSearch = useMemo(() => nodes.map(n => ({
-    ...n, data: { ...n.data, searchQuery, isCurrentMatch: searchResults[currentSearchIndex] === n.id }
-  })), [nodes, searchQuery, searchResults, currentSearchIndex]);
+    ...n, data: { ...n.data, searchQuery, isCurrentMatch: searchResults[currentSearchIndex] === n.id, isSimulatorActive: n.id === simulatorActiveNodeId || n.id === simulatorFixedProcessNodeId }
+  })), [nodes, searchQuery, searchResults, currentSearchIndex, simulatorActiveNodeId, simulatorFixedProcessNodeId]);
 
   const openPublishModal = useCallback(() => {
     const now = new Date();
@@ -1463,12 +1478,14 @@ const FlowBuilder: React.FC = () => {
         onCloseEditor={() => { const zoom = reactFlowInstance?.getViewport().zoom ?? 1; setActiveProcessId(null); setViewMode('editor'); loadFlow(selectedBot?.id || null).then(() => { setTimeout(() => reactFlowInstance?.fitView({ padding: 0.5, duration: 0, minZoom: zoom, maxZoom: zoom }), 300); }); }}
         onHome={() => { setViewMode('dashboard'); setSelectedBot(null); setActiveProcessId(null); }}
         onSimulatorOpen={() => setIsSimulatorOpen(true)}
-        onSimulatorClose={() => setIsSimulatorOpen(false)}
+        onSimulatorClose={() => { setIsSimulatorOpen(false); setSimulatorActiveNodeId(null); setSimulatorFixedProcessNodeId(null); }}
         onDuplicate={() => { setDuplicateName(`${fixedProcesses.find(p => p.id.toString() === activeProcessId)?.name || ''} (עותק)`); setIsDuplicateModalOpen(true); }}
         onChangeTemplate={() => setIsChangeTemplateModalOpen(true)}
         onOpenContacts={() => setViewMode('contacts')}
         onOpenSessions={() => { setSessionsOwnOnly(true); setViewMode('sessions'); }}
         initialParams={selectedBot?.botParams}
+        onNodeFocus={setSimulatorActiveNodeId}
+        onFixedProcessActive={setSimulatorFixedProcessNodeId}
         sidebarProps={{
           fixedProcesses,
           versions,

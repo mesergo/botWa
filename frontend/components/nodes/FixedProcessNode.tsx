@@ -14,6 +14,7 @@ export const FixedProcessNode = (props: any) => {
       type={NodeType.FIXED_PROCESS} 
       selected={props.selected} 
       onDelete={props.data.onDelete}
+      isSimulatorActive={props.data?.isSimulatorActive}
     >
       <div className="bg-purple-50 p-2 rounded border border-purple-100 text-[10px] text-purple-700">
         This is a reusable sequence of blocks.
