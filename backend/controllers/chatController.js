@@ -308,7 +308,7 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
           addToHistory(session, textMsg, currentNodeId);
         }
         
-        // Build options as {label, value, image_url} objects per the API spec
+        // Build options as simple string array
         const rawOptions = nodeData.options || [];
         const rawImages = nodeData.optionImages || [];
         const options = rawOptions
@@ -332,7 +332,7 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
       }
 
       case 'input_text':
-      case 'input_date':
+      case 'input_date': 
       case 'input_file': {
         // Send prompt if exists
         if (nodeData.label) {
