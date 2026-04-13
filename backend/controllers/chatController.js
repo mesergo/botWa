@@ -299,7 +299,7 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
         break;
       }
 
-      case 'output_menu': {
+     case 'output_menu': {
         // Send text message first (if exists)
         const text = replaceParameters(nodeData.content || '', params);
         if (text) {
@@ -310,16 +310,9 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
         
         // Build options as simple string array
         const rawOptions = nodeData.options || [];
-        const rawImages = nodeData.optionImages || [];
         const options = rawOptions
           .filter(opt => opt !== 'default')
-          .map((opt, i) => {
-            const label = String(opt);
-            const obj = { label, value: label };
-            const img = rawImages[i];
-            if (img) obj.image_url = img;
-            return obj;
-          });
+          .map(opt => String(opt));
         
         const optionsMsg = { type: 'Options', options, created: new Date().toISOString() };
         messages.push(optionsMsg);
