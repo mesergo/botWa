@@ -26,10 +26,28 @@ export const getProcesses = async (req, res) => {
   }
 };
 
+export const getProcessUsage = async (req, res) => {
+  const { id } = req.params;
+  const userId = req.user.id;
+  try {
+    // Count proxy widgets (isStandardProcess:1) that reference this process across all bots
+    const count = await Widget.countDocuments({
+      standard_process_id: id,
+      user_id: userId,
+      isStandardProcess: 1,
+      flow_id: { $ne: null }
+    });
+    res.json({ count });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
 export const deleteProcess = async (req, res) => {
   const { id } = req.params;
   const userId = req.user.id;
   try {
+    // Delete all widgets (content + proxy) for this process across ALL bots
     await Widget.deleteMany({ standard_process_id: id, user_id: userId });
     await StandardProcess.deleteOne({ _id: id, user_id: userId });
     res.json({ success: true });

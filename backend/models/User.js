@@ -15,7 +15,8 @@ const userSchema = new mongoose.Schema({
     max_versions: { type: Number, default: null },
     version_price: { type: Number, default: null },
     bot_price: { type: Number, default: null }
-  }
+  },
+  trial_expires_at: { type: Date, default: null }
 }, {
   timestamps: true,
   collection: 'User'

@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useRef, useState } from 'react';
 import ReactFlow, { 
   Background, 
   BackgroundVariant,
@@ -14,7 +14,7 @@ import ReactFlow, {
 import Sidebar from './Sidebar';
 import Simulator from './Simulator';
 import { NodeType, FixedProcess, Version, User, BotFlow } from '../types';
-import { Wand2, Search, ChevronUp, ChevronDown, X, Copy, CloudUpload, AlertTriangle } from 'lucide-react';
+import { Wand2, Search, ChevronUp, ChevronDown, X, Copy, CloudUpload, AlertTriangle, Users, List, Sliders } from 'lucide-react';
 
 interface EditorProps {
   selectedBot: BotFlow | null;
@@ -52,6 +52,18 @@ interface EditorProps {
   isEditingTemplate?: boolean;
   onSaveTemplate?: (name: string, description: string, isPublic: boolean) => void;
   existingTemplateData?: { name: string; description: string; isPublic: boolean } | null;
+  onOpenContacts?: () => void;
+  onOpenSessions?: () => void;
+  /** Pre-filled parameter values from template form, passed to Simulator for --varName-- replacement */
+  initialParams?: Record<string, string>;
+  /** Opens the template params management modal (only when isEditingTemplate) */
+  onManageParams?: () => void;
+  /** Called when the simulator moves to a node, so the canvas can highlight & center it */
+  onNodeFocus?: (nodeId: string | null) => void;
+  /** Called when the simulator enters/exits a fixed-process sub-flow */
+  onFixedProcessActive?: (fixedProcessNodeId: string | null) => void;
+  /** When true, hides the canvas during flow transitions to prevent the visible viewport jump */
+  isTransitioning?: boolean;
 }
 
 const Editor: React.FC<EditorProps> = ({
@@ -59,12 +71,24 @@ const Editor: React.FC<EditorProps> = ({
   searchQuery, searchResults, currentSearchIndex, reactFlowWrapper, nodeTypes, edgeTypes, isSimulatorOpen,
   onNodesChange, onEdgesChange, onConnect, onInit, onDrop, onSearchChange, onSearchNav, onTidy, onPublish,
   onCloseEditor, onHome, onSimulatorOpen, onSimulatorClose, onDuplicate, onChangeTemplate, sidebarProps,
-  isEditingTemplate, onSaveTemplate, existingTemplateData
+  isEditingTemplate, onSaveTemplate, existingTemplateData, onOpenContacts, onOpenSessions, initialParams, onManageParams, onNodeFocus, onFixedProcessActive, isTransitioning
 }) => {
   const [showSaveModal, setShowSaveModal] = React.useState(false);
   const [templateName, setTemplateName] = React.useState(existingTemplateData?.name || '');
   const [templateDescription, setTemplateDescription] = React.useState(existingTemplateData?.description || '');
   const [templateIsPublic, setTemplateIsPublic] = React.useState(existingTemplateData?.isPublic ?? true);
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const profileMenuRef = useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (profileMenuRef.current && !profileMenuRef.current.contains(e.target as unknown as globalThis.Node)) {
+        setProfileMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   React.useEffect(() => {
     if (existingTemplateData) {
@@ -167,9 +191,20 @@ const Editor: React.FC<EditorProps> = ({
         </div>
         <div className="flex items-center gap-6">
           {isEditingTemplate && onSaveTemplate ? (
-            <button onClick={() => setShowSaveModal(true)} className="flex items-center gap-2 px-6 py-2.5 bg-green-600 text-white border border-green-600 rounded-full text-xs font-bold shadow-sm hover:bg-green-700 transition-all">
-              <CloudUpload size={16} /> שמור תבנית
-            </button>
+            <div className="flex items-center gap-2">
+              {onManageParams && (
+                <button onClick={onManageParams} className="flex items-center gap-2 px-5 py-2.5 bg-white border border-amber-400 text-amber-600 rounded-full text-xs font-bold shadow-sm hover:bg-amber-50 transition-all">
+                  <Sliders size={15} /> ניהול פרמטרים
+                </button>
+              )}
+              <button onClick={() => setShowSaveModal(true)} className="flex items-center gap-2 px-6 py-2.5 bg-green-600 text-white border border-green-600 rounded-full text-xs font-bold shadow-sm hover:bg-green-700 transition-all">
+                <CloudUpload size={16} /> שמור תבנית
+              </button>
+            </div>
+          ) : currentUser?.account_type === 'Trial' ? (
+            <div className="flex items-center gap-2 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-full text-xs font-bold text-amber-700 cursor-not-allowed select-none" title="בחשבון ניסיוני לא ניתן לפרסם גרסאות">
+              <CloudUpload size={16} className="opacity-50" /> ניסיוני — ללא פרסום
+            </div>
           ) : (
             <button onClick={onPublish} className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 text-white border border-indigo-600 rounded-full text-xs font-bold shadow-sm hover:bg-indigo-700 transition-all">
               <CloudUpload size={16} /> פרסם גרסה
@@ -180,6 +215,40 @@ const Editor: React.FC<EditorProps> = ({
           )}
           <button onClick={onTidy} className="flex items-center gap-2 px-6 py-2.5 bg-white border border-slate-200 rounded-full text-xs font-bold shadow-sm hover:border-blue-600 hover:text-blue-600 transition-all"><Wand2 size={16} /> סדר הכל</button>
           <div className="h-8 w-px bg-slate-100 mx-1"></div>
+          {/* User Avatar - dropdown menu */}
+          {(onOpenContacts || onOpenSessions) && (
+            <div className="relative" ref={profileMenuRef}>
+              <button
+                onClick={() => setProfileMenuOpen(v => !v)}
+                title="תפריט פרופיל"
+                className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-sm hover:scale-110 transition-transform shadow-md select-none"
+              >
+                {(currentUser?.name?.charAt(0) || currentUser?.email?.charAt(0) || '?').toUpperCase()}
+              </button>
+              {profileMenuOpen && (
+                <div className="absolute right-0 top-12 bg-white border border-slate-100 rounded-2xl shadow-xl z-50 min-w-[180px] overflow-hidden" dir="rtl">
+                  {onOpenContacts && (
+                    <button
+                      onClick={() => { setProfileMenuOpen(false); onOpenContacts(); }}
+                      className="w-full flex items-center gap-3 px-5 py-3.5 text-sm font-bold text-slate-700 hover:bg-slate-50 transition-colors"
+                    >
+                      <Users size={16} className="text-blue-500 flex-shrink-0" />
+                      אנשי קשר
+                    </button>
+                  )}
+                  {onOpenSessions && (
+                    <button
+                      onClick={() => { setProfileMenuOpen(false); onOpenSessions(); }}
+                      className="w-full flex items-center gap-3 px-5 py-3.5 text-sm font-bold text-slate-700 hover:bg-slate-50 transition-colors"
+                    >
+                      <List size={16} className="text-indigo-500 flex-shrink-0" />
+                      שיחות שלי
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
           <button onClick={onHome} className="p-2 text-slate-300 hover:text-blue-600 transition-colors"><X size={22} /></button>
         </div>
       </nav>
@@ -188,6 +257,11 @@ const Editor: React.FC<EditorProps> = ({
         <div className="flex h-full w-full">
           <Sidebar {...sidebarProps} isReadOnly={viewMode === 'viewing-process'} />
           <div className="flex-1 relative h-full bg-[#f8fafc]" ref={reactFlowWrapper}>
+            {isTransitioning && (
+              <div className="absolute inset-0 z-[200] flex items-center justify-center bg-[#f8fafc]">
+                <div className="w-12 h-12 border-4 border-slate-200 border-t-slate-500 rounded-full animate-spin" />
+              </div>
+            )}
             <ReactFlow
               nodes={nodes} edges={edges} 
               onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect}
@@ -244,6 +318,9 @@ const Editor: React.FC<EditorProps> = ({
         token={token}
         currentUser={currentUser}
         flowId={selectedBot?.id}
+        initialParams={initialParams}
+        onNodeFocus={onNodeFocus}
+        onFixedProcessActive={onFixedProcessActive}
       />
     </div>
   );

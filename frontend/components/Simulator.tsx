@@ -17,6 +17,12 @@ interface SimulatorProps {
   isStandalone?: boolean;
   currentUser: UserType | null;
   flowId?: string | null;
+  /** Pre-filled bot parameter values (from template form) to inject at chat start */
+  initialParams?: Record<string, string>;
+  /** Called whenever the simulator moves to a different node (null = no active node) */
+  onNodeFocus?: (nodeId: string | null) => void;
+  /** Called when the simulator enters/exits a fixed-process sub-flow (passes the FixedProcess node ID from the main flow, or null when back in main flow) */
+  onFixedProcessActive?: (fixedProcessNodeId: string | null) => void;
 }
 
 interface StackItem {
@@ -70,8 +76,6 @@ const Carousel: React.FC<{ items: CarouselItem[], onSelect: (text: string, idx: 
   return (
     <div className="w-full flex flex-col items-end gap-2 group/carousel relative">
       <div className="flex gap-3 items-center flex-row-reverse mb-1 mr-1">
-         <div className="w-7 h-7 rounded-lg bg-white border border-slate-100 flex items-center justify-center shadow-sm text-slate-400"><Bot size={14} /></div>
-         <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">תוצאות חיפוש</span>
       </div>
       <div className="relative w-full">
         <button onClick={() => scroll('left')} className="absolute left-0 top-1/2 -translate-y-1/2 z-10 p-2 bg-white/90 border border-slate-100 rounded-full shadow-lg opacity-0 group-hover/carousel:opacity-100 transition-all"><ChevronLeft size={20} /></button>
@@ -98,9 +102,10 @@ const Carousel: React.FC<{ items: CarouselItem[], onSelect: (text: string, idx: 
   );
 };
 
-const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, nodes, edges, fixedProcesses, versions, token, isStandalone, currentUser, flowId }) => {
+const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, nodes, edges, fixedProcesses, versions, token, isStandalone, currentUser, flowId, initialParams, onNodeFocus, onFixedProcessActive }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [userInput, setUserInput] = useState('');
+  const [dateInput, setDateInput] = useState('');
   const [currentNodeId, setCurrentNodeId] = useState<string | null>(null);
   const [currentInstance, setCurrentInstance] = useState<any>(null);
   const [executionStack, setExecutionStack] = useState<StackItem[]>([]);
@@ -108,6 +113,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
   const [sessionId, setSessionId] = useState<number | null>(null);
   const [isWaitingForWebserviceResponse, setIsWaitingForWebserviceResponse] = useState(false);
   const sessionParamsRef = useRef<Record<string, any>>({});
+  const sessionIdRef = useRef<string | null>(null);
   const [sessionParameters, setSessionParameters] = useState<Record<string, any>>({});
   const [lastUserValue, setLastUserValue] = useState<{ string: string | null, number: number | null }>({ string: null, number: null });
   const [currentCommand, setCurrentCommand] = useState<string | null>(null);
@@ -117,6 +123,24 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
   const simulatorFileInputRef = useRef<HTMLInputElement>(null);
   const initialStartRef = useRef(false);
   const updateTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Maps output_menu nodeId -> the flow instance that rendered it (for flow-interrupt support)
+  const menuInstanceMapRef = useRef<Record<string, any>>({});
+  // Cancellation: increment on every reset to invalidate all in-flight processNext calls
+  const runIdRef = useRef(0);
+  // AbortController for cancelling in-flight webservice fetch
+  const wsAbortControllerRef = useRef<AbortController | null>(null);
+
+  // Notify parent whenever the active node changes
+  useEffect(() => {
+    onNodeFocus?.(currentNodeId);
+  }, [currentNodeId, onNodeFocus]);
+
+  // Notify parent of the active fixed-process node in the main flow (bottom of execution stack)
+  useEffect(() => {
+    // executionStack[0] is always the entry from the main flow into the first sub-flow
+    const fixedProcessNodeId = executionStack.length > 0 ? executionStack[0].nodeId : null;
+    onFixedProcessActive?.(fixedProcessNodeId);
+  }, [executionStack, onFixedProcessActive]);
 
   useEffect(() => { 
     if (isOpen && nodes && nodes.length > 0 && !initialStartRef.current) {
@@ -189,9 +213,31 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
       clearTimeout(updateTimeoutRef.current);
       updateTimeoutRef.current = null;
     }
+
+    // Cancel any in-flight processNext / webservice calls from the previous chat
+    runIdRef.current += 1;
+    wsAbortControllerRef.current?.abort();
+    wsAbortControllerRef.current = null;
+    setIsBotTyping(false);
+
+    // Mark current session as inactive before starting a new one
+    const prevSessionId = sessionIdRef.current;
+    if (prevSessionId) {
+      try {
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+        await fetch(`${API_BASE}/sessions/${prevSessionId}/deactivate`, {
+          method: 'PATCH',
+          headers,
+        });
+      } catch (e) {
+        console.error('[Simulator] Failed to deactivate previous session:', e);
+      }
+    }
     
-    setMessages([]); setExecutionStack([]); sessionParamsRef.current = {}; setSessionParameters({});
-    setLastUserValue({ string: null, number: null }); setCurrentCommand(null); setIsWaitingForWebserviceResponse(false); setSessionId(null);
+    setMessages([]); setExecutionStack([]); sessionParamsRef.current = { ...(initialParams || {}) }; setSessionParameters({ ...(initialParams || {}) });
+    menuInstanceMapRef.current = {};
+    setLastUserValue({ string: null, number: null }); setCurrentCommand(null); setIsWaitingForWebserviceResponse(false); setSessionId(null); sessionIdRef.current = null; setDateInput('');
     const instance = getActiveInstance();
     const startNode = instance?.getNodes().find((n: any) => n.type === NodeType.START || n.type === NodeType.AUTOMATIC_RESPONSES);
     
@@ -213,6 +259,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
 
         const data = await res.json();
         setSessionId(data.sessionId);
+        sessionIdRef.current = data.sessionId;
       } catch (e) { 
         console.error("Failed to start session:", e); 
         // Optional: show user friendly error
@@ -295,6 +342,33 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
       options: item.options?.map(opt => ({ ...opt, text: interpolate(opt.text) }))
     })) : msg.carouselItems;
     setMessages(prev => [...prev, { ...msg, content: interpolatedContentNoNull, options: interpolatedOptions, carouselItems: interpolatedCarousel, id: Math.random().toString(36).substr(2, 9), timestamp: new Date() }]);
+
+    // Persist message to session history in the background (skip separator markers)
+    if (msg.type === 'separator') return;
+    const sid = sessionIdRef.current;
+    if (sid) {
+      const typeMap: Record<string, string> = {
+        text: 'Text', image: 'Image', video: 'Video', document: 'Document',
+        link: 'URL', menu: 'Options', carousel: 'Carousel', input_text: 'Text',
+        input_date: 'Text', input_file: 'Text'
+      };
+      const historyEntry: Record<string, any> = {
+        type: typeMap[msg.type] || msg.type,
+        sender: msg.sender,
+        name: msg.sender === 'bot' ? 'בוט' : 'משתמש',
+        created: new Date().toISOString(),
+        text: interpolatedContentNoNull,
+        url: msg.url,
+        options: interpolatedOptions,
+      };
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      fetch(`${API_BASE}/sessions/add-history`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ sessionId: sid, message: historyEntry })
+      }).catch(e => console.error('[Simulator] Failed to save message to history:', e));
+    } 
   };
 
   const findNextNodeId = (id: string, instance: any, handleId?: string) => {
@@ -317,33 +391,53 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
           carouselItems.push({ title: item.title, subtitle: item.subtitle, image: item.image, url: item.url, options: item.options });
           j++;
         }
-        setIsBotTyping(true); await new Promise(r => setTimeout(r, 400));
+        setIsBotTyping(false); 
         addMessage({ sender: 'bot', type: 'carousel', carouselItems: carouselItems });
-        setIsBotTyping(false); shouldPauseForInput = true; i = j; continue;
+        const hasButtons = carouselItems.some(item => item.options && item.options.length > 0);
+        if (hasButtons) shouldPauseForInput = true;
+        i = j; continue;
       }
       switch (action.type) {
         case 'SetParameter': updateParam(action.name, action.value); break;
-        case 'SendMessage': setIsBotTyping(true); await new Promise(r => setTimeout(r, 300)); addMessage({ sender: 'bot', type: 'text', content: action.text }); setIsBotTyping(false); break;
-        case 'SendImage': setIsBotTyping(true); await new Promise(r => setTimeout(r, 400)); addMessage({ sender: 'bot', type: 'image', url: action.url }); setIsBotTyping(false); break;
-        case 'SendWebpage': setIsBotTyping(true); await new Promise(r => setTimeout(r, 300)); addMessage({ sender: 'bot', type: 'link', content: action.text, url: action.url }); setIsBotTyping(false); break;
-        case 'InputText': 
-          console.log('[Simulator] ⏸️ InputText action received:', { text: action.text, options: action.options });
-          setIsBotTyping(true); 
-          await new Promise(r => setTimeout(r, 300)); 
-          // Add message if there's text OR options
-          if (action.text || (action.options && action.options.length > 0)) { 
-            addMessage({ sender: 'bot', type: action.options && action.options.length > 0 ? 'menu' : 'input_text', content: action.text || '', options: action.options }); 
-          } 
+        case 'SendMessage': 
           setIsBotTyping(false); 
+          addMessage({ sender: 'bot', type: 'text', content: action.text }); 
+          if (i < actions.length - 1) { 
+             await new Promise(r => setTimeout(r, 500)); 
+             setIsBotTyping(true); 
+          }
+          break;
+        case 'SendImage': 
+          setIsBotTyping(false); 
+          addMessage({ sender: 'bot', type: 'image', url: action.url }); 
+          if (i < actions.length - 1) {
+             await new Promise(r => setTimeout(r, 500)); 
+             setIsBotTyping(true);
+          } 
+          break;
+        case 'SendWebpage': 
+          setIsBotTyping(false); 
+          addMessage({ sender: 'bot', type: 'link', content: action.text, url: action.url }); 
+          if (i < actions.length - 1) {
+             await new Promise(r => setTimeout(r, 500)); 
+             setIsBotTyping(true);
+          }
+          break;
+        case 'InputText': 
+          setIsBotTyping(false); 
+          if (action.text) { 
+            addMessage({ sender: 'bot', type: action.options && action.options.length > 0 ? 'menu' : 'input_text', content: action.text, options: action.options }); 
+          } 
           shouldPauseForInput = true; 
-          console.log('[Simulator] ⏸️ shouldPauseForInput set to TRUE');
           break;
-        case 'Goto': const targetNode = instance.getNodes().find((n: any) => n.data.label === action.name); if (targetNode) { processNext(targetNode.id, instance, 0, stack); return { paused: true }; } break;
-        case 'Return': 
-          foundReturnValue = action.value; 
-          updateParam('last_return', action.value); 
-          console.log('[Simulator] 🔙 Return value:', foundReturnValue);
+        case 'Goto': 
+          const targetNode = instance.getNodes().find((n: any) => n.data.label === action.name); 
+          if (targetNode) { 
+            processNext(targetNode.id, instance, 0, stack); 
+            return { paused: true }; 
+          } 
           break;
+        case 'Return': foundReturnValue = action.value; updateParam('last_return', action.value); break;
         case 'ChangeState': addMessage({ sender: 'bot', type: 'text', content: `[מצב בוט שונה ל: ${action.value}]` }); break;
       }
       i++;
@@ -353,6 +447,8 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
   };
 
   const processNext = async (nodeId: string | null, instance: any, depth: number = 0, stack: StackItem[] = [], forcedValue?: { string: string | null, number: number | null }, forcedCommand?: string | null) => {
+    const myRunId = runIdRef.current;
+    const cancelled = () => runIdRef.current !== myRunId;
     if (depth > 250) { addMessage({ sender: 'bot', type: 'text', content: "⚠️ חריגה ממורכבות המערכת המותרת." }); return; }
     setCurrentInstance(instance); setExecutionStack(stack);
     if (!nodeId) {
@@ -371,6 +467,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
     const node = nodesList.find((n: any) => n.id === nodeId);
     if (!node) return processNext(null, instance, depth + 1, stack);
     setCurrentNodeId(nodeId); await new Promise(r => setTimeout(r, 50));
+    if (cancelled()) return;
     switch (node.type) {
       case NodeType.START: return processNext(findNextNodeId(nodeId, instance), instance, depth + 1, stack);
       case NodeType.AUTOMATIC_RESPONSES:
@@ -404,7 +501,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
         } catch (e) { console.error(e); }
         return processNext(findNextNodeId(nodeId, instance), instance, depth + 1, stack);
       case NodeType.ACTION_WEB_SERVICE:
-        console.log('[Simulator] 🌐 Starting webservice call');
+        console.log('[Simulator] 🌐 Starting ghjkjhgfghjkjhgfghjkjhg webservice call');
         setIsBotTyping(true); setIsWaitingForWebserviceResponse(false);
         try {
           const payload = { campaign: { id: 50000, name: "FlowBot Campaign" }, chat: { created: new Date().toISOString().replace('T', ' ').split('.')[0], source: "FlowBot_Studio", sender: "SimUser_123", control: nodeId }, parameters: Object.entries(sessionParamsRef.current).map(([name, value]) => ({ name, value })), value: (forcedValue?.string || lastUserValue?.string) || null, command: forcedCommand !== undefined ? forcedCommand : currentCommand };
@@ -413,23 +510,35 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
           
           const headers: Record<string, string> = { 'Content-Type': 'application/json' };
           if (token) headers['Authorization'] = `Bearer ${token}`;
+          const wsAbortCtrl = new AbortController();
+          wsAbortControllerRef.current = wsAbortCtrl;
+          const wsBody = JSON.stringify({ url: interpolate(node.data.url), payload: payload });
 
-          const response = await fetch(`${API_BASE}/proxy/webservice`, { 
+          const response = await fetch(`${API_BASE}/xc/call`, { 
             method: 'POST', 
             headers: headers, 
-            body: JSON.stringify({ url: interpolate(node.data.url), payload: payload }) 
+            body: wsBody,
+            signal: wsAbortCtrl.signal
           });
-          const data = await response.json(); 
-          
-          console.log('[Simulator] 🌐 WS Response received:', data);
-          
-          setIsBotTyping(false); 
-          await new Promise(r => setTimeout(r, 100));
-          
+          const responseText = await response.text();
+          let data: any;
+          try {
+            data = JSON.parse(responseText);
+          } catch (parseErr) {
+            console.error('[Simulator] 🌐 Server returned non-JSON! Full response:', responseText.substring(0, 500));
+            throw new Error(`Server returned non-JSON response (${response.status} ${response.statusText}): ${responseText.substring(0, 200)}`);
+          }
+
+          // If reset happened while awaiting, discard everything
+          if (cancelled()) return;
+
           setLastUserValue({ string: null, number: null }); setCurrentCommand(null);
-          if (data.actions && Array.isArray(data.actions)) {
-            console.log('[Simulator] 🌐 Processing', data.actions.length, 'actions');
+
+          if (data.actions && Array.isArray(data.actions) && data.actions.length > 0) {
+            console.log('[Simulator] 🌐 Actions received:', data.actions.length, data.actions.map((a: any) => a.type));
+
             const result = await executeServerActions(data.actions, instance, stack);
+            if (cancelled()) return;
             console.log('[Simulator] 🌐 Actions result:', result);
             if (result.paused) { 
               console.log('[Simulator] ⏸️ PAUSED - waiting for webservice response'); 
@@ -463,30 +572,45 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
             console.log('[Simulator] 🌐 No actions - taking default exit');
             return processNext(findNextNodeId(nodeId, instance, 'default'), instance, depth + 1, stack); 
           }
-        } catch (error) { 
+        } catch (error: any) {
+          // If the fetch was aborted due to reset, silently discard - do NOT output an error message
+          if (error?.name === 'AbortError' || cancelled()) return;
           setIsBotTyping(false); 
           addMessage({ sender: 'bot', type: 'text', content: `❌ שגיאה בחיבור לשרת ה-Webservice` }); 
           console.log('[Simulator] 🌐 Error - taking default exit');
           return processNext(findNextNodeId(nodeId, instance, 'default'), instance, depth + 1, stack); 
         }
         break;
-      case NodeType.OUTPUT_TEXT: setIsBotTyping(true); await new Promise(r => setTimeout(r, 400)); addMessage({ sender: 'bot', type: 'text', content: node.data.content || "..." }); setIsBotTyping(false); return processNext(findNextNodeId(nodeId, instance), instance, depth + 1, stack);
+      case NodeType.OUTPUT_TEXT: setIsBotTyping(true); await new Promise(r => setTimeout(r, 400)); if (cancelled()) return; addMessage({ sender: 'bot', type: 'text', content: node.data.content || "..." }); setIsBotTyping(false); return processNext(findNextNodeId(nodeId, instance), instance, depth + 1, stack);
       case NodeType.OUTPUT_IMAGE: {
         setIsBotTyping(true); 
-        await new Promise(r => setTimeout(r, 500)); 
+        await new Promise(r => setTimeout(r, 500));
+        if (cancelled()) return;
         const mediaType = node.data.mediaType || 'image';
         const messageType = mediaType === 'video' ? 'video' : mediaType === 'pdf' ? 'document' : 'image';
         addMessage({ sender: 'bot', type: messageType, url: node.data.url }); 
         if (node.data.caption && node.data.caption.trim()) {
           await new Promise(r => setTimeout(r, 200));
+          if (cancelled()) return;
           addMessage({ sender: 'bot', type: 'text', content: node.data.caption });
         }
         setIsBotTyping(false); 
         return processNext(findNextNodeId(nodeId, instance), instance, depth + 1, stack);
       }
-      case NodeType.OUTPUT_LINK: setIsBotTyping(true); await new Promise(r => setTimeout(r, 400)); addMessage({ sender: 'bot', type: 'link', content: node.data.linkLabel || 'קישור חיצוני', url: node.data.url }); setIsBotTyping(false); return processNext(findNextNodeId(nodeId, instance), instance, depth + 1, stack);
-      case NodeType.OUTPUT_MENU: setIsBotTyping(true); await new Promise(r => setTimeout(r, 400)); addMessage({ sender: 'bot', type: 'menu', content: node.data.content, options: node.data.options, optionImages: node.data.optionImages }); setIsBotTyping(false); break;
-      case NodeType.INPUT_TEXT: case NodeType.INPUT_DATE: case NodeType.INPUT_FILE: setIsBotTyping(true); await new Promise(r => setTimeout(r, 300)); if (node.data.label) { addMessage({ sender: 'bot', type: node.type as any, content: node.data.label }); } setIsBotTyping(false); break;
+      case NodeType.OUTPUT_LINK: {
+        setIsBotTyping(true);
+        await new Promise(r => setTimeout(r, 400));
+        if (cancelled()) return;
+        // Resolve --varName-- placeholders in url from session params
+        const resolvedUrl = (node.data.url || '').replace(/--([^-]+)--/g, (_: string, name: string) =>
+          sessionParamsRef.current[name] ?? ''
+        );
+        addMessage({ sender: 'bot', type: 'link', content: node.data.linkLabel || 'קישור חיצוני', url: resolvedUrl });
+        setIsBotTyping(false);
+        return processNext(findNextNodeId(nodeId, instance), instance, depth + 1, stack);
+      }
+      case NodeType.OUTPUT_MENU: setIsBotTyping(true); await new Promise(r => setTimeout(r, 400)); if (cancelled()) return; menuInstanceMapRef.current[nodeId] = instance; addMessage({ sender: 'bot', type: 'menu', content: node.data.content, options: node.data.options, optionImages: node.data.optionImages, sourceNodeId: nodeId }); setIsBotTyping(false); break;
+      case NodeType.INPUT_TEXT: case NodeType.INPUT_DATE: case NodeType.INPUT_FILE: setIsBotTyping(true); await new Promise(r => setTimeout(r, 300)); if (cancelled()) return; if (node.data.label) { addMessage({ sender: 'bot', type: node.type as any, content: node.data.label }); } setIsBotTyping(false); break;
       case NodeType.ACTION_WAIT: await new Promise(r => setTimeout(r, (node.data.waitTime || 1) * 1000)); return processNext(findNextNodeId(nodeId, instance), instance, depth + 1, stack);
       case NodeType.ACTION_TIME_ROUTING: {
         // Get current hour in Israel timezone
@@ -568,9 +692,13 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
     const nodesList = currentInstance.getNodes() || [];
     const node = nodesList.find((n: any) => n.id === currentNodeId);
     
+    const isInputNode = node?.type === NodeType.INPUT_TEXT || node?.type === NodeType.INPUT_DATE || node?.type === NodeType.INPUT_FILE;
+
     // Check if current node has no next edges (end of flow)
+    // Skip this check for input nodes — they are EXPECTED to be the last node and must
+    // save their parameter before deciding what to do next.
     const nextNodeId = findNextNodeId(currentNodeId, currentInstance);
-    if (!node || !nextNodeId) {
+    if (!node || (!nextNodeId && !isInputNode)) {
       console.log('[Simulator] End of flow detected - resetting and starting fresh with new message');
       addMessage({ sender: 'user', type: 'text', content: text });
       await resetChat();
@@ -593,9 +721,26 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
        await processNext(currentNodeId, currentInstance, 0, executionStack, newValue, null);
     } else if (isWaitingForWebserviceResponse && node.type === NodeType.ACTION_WEB_SERVICE) { 
        await processNext(currentNodeId, currentInstance, 0, executionStack, newValue, null); 
+    } else if (isInputNode && !nextNodeId) {
+      // Last node in this (sub-)flow is an input — param already saved above.
+      // processNext(null) will pop executionStack and continue in parent flow if any,
+      // or simply clear the current node if we are at the top-level flow.
+      await processNext(null, currentInstance, 0, executionStack);
     } else { 
        await processNext(findNextNodeId(currentNodeId, currentInstance), currentInstance, 0, executionStack); 
     }
+  };
+
+  const handleDateSend = async () => {
+    if (!dateInput || !currentNodeId || !currentInstance) return;
+    const [year, month, day] = dateInput.split('-');
+    const formattedDate = `${day}/${month}/${year}`;
+    setDateInput('');
+    const nodesList = currentInstance.getNodes() || [];
+    const node = nodesList.find((n: any) => n.id === currentNodeId);
+    if (node && node.data.variableName) updateParam(node.data.variableName, formattedDate);
+    addMessage({ sender: 'user', type: 'text', content: formattedDate });
+    await processNext(findNextNodeId(currentNodeId, currentInstance), currentInstance, 0, executionStack);
   };
 
   const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -614,7 +759,32 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
     await processNext(findNextNodeId(currentNodeId, currentInstance), currentInstance, 0, executionStack);
   };
 
-  const handleMenuSelect = async (option: string, index: number, optionValue?: string) => {
+  const handleMenuSelect = async (option: string, index: number, optionValue?: string, sourceNodeId?: string) => {
+    // ── Flow-interrupt: user clicked a menu button from an earlier point in the chat ──
+    if (sourceNodeId && sourceNodeId !== currentNodeId && !isWaitingForWebserviceResponse) {
+      const menuInstance = menuInstanceMapRef.current[sourceNodeId];
+      if (menuInstance) {
+        console.log('[Simulator] ⚡ Flow interrupt! Leaving', currentNodeId, '→ back to menu', sourceNodeId);
+        // Show a visual separator so the user understands the context switched
+        addMessage({ sender: 'bot', type: 'separator', content: '↩ חזרת לתפריט' });
+        addMessage({ sender: 'user', type: 'text', content: option });
+        setLastUserValue({ string: option, number: null });
+        setIsWaitingForWebserviceResponse(false);
+        // Save the newly selected option to session parameters
+        const menuNodesList = menuInstance.getNodes() || [];
+        const sourceMenuNode = menuNodesList.find((n: any) => n.id === sourceNodeId);
+        if (sourceMenuNode && sourceMenuNode.data && sourceMenuNode.data.variableName) {
+          sessionParamsRef.current = { ...sessionParamsRef.current, [sourceMenuNode.data.variableName]: option };
+          setSessionParameters({ ...sessionParamsRef.current });
+        }
+        // Pass empty stack so processNext clears executionStack (sub-flows abandoned)
+        const nextNodeId = findNextNodeId(sourceNodeId, menuInstance, `option-${index}`);
+        await processNext(nextNodeId, menuInstance, 0, []);
+        return;
+      }
+    }
+
+    // ── Normal flow ──
     console.log('[Simulator] 🔘 Menu option selected:', { option, index, optionValue });
     console.log('[Simulator] 🔘 State:', { 
       currentNodeId, 
@@ -636,6 +806,11 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
     } else {
       console.log('[Simulator] 🔘 Regular menu selection, moving to option', index);
       setLastUserValue({ string: option, number: null });
+      // Save selected option to session parameters if the menu node has a variableName defined
+      if (node && node.data && node.data.variableName) {
+        sessionParamsRef.current = { ...sessionParamsRef.current, [node.data.variableName]: option };
+        setSessionParameters({ ...sessionParamsRef.current });
+      }
       await processNext(findNextNodeId(currentNodeId, currentInstance, `option-${index}`), currentInstance, 0, executionStack);
     }
   };
@@ -721,6 +896,13 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
       </div>
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-6 bg-[#fcfcfc] space-y-6 scrollbar-hide">
         {messages.map((msg) => (
+          msg.type === 'separator' ? (
+            <div key={msg.id} className="flex items-center gap-3 my-1 px-2 animate-in slide-in-from-bottom-2">
+              <div className="flex-1 h-px bg-slate-200" />
+              <span className="text-[9px] text-slate-400 font-bold uppercase tracking-widest whitespace-nowrap">{msg.content}</span>
+              <div className="flex-1 h-px bg-slate-200" />
+            </div>
+          ) : (
           <div key={msg.id} className={`flex ${msg.sender === 'bot' ? 'justify-start' : 'justify-end'} animate-in slide-in-from-bottom-2 flex-row-reverse w-full`}>
             {msg.type === 'carousel' ? <Carousel items={msg.carouselItems || []} onSelect={handleMenuSelect} /> : (
               <div className={`flex gap-3 max-w-[85%] ${msg.sender === 'bot' ? 'flex-row-reverse' : 'flex-row'}`}>
@@ -750,13 +932,37 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
                     <div className="space-y-4 min-w-[180px]">
                       <p className="font-bold text-slate-400 text-[10px] uppercase tracking-widest text-right">{msg.content}</p>
                       <div className="flex flex-col gap-2">
-                        {msg.options?.map((opt, i) => (
-                          <button key={i} onClick={() => handleMenuSelect(opt, i, msg.optionValues?.[i])} className="w-full text-right p-3 bg-slate-50 border border-slate-100 rounded-2xl hover:bg-blue-600 hover:text-white transition-all text-xs font-bold uppercase flex items-center gap-3 flex-row-reverse">
-                            {msg.optionImages?.[i] && <img src={msg.optionImages[i]} className="w-8 h-8 rounded-lg object-cover" alt="" />}
-                            <span className="flex-1">{opt}</span>
-                          </button>
-                        ))}
+                        {msg.options?.map((opt: any, i: number) => {
+                          const label = typeof opt === 'string' ? opt : (opt.label || opt.text || String(opt));
+                          const value = typeof opt === 'string' ? opt : (opt.value !== undefined ? opt.value : label);
+                          const imageUrl = typeof opt === 'object' ? (opt.image_url || msg.optionImages?.[i]) : msg.optionImages?.[i];
+                          return (
+                            <button key={i} onClick={() => handleMenuSelect(value, i, value, msg.sourceNodeId)} className="w-full text-right p-3 bg-slate-50 border border-slate-100 rounded-2xl hover:bg-blue-600 hover:text-white transition-all text-xs font-bold uppercase flex items-center gap-3 flex-row-reverse">
+                              {imageUrl && <img src={imageUrl} className="w-8 h-8 rounded-lg object-cover" alt="" />}
+                              <span className="flex-1">{label}</span>
+                            </button>
+                          );
+                        })}
                       </div>
+                    </div>
+                  )}
+                  {msg.type === 'input_date' && (
+                    <div className="flex flex-col items-end gap-3">
+                      <div className="text-slate-900">{msg.content}</div>
+                      <input
+                        type="date"
+                        value={dateInput}
+                        onChange={e => setDateInput(e.target.value)}
+                        className="border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold text-slate-900 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        dir="ltr"
+                      />
+                      <button
+                        onClick={handleDateSend}
+                        disabled={!dateInput}
+                        className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-xs transition-all shadow-lg active:scale-95 ${dateInput ? 'bg-blue-600 text-white shadow-blue-600/20 hover:bg-blue-700' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`}
+                      >
+                        <Check size={14} /> אשר תאריך
+                      </button>
                     </div>
                   )}
                   {msg.type === 'input_file' && (
@@ -770,11 +976,12 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
                        </button>
                     </div>
                   )}
-                  {msg.type.startsWith('input_') && msg.type !== 'input_file' && <div className="text-slate-900">{msg.content}</div>}
+                  {msg.type.startsWith('input_') && msg.type !== 'input_file' && msg.type !== 'input_date' && <div className="text-slate-900">{msg.content}</div>}
                 </div>
               </div>
             )}
           </div>
+          )
         ))}
         {isBotTyping && (
           <div className="flex gap-2 bg-white border border-slate-100 p-4 rounded-3xl rounded-tr-none shadow-sm w-fit mr-12 ml-auto">
@@ -783,10 +990,29 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
         )}
       </div>
       <div className="p-6 bg-white border-t border-slate-50">
-        <div className="flex items-center gap-3 bg-slate-50 rounded-[1.5rem] p-2.5 pr-6 border border-slate-100 flex-row-reverse">
-          <input type="text" placeholder="הקלד תשובה..." dir="rtl" className="flex-1 bg-transparent border-none outline-none text-sm font-bold text-black h-10 text-right" value={userInput} onChange={e => setUserInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSend()} />
-          <button onClick={handleSend} disabled={!userInput.trim()} className={`p-3 rounded-2xl transition-all ${userInput.trim() ? 'bg-blue-600 text-white shadow-xl shadow-blue-600/20' : 'bg-slate-200 text-slate-400'}`}><Send size={20} className="transform rotate-180" /></button>
-        </div>
+        {(() => {
+          const _activeNodes = currentInstance?.getNodes() || [];
+          const _currentNode = _activeNodes.find((n: any) => n.id === currentNodeId);
+          const _isWaitingForDate = _currentNode?.type === NodeType.INPUT_DATE;
+          return _isWaitingForDate ? (
+            <div className="flex items-center gap-3 bg-slate-50 rounded-[1.5rem] p-2.5 pr-4 border border-slate-100 flex-row-reverse">
+              <input
+                type="date"
+                dir="ltr"
+                className="flex-1 bg-transparent border-none outline-none text-sm font-bold text-black h-10"
+                value={dateInput}
+                onChange={e => setDateInput(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleDateSend()}
+              />
+              <button onClick={handleDateSend} disabled={!dateInput} className={`p-3 rounded-2xl transition-all ${dateInput ? 'bg-blue-600 text-white shadow-xl shadow-blue-600/20' : 'bg-slate-200 text-slate-400'}`}><Check size={20} /></button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-3 bg-slate-50 rounded-[1.5rem] p-2.5 pr-6 border border-slate-100 flex-row-reverse">
+              <input type="text" placeholder="הקלד תשובה..." dir="rtl" className="flex-1 bg-transparent border-none outline-none text-sm font-bold text-black h-10 text-right" value={userInput} onChange={e => setUserInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSend()} />
+              <button onClick={handleSend} disabled={!userInput.trim()} className={`p-3 rounded-2xl transition-all ${userInput.trim() ? 'bg-blue-600 text-white shadow-xl shadow-blue-600/20' : 'bg-slate-200 text-slate-400'}`}><Send size={20} className="transform rotate-180" /></button>
+            </div>
+          );
+        })()}
       </div>
     </div>
   );

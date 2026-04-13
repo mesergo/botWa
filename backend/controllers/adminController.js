@@ -6,8 +6,9 @@ import SystemSetting from '../models/SystemSetting.js';
 
 // Default configuration if DB is empty (used for fallback)
 const DEFAULT_ACCOUNTS_CONFIG = {
-  Basic: { maxBots: 3, maxVersions: 5, versionPrice: 5, botPrice: 30 },
-  Premium: { maxBots: 6, maxVersions: 10, versionPrice: 5, botPrice: 30 }
+  Trial: { maxBots: 1, maxVersions: 0, versionPrice: 0, botPrice: 0, canPublish: false, trialDays: 30 },
+  Basic: { maxBots: 3, maxVersions: 5, versionPrice: 5, botPrice: 30, canPublish: true },
+  Premium: { maxBots: 6, maxVersions: 10, versionPrice: 5, botPrice: 30, canPublish: true }
 };
 
 export const getSystemSettings = async (req, res) => {
@@ -107,6 +108,7 @@ export const getAllUsers = async (req, res) => {
     const usersWithStats = await Promise.all(users.map(async (user) => {
       const userId = user._id.toString();
       const botCount = await BotFlow.countDocuments({ user_id: userId }); // Fixed: Use BotFlow, not Session
+      const sessionCount = await BotSession.countDocuments({ user_id: userId });
       
       const limits = await getUserLimits(user);
       
@@ -124,7 +126,8 @@ export const getAllUsers = async (req, res) => {
         custom_limits: user.custom_limits,
         limits_in_effect: limits,
         stats: {
-          bots: botCount
+          bots: botCount,
+          flows: sessionCount
         }
       };
     }));
@@ -146,6 +149,7 @@ export const getUserDetails = async (req, res) => {
     }
     
     const bots = await BotFlow.find({ user_id: userId }); // Fixed: BotFlow
+    const sessionCount = await BotSession.countDocuments({ user_id: userId });
     const limits = await getUserLimits(user);
     
     res.json({
@@ -162,7 +166,11 @@ export const getUserDetails = async (req, res) => {
         custom_limits: user.custom_limits,
         limits_in_effect: limits,
         createdAt: user.createdAt,
-        updatedAt: user.updatedAt
+        updatedAt: user.updatedAt,
+        stats: {
+            bots: bots.length, // Added this line to fix the bug
+            flows: sessionCount
+        }
       },
       bots
     });

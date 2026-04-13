@@ -1,12 +1,15 @@
 
 import fetch from 'node-fetch';
 
-export const proxyWebservice = async (req, res) => {
+export const proxyWebservice = async (req, res) => { 
+  console.log(`proxyWebservice called with body:`, req.body);
+  console.log(`proxyWebservice - raw URL value:`, req.body?.url);
+  console.log(`proxyWebservice - payload keys:`, Object.keys(req.body?.payload || {}));
   const { url, payload } = req.body;
 
   if (!url) {
     return res.status(400).json({ error: 'Missing Webservice URL' });
-  }
+  } 
 
   console.log(`Calling Webservice URL: ${url}`);
 

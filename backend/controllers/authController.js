@@ -25,6 +25,10 @@ export const register = async (req, res) => {
       }
     }
     
+    // Set trial expiry date (1 month from now)
+    const trialExpiresAt = new Date();
+    trialExpiresAt.setMonth(trialExpiresAt.getMonth() + 1);
+
     const user = await User.create({
       name,
       email,
@@ -32,8 +36,9 @@ export const register = async (req, res) => {
       password,
       role: userRole,
       public_id: publicId,
-      account_type: 'Basic',
-      status: 'active'
+      account_type: 'Trial',
+      status: 'active',
+      trial_expires_at: trialExpiresAt
     });
     
     const userId = user._id.toString();
@@ -48,8 +53,9 @@ export const register = async (req, res) => {
         email, 
         role: 'user',
         public_id: publicId, 
-        account_type: 'Basic', 
+        account_type: 'Trial', 
         status: 'active',
+        trial_expires_at: user.trial_expires_at,
         api_token: user.token // API token for WhatsApp integration
       } 
     });
@@ -77,9 +83,22 @@ export const login = async (req, res) => {
         public_id: user.public_id,
         account_type: user.account_type || 'Basic',
         status: user.status || 'active',
+        trial_expires_at: user.trial_expires_at || null,
         api_token: user.token // API token for WhatsApp integration
       } 
     });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// Check if email already exists in the system
+export const checkEmail = async (req, res) => {
+  const { email } = req.query;
+  if (!email) return res.status(400).json({ error: 'Email is required' });
+  try {
+    const existing = await User.findOne({ email: email.toLowerCase().trim() });
+    res.json({ exists: !!existing });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

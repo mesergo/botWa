@@ -3,8 +3,9 @@ import SystemSetting from '../models/SystemSetting.js';
 
 // Default configuration if DB is empty
 const DEFAULT_CONFIG = {
-  Basic: { maxBots: 3, maxVersions: 5, versionPrice: 5, botPrice: 30 },
-  Premium: { maxBots: 6, maxVersions: 10, versionPrice: 5, botPrice: 30 }
+  Trial: { maxBots: 1, maxVersions: 0, versionPrice: 0, botPrice: 0, canPublish: false, trialDays: 30 },
+  Basic: { maxBots: 3, maxVersions: 5, versionPrice: 5, botPrice: 30, canPublish: true },
+  Premium: { maxBots: 6, maxVersions: 10, versionPrice: 5, botPrice: 30, canPublish: true }
 };
 
 export const getUserLimits = async (user) => {
@@ -19,9 +20,18 @@ export const getUserLimits = async (user) => {
     console.error('Failed to load system settings, using defaults', err);
   }
 
-  // 2. Get user's plan limits
+  // 2. Get user's plan limits (merge DB config over defaults, so Trial always has its defaults)
+  const mergedConfig = { ...DEFAULT_CONFIG, ...accountsConfig };
   const accountType = user.account_type || 'Basic';
-  const planLimits = accountsConfig[accountType] || accountsConfig['Basic'];
+  const planLimits = mergedConfig[accountType] || mergedConfig['Basic'];
+
+  // Check if trial has expired
+  if (accountType === 'Trial' && user.trial_expires_at) {
+    const now = new Date();
+    if (now > new Date(user.trial_expires_at)) {
+      return { ...planLimits, maxBots: 0, maxVersions: 0, canPublish: false, trialExpired: true };
+    }
+  }
 
   // 3. Apply custom overrides (if any)
   const limits = { ...planLimits };

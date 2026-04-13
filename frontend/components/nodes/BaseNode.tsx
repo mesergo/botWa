@@ -13,9 +13,10 @@ interface BaseNodeProps {
   selected?: boolean;
   onDelete?: (id: string) => void;
   serialId?: string;
+  isSimulatorActive?: boolean;
 }
 
-const BaseNode: React.FC<BaseNodeProps> = ({ id, title, icon, children, type, selected, onDelete, serialId }) => {
+const BaseNode: React.FC<BaseNodeProps> = ({ id, title, icon, children, type, selected, onDelete, serialId, isSimulatorActive }) => {
   const isStart = type === NodeType.START;
   const isAutomaticResponses = type === NodeType.AUTOMATIC_RESPONSES;
   const isBranchingNode = type === NodeType.OUTPUT_MENU || type === NodeType.ACTION_WEB_SERVICE || type === NodeType.AUTOMATIC_RESPONSES || type === NodeType.ACTION_TIME_ROUTING;
@@ -48,8 +49,12 @@ const BaseNode: React.FC<BaseNodeProps> = ({ id, title, icon, children, type, se
   const theme = getNodeTheme(type);
 
   return (
-    <div className={`${isMediaNode ? 'min-w-[380px] max-w-[450px]' : 'min-w-[280px]'} bg-white border-2 border-slate-200 rounded-[2.5rem] shadow-[0_15px_40px_-10px_rgba(0,0,0,0.06)] transition-all duration-400 ${
-      selected ? `ring-8 ${theme.ring} !border-slate-400 scale-[1.01]` : ''
+    <div className={`${isMediaNode ? 'min-w-[380px] max-w-[450px]' : 'min-w-[280px]'} bg-white border-2 rounded-[2.5rem] shadow-[0_15px_40px_-10px_rgba(0,0,0,0.06)] transition-all duration-400 ${
+      isSimulatorActive
+        ? 'border-green-400 ring-8 ring-green-400/25 shadow-[0_0_28px_6px_rgba(34,197,94,0.35)] scale-[1.03]'
+        : selected
+          ? `ring-8 ${theme.ring} !border-slate-400 scale-[1.01] border-slate-200`
+          : 'border-slate-200'
     }`}>
       {/* Top indicator bar with rounded corners to match the parent */}
       <div className={`h-1.5 w-full ${theme.bar} rounded-t-[2.5rem]`} />
