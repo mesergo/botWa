@@ -31,7 +31,7 @@ const fetchFlowData = async (userId, flow_id, standard_process_id = null, versio
     query.$or = [
       { standard_process_id: standard_process_id, isStandardProcess: 0 },
       { parent_process_id: standard_process_id },
-      { standard_process_id: standard_process_id, isStandardProcess: 1, flow_id: null }
+      { standard_process_id: standard_process_id, isStandardProcess: 1, flow_id: null, parent_process_id: null }
     ];
   } else {
     // When loading a bot flow, we filter by its flow_id
@@ -160,22 +160,45 @@ export const syncFlow = async (req, res) => {
         ? { user_id: userId, $or: [
             { standard_process_id: standard_process_id, isStandardProcess: 0 },
             { parent_process_id: standard_process_id },
-            { standard_process_id: standard_process_id, isStandardProcess: 1, flow_id: null }
+            { standard_process_id: standard_process_id, isStandardProcess: 1, flow_id: null, parent_process_id: null }
           ]}
         : { user_id: userId, flow_id: flow_id, $or: [{ standard_process_id: null }, { isStandardProcess: 1 }] };
-
+ 
     console.log('🗑️ מוחק widgets קיימים:', cleanupQuery);
+    // First, collect old widget IDs so we can also delete their orphaned options
+    const oldWidgets = await Widget.find(cleanupQuery).select('id');
+    const oldWidgetIds = oldWidgets.map(w => w.get('id')).filter(Boolean);
+
     const deleteResult = await Widget.deleteMany(cleanupQuery);
     console.log(`✅ נמחקו ${deleteResult.deletedCount} widgets`);
 
-    const widgetIds = nodes.map(n => n.id);
-    const optionsDeleteResult = await Option.deleteMany({ widget_id: { $in: widgetIds } });
+    // Deduplicate incoming nodes by id to prevent accidental multiplication
+    // (can happen if the frontend state accumulated duplicates from a previous race condition)
+    const seenIds = new Set();
+    const uniqueNodes = nodes.filter(n => {
+      if (seenIds.has(n.id)) return false;
+      seenIds.add(n.id);
+      return true;
+    });
+
+    // Delete options for all relevant widget ids (new + old orphaned)
+    const allWidgetIds = [...new Set([...oldWidgetIds, ...uniqueNodes.map(n => n.id)])];
+    const optionsDeleteResult = await Option.deleteMany({ widget_id: { $in: allWidgetIds } });
     console.log(`✅ נמחקו ${optionsDeleteResult.deletedCount} options`);
 
-    for (const node of nodes) {
+    for (const node of uniqueNodes) {
       const isFirst = (node.type === 'start' || node.type === 'automatic_responses') ? 1 : 0;
       const isBranching = node.type === 'output_menu' || node.type === 'action_web_service' || node.type === 'automatic_responses' || node.type === 'action_time_routing';
-      const nextEdge = !isBranching ? edges.find(e => e.source === node.id && !e.sourceHandle) : null;
+      // Use findLast so that if there are duplicate edges for the same source+handle
+      // (e.g. old DB edges coexisting with a new connection), the most-recently-added
+      // edge wins. This is a safety-net; the frontend already de-duplicates on connect.
+      const findLastEdge = (predicate) => {
+        for (let i = edges.length - 1; i >= 0; i--) {
+          if (predicate(edges[i])) return edges[i];
+        }
+        return undefined;
+      };
+      const nextEdge = !isBranching ? findLastEdge(e => e.source === node.id && !e.sourceHandle) : null;
       const nextId = nextEdge ? nextEdge.target : null;
       const isProxy = (node.type === 'fixed_process' || node.data.isStandardProcess) ? 1 : 0;
 
@@ -235,7 +258,7 @@ export const syncFlow = async (req, res) => {
         // Save each time range as an option
         for (let i = 0; i < timeRanges.length; i++) {
           const range = timeRanges[i];
-          const optionEdge = edges.find(e => e.source === node.id && e.sourceHandle === `option-${i}`);
+          const optionEdge = findLastEdge(e => e.source === node.id && e.sourceHandle === `option-${i}`);
           await Option.create({
             widget_id: node.id,
             value: `${range.fromHour}-${range.toHour}`, // Store as "8-16"
@@ -246,7 +269,7 @@ export const syncFlow = async (req, res) => {
         }
         
         // Save the default option
-        const defaultEdge = edges.find(e => e.source === node.id && e.sourceHandle === 'option-default');
+        const defaultEdge = findLastEdge(e => e.source === node.id && e.sourceHandle === 'option-default');
         if (defaultEdge) {
           await Option.create({
             widget_id: node.id,
@@ -260,7 +283,7 @@ export const syncFlow = async (req, res) => {
         for (let i = 0; i < node.data.options.length; i++) {
           const branchValue = node.data.options[i];
           const branchOperator = node.data.optionOperators?.[i] || 'eq';
-          const optionEdge = edges.find(e => e.source === node.id && e.sourceHandle === `option-${i}`);
+          const optionEdge = findLastEdge(e => e.source === node.id && e.sourceHandle === `option-${i}`);
           await Option.create({
             widget_id: node.id,
             value: branchValue,
@@ -271,7 +294,7 @@ export const syncFlow = async (req, res) => {
         }
         // For action_web_service: also save the 'default' exit edge
         if (node.type === 'action_web_service') {
-          const defaultEdge = edges.find(e => e.source === node.id && e.sourceHandle === 'default');
+          const defaultEdge = findLastEdge(e => e.source === node.id && e.sourceHandle === 'default');
           if (defaultEdge) {
             await Option.create({
               widget_id: node.id,
@@ -284,7 +307,7 @@ export const syncFlow = async (req, res) => {
         }
       } else if (isBranching && node.type === 'action_web_service') {
         // No conditional options, but still save the default exit edge
-        const defaultEdge = edges.find(e => e.source === node.id && e.sourceHandle === 'default');
+        const defaultEdge = findLastEdge(e => e.source === node.id && e.sourceHandle === 'default');
         if (defaultEdge) {
           await Option.create({
             widget_id: node.id,

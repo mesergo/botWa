@@ -220,7 +220,7 @@ export const InputFileNode = (props: any) => (
 );
 
 export const OutputTextNode = (props: any) => (
-  <BaseNode id={props.id} title="הודעת בוט" icon={<MessageSquare size={20} />} type={NodeType.OUTPUT_TEXT} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive}>
+  <BaseNode id={props.id} title="הודעת טקסט" icon={<MessageSquare size={20} />} type={NodeType.OUTPUT_TEXT} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive}>
     <InputFieldWrapper label="תוכן ההודעה">
       <SearchableInput isTextArea value={props.data.content} onChange={(v: string) => props.data.onChange({ content: v })} placeholder="היי, איך אני יכול לעזור?" searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
     </InputFieldWrapper>

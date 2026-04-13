@@ -116,10 +116,7 @@ const getFlowData = async (flowId, processId = null) => {
     return { nodes: [], edges: [] };
   }
 
-  console.log('[getFlowData] Query:', JSON.stringify(query), 'flowIdStr:', flowIdStr);
   const widgets = await Widget.find(query);
-  console.log(`[getFlowData] Found ${widgets.length} widgets:`, widgets.map(w => ({ id: w.id, type: w.type, flow_id: w.flow_id })));
-  
   const options = await Option.find({ 
     widget_id: { $in: widgets.map(w => w.id) } 
   });
@@ -201,13 +198,11 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
   const returnToMenu = () => {
     const autoNode = nodes.find(n => n.type === 'automatic_responses');
     if (autoNode) {
-      console.log('[BOT] ✅ End of flow - returning to automatic_responses (session stays active)');
       session.current_node_id   = autoNode.id;
       session.waiting_text_input = false;
       session.waiting_webservice = false;
       session.execution_stack   = [];
     } else {
-      console.log('[BOT] ✅ End of flow - no automatic_responses node, closing session');
       session.is_active         = false;
       session.current_node_id   = null;
       session.waiting_text_input = false;
@@ -223,8 +218,6 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
     const nodeType = node.type;
     const nodeData = node.data;
     const params = session.parameters || {};
-
-    console.log(`[BOT] Processing node ${currentNodeId}, type: ${nodeType}`);
 
     // Handle different node types
     switch (nodeType) {
@@ -315,10 +308,18 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
           addToHistory(session, textMsg, currentNodeId);
         }
         
-        // Then send options menu (array of strings, not objects)
-        const options = (nodeData.options || [])
+        // Build options as {label, value, image_url} objects per the API spec
+        const rawOptions = nodeData.options || [];
+        const rawImages = nodeData.optionImages || [];
+        const options = rawOptions
           .filter(opt => opt !== 'default')
-          .map(opt => String(opt));
+          .map((opt, i) => {
+            const label = String(opt);
+            const obj = { label, value: label };
+            const img = rawImages[i];
+            if (img) obj.image_url = img;
+            return obj;
+          });
         
         const optionsMsg = { type: 'Options', options, created: new Date().toISOString() };
         messages.push(optionsMsg);
@@ -349,7 +350,6 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
 
       case 'action_wait': {
         const waitTime = parseInt(nodeData.waitTime) || 1;
-        console.log(`[BOT] Waiting ${waitTime} seconds`);
         await new Promise(resolve => setTimeout(resolve, waitTime * 1000));
         currentNodeId = findNextNode(currentNodeId, edges);
         break;
@@ -360,8 +360,6 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
         const now = new Date();
         const israelTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Jerusalem' }));
         const israelHour = israelTime.getHours();
-        
-        console.log(`[BOT] Time routing - current Israel hour: ${israelHour}`);
         
         // Check time ranges
         const timeRanges = nodeData.timeRanges || [];
@@ -385,7 +383,6 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
           
           if (inRange) {
             matchedIndex = i;
-            console.log(`[BOT] Matched time range ${i}: ${fromHour}-${toHour}`);
             break;
           }
         }
@@ -394,33 +391,17 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
         if (matchedIndex >= 0) {
           currentNodeId = findNextNode(currentNodeId, edges, `option-${matchedIndex}`);
         } else {
-          console.log(`[BOT] No time range matched, using default route`);
           currentNodeId = findNextNode(currentNodeId, edges, 'option-default');
         }
         break;
       }
 
       case 'action_web_service': {
-        console.log('[BOT] 🌐 Web service node - calling API');
-        
         // If we're continuing from a previous webservice call with user input
         const userInput = session.waiting_webservice ? session.last_user_input : null;
-        console.log('[BOT] 🌐 User input for WS:', userInput);
-        console.log('[BOT] 🌐 Session before WS call:', {
-          waiting_webservice: session.waiting_webservice,
-          waiting_text_input: session.waiting_text_input,
-          current_node: session.current_node_id
-        });
         
         // Call webservice
         const wsResult = await handleWebService(node, session, userInput);
-        
-        console.log('[BOT] 🌐 WS Result received:', {
-          messageCount: wsResult.messages.length,
-          messageTypes: wsResult.messages.map(m => m.type),
-          returnValue: wsResult.returnValue,
-          waitingInput: wsResult.waitingInput
-        });
         
         // Add messages to response
         messages.push(...wsResult.messages);
@@ -428,24 +409,28 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
         
         // If waiting for input, stop here (even if this is the last node)
         if (wsResult.waitingInput) {
-          console.log('[BOT] ⏸️ Web service waiting for input - session stays active');
-          console.log('[BOT] ⏸️ Setting session state:', {
-            current_node_id: currentNodeId,
-            waiting_webservice: true,
-            waiting_text_input: true
-          });
           session.current_node_id = currentNodeId;
           session.waiting_webservice = true;
           session.waiting_text_input = true;
-          console.log('[BOT] ⏸️ Returning', messages.length, 'messages');
           return messages;
+        }
+
+        // If Goto action: navigate to node by label
+        if (wsResult.gotoLabel) {
+          const gotoNode = nodes.find(n => n.data.label === wsResult.gotoLabel);
+          if (gotoNode) {
+            console.log(`[BOT] Goto node "${wsResult.gotoLabel}" (${gotoNode.id})`);
+            session.waiting_webservice = false;
+            currentNodeId = gotoNode.id;
+            break;
+          }
+          console.warn(`[BOT] Goto target not found: "${wsResult.gotoLabel}"`);
         }
         
         // If we have a return value, find matching option
         if (wsResult.returnValue !== null && wsResult.returnValue !== undefined) {
           const matchedIdx = findMatchingOption(node, wsResult.returnValue);
           if (matchedIdx !== -1) {
-            console.log(`[BOT] ✅ Return value matched option ${matchedIdx} - taking conditional exit`);
             currentNodeId = findNextNode(currentNodeId, edges, `option-${matchedIdx}`);
             session.waiting_webservice = false;
             break;
@@ -453,12 +438,10 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
         }
         
         // No match or no return value - take default exit
-        console.log('[BOT] ✅ No match - taking default exit');
         session.waiting_webservice = false;
         const nextNode = findNextNode(currentNodeId, edges, 'default');
         
         if (!nextNode) {
-          console.log('[BOT] ⚠️ No default exit found - returning to menu');
           returnToMenu();
           return messages;
         }
@@ -471,7 +454,6 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
         // Load subprocess
         const processId = nodeData.processId;
         if (processId) {
-          console.log(`[BOT] Entering fixed process ${processId}`);
           const subFlow = await getFlowData(flowId, processId);
           const startNode = subFlow.nodes.find(n => n.type === 'start');
           
@@ -501,14 +483,13 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
       }
 
       default:
-        console.log(`[BOT] Unknown node type: ${nodeType}`);
         currentNodeId = findNextNode(currentNodeId, edges);
     }
   }
 
   // End of chain
   if (depth >= maxDepth) {
-    console.log('[BOT] ⚠️ Max depth reached');
+    console.error('[BOT] ⚠️ Max depth reached');
   } else if (!currentNodeId) {
     returnToMenu();
   }
@@ -526,7 +507,7 @@ export const respondToMessage = async (req, res) => {
     const { phone, text = '', sender = 'unknown', token: tokenParam, bot_id } = source;
     const token = req.headers.authorization?.replace('Bearer ', '') || tokenParam;
 
-    console.log('[BOT] Incoming request:', { phone, sender, text: text.substring(0, 50) });
+    console.log(`[BOT] ← ${req.method} | phone=${phone} sender=${sender} text="${String(text).substring(0, 40)}"`)
 
     if (!phone || !token) {
       return res.status(400).json({ 
@@ -557,22 +538,17 @@ export const respondToMessage = async (req, res) => {
     // Check if session exists and is within 15 minutes
     if (session) {
       const diffMinutes = (new Date() - new Date(session.updatedAt)) / (1000 * 60);
-      console.log(`[BOT] Found existing session - age: ${diffMinutes.toFixed(2)} minutes`);
-      
       if (diffMinutes > 15) {
-        console.log('[BOT] Session expired (>15 min), closing and will create new one');
+        console.log(`[BOT] session expired (${diffMinutes.toFixed(1)} min) - resetting`);
         session.is_active = false;
         await session.save();
         session = null;
       } else {
-        console.log(`[BOT] Using existing session - bot: ${session.flow_id}, sender: ${session.sender}`);
         // Update sender and phone if changed
         if (session.sender !== sender) {
-          console.log(`[BOT] Updating sender from ${session.sender} to ${sender}`);
           session.sender = sender;
         }
         if (session.customer_phone !== phone) {
-          console.log(`[BOT] Updating phone from ${session.customer_phone} to ${phone}`);
           session.customer_phone = phone;
         }
         // Merge botParams into existing session if missing (handles sessions created before this fix)
@@ -593,7 +569,6 @@ export const respondToMessage = async (req, res) => {
             if (changed) {
               session.parameters = enriched;
               session.markModified('parameters');
-              console.log('[BOT] Merged missing botParams into existing session:', enriched);
             }
           }
         } catch(e) {
@@ -604,13 +579,11 @@ export const respondToMessage = async (req, res) => {
 
     // Create new session if needed
     if (!session) {
-      console.log('[BOT] Creating new session');
-      
+      console.log('[BOT] creating new session');
       let bot;
       
       // If bot_id provided, use that specific bot
       if (bot_id) {
-        console.log('[BOT] Looking for specific bot_id:', bot_id);
         bot = await BotFlow.findOne({ _id: bot_id, user_id: user._id });
         if (!bot) {
           return res.status(404).json({ 
@@ -618,15 +591,12 @@ export const respondToMessage = async (req, res) => {
             StatusDescription: 'Bot not found or does not belong to user' 
           });
         }
-        console.log('[BOT] Using specified bot:', { id: bot._id, name: bot.name });
       } else {
         // No bot_id provided - use default bot
-        console.log('[BOT] No bot_id provided, looking for default bot');
         bot = await BotFlow.findOne({ user_id: user._id, is_default: true });
         
         if (!bot) {
           // No default bot - use first bot
-          console.log('[BOT] No default bot found, using first bot');
           const userBots = await BotFlow.find({ user_id: user._id });
           if (userBots.length === 0) {
             return res.status(404).json({ 
@@ -636,33 +606,20 @@ export const respondToMessage = async (req, res) => {
           }
           bot = userBots[0];
         }
-        console.log('[BOT] Using bot:', { id: bot._id, name: bot.name, is_default: bot.is_default });
       }
-      console.log('[BOT] Using bot:', { id: bot._id, id_string: bot._id.toString(), name: bot.name });
-      
-      // First, let's check what flow_ids exist in widgets
-      const allBotWidgets = await Widget.find({ user_id: user._id.toString() }).limit(5);
-      console.log('[BOT] Sample widgets for user:', allBotWidgets.map(w => ({ id: w.id, type: w.type, flow_id: w.flow_id })));
       
       const flowData = await getFlowData(bot._id);
-      console.log('[BOT] Flow data loaded:', { 
-        nodesCount: flowData.nodes.length, 
-        nodeTypes: flowData.nodes.map(n => n.type)
-      });
 
       // Find automatic_responses node
       const autoResponseNode = flowData.nodes.find(n => n.type === 'automatic_responses');
       
       if (!autoResponseNode) {
-        console.log('[BOT] ❌ No automatic_responses node found!');
+        console.error('[BOT] ❌ No automatic_responses node found for bot:', bot._id);
         return res.status(404).json({ 
           StatusId: 0, 
           StatusDescription: 'No automatic responses configured' 
         });
       }
-      
-      console.log('[BOT] ✅ Found automatic_responses node:', autoResponseNode.id);
-      console.log('[BOT] ✅ Found sender :', sender);
 
       // Merge bot-level template params (filled in the web form) into the session
       // so that --variableName-- placeholders are resolved in all nodes.
@@ -679,8 +636,8 @@ export const respondToMessage = async (req, res) => {
           console.error('[BOT] Failed to extract botParams:', e);
         }
       }
-      console.log('[BOT] botParams from BotFlow:', botParamsObj);
 
+      console.log(`[BOT] bot selected: "${bot.name}" (${bot._id})`);
       session = await BotSession.create({
         user_id: user._id,
         flow_id: bot._id.toString(),
@@ -702,36 +659,36 @@ export const respondToMessage = async (req, res) => {
     }
 
     // Load current flow
-    console.log('[BOT] Loading flow data for session:', {
-      flow_id: session.flow_id,
-      flow_id_type: typeof session.flow_id,
-      current_node: session.current_node_id,
-      isNewSession
-    });
     const flowData = await getFlowData(session.flow_id);
-    console.log('[BOT] Flow loaded:', {
-      nodesCount: flowData.nodes.length,
-      nodeIds: flowData.nodes.map(n => n.id)
-    });
-    
-    const currentNode = flowData.nodes.find(n => n.id === session.current_node_id);
+    let currentNode = flowData.nodes.find(n => n.id === session.current_node_id);
+
+    // If the node is not found in the main flow, it may be inside a fixed_process sub-flow.
+    // This happens when an input_text is the last node inside a fixed_process.
+    let subFlowContext = null; // { nodes, edges, returnTo }
+    if (!currentNode && session.waiting_text_input && (session.execution_stack || []).length > 0) {
+      const stack = session.execution_stack;
+      const lastEntry = stack[stack.length - 1];
+      // lastEntry.nodeId is the fixed_process node in the parent (main) flow
+      const fpNode = flowData.nodes.find(n => n.id === lastEntry.nodeId);
+      if (fpNode && fpNode.data && fpNode.data.processId) {
+        const subFlow = await getFlowData(session.flow_id, fpNode.data.processId);
+        const nodeInSub = subFlow.nodes.find(n => n.id === session.current_node_id);
+        if (nodeInSub) {
+          currentNode = nodeInSub;
+          subFlowContext = { nodes: subFlow.nodes, edges: subFlow.edges, returnTo: lastEntry.returnTo };
+          console.log(`[BOT] 🔁 Node found in sub-flow (processId=${fpNode.data.processId}), returnTo=${lastEntry.returnTo}`);
+        }
+      }
+    }
 
     if (!currentNode) {
-      console.log('[BOT] ❌ Current node not found!', {
-        looking_for: session.current_node_id,
-        available_nodes: flowData.nodes.map(n => ({ id: n.id, type: n.type }))
-      });
+      console.error('[BOT] ❌ Current node not found:', session.current_node_id);
       return res.status(404).json({ 
         StatusId: 0, 
         StatusDescription: 'Current node not found' 
       });
     }
-    
-    console.log('[BOT] Current node found:', {
-      id: currentNode.id,
-      type: currentNode.type,
-      options: currentNode.data.options
-    });
+    console.log(`[BOT] node=${currentNode.type} (${currentNode.id}) | newSession=${isNewSession} | waitText=${session.waiting_text_input} | waitWS=${session.waiting_webservice}`);
 
     const params = session.parameters || {};
 
@@ -752,8 +709,8 @@ export const respondToMessage = async (req, res) => {
           opt => String(opt).trim().toLowerCase() === text.trim().toLowerCase()
         );
         if (matchedMenuIdx !== -1) {
-          console.log(`[BOT] ⚡ Flow interrupt via output_menu "${menuNode.id}" option ${matchedMenuIdx}`);
-          session.execution_stack    = [];
+          console.log(`[BOT] ⚡ interrupt: output_menu "${menuNode.id}" option ${matchedMenuIdx}`);
+            session.execution_stack    = [];
           session.markModified('execution_stack');
           session.waiting_webservice = false;
           session.waiting_text_input = false;
@@ -792,7 +749,7 @@ export const respondToMessage = async (req, res) => {
           }
 
           if (interruptIdx !== -1) {
-            console.log(`[BOT] ⚡ Flow interrupt via automatic_responses option ${interruptIdx}`);
+            console.log(`[BOT] ⚡ interrupt: automatic_responses option ${interruptIdx}`);
             session.execution_stack    = [];
             session.markModified('execution_stack');
             session.waiting_webservice = false;
@@ -817,16 +774,9 @@ export const respondToMessage = async (req, res) => {
       const options = currentNode.data.options || [];
       const operators = currentNode.data.optionOperators || options.map(() => 'eq');
       
-      console.log('[BOT] Matching text for new session:', {
-        text,
-        options,
-        operators
-      });
-      
       let matchedIdx = -1;
       for (let i = 1; i < options.length; i++) {
         const matches = evaluateCondition(operators[i], text, options[i]);
-        console.log(`[BOT] Testing option ${i}: "${options[i]}" with operator "${operators[i]}" => ${matches}`);
         if (matches) {
           matchedIdx = i;
           break;
@@ -835,17 +785,12 @@ export const respondToMessage = async (req, res) => {
       
       // Default to first option (כניסה) if no match
       const finalIdx = matchedIdx !== -1 ? matchedIdx : 0;
-      console.log(`[BOT] Final matched index: ${finalIdx} (option: "${options[finalIdx]}")`);
-      
       const nextNodeId = findNextNode(currentNode.id, flowData.edges, `option-${finalIdx}`);
-      console.log(`[BOT] Next node ID: ${nextNodeId}`);
-      
       if (nextNodeId) {
         messages = await walkChain(nextNodeId, flowData.nodes, flowData.edges, session, session.flow_id, req);
       }
     } else if (session.waiting_webservice && currentNode.type === 'action_web_service') {
       // User is responding to a webservice InputText request
-      console.log('[BOT] Handling webservice InputText response');
       
       // Save user input
       session.last_user_input = text;
@@ -853,6 +798,9 @@ export const respondToMessage = async (req, res) => {
       // Re-call the webservice with the user input
       messages = await walkChain(currentNode.id, flowData.nodes, flowData.edges, session, session.flow_id, req);
     } else if (currentNode.type === 'input_text' || currentNode.type === 'input_date' || currentNode.type === 'input_file') {
+      // We received the answer — no longer waiting
+      session.waiting_text_input = false;
+
       // Save input to parameters
       const varName = currentNode.data.variableName;
       if (varName) {
@@ -860,10 +808,49 @@ export const respondToMessage = async (req, res) => {
         session.parameters = params;
         session.markModified('parameters');
       }
-      
-      const nextNodeId = findNextNode(currentNode.id, flowData.edges);
+
+      // Use sub-flow edges if the node lives inside a fixed_process
+      const activeNodes = subFlowContext ? subFlowContext.nodes : flowData.nodes;
+      const activeEdges = subFlowContext ? subFlowContext.edges : flowData.edges;
+
+      const nextNodeId = findNextNode(currentNode.id, activeEdges);
       if (nextNodeId) {
-        messages = await walkChain(nextNodeId, flowData.nodes, flowData.edges, session, session.flow_id, req);
+        // There is a next node inside the same (sub-)flow — continue normally
+        messages = await walkChain(nextNodeId, activeNodes, activeEdges, session, session.flow_id, req);
+      } else if (subFlowContext) {
+        // Last node in sub-flow — pop execution stack and continue in parent flow
+        const newStack = [...session.execution_stack];
+        newStack.pop();
+        session.execution_stack = newStack;
+        session.markModified('execution_stack');
+        if (subFlowContext.returnTo) {
+          console.log(`[BOT] 🔁 Sub-flow input done, returning to parent node: ${subFlowContext.returnTo}`);
+          messages = await walkChain(subFlowContext.returnTo, flowData.nodes, flowData.edges, session, session.flow_id, req);
+        } else {
+          // No return node — go back to main menu
+          const autoNode = flowData.nodes.find(n => n.type === 'automatic_responses');
+          if (autoNode) {
+            session.current_node_id   = autoNode.id;
+            session.waiting_webservice = false;
+            session.execution_stack   = [];
+            session.markModified('execution_stack');
+          } else {
+            session.is_active       = false;
+            session.current_node_id = null;
+          }
+        }
+      } else {
+        // Last node in main flow — return to main menu or close session
+        const autoNode = flowData.nodes.find(n => n.type === 'automatic_responses');
+        if (autoNode) {
+          session.current_node_id   = autoNode.id;
+          session.waiting_webservice = false;
+          session.execution_stack   = [];
+          session.markModified('execution_stack');
+        } else {
+          session.is_active         = false;
+          session.current_node_id   = null;
+        }
       }
     } else if (currentNode.type === 'output_menu') {
       // Handle menu selection
@@ -895,16 +882,9 @@ export const respondToMessage = async (req, res) => {
       const options = currentNode.data.options || [];
       const operators = currentNode.data.optionOperators || options.map(() => 'eq');
       
-      console.log('[BOT] Re-matching text on automatic_responses:', {
-        text,
-        options,
-        operators
-      });
-      
       let matchedIdx = -1;
       for (let i = 1; i < options.length; i++) {
         const matches = evaluateCondition(operators[i], text, options[i]);
-        console.log(`[BOT] Testing option ${i}: "${options[i]}" with operator "${operators[i]}" => ${matches}`);
         if (matches) {
           matchedIdx = i;
           break;
@@ -912,11 +892,7 @@ export const respondToMessage = async (req, res) => {
       }
       
       const finalIdx = matchedIdx !== -1 ? matchedIdx : 0;
-      console.log(`[BOT] Final matched index: ${finalIdx} (option: "${options[finalIdx]}")`);
-      
       const nextNodeId = findNextNode(currentNode.id, flowData.edges, `option-${finalIdx}`);
-      console.log(`[BOT] Next node ID: ${nextNodeId}`);
-      
       if (nextNodeId) {
         messages = await walkChain(nextNodeId, flowData.nodes, flowData.edges, session, session.flow_id, req);
       }
@@ -926,25 +902,16 @@ export const respondToMessage = async (req, res) => {
     await session.save();
 
     // Build control object if needed
-    if (session.waiting_text_input && currentNode.data.variableName) {
+    // Reload the waiting node from the updated session.current_node_id (may have changed inside walkChain)
+    const waitingNode = flowData.nodes.find(n => n.id === session.current_node_id);
+    if (session.waiting_text_input && waitingNode?.data?.variableName) {
       control = {
         type: 'InputText',
-        name: currentNode.data.variableName
+        name: waitingNode.data.variableName
       };
     }
 
-    console.log('[BOT] 📨 Final response:', {
-      messageCount: messages.length,
-      messageTypes: messages.map(m => m.type),
-      control: control,
-      session_state: {
-        current_node_id: session.current_node_id,
-        waiting_text_input: session.waiting_text_input,
-        waiting_webservice: session.waiting_webservice,
-        is_active: session.is_active
-      }
-    });
-
+    console.log(`[BOT] → ${messages.length} messages | node=${session.current_node_id} | active=${session.is_active}`);
     return res.json({
       StatusId: 1,
       StatusDescription: 'Success',

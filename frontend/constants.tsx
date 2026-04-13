@@ -27,7 +27,7 @@ export const COMPONENT_GROUPS = [
     title: 'פלט (בוט)',
     items: [
       { type: NodeType.OUTPUT_TEXT, label: 'הודעת טקסט', icon: <MessageSquare size={18} /> },
-      { type: NodeType.OUTPUT_IMAGE, label: 'הודעת תמונה', icon: <ImageIcon size={18} /> },
+      { type: NodeType.OUTPUT_IMAGE, label: 'הודעת מדיה', icon: <ImageIcon size={18} /> },
       { type: NodeType.OUTPUT_LINK, label: 'קישור חיצוני', icon: <ExternalLink size={18} /> },
       { type: NodeType.OUTPUT_MENU, label: 'תפריט בחירה', icon: <List size={18} /> },
     ]

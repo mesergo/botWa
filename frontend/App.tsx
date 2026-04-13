@@ -108,6 +108,7 @@ const FlowBuilder: React.FC = () => {
   const [versions, setVersions] = useState<Version[]>([]);
   const [restorableVersions, setRestorableVersions] = useState<RestorableVersionsData | null>(null);
   const [activeProcessId, setActiveProcessId] = useState<string | null>(null);
+  const [isFlowTransitioning, setIsFlowTransitioning] = useState(false);
   const [reactFlowInstance, setReactFlowInstance] = useState<ReactFlowInstance | null>(null);
   const [isSimulatorOpen, setIsSimulatorOpen] = useState(viewMode === 'simulator-only');
   const [simulatorActiveNodeId, setSimulatorActiveNodeId] = useState<string | null>(null);
@@ -179,13 +180,57 @@ const FlowBuilder: React.FC = () => {
     const uniqueMatches = new Set<string>();
     
     nodes.forEach(node => {
-      const { label, content, variableName, linkLabel, options, url, urlVariable, serialId } = node.data;
-      const check = (val?: string) => (val || '').toLowerCase().includes(q);
-      
-      if (check(label) || check(content) || check(variableName) || check(linkLabel) || check(url) || check(urlVariable) || check(serialId)) {
+      const d = node.data;
+      const check = (val?: string) => typeof val === 'string' && val.toLowerCase().includes(q);
+      const reasons: string[] = [];
+
+      // Only search fields that are actually user-editable for each node type
+      switch (node.type as NodeType) {
+        case NodeType.INPUT_TEXT:
+        case NodeType.INPUT_DATE:
+        case NodeType.INPUT_FILE:
+          if (check(d.label))        reasons.push(`label: "${d.label}"`);
+          if (check(d.variableName)) reasons.push(`variableName: "${d.variableName}"`);
+          break;
+        case NodeType.OUTPUT_TEXT:
+          if (check(d.content)) reasons.push(`content: "${d.content}"`);
+          break;
+        case NodeType.OUTPUT_IMAGE:
+          if (check(d.url))     reasons.push(`url: "${d.url}"`);
+          if (check(d.caption)) reasons.push(`caption: "${d.caption}"`);
+          break;
+        case NodeType.OUTPUT_LINK:
+          if (check(d.linkLabel))   reasons.push(`linkLabel: "${d.linkLabel}"`);
+          if (check(d.url))         reasons.push(`url: "${d.url}"`);
+          if (check(d.urlVariable)) reasons.push(`urlVariable: "${d.urlVariable}"`);
+          break;
+        case NodeType.OUTPUT_MENU:
+          if (check(d.content))     reasons.push(`content: "${d.content}"`);
+          if (check(d.variableName)) reasons.push(`variableName: "${d.variableName}"`);
+          if (Array.isArray(d.options) && d.options.some((opt: string) => check(opt)))
+            reasons.push(`options`);
+          break;
+        case NodeType.ACTION_WEB_SERVICE:
+          if (check(d.url)) reasons.push(`url: "${d.url}"`);
+          if (Array.isArray(d.options) && d.options.some((opt: string) => check(opt)))
+            reasons.push(`branches`);
+          break;
+        case NodeType.AUTOMATIC_RESPONSES:
+          if (Array.isArray(d.options) && d.options.some((opt: string) => check(opt)))
+            reasons.push(`options`);
+          break;
+        case NodeType.FIXED_PROCESS:
+          if (check(d.label)) reasons.push(`label: "${d.label}"`);
+          break;
+        default:
+          if (check(d.label))   reasons.push(`label: "${d.label}"`);
+          if (check(d.content)) reasons.push(`content: "${d.content}"`);
+          break;
+      }
+
+      if (reasons.length > 0) {
+        console.log(`[Search] node ${d.serialId} (${node.type}): matched on ${reasons.join(' | ')}`);
         uniqueMatches.add(node.id);
-      } else if (options && Array.isArray(options)) {
-        if (options.some(opt => check(opt))) uniqueMatches.add(node.id);
       }
     });
 
@@ -222,15 +267,14 @@ const FlowBuilder: React.FC = () => {
       ...node.data, 
       onChange: (data: Partial<NodeData>) => onNodeDataChange(node.id, data), 
       onDelete: () => onDeleteNode(node.id),
-      searchQuery,
-      isCurrentMatch: false 
     }
-  }), [onNodeDataChange, onDeleteNode, searchQuery]);
+  }), [onNodeDataChange, onDeleteNode]);
 
-  const loadBots = useCallback(async () => {
-    if (!token) return;
+  const loadBots = useCallback(async (overrideToken?: string) => {
+    const activeToken = overrideToken ?? token;
+    if (!activeToken) return;
     try {
-      const res = await fetch(`${API_BASE}/bots`, { headers: { 'Authorization': `Bearer ${token}` } });
+      const res = await fetch(`${API_BASE}/bots`, { headers: { 'Authorization': `Bearer ${activeToken}` } });
       if (!res.ok) {
         if (res.status === 401 || res.status === 403) {
             console.error("Authentication error loading bots - forcing logout");
@@ -361,39 +405,61 @@ const FlowBuilder: React.FC = () => {
 
   useEffect(() => { if (currentUser) loadBots(); }, [currentUser, loadBots]);
 
+  // Ref to abort a previous in-flight sync request when a newer one starts,
+  // preventing a slower old request from overwriting a more recent save.
+  const syncAbortControllerRef = useRef<AbortController | null>(null);
+
   const syncFlow = async (customNodes?: Node[], customEdges?: Edge[], customProcessId?: string) => {
     if (!token || (!selectedBot && !activeProcessId && !editingTemplateId && !creatingTemplate)) return;
     const n = customNodes || nodes;
     const e = customEdges || edges;
     const pId = customProcessId !== undefined ? customProcessId : activeProcessId;
-    
-    // If editing/creating template, sync to template endpoint
-    if (editingTemplateId || creatingTemplate) {
-      if (editingTemplateId) {
-        await fetch(`${API_BASE}/templates/${editingTemplateId}/flow`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-          body: JSON.stringify({ nodes: n, edges: e })
-        });
-      }
-      return;
+
+    // Cancel any previous in-flight sync so it cannot overwrite this newer one
+    if (syncAbortControllerRef.current) {
+      syncAbortControllerRef.current.abort();
     }
-    
-    await fetch(`${API_BASE}/flow/sync`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-      body: JSON.stringify({ 
-        nodes: n, 
-        edges: e, 
-        flow_id: selectedBot?.id || null, 
-        standard_process_id: pId 
-      })
-    });
+    const controller = new AbortController();
+    syncAbortControllerRef.current = controller;
+
+    try {
+      // If editing/creating template, sync to template endpoint
+      if (editingTemplateId || creatingTemplate) {
+        if (editingTemplateId) {
+          await fetch(`${API_BASE}/templates/${editingTemplateId}/flow`, {
+            method: 'PUT',
+            signal: controller.signal,
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify({ nodes: n, edges: e })
+          });
+        }
+        return;
+      }
+
+      await fetch(`${API_BASE}/flow/sync`, {
+        method: 'POST',
+        signal: controller.signal,
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ 
+          nodes: n, 
+          edges: e, 
+          flow_id: selectedBot?.id || null, 
+          standard_process_id: pId 
+        })
+      });
+    } catch (err: any) {
+      if (err.name === 'AbortError') return; // Superseded by a newer sync – ignore
+      throw err;
+    }
   };
+
+  // Always keep a ref to the latest syncFlow so the debounce timer never calls a stale closure
+  const syncFlowRef = useRef(syncFlow);
+  useEffect(() => { syncFlowRef.current = syncFlow; });
 
   useEffect(() => {
     if (viewMode !== 'dashboard' && viewMode !== 'template-selection' && viewMode !== 'template-form' && viewMode !== 'simulator-only' && viewMode !== 'admin-panel' && viewMode !== 'contacts' && viewMode !== 'sessions' && (selectedBot || activeProcessId || editingTemplateId)) {
-      const timer = setTimeout(syncFlow, 1500);
+      const timer = setTimeout(() => syncFlowRef.current(), 1500);
       return () => clearTimeout(timer);
     }
   }, [nodes, edges, viewMode, selectedBot, activeProcessId, editingTemplateId]);
@@ -444,8 +510,11 @@ const FlowBuilder: React.FC = () => {
 
     const levels: Record<string, number> = {};
     const adj: Record<string, string[]> = {};
+    const nodeIds = new Set(nodes.map(n => n.id));
+    // Filter out stale edges whose source/target node no longer exists
+    const validEdges = edges.filter(e => nodeIds.has(e.source) && nodeIds.has(e.target));
     nodes.forEach(n => { adj[n.id] = []; });
-    edges.forEach(e => { if (adj[e.source]) adj[e.source].push(e.target); });
+    validEdges.forEach(e => { adj[e.source].push(e.target); });
 
     const startNode = nodes.find(n => n.type === NodeType.START || n.type === NodeType.AUTOMATIC_RESPONSES);
     if (!startNode) return;
@@ -457,7 +526,8 @@ const FlowBuilder: React.FC = () => {
       if (visited.has(id)) continue;
       visited.add(id);
       levels[id] = level;
-      adj[id].forEach(childId => queue.push([childId, level + 1]));
+      // Guard: skip targets that no longer exist in the nodes array (stale/orphaned edges)
+      (adj[id] ?? []).forEach(childId => { if (adj[childId] !== undefined) queue.push([childId, level + 1]); });
     }
 
     const maxLevel = Math.max(...Object.values(levels), 0);
@@ -471,8 +541,8 @@ const FlowBuilder: React.FC = () => {
     const levelYAccumulator = Array(maxLevel + 1).fill(150);
     nodesByLevel.forEach((levelNodeIds, levelIndex) => {
       const sortedLevel = [...levelNodeIds].sort((a, b) => {
-        const edgeA = edges.find(e => e.target === a && levels[e.source] < levelIndex);
-        const edgeB = edges.find(e => e.target === b && levels[e.source] < levelIndex);
+        const edgeA = validEdges.find(e => e.target === a && levels[e.source] < levelIndex);
+        const edgeB = validEdges.find(e => e.target === b && levels[e.source] < levelIndex);
         if (!edgeA) return 1;
         if (!edgeB) return -1;
         if (edgeA.source === edgeB.source) {
@@ -496,8 +566,15 @@ const FlowBuilder: React.FC = () => {
       });
     });
 
+    const currentZoom = reactFlowInstance.getZoom();
+    const startPos = finalPositions[startNode.id] || { x: 100, y: 150 };
     setNodes(nds => nds.map(n => ({ ...n, position: finalPositions[n.id] || n.position })));
-    setTimeout(() => reactFlowInstance.fitView({ duration: 800 }), 100);
+    setTimeout(() => {
+      // מיקום הרכיב הראשון צמוד לצד שמאל (60px מהקצה) ו-80px מלמעלה, באותו זום
+      const newX = 60 - startPos.x * currentZoom;
+      const newY = 80 - startPos.y * currentZoom;
+      reactFlowInstance.setViewport({ x: newX, y: newY, zoom: currentZoom }, { duration: 800 });
+    }, 100);
   };
 
   const handleCreateBot = async (name: string) => {
@@ -572,8 +649,8 @@ const FlowBuilder: React.FC = () => {
     localStorage.setItem('flowbot_token', impersonationToken);
     localStorage.setItem('flowbot_user', JSON.stringify(userData));
     setViewMode('dashboard');
-    // Reload bots for the impersonated user
-    loadBots();
+    // Pass the new token directly to avoid stale closure with the old admin token
+    loadBots(impersonationToken);
   }, [loadBots]);
 
   const handleStopImpersonation = useCallback(async () => {
@@ -592,8 +669,8 @@ const FlowBuilder: React.FC = () => {
         localStorage.setItem('flowbot_token', data.token);
         localStorage.setItem('flowbot_user', JSON.stringify(data.user));
         setViewMode('dashboard');
-        // Reload bots for the admin user
-        loadBots();
+        // Pass the new token directly to avoid stale closure with the old impersonation token
+        loadBots(data.token);
       }
     } catch (error) {
       console.error('Error stopping impersonation:', error);
@@ -811,11 +888,19 @@ const FlowBuilder: React.FC = () => {
     } catch (e) { console.error(e); }
   };
 
-  const openDeleteConfirmation = (id: string, name: string) => {
-    const count = nodes.filter(n => n.data.processId?.toString() === id.toString() && !!n.data.isStandardProcess).length;
+  const openDeleteConfirmation = async (id: string, name: string) => {
     setProcessToDelete({ id, name });
-    setInstanceCount(count);
+    setInstanceCount(0);
     setIsDeleteModalOpen(true);
+    try {
+      const res = await fetch(`${API_BASE}/processes/${id}/usage`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setInstanceCount(data.count);
+      }
+    } catch (e) { console.error(e); }
   };
 
   const confirmDeleteProcess = async () => {
@@ -828,12 +913,9 @@ const FlowBuilder: React.FC = () => {
       });
       if (res.ok) {
         loadProcesses();
-        if (activeProcessId === id) { 
-          setActiveProcessId(null); 
-          setViewMode('editor'); 
-          loadFlow(selectedBot?.id || null);
-        }
-        setNodes(nds => nds.filter(n => !(n.data.processId?.toString() === id.toString() && !!n.data.isStandardProcess)));
+        setActiveProcessId(null);
+        setViewMode('editor');
+        loadFlow(selectedBot?.id || null);
       }
     } catch (e) { console.error(e); }
     setIsDeleteModalOpen(false);
@@ -1085,14 +1167,84 @@ const FlowBuilder: React.FC = () => {
     loadFlow(bot.id);
   };
 
+  /**
+   * Flush any pending sync BEFORE changing activeProcessId/viewMode.
+   * Without this, navigation that mutates those deps cancels the debounce
+   * timer (via useEffect cleanup) and the latest connections are never saved.
+   */
+  const handleCloseProcessEditor = useCallback(async () => {
+    const zoom = reactFlowInstance?.getViewport().zoom ?? 1;
+    setIsFlowTransitioning(true);
+    await syncFlowRef.current();
+    setActiveProcessId(null);
+    setViewMode('editor');
+    loadFlow(selectedBot?.id || null).then(() => {
+      requestAnimationFrame(() =>        // React commits new nodes to DOM
+        requestAnimationFrame(() =>      // ReactFlow measures node sizes
+          requestAnimationFrame(() => {  // safe to fitView
+            reactFlowInstance?.fitView({ padding: 0.5, duration: 0, minZoom: zoom, maxZoom: zoom });
+            requestAnimationFrame(() => requestAnimationFrame(() => setIsFlowTransitioning(false)));
+          })
+        )
+      );
+    });
+  }, [reactFlowInstance, selectedBot, loadFlow]);
+
+  const handleEditFixedProcess = useCallback(async (id: string) => {
+    const zoom = reactFlowInstance?.getViewport().zoom ?? 1;
+    setIsFlowTransitioning(true);
+    // Flush current process changes before switching
+    await syncFlowRef.current();
+    setActiveProcessId(id);
+    setViewMode('editing-process');
+    loadFlow(selectedBot?.id || null, id).then(() => {
+      requestAnimationFrame(() =>
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() => {
+            reactFlowInstance?.fitView({ padding: 0.5, duration: 0, minZoom: zoom, maxZoom: zoom });
+            requestAnimationFrame(() => requestAnimationFrame(() => setIsFlowTransitioning(false)));
+          })
+        )
+      );
+    });
+  }, [reactFlowInstance, selectedBot, loadFlow]);
+
+  const handleViewFixedProcess = useCallback(async (id: string) => {
+    const zoom = reactFlowInstance?.getViewport().zoom ?? 1;
+    setIsFlowTransitioning(true);
+    await syncFlowRef.current();
+    setActiveProcessId(id);
+    setViewMode('viewing-process');
+    loadFlow(selectedBot?.id || null, id).then(() => {
+      requestAnimationFrame(() =>
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() => {
+            reactFlowInstance?.fitView({ padding: 0.5, duration: 0, minZoom: zoom, maxZoom: zoom });
+            requestAnimationFrame(() => requestAnimationFrame(() => setIsFlowTransitioning(false)));
+          })
+        )
+      );
+    });
+  }, [reactFlowInstance, selectedBot, loadFlow]);
+
   const onNodesChange: OnNodesChange = useCallback((changes) => setNodes((nds) => applyNodeChanges(changes, nds)), []);
   const onEdgesChange: OnEdgesChange = useCallback((changes) => setEdges((eds) => applyEdgeChanges(changes, eds)), []);
-  const onConnect: OnConnect = useCallback((params) => setEdges((eds) => addEdge({ ...params, type: 'button', style: DEFAULT_EDGE_STYLE, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6' } }, eds)), []);
+  const onConnect: OnConnect = useCallback((params) => setEdges((eds) => {
+    // Remove any existing edge from the same source-handle before adding the new connection.
+    // Without this, old edges loaded from the DB coexist with the new one and the backend
+    // finds the OLD edge first (via Array.find), saving the wrong target.
+    const withoutOld = params.sourceHandle
+      ? eds.filter(e => !(e.source === params.source && e.sourceHandle === params.sourceHandle))
+      : eds;
+    return addEdge({ ...params, type: 'button', style: DEFAULT_EDGE_STYLE, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6' } }, withoutOld);
+  }), []);
 
   const onDrop = useCallback((event: React.DragEvent) => {
     event.preventDefault();
     if (!reactFlowWrapper.current || !reactFlowInstance) return;
     const type = event.dataTransfer.getData('application/reactflow') as NodeType;
+    // Guard: only accept drops that originated from the sidebar (valid node type)
+    if (!type) return;
     const extraData = JSON.parse(event.dataTransfer.getData('application/extra') || '{}');
     const position = reactFlowInstance.project({
       x: event.clientX - reactFlowWrapper.current.getBoundingClientRect().left,
@@ -1100,11 +1252,24 @@ const FlowBuilder: React.FC = () => {
     });
     const prefix = type === NodeType.FIXED_PROCESS ? 'B' : '#';
     const nextNum = nodes.filter(n => n.data.serialId?.startsWith(prefix)).length + 1;
+    const hebrewNodeNames: Record<string, string> = {
+      [NodeType.INPUT_TEXT]: 'שדה טקסט',
+      [NodeType.INPUT_DATE]: 'בחירת תאריך',
+      [NodeType.INPUT_FILE]: 'העלאת קובץ',
+      [NodeType.OUTPUT_TEXT]: 'הודעת טקסט',
+      [NodeType.OUTPUT_IMAGE]: 'הודעת תמונה',
+      [NodeType.OUTPUT_LINK]: 'קישור חיצוני',
+      [NodeType.OUTPUT_MENU]: 'תפריט בחירה',
+      [NodeType.ACTION_WEB_SERVICE]: 'קריאת API',
+      [NodeType.ACTION_WAIT]: 'המתנה',
+      [NodeType.ACTION_TIME_ROUTING]: 'ניתוב לפי שעה',
+      [NodeType.FIXED_PROCESS]: 'תהליך',
+    };
     const newNode = bindNodeCallbacks({
       id: `${type}-${Date.now()}`,
       type, position,
       data: { 
-        label: extraData.name || `חדש ${type}`, 
+        label: extraData.name || hebrewNodeNames[type] || 'רכיב חדש', 
         processId: extraData.id, 
         serialId: `${prefix}${nextNum}`,
         isStandardProcess: type === NodeType.FIXED_PROCESS
@@ -1475,7 +1640,7 @@ const FlowBuilder: React.FC = () => {
         onSearchNav={(dir) => setCurrentSearchIndex(i => dir === 'up' ? (i > 0 ? i - 1 : searchResults.length - 1) : (i + 1) % searchResults.length)}
         onTidy={tidyFlow}
         onPublish={openPublishModal}
-        onCloseEditor={() => { const zoom = reactFlowInstance?.getViewport().zoom ?? 1; setActiveProcessId(null); setViewMode('editor'); loadFlow(selectedBot?.id || null).then(() => { setTimeout(() => reactFlowInstance?.fitView({ padding: 0.5, duration: 0, minZoom: zoom, maxZoom: zoom }), 300); }); }}
+        onCloseEditor={handleCloseProcessEditor}
         onHome={() => { setViewMode('dashboard'); setSelectedBot(null); setActiveProcessId(null); }}
         onSimulatorOpen={() => setIsSimulatorOpen(true)}
         onSimulatorClose={() => { setIsSimulatorOpen(false); setSimulatorActiveNodeId(null); setSimulatorFixedProcessNodeId(null); }}
@@ -1486,14 +1651,15 @@ const FlowBuilder: React.FC = () => {
         initialParams={selectedBot?.botParams}
         onNodeFocus={setSimulatorActiveNodeId}
         onFixedProcessActive={setSimulatorFixedProcessNodeId}
+        isTransitioning={isFlowTransitioning}
         sidebarProps={{
           fixedProcesses,
           versions,
           restorableVersions,
           activeProcessId,
           onAddFixedProcess: () => setIsProcessModalOpen(true),
-          onEditFixedProcess: (id: string) => { const zoom = reactFlowInstance?.getViewport().zoom ?? 1; setActiveProcessId(id); setViewMode('editing-process'); loadFlow(selectedBot?.id || null, id).then(() => { setTimeout(() => reactFlowInstance?.fitView({ padding: 0.5, duration: 0, minZoom: zoom, maxZoom: zoom }), 300); }); },
-          onViewFixedProcess: (id: string) => { const zoom = reactFlowInstance?.getViewport().zoom ?? 1; setActiveProcessId(id); setViewMode('viewing-process'); loadFlow(selectedBot?.id || null, id).then(() => { setTimeout(() => reactFlowInstance?.fitView({ padding: 0.5, duration: 0, minZoom: zoom, maxZoom: zoom }), 300); }); },
+          onEditFixedProcess: handleEditFixedProcess,
+          onViewFixedProcess: handleViewFixedProcess,
           onDeleteFixedProcess: openDeleteConfirmation,
           onRestoreVersion: (v: Version) => { setVersionToRestore(v); setIsRestoreModalOpen(true); },
           onDeleteVersion: handleDeleteVersion,
@@ -1588,7 +1754,7 @@ const FlowBuilder: React.FC = () => {
             <div className="w-16 h-16 bg-red-50 text-red-500 rounded-3xl flex items-center justify-center mb-6 mr-0"><AlertTriangle size={32} /></div>
             <h3 className="text-2xl font-bold text-slate-900 mb-2 text-right">אישור מחיקה</h3>
             <p className="text-slate-500 text-sm mb-8 font-medium leading-relaxed text-right">
-              שים לב: במחיקה זו ימחקו <span className="text-red-600 font-bold">{instanceCount}</span> מופעים של תהליך <span className="text-slate-900 font-bold">{processToDelete?.name}</span>.
+              שים לב: תהליך זה מופיע <span className="text-red-600 font-bold">{instanceCount}</span> פעמים בסך כל הבוטים. המחיקה תסיר את כל המופעים של <span className="text-slate-900 font-bold">{processToDelete?.name}</span> מכל הבוטים.
               <br /> האם אתה בטוח שברצונך למחוק?
             </p>
             <div className="flex gap-4">

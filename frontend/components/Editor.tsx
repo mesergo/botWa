@@ -62,6 +62,8 @@ interface EditorProps {
   onNodeFocus?: (nodeId: string | null) => void;
   /** Called when the simulator enters/exits a fixed-process sub-flow */
   onFixedProcessActive?: (fixedProcessNodeId: string | null) => void;
+  /** When true, hides the canvas during flow transitions to prevent the visible viewport jump */
+  isTransitioning?: boolean;
 }
 
 const Editor: React.FC<EditorProps> = ({
@@ -69,7 +71,7 @@ const Editor: React.FC<EditorProps> = ({
   searchQuery, searchResults, currentSearchIndex, reactFlowWrapper, nodeTypes, edgeTypes, isSimulatorOpen,
   onNodesChange, onEdgesChange, onConnect, onInit, onDrop, onSearchChange, onSearchNav, onTidy, onPublish,
   onCloseEditor, onHome, onSimulatorOpen, onSimulatorClose, onDuplicate, onChangeTemplate, sidebarProps,
-  isEditingTemplate, onSaveTemplate, existingTemplateData, onOpenContacts, onOpenSessions, initialParams, onManageParams, onNodeFocus, onFixedProcessActive
+  isEditingTemplate, onSaveTemplate, existingTemplateData, onOpenContacts, onOpenSessions, initialParams, onManageParams, onNodeFocus, onFixedProcessActive, isTransitioning
 }) => {
   const [showSaveModal, setShowSaveModal] = React.useState(false);
   const [templateName, setTemplateName] = React.useState(existingTemplateData?.name || '');
@@ -255,6 +257,11 @@ const Editor: React.FC<EditorProps> = ({
         <div className="flex h-full w-full">
           <Sidebar {...sidebarProps} isReadOnly={viewMode === 'viewing-process'} />
           <div className="flex-1 relative h-full bg-[#f8fafc]" ref={reactFlowWrapper}>
+            {isTransitioning && (
+              <div className="absolute inset-0 z-[200] flex items-center justify-center bg-[#f8fafc]">
+                <div className="w-12 h-12 border-4 border-slate-200 border-t-slate-500 rounded-full animate-spin" />
+              </div>
+            )}
             <ReactFlow
               nodes={nodes} edges={edges} 
               onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect}

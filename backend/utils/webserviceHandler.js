@@ -142,16 +142,15 @@ export const handleWebService = async (node, session, userInput = null) => {
         const actions = data.actions || [];
         let returnValue = null;
         let waitingInput = false;
+        let gotoLabel = null;
 
         // Process each action
         for (const action of actions) {
           const actionType = action.type;
-          console.log('[WS] Processing action:', actionType);
 
           switch (actionType) {
             case 'SetParameter':
               params[action.name] = action.value;
-              console.log(`[WS] Set parameter ${action.name} = ${action.value}`);
               break;
 
             case 'SendMessage':
@@ -198,9 +197,12 @@ export const handleWebService = async (node, session, userInput = null) => {
               // If there are buttons/options, send them as menu with text
               if (action.options && Array.isArray(action.options) && action.options.length > 0) {
                 console.log('[WS] 🔵 InputText has options:', action.options);
-                const optionsList = action.options.map(opt => 
-                  typeof opt === 'string' ? opt : opt.label || opt.text || String(opt)
-                );
+                // Normalize to {label, value} objects per API spec
+                const optionsList = action.options.map(opt => {
+                  if (typeof opt === 'string') return { label: opt, value: opt };
+                  const label = opt.label || opt.text || String(opt);
+                  return { label, value: opt.value !== undefined ? opt.value : label };
+                });
                 
                 // Only send text message if there's actual text
                 if (action.text && action.text.trim()) {
@@ -235,6 +237,11 @@ export const handleWebService = async (node, session, userInput = null) => {
             case 'Return':
               returnValue = action.value;
               console.log('[WS] Return value:', returnValue);
+              break;
+
+            case 'Goto':
+              gotoLabel = action.name || action.value;
+              console.log('[WS] Goto target label:', gotoLabel);
               break;
 
             case 'ChangeState':
@@ -277,7 +284,8 @@ export const handleWebService = async (node, session, userInput = null) => {
         return {
           messages,
           returnValue,
-          waitingInput
+          waitingInput,
+          gotoLabel
         };
 
       } catch (fetchError) {

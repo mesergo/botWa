@@ -393,7 +393,9 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
         }
         setIsBotTyping(false); 
         addMessage({ sender: 'bot', type: 'carousel', carouselItems: carouselItems });
-        shouldPauseForInput = true; i = j; continue;
+        const hasButtons = carouselItems.some(item => item.options && item.options.length > 0);
+        if (hasButtons) shouldPauseForInput = true;
+        i = j; continue;
       }
       switch (action.type) {
         case 'SetParameter': updateParam(action.name, action.value); break;
@@ -690,9 +692,13 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
     const nodesList = currentInstance.getNodes() || [];
     const node = nodesList.find((n: any) => n.id === currentNodeId);
     
+    const isInputNode = node?.type === NodeType.INPUT_TEXT || node?.type === NodeType.INPUT_DATE || node?.type === NodeType.INPUT_FILE;
+
     // Check if current node has no next edges (end of flow)
+    // Skip this check for input nodes — they are EXPECTED to be the last node and must
+    // save their parameter before deciding what to do next.
     const nextNodeId = findNextNodeId(currentNodeId, currentInstance);
-    if (!node || !nextNodeId) {
+    if (!node || (!nextNodeId && !isInputNode)) {
       console.log('[Simulator] End of flow detected - resetting and starting fresh with new message');
       addMessage({ sender: 'user', type: 'text', content: text });
       await resetChat();
@@ -715,6 +721,11 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
        await processNext(currentNodeId, currentInstance, 0, executionStack, newValue, null);
     } else if (isWaitingForWebserviceResponse && node.type === NodeType.ACTION_WEB_SERVICE) { 
        await processNext(currentNodeId, currentInstance, 0, executionStack, newValue, null); 
+    } else if (isInputNode && !nextNodeId) {
+      // Last node in this (sub-)flow is an input — param already saved above.
+      // processNext(null) will pop executionStack and continue in parent flow if any,
+      // or simply clear the current node if we are at the top-level flow.
+      await processNext(null, currentInstance, 0, executionStack);
     } else { 
        await processNext(findNextNodeId(currentNodeId, currentInstance), currentInstance, 0, executionStack); 
     }
@@ -921,12 +932,17 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
                     <div className="space-y-4 min-w-[180px]">
                       <p className="font-bold text-slate-400 text-[10px] uppercase tracking-widest text-right">{msg.content}</p>
                       <div className="flex flex-col gap-2">
-                        {msg.options?.map((opt, i) => (
-                          <button key={i} onClick={() => handleMenuSelect(opt, i, msg.optionValues?.[i], msg.sourceNodeId)} className="w-full text-right p-3 bg-slate-50 border border-slate-100 rounded-2xl hover:bg-blue-600 hover:text-white transition-all text-xs font-bold uppercase flex items-center gap-3 flex-row-reverse">
-                            {msg.optionImages?.[i] && <img src={msg.optionImages[i]} className="w-8 h-8 rounded-lg object-cover" alt="" />}
-                            <span className="flex-1">{opt}</span>
-                          </button>
-                        ))}
+                        {msg.options?.map((opt: any, i: number) => {
+                          const label = typeof opt === 'string' ? opt : (opt.label || opt.text || String(opt));
+                          const value = typeof opt === 'string' ? opt : (opt.value !== undefined ? opt.value : label);
+                          const imageUrl = typeof opt === 'object' ? (opt.image_url || msg.optionImages?.[i]) : msg.optionImages?.[i];
+                          return (
+                            <button key={i} onClick={() => handleMenuSelect(value, i, value, msg.sourceNodeId)} className="w-full text-right p-3 bg-slate-50 border border-slate-100 rounded-2xl hover:bg-blue-600 hover:text-white transition-all text-xs font-bold uppercase flex items-center gap-3 flex-row-reverse">
+                              {imageUrl && <img src={imageUrl} className="w-8 h-8 rounded-lg object-cover" alt="" />}
+                              <span className="flex-1">{label}</span>
+                            </button>
+                          );
+                        })}
                       </div>
                     </div>
                   )}

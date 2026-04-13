@@ -139,7 +139,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                       <div
                         key={item.type}
                         className={`flex flex-col items-center justify-center gap-2 p-3 bg-white border border-slate-100 rounded-2xl cursor-grab ${theme.border} hover:shadow-md hover:-translate-y-0.5 transition-all group text-center`}
-                        onDragStart={(event) => onDragStart(event, item.type)}
+                        onDragStart={(event) => onDragStart(event, item.type, { name: item.label })}
                         draggable
                       >
                         <div className={`p-2 ${theme.bg} rounded-xl ${theme.text} ${theme.icon} group-hover:text-white transition-all`}>
@@ -184,8 +184,8 @@ const Sidebar: React.FC<SidebarProps> = ({
                           : 'bg-white border-slate-100 hover:border-indigo-400 hover:bg-indigo-50/30'
                       }`}
                       onClick={() => isActive ? null : onEditFixedProcess(proc.id)}
-                      onDragStart={(event) => onDragStart(event, 'fixed_process', { id: proc.id, name: proc.name })}
-                      draggable={!isReadOnly}
+                      onDragStart={(event) => { if (!isActive) onDragStart(event, 'fixed_process', { id: proc.id, name: proc.name }); }}
+                      draggable={!isReadOnly && !isActive}
                     >
                       <div className={`absolute top-1 left-1 flex items-center gap-0.5 transition-all ${isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
                         <button 
