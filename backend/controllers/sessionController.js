@@ -143,14 +143,15 @@ export const getContacts = async (req, res) => {
       },
       {
         $addFields: {
-          phone: { $ifNull: ['$customer_phone', { $ifNull: ['$sender', 'לא ידוע'] }] }
+          phone: { $ifNull: ['$customer_phone', { $ifNull: ['$sender', 'לא ידוע'] }] },
+          _date: { $ifNull: ['$created_at', '$createdAt'] }
         }
       },
       {
         $group: {
           _id: '$phone',
           sessionCount: { $sum: 1 },
-          lastSeen: { $max: '$created_at' },
+          lastSeen: { $max: '$_date' },
           widgetIds: { $addToSet: '$widget_id' }
         }
       },
@@ -382,6 +383,66 @@ export const getAllSessions = async (req, res) => {
     res.json({ sessions: finalSessions, total: accurateTotal, page: safePage, totalPages });
   } catch (err) {
     console.error('getAllSessions error:', err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+export const getSessionsByPhone = async (req, res) => {
+  const userId = req.user.id;
+  const phone = req.query.phone || '';
+  if (!phone) return res.status(400).json({ error: 'phone is required' });
+
+  try {
+    const [userBots, userWidgets] = await Promise.all([
+      BotFlow.find({ user_id: userId }).lean(),
+      Widget.find({ $or: [{ user_id: userId }, { user_id: userId.toString() }] }).select('id flow_id').lean()
+    ]);
+
+    const botNameMap = {};
+    userBots.forEach(b => { botNameMap[b._id.toString()] = b.name; });
+    const botIds = userBots.map(b => b._id.toString());
+
+    const botWidgets = await Widget.find({ flow_id: { $in: botIds } }).select('id flow_id').lean();
+    const allWidgets = [...userWidgets, ...botWidgets];
+    const widgetIds = [...new Set(allWidgets.map(w => w.id).filter(Boolean))];
+    const widgetFlowMap = {};
+    allWidgets.forEach(w => { if (w.id) widgetFlowMap[w.id] = w.flow_id; });
+
+    const collection = mongoose.connection.collection('BotSession');
+
+    const sessions = await collection.aggregate([
+      {
+        $match: {
+          customer_phone: phone,
+          $or: [
+            { user_id: userId },
+            { user_id: userId.toString() },
+            { widget_id: { $in: widgetIds } }
+          ]
+        }
+      },
+      { $addFields: { _sortDate: { $ifNull: ['$created_at', '$createdAt'] } } },
+      { $sort: { _sortDate: 1 } }
+    ]).toArray();
+
+    const result = sessions.map(s => {
+      const flowId = widgetFlowMap[s.widget_id] || s.flow_id;
+      const botName = flowId ? botNameMap[flowId] : null;
+      return {
+        id: s._id.toString(),
+        phone: s.customer_phone || s.sender || phone,
+        sender: s.sender || null,
+        widget_id: s.widget_id,
+        bot_name: botName || 'לא ידוע',
+        created_at: s.created_at || s.createdAt,
+        parameters: s.parameters || {},
+        process_history: s.process_history || []
+      };
+    });
+
+    res.json(result);
+  } catch (err) {
+    console.error('getSessionsByPhone error:', err);
     res.status(500).json({ error: err.message });
   }
 };

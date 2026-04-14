@@ -613,37 +613,50 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
       case NodeType.INPUT_TEXT: case NodeType.INPUT_DATE: case NodeType.INPUT_FILE: setIsBotTyping(true); await new Promise(r => setTimeout(r, 300)); if (cancelled()) return; if (node.data.label) { addMessage({ sender: 'bot', type: node.type as any, content: node.data.label }); } setIsBotTyping(false); break;
       case NodeType.ACTION_WAIT: await new Promise(r => setTimeout(r, (node.data.waitTime || 1) * 1000)); return processNext(findNextNodeId(nodeId, instance), instance, depth + 1, stack);
       case NodeType.ACTION_TIME_ROUTING: {
-        // Get current hour in Israel timezone
+        // Get current date/time in Israel timezone
         const now = new Date();
         const israelTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Jerusalem' }));
-        const israelHour = israelTime.getHours();
-        
-        const timeRanges = node.data.timeRanges || [];
+        const routingMode = node.data.routingMode || 'time';
+
         let matchedIndex = -1;
-        
-        for (let i = 0; i < timeRanges.length; i++) {
-          const range = timeRanges[i];
-          const fromHour = parseInt(range.fromHour) || 0;
-          const toHour = parseInt(range.toHour) || 23;
-          
-          // Check if current hour is within range
-          // Handle ranges that cross midnight (e.g., 22-8 means 22:00-07:59)
-          let inRange = false;
-          if (fromHour <= toHour) {
-            // Normal range (e.g., 8-16)
-            inRange = israelHour >= fromHour && israelHour < toHour;
-          } else {
-            // Range crosses midnight (e.g., 22-8)
-            inRange = israelHour >= fromHour || israelHour < toHour;
+
+        if (routingMode === 'date') {
+          const israelDateStr = [
+            israelTime.getFullYear(),
+            String(israelTime.getMonth() + 1).padStart(2, '0'),
+            String(israelTime.getDate()).padStart(2, '0'),
+          ].join('-');
+
+          const dateRanges = node.data.dateRanges || [];
+          for (let i = 0; i < dateRanges.length; i++) {
+            const range = dateRanges[i];
+            if (range.fromDate && range.toDate && israelDateStr >= range.fromDate && israelDateStr <= range.toDate) {
+              matchedIndex = i;
+              break;
+            }
           }
-          
-          if (inRange) {
-            matchedIndex = i;
-            break;
+        } else {
+          const israelHour = israelTime.getHours();
+          const timeRanges = node.data.timeRanges || [];
+          for (let i = 0; i < timeRanges.length; i++) {
+            const range = timeRanges[i];
+            const fromHour = parseInt(range.fromHour) || 0;
+            const toHour = parseInt(range.toHour) || 23;
+
+            let inRange = false;
+            if (fromHour <= toHour) {
+              inRange = israelHour >= fromHour && israelHour < toHour;
+            } else {
+              inRange = israelHour >= fromHour || israelHour < toHour;
+            }
+
+            if (inRange) {
+              matchedIndex = i;
+              break;
+            }
           }
         }
-        
-        // Route to matched option or default
+
         const targetHandle = matchedIndex >= 0 ? `option-${matchedIndex}` : 'option-default';
         return processNext(findNextNodeId(nodeId, instance, targetHandle), instance, depth + 1, stack);
       }

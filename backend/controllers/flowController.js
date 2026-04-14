@@ -40,8 +40,20 @@ const fetchFlowData = async (userId, flow_id, standard_process_id = null, versio
   }
 
   console.log('📖 טוען widgets עם query:', JSON.stringify(query));
-  const widgets = await Widget.find(query);
-  console.log(`📊 נמצאו ${widgets.length} widgets`);
+  const rawWidgets = await Widget.find(query);
+  console.log(`📊 נמצאו ${rawWidgets.length} widgets`);
+
+  // Deduplicate: keep only 1 automatic_responses per flow (prefer is_first=1)
+  const autoResponseWidgets = rawWidgets.filter(w => w.type === 'automatic_responses');
+  const otherWidgets = rawWidgets.filter(w => w.type !== 'automatic_responses');
+  const bestAutoResponse = autoResponseWidgets.length > 0
+    ? (autoResponseWidgets.find(w => w.is_first === 1) || autoResponseWidgets[0])
+    : null;
+  const widgets = bestAutoResponse ? [bestAutoResponse, ...otherWidgets] : otherWidgets;
+  if (autoResponseWidgets.length > 1) {
+    console.warn(`⚠️ נמצאו ${autoResponseWidgets.length} רכיבי automatic_responses - נשמר רק 1`);
+  }
+
   const options = await Option.find({ 
     widget_id: { $in: widgets.map(w => w.id) } 
   });
@@ -139,6 +151,21 @@ const fetchFlowData = async (userId, flow_id, standard_process_id = null, versio
   return { nodes, edges };
 };
 
+// Per-flow serialization lock: prevents concurrent syncFlow calls for the same flow
+// from interleaving their deleteMany + create sequences, which would cause duplicates.
+const flowSyncQueue = new Map(); // lockKey -> Promise
+
+const withFlowLock = (lockKey, fn) => {
+  const prev = flowSyncQueue.get(lockKey) || Promise.resolve();
+  let releaseLock;
+  const next = new Promise(resolve => { releaseLock = resolve; });
+  flowSyncQueue.set(lockKey, next);
+  return prev.then(() => fn()).finally(() => {
+    releaseLock();
+    if (flowSyncQueue.get(lockKey) === next) flowSyncQueue.delete(lockKey);
+  });
+};
+
 export const syncFlow = async (req, res) => {
   const userId = req.user.id;
   const { nodes, edges, flow_id, standard_process_id = null } = req.body;
@@ -154,8 +181,10 @@ export const syncFlow = async (req, res) => {
   if (!flow_id && !standard_process_id) {
       return res.status(400).json({ error: 'Missing flow_id' });
   }
-  
-  try {
+
+  const lockKey = `${userId}:${flow_id || standard_process_id}`;
+
+  withFlowLock(lockKey, async () => {
     const cleanupQuery = standard_process_id 
         ? { user_id: userId, $or: [
             { standard_process_id: standard_process_id, isStandardProcess: 0 },
@@ -165,28 +194,27 @@ export const syncFlow = async (req, res) => {
         : { user_id: userId, flow_id: flow_id, $or: [{ standard_process_id: null }, { isStandardProcess: 1 }] };
  
     console.log('🗑️ מוחק widgets קיימים:', cleanupQuery);
-    // First, collect old widget IDs so we can also delete their orphaned options
-    const oldWidgets = await Widget.find(cleanupQuery).select('id');
-    const oldWidgetIds = oldWidgets.map(w => w.get('id')).filter(Boolean);
-
     const deleteResult = await Widget.deleteMany(cleanupQuery);
     console.log(`✅ נמחקו ${deleteResult.deletedCount} widgets`);
 
-    // Deduplicate incoming nodes by id to prevent accidental multiplication
-    // (can happen if the frontend state accumulated duplicates from a previous race condition)
-    const seenIds = new Set();
-    const uniqueNodes = nodes.filter(n => {
-      if (seenIds.has(n.id)) return false;
-      seenIds.add(n.id);
+    // Deduplicate: keep only 1 automatic_responses in incoming nodes
+    let autoResponseSeen = false;
+    const deduplicatedNodes = nodes.filter(n => {
+      if (n.type === 'automatic_responses') {
+        if (autoResponseSeen) {
+          console.warn(`⚠️ רכיב automatic_responses כפול הוסר מה-sync`);
+          return false;
+        }
+        autoResponseSeen = true;
+      }
       return true;
     });
 
-    // Delete options for all relevant widget ids (new + old orphaned)
-    const allWidgetIds = [...new Set([...oldWidgetIds, ...uniqueNodes.map(n => n.id)])];
-    const optionsDeleteResult = await Option.deleteMany({ widget_id: { $in: allWidgetIds } });
+    const widgetIds = deduplicatedNodes.map(n => n.id);
+    const optionsDeleteResult = await Option.deleteMany({ widget_id: { $in: widgetIds } });
     console.log(`✅ נמחקו ${optionsDeleteResult.deletedCount} options`);
 
-    for (const node of uniqueNodes) {
+    for (const node of deduplicatedNodes) {
       const isFirst = (node.type === 'start' || node.type === 'automatic_responses') ? 1 : 0;
       const isBranching = node.type === 'output_menu' || node.type === 'action_web_service' || node.type === 'automatic_responses' || node.type === 'action_time_routing';
       // Use findLast so that if there are duplicate edges for the same source+handle
@@ -320,12 +348,12 @@ export const syncFlow = async (req, res) => {
       }
     }
     
-    console.log(`✅ syncFlow הושלם בהצלחה - נשמרו ${nodes.length} widgets`);
+    console.log(`✅ syncFlow הושלם בהצלחה - נשמרו ${deduplicatedNodes.length} widgets`);
     res.json({ success: true });
-  } catch (err) {
+  }).catch(err => {
     console.error('❌ שגיאה ב-syncFlow:', err);
     res.status(500).json({ error: err.message });
-  }
+  });
 };
 
 export const getFlow = async (req, res) => {
