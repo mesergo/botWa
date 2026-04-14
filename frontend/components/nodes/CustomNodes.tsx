@@ -1,6 +1,6 @@
 
-import React, { useRef, useState } from 'react';
-import { Handle, Position } from 'reactflow';
+import React, { useEffect, useRef, useState } from 'react';
+import { Handle, Position, useReactFlow } from 'reactflow';
 import { 
   Type, Calendar, Upload, MessageSquare, 
   Image as ImageIcon, ExternalLink, List, Globe, Clock, PlayCircle, Plus, Layers, X, GitBranch, Trash2, ChevronDown, Zap
@@ -595,8 +595,16 @@ export const FixedProcessNode = (props: any) => (
 );
 
 export const ActionTimeRoutingNode = (props: any) => {
+  const routingMode = props.data.routingMode || 'time';
   const timeRanges = props.data.timeRanges || [];
+  const dateRanges = props.data.dateRanges || [];
+  const isDateMode = routingMode === 'date';
 
+  const setMode = (mode: 'time' | 'date') => {
+    props.data.onChange({ routingMode: mode });
+  };
+
+  // Time mode helpers
   const updateTimeRange = (index: number, field: 'fromHour' | 'toHour', value: any) => {
     const newRanges = [...timeRanges];
     newRanges[index] = { ...newRanges[index], [field]: value };
@@ -604,59 +612,95 @@ export const ActionTimeRoutingNode = (props: any) => {
   };
 
   const addTimeRange = () => {
-    props.data.onChange({ 
-      timeRanges: [...timeRanges, { fromHour: 9, toHour: 17 }]
-    });
+    props.data.onChange({ timeRanges: [...timeRanges, { fromHour: 9, toHour: 17 }] });
   };
 
   const removeTimeRange = (index: number) => {
-    const newRanges = timeRanges.filter((_: any, i: number) => i !== index);
-    props.data.onChange({ timeRanges: newRanges });
+    props.data.onChange({ timeRanges: timeRanges.filter((_: any, i: number) => i !== index) });
   };
 
+  // Date mode helpers
+  const updateDateRange = (index: number, field: 'fromDate' | 'toDate', value: string) => {
+    const newRanges = [...dateRanges];
+    newRanges[index] = { ...newRanges[index], [field]: value };
+    props.data.onChange({ dateRanges: newRanges });
+  };
+
+  const addDateRange = () => {
+    const today = new Date().toISOString().split('T')[0];
+    props.data.onChange({ dateRanges: [...dateRanges, { fromDate: today, toDate: today }] });
+  };
+
+  const removeDateRange = (index: number) => {
+    props.data.onChange({ dateRanges: dateRanges.filter((_: any, i: number) => i !== index) });
+  };
+
+  const nodeTitle = isDateMode ? 'ניתוב לפי תאריך' : 'ניתוב לפי שעות';
+
   return (
-    <BaseNode id={props.id} title="ניתוב לפי שעות" icon={<Clock size={20} />} type={NodeType.ACTION_TIME_ROUTING} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive}>
+    <BaseNode id={props.id} title={nodeTitle} icon={<Clock size={20} />} type={NodeType.ACTION_TIME_ROUTING} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive}>
       <div className="space-y-4 relative text-right">
-        <label className="block text-[14px] font-bold text-slate-400 uppercase tracking-widest">טווחי שעות</label>
-        
+
+        {/* Mode toggle */}
+        <div className="flex rounded-xl overflow-hidden border border-slate-200">
+          <button
+            onClick={() => setMode('time')}
+            className={`flex-1 py-2 text-sm font-bold nodrag transition-colors ${!isDateMode ? 'bg-orange-500 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}`}
+          >
+            לפי שעה
+          </button>
+          <button
+            onClick={() => setMode('date')}
+            className={`flex-1 py-2 text-sm font-bold nodrag transition-colors ${isDateMode ? 'bg-orange-500 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}`}
+          >
+            לפי תאריך
+          </button>
+        </div>
+
+        <label className="block text-[14px] font-bold text-slate-400 uppercase tracking-widest">
+          {isDateMode ? 'טווחי תאריכים' : 'טווחי שעות'}
+        </label>
+
         {/* Default option */}
         <div className="flex items-center gap-2 p-2 bg-slate-50 border border-slate-200 rounded-2xl relative">
           <Handle type="source" position={Position.Right} id="option-default" style={{ top: '50%', right: -16 }} className="w-4 h-4 bg-slate-400 border-2 border-white rounded-full shadow-lg" />
           <div className="flex-1 text-center py-2">
-            <span className="text-sm font-bold text-slate-600">ברירת מחדל (כל שאר השעות)</span>
+            <span className="text-sm font-bold text-slate-600">
+              {isDateMode ? 'ברירת מחדל (כל שאר התאריכים)' : 'ברירת מחדל (כל שאר השעות)'}
+            </span>
           </div>
         </div>
 
         {/* Time ranges */}
-        {timeRanges.map((range: any, i: number) => (
+        {!isDateMode && timeRanges.map((range: any, i: number) => (
           <div key={i} className="flex items-center gap-2 p-3 bg-slate-50 border border-slate-100 rounded-2xl group/item relative transition-colors hover:bg-white hover:border-orange-100">
             <Handle type="source" position={Position.Right} id={`option-${i}`} style={{ top: '50%', right: -16 }} className="w-4 h-4 bg-slate-400 border-2 border-white rounded-full shadow-lg" />
-            
+
             <div className="flex-1">
               <div className="flex gap-2 items-center justify-center py-1">
-                <input 
-                  type="number" 
-                  min="0" 
-                  max="23" 
-                  value={range.toHour} 
+                <input
+                  type="number"
+                  min="0"
+                  max="23"
+                  value={range.toHour}
                   onChange={(e) => updateTimeRange(i, 'toHour', parseInt(e.target.value) || 0)}
                   className="w-16 px-2 py-2 border border-slate-200 rounded-lg text-center nodrag font-bold"
                 />
                 <span className="text-sm font-bold text-slate-500">עד</span>
-                <input 
-                  type="number" 
-                  min="0" 
-                  max="23" 
-                  value={range.fromHour} 
+                <input
+                  type="number"
+                  min="0"
+                  max="23"
+                  value={range.fromHour}
                   onChange={(e) => updateTimeRange(i, 'fromHour', parseInt(e.target.value) || 0)}
                   className="w-16 px-2 py-2 border border-slate-200 rounded-lg text-center nodrag font-bold"
                 />
                 <span className="text-sm font-bold text-slate-500">משעה</span>
               </div>
             </div>
-            
-            <button 
-              onClick={() => removeTimeRange(i)} 
+
+            <button
+              onClick={() => removeTimeRange(i)}
               className="w-10 h-10 rounded-lg flex items-center justify-center text-slate-200 hover:text-red-500 hover:bg-red-50 transition-all opacity-0 group-hover/item:opacity-100 nodrag flex-shrink-0"
               title="מחק טווח"
             >
@@ -664,9 +708,46 @@ export const ActionTimeRoutingNode = (props: any) => {
             </button>
           </div>
         ))}
-        
-        <button onClick={addTimeRange} className="w-full mt-2 py-4 text-[13px] font-bold bg-white text-blue-600 rounded-2xl border-2 border-dashed border-blue-100 hover:bg-blue-50 hover:border-blue-400 flex items-center justify-center gap-2 transition-all nodrag uppercase tracking-wider">
-          <Plus size={18} /> הוסף טווח שעות
+
+        {/* Date ranges */}
+        {isDateMode && dateRanges.map((range: any, i: number) => (
+          <div key={i} className="flex items-center gap-1 p-1.5 bg-slate-50 border border-slate-100 rounded-xl group/item relative transition-colors hover:bg-white hover:border-orange-100">
+            <Handle type="source" position={Position.Right} id={`option-${i}`} style={{ top: '50%', right: -16 }} className="w-4 h-4 bg-slate-400 border-2 border-white rounded-full shadow-lg" />
+
+            <div className="flex-1">
+              <div className="flex gap-1 items-center" dir="rtl">
+                <span className="text-xs font-bold text-slate-500 whitespace-nowrap">מ</span>
+                <input
+                  type="date"
+                  value={range.fromDate || ''}
+                  onChange={(e) => updateDateRange(i, 'fromDate', e.target.value)}
+                  className="flex-1 min-w-0 px-1 py-1 border border-slate-200 rounded-lg nodrag font-bold text-xs"
+                />
+                <span className="text-xs font-bold text-slate-500 whitespace-nowrap">עד</span>
+                <input
+                  type="date"
+                  value={range.toDate || ''}
+                  onChange={(e) => updateDateRange(i, 'toDate', e.target.value)}
+                  className="flex-1 min-w-0 px-1 py-1 border border-slate-200 rounded-lg nodrag font-bold text-xs"
+                />
+              </div>
+            </div>
+
+            <button
+              onClick={() => removeDateRange(i)}
+              className="w-6 h-6 rounded-md flex items-center justify-center text-slate-200 hover:text-red-500 hover:bg-red-50 transition-all opacity-0 group-hover/item:opacity-100 nodrag flex-shrink-0"
+              title="מחק טווח"
+            >
+              <X size={13} />
+            </button>
+          </div>
+        ))}
+
+        <button
+          onClick={isDateMode ? addDateRange : addTimeRange}
+          className="w-full mt-2 py-4 text-[13px] font-bold bg-white text-blue-600 rounded-2xl border-2 border-dashed border-blue-100 hover:bg-blue-50 hover:border-blue-400 flex items-center justify-center gap-2 transition-all nodrag uppercase tracking-wider"
+        >
+          <Plus size={18} /> {isDateMode ? 'הוסף טווח תאריכים' : 'הוסף טווח שעות'}
         </button>
       </div>
     </BaseNode>
@@ -676,6 +757,24 @@ export const ActionTimeRoutingNode = (props: any) => {
 export const AutomaticResponsesNode = (props: any) => {
   const options = props.data.options || ['כניסה'];
   const operators = props.data.optionOperators || Array(options.length).fill('eq');
+  // Persist isExpanded in node data so it survives remounts and re-entry
+  const [isExpanded, setIsExpanded] = useState<boolean>(props.data.isExpanded ?? false);
+  const MAX_VISIBLE = 5;
+  const hasMore = options.length > MAX_VISIBLE;
+  const visibleOptions = hasMore && !isExpanded ? options.slice(0, MAX_VISIBLE) : options;
+  const { setEdges } = useReactFlow();
+
+  // Apply edge visibility whenever isExpanded changes (handles toggle; initial load is handled by App.tsx)
+  useEffect(() => {
+    setEdges((eds) => eds.map((edge) => {
+      if (edge.source !== props.id) return edge;
+      const match = edge.sourceHandle?.match(/^option-(\d+)$/);
+      if (!match) return edge;
+      const idx = parseInt(match[1]);
+      if (idx < MAX_VISIBLE) return edge;
+      return { ...edge, hidden: !isExpanded };
+    }));
+  }, [isExpanded, props.id]);
 
   const updateOption = (index: number, value: string) => {
     if (index === 0) return; // Prevent changing the fixed "כניסה" option
@@ -709,7 +808,11 @@ export const AutomaticResponsesNode = (props: any) => {
     <BaseNode id={props.id} title="תגובות אוטומטיות" icon={<Zap size={20} />} type={NodeType.AUTOMATIC_RESPONSES} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive}>
       <div className="space-y-4 relative text-right">
         <label className="block text-[14px] font-bold text-slate-400 uppercase tracking-widest">מילות מפתח ופתיחים</label>
-        {options.map((opt: string, i: number) => {
+        {/* Always render hidden handles for collapsed options so ReactFlow edges stay connected */}
+        {hasMore && !isExpanded && options.slice(MAX_VISIBLE).map((_: string, j: number) => (
+          <Handle key={`hidden-${MAX_VISIBLE + j}`} type="source" position={Position.Right} id={`option-${MAX_VISIBLE + j}`} style={{ opacity: 0, pointerEvents: 'none', top: '50%', right: -16 }} className="w-4 h-4" />
+        ))}
+        {visibleOptions.map((opt: string, i: number) => {
           const isDefault = i === 0;
           return (
             <div key={i} className={`flex items-center gap-2 p-2 border rounded-2xl group/item relative transition-colors ${isDefault ? 'bg-slate-50 border-slate-200' : 'bg-slate-50 border-slate-100 hover:bg-white hover:border-blue-100'}`}>
@@ -738,6 +841,20 @@ export const AutomaticResponsesNode = (props: any) => {
             </div>
           );
         })}
+        {hasMore && (
+          <button
+            onClick={() => {
+              const next = !isExpanded;
+              setIsExpanded(next);
+              props.data.onChange({ isExpanded: next });
+            }}
+            className="w-full py-2 text-[12px] font-bold text-slate-500 bg-slate-50 hover:bg-slate-100 rounded-2xl border border-slate-200 flex items-center justify-center gap-2 transition-all nodrag"
+            title={isExpanded ? 'הצג פחות' : `הצג את כל ${options.length} האפשרויות`}
+          >
+            <ChevronDown size={16} className={`transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
+            {isExpanded ? 'הצג פחות' : `עוד ${options.length - MAX_VISIBLE} אפשרויות`}
+          </button>
+        )}
         <button onClick={addOption} className="w-full mt-2 py-4 text-[13px] font-bold bg-white text-slate-900 rounded-2xl border-2 border-dashed border-slate-200 hover:bg-slate-50 hover:border-slate-400 flex items-center justify-center gap-2 transition-all nodrag uppercase tracking-wider">
           <Plus size={18} /> הוסף פתיח חדש
         </button>

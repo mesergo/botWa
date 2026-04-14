@@ -124,6 +124,33 @@ const getFlowData = async (flowId, processId = null) => {
   const nodes = widgets.map(w => {
     let metadata = w.image_file || {};
     const nodeOptions = options.filter(o => o.widget_id === w.id);
+
+    // Reconstruct timeRanges / dateRanges for action_time_routing
+    if (w.type === 'action_time_routing') {
+      const routingMode = metadata.routingMode || 'time';
+      let ranges = {};
+      if (routingMode === 'date') {
+        ranges.dateRanges = nodeOptions
+          .filter(o => o.operator === 'date_range')
+          .map(o => {
+            const [fromDate, toDate] = o.value.split('|');
+            return { fromDate, toDate };
+          });
+      } else {
+        ranges.timeRanges = nodeOptions
+          .filter(o => o.operator === 'time_range')
+          .map(o => {
+            const [fromHour, toHour] = o.value.split('-').map(Number);
+            return { fromHour, toHour };
+          });
+      }
+      return {
+        id: w.id,
+        type: w.type,
+        position: { x: w.pos_x, y: w.pos_y },
+        data: { ...metadata, ...ranges }
+      };
+    }
     
     return { 
       id: w.id, 
@@ -154,11 +181,24 @@ const getFlowData = async (flowId, processId = null) => {
       edges.push({ id: `e-${w.id}-${w.next}`, source: w.id, target: w.next });
     }
     const wOptions = options.filter(o => o.widget_id === w.id);
-    wOptions.forEach((o, i) => { 
-      if (o.next) { 
-        edges.push({ id: `e-${w.id}-opt-${i}`, source: w.id, sourceHandle: `option-${i}`, target: o.next }); 
-      } 
-    });
+
+    // Special handling for time routing: use correct sourceHandle names
+    if (w.type === 'action_time_routing') {
+      let rangeIndex = 0;
+      wOptions.forEach((o) => {
+        if (o.next) {
+          const sourceHandle = o.operator === 'default' ? 'option-default' : `option-${rangeIndex}`;
+          edges.push({ id: `e-${w.id}-${sourceHandle}-${o.next}`, source: w.id, sourceHandle, target: o.next });
+        }
+        if (o.operator === 'time_range' || o.operator === 'date_range') rangeIndex++;
+      });
+    } else {
+      wOptions.forEach((o, i) => { 
+        if (o.next) { 
+          edges.push({ id: `e-${w.id}-opt-${i}`, source: w.id, sourceHandle: `option-${i}`, target: o.next }); 
+        } 
+      });
+    }
   });
 
   return { nodes, edges };
@@ -299,7 +339,7 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
         break;
       }
 
-      case 'output_menu': {
+     case 'output_menu': {
         // Send text message first (if exists)
         const text = replaceParameters(nodeData.content || '', params);
         if (text) {
@@ -308,18 +348,11 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
           addToHistory(session, textMsg, currentNodeId);
         }
         
-        // Build options as {label, value, image_url} objects per the API spec
+        // Build options as simple string array
         const rawOptions = nodeData.options || [];
-        const rawImages = nodeData.optionImages || [];
         const options = rawOptions
           .filter(opt => opt !== 'default')
-          .map((opt, i) => {
-            const label = String(opt);
-            const obj = { label, value: label };
-            const img = rawImages[i];
-            if (img) obj.image_url = img;
-            return obj;
-          });
+          .map(opt => String(opt));
         
         const optionsMsg = { type: 'Options', options, created: new Date().toISOString() };
         messages.push(optionsMsg);
@@ -332,7 +365,7 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
       }
 
       case 'input_text':
-      case 'input_date':
+      case 'input_date': 
       case 'input_file': {
         // Send prompt if exists
         if (nodeData.label) {
@@ -356,37 +389,50 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
       }
 
       case 'action_time_routing': {
-        // Get current hour in Israel timezone (handles DST automatically)
+        // Get current date/time in Israel timezone (handles DST automatically)
         const now = new Date();
         const israelTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Jerusalem' }));
-        const israelHour = israelTime.getHours();
-        
-        // Check time ranges
-        const timeRanges = nodeData.timeRanges || [];
+        const routingMode = nodeData.routingMode || 'time';
+
         let matchedIndex = -1;
-        
-        for (let i = 0; i < timeRanges.length; i++) {
-          const range = timeRanges[i];
-          const fromHour = parseInt(range.fromHour) || 0;
-          const toHour = parseInt(range.toHour) || 23;
-          
-          // Check if current hour is within range
-          // Handle ranges that cross midnight (e.g., 22-8 means 22:00-07:59)
-          let inRange = false;
-          if (fromHour <= toHour) {
-            // Normal range (e.g., 8-16)
-            inRange = israelHour >= fromHour && israelHour < toHour;
-          } else {
-            // Range crosses midnight (e.g., 22-8)
-            inRange = israelHour >= fromHour || israelHour < toHour;
+
+        if (routingMode === 'date') {
+          const israelDateStr = [
+            israelTime.getFullYear(),
+            String(israelTime.getMonth() + 1).padStart(2, '0'),
+            String(israelTime.getDate()).padStart(2, '0'),
+          ].join('-');
+
+          const dateRanges = nodeData.dateRanges || [];
+          for (let i = 0; i < dateRanges.length; i++) {
+            const range = dateRanges[i];
+            if (range.fromDate && range.toDate && israelDateStr >= range.fromDate && israelDateStr <= range.toDate) {
+              matchedIndex = i;
+              break;
+            }
           }
-          
-          if (inRange) {
-            matchedIndex = i;
-            break;
+        } else {
+          const israelHour = israelTime.getHours();
+          const timeRanges = nodeData.timeRanges || [];
+          for (let i = 0; i < timeRanges.length; i++) {
+            const range = timeRanges[i];
+            const fromHour = parseInt(range.fromHour) || 0;
+            const toHour = parseInt(range.toHour) || 23;
+
+            let inRange = false;
+            if (fromHour <= toHour) {
+              inRange = israelHour >= fromHour && israelHour < toHour;
+            } else {
+              inRange = israelHour >= fromHour || israelHour < toHour;
+            }
+
+            if (inRange) {
+              matchedIndex = i;
+              break;
+            }
           }
         }
-        
+
         // Route to matched option or default
         if (matchedIndex >= 0) {
           currentNodeId = findNextNode(currentNodeId, edges, `option-${matchedIndex}`);

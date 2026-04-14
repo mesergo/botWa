@@ -197,11 +197,10 @@ export const handleWebService = async (node, session, userInput = null) => {
               // If there are buttons/options, send them as menu with text
               if (action.options && Array.isArray(action.options) && action.options.length > 0) {
                 console.log('[WS] 🔵 InputText has options:', action.options);
-                // Normalize to {label, value} objects per API spec
+                // Convert to simple string array
                 const optionsList = action.options.map(opt => {
-                  if (typeof opt === 'string') return { label: opt, value: opt };
-                  const label = opt.label || opt.text || String(opt);
-                  return { label, value: opt.value !== undefined ? opt.value : label };
+                  if (typeof opt === 'string') return opt;
+                  return opt.label || opt.text || opt.value || String(opt);
                 });
                 
                 // Only send text message if there's actual text

@@ -1,12 +1,15 @@
 
 import express from 'express';
-import { startSession, updateSessionParameters, addHistoryMessage, getContacts, getUserSessions, getAllSessions, toggleSessionActive, deactivateSession } from '../controllers/sessionController.js';
+import { startSession, updateSessionParameters, addHistoryMessage, getContacts, getSessionsByPhone, getUserSessions, getAllSessions, toggleSessionActive, deactivateSession } from '../controllers/sessionController.js';
 import { authenticateToken, optionalAuthToken, requireAdmin } from '../middleware/auth.js';
 
 const router = express.Router();
 
 // Authenticated route to get all contacts
 router.get('/contacts', authenticateToken, getContacts);
+
+// Authenticated route to get all sessions for a specific phone number (oldest→newest)
+router.get('/by-phone', authenticateToken, getSessionsByPhone);
 
 // Authenticated route to get sessions for the current user
 router.get('/my-sessions', authenticateToken, getUserSessions);

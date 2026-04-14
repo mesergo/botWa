@@ -199,7 +199,17 @@ export const initializeFromTemplate = async (req, res) => {
 
     await Widget.deleteMany({ user_id: userId, flow_id: bot_id });
 
-    for (const node of processedNodes) {
+    // Deduplicate: keep only 1 automatic_responses node from template
+    let autoResponseSeen = false;
+    const deduplicatedNodes = processedNodes.filter(n => {
+      if (n.type === 'automatic_responses') {
+        if (autoResponseSeen) return false;
+        autoResponseSeen = true;
+      }
+      return true;
+    });
+
+    for (const node of deduplicatedNodes) {
       const isFirst = (node.type === 'start' || node.type === 'automatic_responses') ? 1 : 0;
       const isTimeRouting = node.type === 'action_time_routing';
       const isBranching = node.type === 'output_menu' || node.type === 'action_web_service' || node.type === 'automatic_responses' || isTimeRouting;
@@ -453,6 +463,23 @@ export const createTemplateFromBot = async (req, res) => {
     if (widgets.length > 0) {
       // Fetch options for all widgets
       const options = await Option.find({ widget_id: { $in: widgets.map(w => w.id) } }).lean();
+
+      // Deduplicate automatic_responses: keep the one with connected options (next),
+      // falling back to is_first=1, then the first found.
+      const autoResponses = widgets.filter(w => w.type === 'automatic_responses');
+      if (autoResponses.length > 1) {
+        const withConnections = autoResponses.find(w =>
+          options.some(o => o.widget_id === w.id && o.next)
+        );
+        const keeper = withConnections
+          || autoResponses.find(w => w.is_first === 1)
+          || autoResponses[0];
+        const keeperId = keeper.id;
+        // Remove all automatic_responses except the keeper
+        widgets.splice(0, widgets.length,
+          ...widgets.filter(w => w.type !== 'automatic_responses' || w.id === keeperId)
+        );
+      }
 
       // Build nodes with full data including options
       nodes = widgets.map(w => {

@@ -31,7 +31,9 @@ export interface NodeData {
   options?: string[];
   optionOperators?: string[];
   optionImages?: string[];
+  routingMode?: 'time' | 'date';
   timeRanges?: Array<{ fromHour: number; toHour: number; }>;
+  dateRanges?: Array<{ fromDate: string; toDate: string; }>;
   processId?: string;
   onChange?: (data: Partial<NodeData>) => void;
   onDelete?: () => void;

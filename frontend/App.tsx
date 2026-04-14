@@ -215,6 +215,11 @@ const FlowBuilder: React.FC = () => {
           if (Array.isArray(d.options) && d.options.some((opt: string) => check(opt)))
             reasons.push(`branches`);
           break;
+        case NodeType.ACTION_TIME_ROUTING:
+        case NodeType.ACTION_WAIT:
+        case NodeType.START:
+          // No searchable text fields
+          break;
         case NodeType.AUTOMATIC_RESPONSES:
           if (Array.isArray(d.options) && d.options.some((opt: string) => check(opt)))
             reasons.push(`options`);
