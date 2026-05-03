@@ -6,6 +6,7 @@ const botSessionSchema = new mongoose.Schema({
   customer_phone: String,
   sender: String,
   widget_id: String,
+  simulator_id: String, // Unique identifier for the simulator instance
   current_node_id: String,
   is_active: { type: Boolean, default: true },
   waiting_text_input: { type: Boolean, default: false },
