@@ -129,6 +129,10 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
   const runIdRef = useRef(0);
   // AbortController for cancelling in-flight webservice fetch
   const wsAbortControllerRef = useRef<AbortController | null>(null);
+  // Track last message timestamp for polling external messages
+  const lastMessageTimestampRef = useRef<string | null>(null);
+  // Unique simulator ID - created once and stays consistent during session
+  const simulatorIdRef = useRef<string>(`sim-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`);
 
   // Notify parent whenever the active node changes
   useEffect(() => {
@@ -196,6 +200,66 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
     };
   }, [sessionParameters, sessionId, token]);
 
+  // Poll for external messages (e.g., from Filament or web service responses)
+  useEffect(() => {
+    if (!sessionId || !isOpen) {
+      return;
+    }
+
+    const pollInterval = setInterval(async () => {
+      try {
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+        
+        let url = `${API_BASE}/sessions/${sessionId}/messages?simulator_id=${simulatorIdRef.current}`;
+        if (lastMessageTimestampRef.current) {
+          url += `&since=${encodeURIComponent(lastMessageTimestampRef.current)}`;
+        }
+
+        const response = await fetch(url, { headers });
+        
+        if (response.ok) {
+          const data = await response.json();
+          
+          if (data.hasNewMessages && data.messages.length > 0) {
+            console.log('[Simulator] 📨 Received external messages:', data.messages.length);
+            
+            // Process each new message
+            data.messages.forEach((msg: any) => {
+              // Convert backend message format to ChatMessage format
+              const chatMessage: Omit<ChatMessage, 'id' | 'timestamp'> = {
+                sender: msg.sender || 'bot',
+                type: msg.type === 'Text' ? 'text' : 
+                      msg.type === 'Image' ? 'image' : 
+                      msg.type === 'Video' ? 'video' : 
+                      msg.type === 'Document' ? 'document' : 
+                      msg.type === 'URL' ? 'link' : 
+                      msg.type === 'Options' ? 'menu' : 'text',
+                content: msg.text || '',
+                url: msg.url,
+                options: msg.options
+              };
+              
+              // Add message directly to UI without re-saving to history
+              setMessages(prev => [...prev, { 
+                ...chatMessage, 
+                id: Math.random().toString(36).substr(2, 9), 
+                timestamp: new Date(msg.created) 
+              }]);
+              
+              // Update last message timestamp
+              lastMessageTimestampRef.current = msg.created;
+            });
+          }
+        }
+      } catch (err) {
+        console.error('[Simulator] Failed to poll messages:', err);
+      }
+    }, 3000); // Poll every 3 seconds
+
+    return () => clearInterval(pollInterval);
+  }, [sessionId, isOpen, token]);
+
   const updateParam = (name: string, value: any) => {
     sessionParamsRef.current = { ...sessionParamsRef.current, [name]: value };
     setSessionParameters({ ...sessionParamsRef.current });
@@ -220,6 +284,9 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
     wsAbortControllerRef.current = null;
     setIsBotTyping(false);
 
+    // Reset external message polling timestamp
+    lastMessageTimestampRef.current = null;
+
     // Mark current session as inactive before starting a new one
     const prevSessionId = sessionIdRef.current;
     if (prevSessionId) {
@@ -235,7 +302,10 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
       }
     }
     
-    setMessages([]); setExecutionStack([]); sessionParamsRef.current = { ...(initialParams || {}) }; setSessionParameters({ ...(initialParams || {}) });
+    setMessages([]); setExecutionStack([]); 
+    // Include simulatorId in initial parameters
+    sessionParamsRef.current = { ...(initialParams || {}), _simulatorId: simulatorIdRef.current }; 
+    setSessionParameters({ ...(initialParams || {}), _simulatorId: simulatorIdRef.current });
     menuInstanceMapRef.current = {};
     setLastUserValue({ string: null, number: null }); setCurrentCommand(null); setIsWaitingForWebserviceResponse(false); setSessionId(null); sessionIdRef.current = null; setDateInput('');
     const instance = getActiveInstance();
@@ -249,7 +319,10 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
         const res = await fetch(`${API_BASE}/sessions/start`, {
           method: 'POST',
           headers: headers,
-          body: JSON.stringify({ widget_id: startNode.id })
+          body: JSON.stringify({ 
+            widget_id: startNode.id,
+            simulator_id: simulatorIdRef.current 
+          })
         });
         
         if (!res.ok) {
@@ -260,6 +333,10 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
         const data = await res.json();
         setSessionId(data.sessionId);
         sessionIdRef.current = data.sessionId;
+        
+        // Store sessionId in parameters for web service access
+        sessionParamsRef.current = { ...sessionParamsRef.current, _sessionId: data.sessionId };
+        setSessionParameters(prev => ({ ...prev, _sessionId: data.sessionId }));
       } catch (e) { 
         console.error("Failed to start session:", e); 
         // Optional: show user friendly error
@@ -360,6 +437,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
         text: interpolatedContentNoNull,
         url: msg.url,
         options: interpolatedOptions,
+        originSimulatorId: simulatorIdRef.current // Mark message as originated from this simulator
       };
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (token) headers['Authorization'] = `Bearer ${token}`;
@@ -491,14 +569,78 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
         }
         break;
       case NodeType.FIXED_PROCESS:
+        console.log('[Simulator] 🔄 FIXED_PROCESS node:', { nodeId, processId: node.data.processId, flowId, hasToken: !!token });
+        
+        // Validate required data
+        if (!node.data.processId) {
+          console.error('[Simulator] ❌ FIXED_PROCESS missing processId!', node);
+          addMessage({ sender: 'bot', type: 'text', content: '⚠️ שגיאה: תת-תהליך לא מוגדר כראוי (חסר processId)' });
+          return processNext(findNextNodeId(nodeId, instance), instance, depth + 1, stack);
+        }
+        
+        if (!flowId) {
+          console.error('[Simulator] ❌ FIXED_PROCESS missing flowId!');
+          addMessage({ sender: 'bot', type: 'text', content: '⚠️ שגיאה: flowId לא מוגדר' });
+          return processNext(findNextNodeId(nodeId, instance), instance, depth + 1, stack);
+        }
+        
         try {
-          const fetchUrl = `${API_BASE}/flow?flow_id=${flowId}&standard_process_id=${node.data.processId}`;
-          const res = await fetch(fetchUrl, { headers: token ? { 'Authorization': `Bearer ${token}` } : {} });
+          // Build fetch URL based on authentication status
+          let fetchUrl: string;
+          const headers: Record<string, string> = {};
+          
+          if (token) {
+            // Authenticated user: use standard endpoint
+            fetchUrl = `${API_BASE}/flow?flow_id=${flowId}&standard_process_id=${node.data.processId}`;
+            headers['Authorization'] = `Bearer ${token}`;
+          } else {
+            // Public simulator mode: use public endpoint with public_id from URL
+            const params = new URLSearchParams(window.location.search);
+            const publicId = currentUser?.public_id || params.get('public_id');
+            if (!publicId) {
+              console.error('[Simulator] ❌ No token and no public_id - cannot fetch sub-flow');
+              addMessage({ sender: 'bot', type: 'text', content: '⚠️ שגיאה: אין הרשאות לטעינת תת-תהליך' });
+              return processNext(findNextNodeId(nodeId, instance), instance, depth + 1, stack);
+            }
+            fetchUrl = `${API_BASE}/flow/public/${publicId}?flow_id=${flowId}&standard_process_id=${node.data.processId}`;
+          }
+          
+          console.log('[Simulator] 📡 Fetching sub-flow:', fetchUrl);
+          
+          const res = await fetch(fetchUrl, { headers });
+          
+          if (!res.ok) {
+            const errorText = await res.text();
+            console.error('[Simulator] ❌ Failed to fetch sub-flow:', res.status, errorText);
+            addMessage({ sender: 'bot', type: 'text', content: `⚠️ שגיאה בטעינת תת-תהליך (${res.status})` });
+            return processNext(findNextNodeId(nodeId, instance), instance, depth + 1, stack);
+          }
+          
           const subFlow = await res.json();
+          console.log('[Simulator] ✅ Sub-flow loaded:', { nodes: subFlow.nodes?.length, edges: subFlow.edges?.length });
+          
+          if (!subFlow.nodes || subFlow.nodes.length === 0) {
+            console.error('[Simulator] ❌ Sub-flow is empty!');
+            addMessage({ sender: 'bot', type: 'text', content: '⚠️ תת-תהליך ריק' });
+            return processNext(findNextNodeId(nodeId, instance), instance, depth + 1, stack);
+          }
+          
           const subInstance = { getNodes: () => subFlow.nodes, getEdges: () => subFlow.edges };
           const subStart = subFlow.nodes?.find((n: any) => n.type === NodeType.START);
-          if (subStart) { const newStack = [...stack, { nodeId, instance }]; return processNext(subStart.id, subInstance, depth + 1, newStack); }
-        } catch (e) { console.error(e); }
+          
+          if (!subStart) {
+            console.error('[Simulator] ❌ Sub-flow missing START node!');
+            addMessage({ sender: 'bot', type: 'text', content: '⚠️ תת-תהליך לא מכיל נקודת התחלה' });
+            return processNext(findNextNodeId(nodeId, instance), instance, depth + 1, stack);
+          }
+          
+          console.log('[Simulator] 🚀 Entering sub-flow with START node:', subStart.id);
+          const newStack = [...stack, { nodeId, instance }]; 
+          return processNext(subStart.id, subInstance, depth + 1, newStack);
+        } catch (e) { 
+          console.error('[Simulator] ❌ FIXED_PROCESS exception:', e);
+          addMessage({ sender: 'bot', type: 'text', content: '⚠️ שגיאה בטעינת תת-תהליך' });
+        }
         return processNext(findNextNodeId(nodeId, instance), instance, depth + 1, stack);
       case NodeType.ACTION_WEB_SERVICE:
         console.log('[Simulator] 🌐 Starting ghjkjhgfghjkjhgfghjkjhg webservice call');
@@ -685,7 +827,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
     }
     
     const text = userInput; 
-    setUserInput('');
+    setUserInput(''); 
     const isNum = !isNaN(Number(text)) && text.trim() !== "";
     const newValue = { string: text, number: isNum ? Number(text) : null }; 
     setLastUserValue(newValue);

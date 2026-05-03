@@ -339,7 +339,7 @@ export const getFlow = async (req, res) => {
 
 export const getPublicFlow = async (req, res) => {
   const { userId } = req.params; // This userId is the public_id from URL
-  const { flow_id, version_id = null } = req.query;
+  const { flow_id, standard_process_id = null, version_id = null } = req.query;
   try {
     // Access the collection via mongoose connection
     const userCollection = mongoose.connection.collection('User');
@@ -359,7 +359,7 @@ export const getPublicFlow = async (req, res) => {
       if (latestBot) targetFlowId = latestBot._id.toString();
     }
 
-    const data = await fetchFlowData(internalUserId, targetFlowId, null, version_id);
+    const data = await fetchFlowData(internalUserId, targetFlowId, standard_process_id, version_id);
     res.json(data);
   } catch (err) { 
     console.error("Public Flow Error:", err);

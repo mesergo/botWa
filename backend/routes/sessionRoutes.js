@@ -1,6 +1,6 @@
 
 import express from 'express';
-import { startSession, updateSessionParameters, addHistoryMessage, getContacts, getUserSessions, getAllSessions, toggleSessionActive, deactivateSession } from '../controllers/sessionController.js';
+import { startSession, updateSessionParameters, addHistoryMessage, getContacts, getUserSessions, getAllSessions, toggleSessionActive, deactivateSession, sendExternalMessage, getSessionMessages } from '../controllers/sessionController.js';
 import { authenticateToken, optionalAuthToken, requireAdmin } from '../middleware/auth.js';
 
 const router = express.Router();
@@ -22,4 +22,9 @@ router.post('/start', optionalAuthToken, startSession);
 router.post('/update-parameters', updateSessionParameters);
 router.post('/add-history', addHistoryMessage);
 router.patch('/:id/deactivate', deactivateSession);
+
+// External message routes (for Filament or web service responses)
+router.post('/send-message', sendExternalMessage);
+router.get('/:sessionId/messages', getSessionMessages);
+
 export default router;

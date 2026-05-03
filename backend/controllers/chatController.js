@@ -501,6 +501,8 @@ export const respondToMessage = async (req, res) => {
     const token = req.headers.authorization?.replace('Bearer ', '') || tokenParam;
 
     console.log(`[BOT] ← ${req.method} | phone=${phone} sender=${sender} text="${String(text).substring(0, 40)}"`)
+    console.log(`[BOT] 🔍 DEBUG - phone: "${phone}", sender: "${sender}"`);
+    console.log(`[BOT] 🔍 Searching for session with sender: "${sender}"`);
 
     if (!phone || !token) {
       return res.status(400).json({ 
@@ -523,6 +525,13 @@ export const respondToMessage = async (req, res) => {
       sender,
       is_active: true
     }).sort({ updatedAt: -1 });
+    
+    console.log(`[BOT] 🔎 Session search result: ${session ? 'FOUND' : 'NOT FOUND'}`);
+    if (session) {
+      console.log(`[BOT]    Session ID: ${session._id}`);
+      console.log(`[BOT]    Session sender: "${session.sender}"`);
+      console.log(`[BOT]    Session phone: "${session.customer_phone}"`);
+    }
 
     let isNewSession = false;
     let messages = [];
@@ -537,13 +546,23 @@ export const respondToMessage = async (req, res) => {
         await session.save();
         session = null;
       } else {
+        console.log(`[BOT] 📝 Existing session found - BEFORE update:`);
+        console.log(`[BOT]    DB sender: ${session.sender}, DB phone: ${session.customer_phone}`);
+        console.log(`[BOT]    Request sender: ${sender}, Request phone: ${phone}`);
+        
         // Update sender and phone if changed
         if (session.sender !== sender) {
+          console.log(`[BOT] ⚠️  Updating sender from "${session.sender}" to "${sender}"`);
           session.sender = sender;
         }
         if (session.customer_phone !== phone) {
+          console.log(`[BOT] ⚠️  Updating phone from "${session.customer_phone}" to "${phone}"`);
           session.customer_phone = phone;
         }
+        
+        console.log(`[BOT] 📝 AFTER update:`);
+        console.log(`[BOT]    DB sender: ${session.sender}, DB phone: ${session.customer_phone}`);
+        
         // Merge botParams into existing session if missing (handles sessions created before this fix)
         try {
           const existingBot = await BotFlow.findById(session.flow_id);
@@ -625,12 +644,15 @@ export const respondToMessage = async (req, res) => {
           } else if (typeof bot.botParams === 'object') {
             Object.assign(botParamsObj, bot.botParams);
           }
-        } catch (e) {
-          console.error('[BOT] Failed to extract botParams:', e);
+        } catch(e) {
+          console.error('[BOT] Failed to parse botParams for new session:', e);
         }
       }
-
-      console.log(`[BOT] bot selected: "${bot.name}" (${bot._id})`);
+      
+      console.log(`[BOT] 🆕 Creating NEW session with:`);
+      console.log(`[BOT]    customer_phone: "${phone}"`);
+      console.log(`[BOT]    sender: "${sender}"`);
+      
       session = await BotSession.create({
         user_id: user._id,
         flow_id: bot._id.toString(),
@@ -641,6 +663,10 @@ export const respondToMessage = async (req, res) => {
         parameters: { ...botParamsObj, waPhone: sender },
         process_history: []
       });
+      
+      console.log(`[BOT] ✅ Session created with ID: ${session._id}`);
+      console.log(`[BOT]    Saved sender: "${session.sender}"`);
+      console.log(`[BOT]    Saved phone: "${session.customer_phone}"`);
 
       isNewSession = true;
     }
@@ -892,6 +918,7 @@ export const respondToMessage = async (req, res) => {
     }
 
     // Save session
+    console.log(`[BOT] 💾 Saving session - sender: ${session.sender}, phone: ${session.customer_phone}`);
     await session.save();
 
     // Build control object if needed
@@ -905,6 +932,7 @@ export const respondToMessage = async (req, res) => {
     }
 
     console.log(`[BOT] → ${messages.length} messages | node=${session.current_node_id} | active=${session.is_active}`);
+    console.log(`[BOT] 📤 RESPONSE - sender: ${sender}, session.sender: ${session.sender}, session.customer_phone: ${session.customer_phone}`);
     return res.json({
       StatusId: 1,
       StatusDescription: 'Success',

@@ -7,7 +7,7 @@ import User from '../models/User.js';
 export const startSession = async (req, res) => {
   // Safe extraction: explicitly check for req.user to avoid 'undefined' values in DB insert
   const userId = (req.user && req.user.id) ? req.user.id : null;
-  const { customer_phone, widget_id } = req.body;
+  const { customer_phone, widget_id, simulator_id } = req.body;
 
   if (!widget_id) {
     return res.status(400).json({ error: 'Missing widget_id' });
@@ -21,14 +21,21 @@ export const startSession = async (req, res) => {
     
     const collection = mongoose.connection.collection('BotSession');
     
-    const result = await collection.insertOne({
+    const sessionData = {
       user_id: userId, // Will be null if guest, which is valid for MongoDB
       customer_phone: customer_phone || 'Simulated',
       widget_id: widget_id,
-      parameters: {},
+      parameters: simulator_id ? { _simulatorId: simulator_id } : {},
       process_history: [],
       created_at: new Date()
-    });
+    };
+    
+    // Add simulator_id as a top-level field for easy filtering
+    if (simulator_id) {
+      sessionData.simulator_id = simulator_id;
+    }
+    
+    const result = await collection.insertOne(sessionData);
     res.json({ sessionId: result.insertedId.toString() });
   } catch (err) {
     console.error("Start Session Error:", err);
@@ -143,17 +150,18 @@ export const getContacts = async (req, res) => {
       },
       {
         $addFields: {
-          phone: { $ifNull: ['$customer_phone', { $ifNull: ['$sender', 'לא ידוע'] }] }
+          // Group by sender (the person who sent the message), not by phone (bot's number)
+          contactKey: { $ifNull: ['$sender', { $ifNull: ['$customer_phone', 'לא ידוע'] }] }
         }
       },
       {
         $group: {
-          _id: '$phone',
+          _id: '$contactKey',
           sessionCount: { $sum: 1 },
           lastSeen: { $max: '$created_at' },
           widgetIds: { $addToSet: '$widget_id' }
         }
-      },
+      }, 
       { $sort: { lastSeen: -1 } }
     ];
 
@@ -258,8 +266,9 @@ export const getUserSessions = async (req, res) => {
       const botName = flowId ? botNameMap[flowId] : null;
       return {
         id: s._id.toString(),
-        phone: s.customer_phone || s.sender || 'לא ידוע',
+        phone: s.sender || s.customer_phone || 'לא ידוע', // Display sender first
         sender: s.sender || null,
+        customer_phone: s.customer_phone || null,
         widget_id: s.widget_id,
         bot_name: botName || 'לא ידוע',
         created_at: s.created_at || s.createdAt,
@@ -423,8 +432,141 @@ export const toggleSessionActive = async (req, res) => {
       { $set: { is_active: newActive } }
     );
     res.json({ success: true, is_active: newActive });
-  } catch (err) {
+  } catch (err) { 
     console.error('toggleSessionActive error:', err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// Send external message to session (e.g., from Filament or after web service)
+export const sendExternalMessage = async (req, res) => {
+  const { sessionId, message, simulator_id } = req.body;
+
+  console.log('[sendExternalMessage] Request:', { sessionId, message, simulator_id });
+
+  if (!sessionId) {
+    return res.status(400).json({ error: 'Missing sessionId' });
+  }
+
+  if (!message || !message.content) {
+    return res.status(400).json({ error: 'Missing message content' });
+  }
+
+  if (!mongoose.Types.ObjectId.isValid(sessionId)) {
+    return res.status(400).json({ error: 'Invalid sessionId format' });
+  }
+
+  try {
+    if (!mongoose.connection || mongoose.connection.readyState !== 1) {
+      return res.status(503).json({ error: 'Database connection not ready' });
+    }
+
+    const collection = mongoose.connection.collection('BotSession');
+
+    // Verify session exists and is active
+    const session = await collection.findOne({ 
+      _id: new mongoose.Types.ObjectId(sessionId) 
+    });
+
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+
+    // Prepare message entry
+    const entry = {
+      type: message.type || 'Text',
+      sender: message.sender || 'bot',
+      name: message.sender === 'user' ? 'משתמש' : 'בוט',
+      text: message.content,
+      url: message.url,
+      options: message.options,
+      created: new Date().toISOString(),
+      isExternal: true, // Flag to identify external messages
+      targetSimulatorId: simulator_id || null // Target specific simulator or all
+    };
+
+    // Add message to process_history
+    await collection.updateOne(
+      { _id: new mongoose.Types.ObjectId(sessionId) },
+      { 
+        $push: { process_history: entry },
+        $set: { updatedAt: new Date() }
+      }
+    );
+
+    console.log('[sendExternalMessage] Message added successfully to session:', sessionId);
+    res.json({ success: true, message: 'Message added to session' });
+  } catch (err) {
+    console.error('sendExternalMessage Error:', err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// Get new messages for a session (for polling)
+export const getSessionMessages = async (req, res) => {
+  const { sessionId } = req.params;
+  const { since, simulator_id } = req.query; // ISO timestamp of last received message and simulator ID
+
+  if (!sessionId || !mongoose.Types.ObjectId.isValid(sessionId)) {
+    return res.status(400).json({ error: 'Invalid sessionId' });
+  }
+
+  try {
+    if (!mongoose.connection || mongoose.connection.readyState !== 1) {
+      return res.status(503).json({ error: 'Database connection not ready' });
+    }
+
+    const collection = mongoose.connection.collection('BotSession');
+    const session = await collection.findOne({ 
+      _id: new mongoose.Types.ObjectId(sessionId) 
+    });
+
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+
+    const allMessages = session.process_history || [];
+    
+    // Filter messages based on criteria
+    let messages = allMessages;
+    
+    // Filter by timestamp if 'since' provided
+    if (since) {
+      const sinceDate = new Date(since);
+      messages = messages.filter(msg => {
+        const msgDate = new Date(msg.created);
+        return msgDate > sinceDate;
+      });
+    }
+    
+    // Filter by simulator_id if provided
+    // Only return messages that are either:
+    // 1. External with no targetSimulatorId (broadcast to all)
+    // 2. External with matching targetSimulatorId
+    // Exclude messages that originated from this simulator (to prevent duplicates)
+    if (simulator_id) {
+      messages = messages.filter(msg => {
+        // Skip messages that originated from this simulator
+        if (msg.originSimulatorId === simulator_id) return false;
+        
+        // Non-external messages are excluded (they're already shown locally)
+        if (!msg.isExternal) return false;
+        
+        // External messages with no target are broadcast to all
+        if (!msg.targetSimulatorId) return true;
+        
+        // External messages with matching target
+        return msg.targetSimulatorId === simulator_id;
+      });
+    }
+
+    res.json({ 
+      success: true, 
+      messages,
+      hasNewMessages: messages.length > 0
+    });
+  } catch (err) {
+    console.error('getSessionMessages Error:', err);
     res.status(500).json({ error: err.message });
   }
 };

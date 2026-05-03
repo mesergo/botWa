@@ -35,27 +35,62 @@
    - webservice
    - carousel
 
+### 🌐 הודעות חיצוניות (חדש!)
+6. **[EXTERNAL-MESSAGE-README.md](./EXTERNAL-MESSAGE-README.md)** ⭐ NEW
+   - סיכום מהיר
+   - איך להתחיל
+   - דוגמאות שימוש
+
+7. **[EXTERNAL-MESSAGE-API.md](./EXTERNAL-MESSAGE-API.md)** ⭐ NEW
+   - מדריך מפורט
+   - תיעוד API מלא
+   - שילוב עם Filament
+   - דוגמאות PHP/JavaScript
+
+8. **[SIMULATOR-ID-GUIDE.md](./SIMULATOR-ID-GUIDE.md)** ⭐ NEW
+   - מזהה סימולטור ייחודי
+   - שליחה לסימולטור ספציפי
+   - מספר סימולטורים בו-זמנית
+   - דוגמאות ושאלות נפוצות
+
 ### 🔧 מידע טכני
-6. **[IMPLEMENTATION-SUMMARY.md](./IMPLEMENTATION-SUMMARY.md)**
+9. **[IMPLEMENTATION-SUMMARY.md](./IMPLEMENTATION-SUMMARY.md)**
    - סיכום כל השינויים
    - קבצים שנוצרו
    - קבצים שעודכנו
    - מפת דרכים טכנית
 
 ### 📝 קבצי README קיימים
-7. **[README.md](./README.md)**
+10. **[README.md](./README.md)**
    - README ראשי של הפרויקט
    - עודכן עם מידע על ה-API החדש
 
-8. **[DEPLOYMENT.md](./DEPLOYMENT.md)**
+11. **[DEPLOYMENT.md](./DEPLOYMENT.md)**
    - מדריך העלאה לשרת
    - הגדרות production
 
-9. **[PRODUCTION-CHECKLIST.md](./PRODUCTION-CHECKLIST.md)**
+12. **[PRODUCTION-CHECKLIST.md](./PRODUCTION-CHECKLIST.md)**
    - רשימה לפני העלאה
 
-10. **[SETUP-INSTRUCTIONS.md](./SETUP-INSTRUCTIONS.md)**
+13. **[SETUP-INSTRUCTIONS.md](./SETUP-INSTRUCTIONS.md)**
     - הוראות התקנה
+
+### 🧪 קבצי דוגמה וקוד
+14. **[backend/examples/external-message-example.js](./backend/examples/external-message-example.js)** ⭐ NEW
+    - דוגמאות JavaScript מלאות
+    - שילוב עם Web Services
+    - פונקציות עזר
+    - תמיכה במזהה סימולטור
+
+15. **[backend/examples/filament-integration-example.php](./backend/examples/filament-integration-example.php)** ⭐ NEW
+    - דוגמאות PHP/Laravel
+    - שילוב עם Filament
+    - Observers ו-Webhooks
+
+16. **[backend/test-external-messages.js](./backend/test-external-messages.js)** ⭐ NEW
+    - קובץ בדיקות אוטומטי
+    - 10 test cases
+    - הרץ: `node backend/test-external-messages.js`
 
 ---
 
@@ -106,6 +141,12 @@ project-bots/
 2. **[CHAT-API-EXAMPLES.md](./CHAT-API-EXAMPLES.md)** - דוגמאות
 3. בנה בוט ותתחיל לשחק
 
+### אני מפתח - צריך לשלוח הודעות מפרויקט חיצוני
+1. **[EXTERNAL-MESSAGE-README.md](./EXTERNAL-MESSAGE-README.md)** - סיכום מהיר ⭐
+2. **[EXTERNAL-MESSAGE-API.md](./EXTERNAL-MESSAGE-API.md)** - מדריך מפורט
+3. **[backend/examples/external-message-example.js](./backend/examples/external-message-example.js)** - דוגמאות JS
+4. **[backend/examples/filament-integration-example.php](./backend/examples/filament-integration-example.php)** - דוגמאות PHP
+
 ### אני מפתח - רוצה הבנה מעמיקה
 1. **[IMPLEMENTATION-SUMMARY.md](./IMPLEMENTATION-SUMMARY.md)** - סקירה
 2. **[CHAT-API-GUIDE.md](./CHAT-API-GUIDE.md)** - תיעוד מלא
@@ -125,17 +166,26 @@ project-bots/
 1. **[CHECKLIST.md](./CHECKLIST.md)** - מה לבדוק
 2. **[CHAT-API-EXAMPLES.md](./CHAT-API-EXAMPLES.md)** - test cases
 3. השתמש ב-`backend/test-chat-api.js`
+4. **[backend/test-external-messages.js](./backend/test-external-messages.js)** - בדיקות הודעות חיצוניות ⭐
 
 ---
 
 ## 📊 סטטיסטיקות
+6 קבצים (4 חדשים!)
+- **קבצי קוד חדשים**: 8 קבצים (3 חדשים!)
+- **קבצי קוד מעודכנים**: 7 קבצים (4 חדשים!)
+- **שורות קוד חדשות**: ~1,800 (+200)
+- **שורות תיעוד**: ~4,200 (+700)
+- **דוגמאות**: 6 מקרי שימוש מלאים + דוגמאות חיצוניות + תמיכה במזהה סימולטור
 
-- **קבצי תיעוד**: 10 קבצים
-- **קבצי קוד חדשים**: 5 קבצים
-- **קבצי קוד מעודכנים**: 3 קבצים
-- **שורות קוד חדשות**: ~1,200
-- **שורות תיעוד**: ~2,500
-- **דוגמאות**: 6 מקרי שימוש מלאים
+### תכונות חדשות (21/04/2026)
+- ✅ **External Message API** - שליחת הודעות מפרויקטים חיצוניים
+- ✅ **Simulator ID** - מזהה ייחודי לכל סימולטור ⭐ NEW
+- ✅ **Targeted Messages** - שליחה לסימולטור ספציפי או broadcast ⭐ NEW
+- ✅ **External Message API** - שליחת הודעות מפרויקטים חיצוניים
+- ✅ **Polling Mechanism** - עדכון הודעות בזמן אמת (3 שניות)
+- ✅ **PHP/Filament Integration** - דוגמאות לשילוב עם Laravel
+- ✅ **Automated Tests** - 10 test cases אוטומטיים
 
 ---
 
