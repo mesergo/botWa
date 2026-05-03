@@ -1,8 +1,10 @@
 
+import crypto from 'crypto';
 import { mongoose } from '../config/db.js';
 import BotFlow from '../models/BotFlow.js';
 import Widget from '../models/Widget.js';
 import User from '../models/User.js';
+import fetch from 'node-fetch';
 
 export const startSession = async (req, res) => {
   // Safe extraction: explicitly check for req.user to avoid 'undefined' values in DB insert
@@ -436,7 +438,9 @@ export const getSessionsByPhone = async (req, res) => {
         bot_name: botName || 'לא ידוע',
         created_at: s.created_at || s.createdAt,
         parameters: s.parameters || {},
-        process_history: s.process_history || []
+        process_history: s.process_history || [],
+        is_agent: s.is_agent || false,
+        agent_since: s.agent_since || null
       };
     });
 
@@ -466,6 +470,146 @@ export const deactivateSession = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
+
+// ── Agent mode helpers ───────────────────────────────────────────────────────
+
+const getSessionWithOwnership = async (id, userId) => {
+  if (!mongoose.Types.ObjectId.isValid(id)) return { error: 'Invalid session ID', status: 400 };
+  const collection = mongoose.connection.collection('BotSession');
+  const session = await collection.findOne({ _id: new mongoose.Types.ObjectId(id) });
+  if (!session) return { error: 'Session not found', status: 404 };
+
+  const userBots = await BotFlow.find({ user_id: userId }).lean();
+  const botIds = userBots.map(b => b._id.toString());
+  const userWidgets = await Widget.find({ flow_id: { $in: botIds } }).select('id').lean();
+  const widgetIds = userWidgets.map(w => w.id).filter(Boolean);
+
+  const owned =
+    session.user_id === userId ||
+    session.user_id === String(userId) ||
+    widgetIds.includes(session.widget_id);
+
+  if (!owned) return { error: 'Access denied', status: 403 };
+  return { session, collection };
+};
+
+export const setAgentMode = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { session, collection, error, status } = await getSessionWithOwnership(id, req.user.id);
+    if (error) return res.status(status).json({ error });
+
+    const agent_since = new Date();
+    await collection.updateOne(
+      { _id: new mongoose.Types.ObjectId(id) },
+      { $set: { is_agent: true, agent_since } }
+    );
+    res.json({ success: true, agent_since: agent_since.toISOString() });
+  } catch (err) {
+    console.error('setAgentMode error:', err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+export const clearAgentMode = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { collection, error, status } = await getSessionWithOwnership(id, req.user.id);
+    if (error) return res.status(status).json({ error });
+
+    await collection.updateOne(
+      { _id: new mongoose.Types.ObjectId(id) },
+      { $set: { is_agent: false, agent_since: null } }
+    );
+    res.json({ success: true });
+  } catch (err) {
+    console.error('clearAgentMode error:', err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+export const sendAgentMessage = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { message } = req.body;
+    if (!message || !String(message).trim()) {
+      return res.status(400).json({ error: 'message is required' });
+    }
+    const { session, collection, error, status } = await getSessionWithOwnership(id, req.user.id);
+    if (error) return res.status(status).json({ error });
+
+    const msgText = String(message).trim();
+    const now = new Date();
+    const created = now.toISOString(); // for process_history
+    // WhatsApp API expects "Y-m-d H:i:s" format (like PHP's now()->format())
+    const waCreated = now.toISOString().replace('T', ' ').replace(/\.\d{3}Z$/, '');
+
+    // Send message to customer via WhatsApp API
+    const endpoint = process.env.WHATSAPP_ENDPOINT || 'dialog360/65aec7ebf1a1d64f29645fd9';
+    const waToken = crypto.createHash('sha1').update(endpoint + 'moomoo').digest('hex');
+    const phone = '0533339724'; // TODO: החזר ל- session.customer_phone לאחר בדיקות
+    const waId = phone.replace(/\D/g, '');
+
+    // Confirmed working format: contact array + messages array with text as plain string
+    const waBody = {
+      chat: phone,
+      contact: [{
+        name: { formatted_name: 'לקוח', first_name: 'לקוח' },
+        phones: [{ phone, type: 'CELL', wa_id: waId }]
+      }],
+      messages: [{ type: 'text', text: msgText, created: waCreated }]
+    };
+
+    let waSent = false;
+    let waError = null;
+    console.log(`[sendAgentMessage] 📤 Sending | endpoint=${endpoint} | phone=${phone}`);
+    console.log(`[sendAgentMessage] 📤 Body:`, JSON.stringify(waBody, null, 2));
+    try {
+      const waRes = await fetch(`https://wa.message.co.il/api/${endpoint}/send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', token: waToken },
+        body: JSON.stringify(waBody)
+      });
+      if (waRes.ok) {
+        waSent = true;
+        let responseBody = '';
+        try { responseBody = await waRes.text(); } catch (_) {}
+        console.log(`[sendAgentMessage] ✅ WhatsApp OK | phone=${phone} | status=${waRes.status} | response=${responseBody}`);
+      } else {
+        waError = `HTTP ${waRes.status}: ${await waRes.text()}`;
+        console.error(`[sendAgentMessage] ❌ WhatsApp FAILED | phone=${phone} | ${waError}`);
+      }
+    } catch (waErr) {
+      waError = waErr.message;
+      console.error(`[sendAgentMessage] ❌ WhatsApp exception:`, waErr.message);
+    }
+
+    // Always save to history (for audit trail), but mark if not delivered
+    await collection.updateOne(
+      { _id: new mongoose.Types.ObjectId(id) },
+      {
+        $push: {
+          process_history: {
+            type: 'Text',
+            text: msgText,
+            sender: 'agent',
+            name: 'נציג',
+            node_id: 'agent',
+            created,
+            wa_sent: waSent
+          }
+        }
+      }
+    );
+
+    res.json({ success: true, waSent, waError, created });
+  } catch (err) {
+    console.error('sendAgentMessage error:', err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 export const toggleSessionActive = async (req, res) => {
   // Admin-only: toggle is_active for a session

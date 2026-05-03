@@ -1,5 +1,5 @@
 ﻿import React, { useState, useEffect, useRef } from 'react';
-import { Clock, MessageSquare, Search, Bot, LogOut, User, Phone, List, Users, ExternalLink, X } from 'lucide-react';
+import { Clock, MessageSquare, Search, Bot, LogOut, User, Phone, List, Users, ExternalLink, X, Headphones, RefreshCw } from 'lucide-react';
 
 interface Session {
   id: string;
@@ -11,6 +11,8 @@ interface Session {
   created_at: string | null;
   parameters: Record<string, any>;
   process_history: any[];
+  is_agent?: boolean;
+  agent_since?: string | null;
 }
 
 interface Contact {
@@ -46,6 +48,14 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
   const [selectedPhone, setSelectedPhone] = useState<string | null>(null);
   const [phoneSessions, setPhoneSessions] = useState<Session[]>([]);
   const [phoneSessionsLoading, setPhoneSessionsLoading] = useState(false);
+
+  // Agent mode state
+  const [isAgentMode, setIsAgentMode] = useState(false);
+  const [agentSessionId, setAgentSessionId] = useState<string | null>(null);
+  const [agentMessage, setAgentMessage] = useState('');
+  const [showAgentConfirm, setShowAgentConfirm] = useState(false);
+  const [agentSending, setAgentSending] = useState(false);
+  const [agentWaFailed, setAgentWaFailed] = useState(false);
 
   const chatScrollRef = useRef<HTMLDivElement>(null);
 
@@ -95,6 +105,26 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
     }
   }, [phoneSessions]);
 
+  // Detect agent mode from last session
+  useEffect(() => {
+    if (phoneSessions.length === 0) {
+      setIsAgentMode(false);
+      setAgentSessionId(null);
+      return;
+    }
+    const last = phoneSessions[phoneSessions.length - 1];
+    if (last.is_agent && last.agent_since) {
+      const ageMinutes = (Date.now() - new Date(last.agent_since).getTime()) / 60000;
+      if (ageMinutes <= 30) {
+        setIsAgentMode(true);
+        setAgentSessionId(last.id);
+        return;
+      }
+    }
+    setIsAgentMode(false);
+    setAgentSessionId(null);
+  }, [phoneSessions]);
+
   const formatDate = (dateStr: string | null) => {
     if (!dateStr) return 'לא ידוע';
     const d = new Date(dateStr);
@@ -134,6 +164,90 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
   const isSimulator = (phone: string) =>
     phone === 'Simulated' || phone === 'simulator' || phone.toLowerCase() === 'simulated';
 
+  // ── Agent mode handlers ───────────────────────────────────────────────────
+
+  const handleOpenAgentConfirm = () => {
+    if (phoneSessions.length > 0) {
+      setAgentSessionId(phoneSessions[phoneSessions.length - 1].id);
+    }
+    setShowAgentConfirm(true);
+  };
+
+  const activateAgent = async () => {
+    const sid = agentSessionId || (phoneSessions.length > 0 ? phoneSessions[phoneSessions.length - 1].id : null);
+    if (!sid) return;
+    try {
+      const r = await fetch(`${API_BASE}/sessions/${sid}/set-agent`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (r.ok) {
+        const data = await r.json();
+        setIsAgentMode(true);
+        setAgentSessionId(sid);
+        setShowAgentConfirm(false);
+        setPhoneSessions(prev => prev.map((s, i) =>
+          i === prev.length - 1 ? { ...s, is_agent: true, agent_since: data.agent_since } : s
+        ));
+      }
+    } catch (e) {
+      console.error('Failed to set agent mode', e);
+    }
+  };
+
+  const deactivateAgent = async () => {
+    if (!agentSessionId) return;
+    try {
+      const r = await fetch(`${API_BASE}/sessions/${agentSessionId}/clear-agent`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (r.ok) {
+        setIsAgentMode(false);
+        setAgentSessionId(null);
+        setPhoneSessions(prev => prev.map((s, i) =>
+          i === prev.length - 1 ? { ...s, is_agent: false, agent_since: null } : s
+        ));
+      }
+    } catch (e) {
+      console.error('Failed to clear agent mode', e);
+    }
+  };
+
+  const sendAgentMsg = async () => {
+    if (!agentMessage.trim() || !agentSessionId || agentSending) return;
+    const msgText = agentMessage.trim();
+    const created = new Date().toISOString();
+    setAgentSending(true);
+    setAgentWaFailed(false);
+    try {
+      const r = await fetch(`${API_BASE}/sessions/${agentSessionId}/send-agent-message`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ message: msgText })
+      });
+      if (r.ok) {
+        const data = await r.json();
+        setAgentMessage('');
+        setPhoneSessions(prev => prev.map((s, i) =>
+          i === prev.length - 1
+            ? { ...s, process_history: [...s.process_history, { type: 'Text', text: msgText, sender: 'agent', name: 'נציג', created, wa_sent: data.waSent }] }
+            : s
+        ));
+        if (!data.waSent) {
+          setAgentWaFailed(true);
+          setTimeout(() => setAgentWaFailed(false), 8000);
+        }
+      }
+    } catch (e) {
+      console.error('Failed to send agent message', e);
+    } finally {
+      setAgentSending(false);
+    }
+  };
+
+  // ─────────────────────────────────────────────────────────────────────────
+
   const firstName = currentUser?.name?.charAt(0)?.toUpperCase() || currentUser?.email?.charAt(0)?.toUpperCase() || '?';
 
   const filteredContacts = contacts.filter(c =>
@@ -164,12 +278,39 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
     }
 
     return grouped.map((item: any, idx: number) => {
-      const sender: 'bot' | 'user' = item.sender
-        ? item.sender
-        : item.type === 'UserInput' ? 'user' : 'bot';
-      const isBot = sender === 'bot';
+      const senderType: 'bot' | 'user' | 'agent' =
+        item.sender === 'agent' ? 'agent'
+        : item.sender === 'user' ? 'user'
+        : item.type === 'UserInput' ? 'user'
+        : item.sender === 'bot' ? 'bot'
+        : 'bot';
+      const isBot = senderType === 'bot';
+      const isAgent = senderType === 'agent';
       const text = item.text ?? item.content ?? '';
       const msgDate = item.created ? formatMessageDate(item.created) : '';
+
+      // Agent message — purple bubble on left side
+      if (isAgent) {
+        return (
+          <div key={`${session.id}-${idx}`} className="flex w-full justify-start">
+            <div className="flex gap-2 max-w-[88%] flex-row-reverse">
+              <div className="w-8 h-8 rounded-xl flex-shrink-0 flex items-center justify-center shadow-sm bg-purple-100 border border-purple-200 text-purple-700">
+                <Headphones size={15} />
+              </div>
+              <div className="flex flex-col gap-1 items-end">
+                <div className="px-4 py-2.5 rounded-3xl text-sm font-semibold shadow-sm text-right bg-purple-50 border border-purple-200 text-purple-900 rounded-tr-none">
+                  <p className="text-[9px] text-purple-400 font-black mb-1 uppercase tracking-widest">נציג</p>
+                  {text && <p className="whitespace-pre-wrap leading-relaxed">{text}</p>}
+                </div>
+                {item.wa_sent === false && (
+                  <span className="text-[9px] text-red-500 font-black px-1">⚠️ לא נשלח ללקוח</span>
+                )}
+                {msgDate && <span className="text-[10px] text-slate-400 font-semibold px-1">{msgDate}</span>}
+              </div>
+            </div>
+          </div>
+        );
+      }
 
       return (
         <div
@@ -218,9 +359,12 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                     {text && <p className="mb-2 text-slate-400 text-[10px] uppercase tracking-widest font-black">{text}</p>}
                     {Array.isArray(item.options) && (
                       <div className="flex flex-col gap-1.5 mt-1">
-                        {item.options.filter((o: string) => o !== 'default').map((opt: string, i: number) => (
-                          <div key={i} className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700">{opt}</div>
-                        ))}
+                        {item.options
+                          .map((o: any) => (typeof o === 'object' && o !== null) ? (o.label ?? o.value ?? o.text ?? '') : String(o))
+                          .filter((o: string) => o !== 'default' && o !== '')
+                          .map((opt: string, i: number) => (
+                            <div key={i} className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700">{opt}</div>
+                          ))}
                       </div>
                     )}
                   </div>
@@ -414,6 +558,24 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                     )}
                   </p>
                 </div>
+                {!isSimulator(selectedPhone) && (
+                  isAgentMode ? (
+                    <button
+                      onClick={deactivateAgent}
+                      className="flex items-center gap-2 px-4 py-2 rounded-2xl bg-emerald-500 text-white text-xs font-black hover:bg-emerald-600 transition-colors shadow-sm"
+                    >
+                      <RefreshCw size={14} /> החזרת השיחה לבוט
+                    </button>
+                  ) : (
+                    <button
+                      onClick={handleOpenAgentConfirm}
+                      disabled={phoneSessions.length === 0}
+                      className="flex items-center gap-2 px-4 py-2 rounded-2xl border-2 border-sky-400 text-sky-600 text-xs font-black hover:bg-sky-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      <Headphones size={14} /> שיחה עם נציג
+                    </button>
+                  )
+                )}
                 <button
                   onClick={() => setSelectedPhone(null)}
                   className="p-2 hover:bg-slate-100 rounded-xl transition-colors text-slate-400"
@@ -422,7 +584,33 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 </button>
               </div>
 
-              {/* Sessions + messages */}
+              {/* Agent mode banner */}
+              {isAgentMode && (
+                <div className="flex-shrink-0 px-6 py-2.5 bg-amber-50 border-b border-amber-200 flex items-center gap-3" dir="rtl">
+                  <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse flex-shrink-0" />
+                  <p className="text-xs font-black text-amber-800 flex-1">
+                    מצב נציג פעיל — הבוט מושהה. הודעות מהלקוח לא יקבלו מענה אוטומטי.
+                  </p>
+                  {phoneSessions.length > 0 && phoneSessions[phoneSessions.length - 1].agent_since && (
+                    <span className="text-xs text-amber-600 font-semibold flex-shrink-0">
+                      הופעל {formatContactTime(phoneSessions[phoneSessions.length - 1].agent_since!)}
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {/* WhatsApp send failure banner */}
+              {agentWaFailed && (
+                <div className="flex-shrink-0 px-6 py-2.5 bg-red-50 border-b border-red-200 flex items-center gap-3" dir="rtl">
+                  <div className="w-2 h-2 rounded-full bg-red-500 flex-shrink-0" />
+                  <p className="text-xs font-black text-red-700 flex-1">
+                    ⚠️ ההודעה נשמרה בהיסטוריה אך <strong>לא נשלחה ללקוח</strong> — בעיה ב-WhatsApp API
+                  </p>
+                  <button onClick={() => setAgentWaFailed(false)} className="text-red-400 hover:text-red-600">
+                    <X size={14} />
+                  </button>
+                </div>
+              )}
               {phoneSessionsLoading ? (
                 <div className="flex-1 flex items-center justify-center">
                   <div className="animate-spin w-10 h-10 border-4 border-slate-200 border-t-sky-500 rounded-full" />
@@ -464,12 +652,17 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 </div>
               )}
 
-              {/* Message input bar (display only) */}
+              {/* Message input bar */}
               {!phoneSessionsLoading && (
                 <div className="flex-shrink-0 bg-white border-t border-slate-100 px-4 py-3" dir="rtl">
                   <div className="flex items-center gap-3">
                     <button
-                      className="w-10 h-10 flex-shrink-0 flex items-center justify-center rounded-2xl bg-sky-500 text-white opacity-40 cursor-not-allowed"
+                      onClick={sendAgentMsg}
+                      disabled={!isAgentMode || !agentMessage.trim() || agentSending}
+                      className={`w-10 h-10 flex-shrink-0 flex items-center justify-center rounded-2xl transition-colors
+                        ${isAgentMode && agentMessage.trim() && !agentSending
+                          ? 'bg-sky-500 text-white hover:bg-sky-600 cursor-pointer'
+                          : 'bg-sky-500 text-white opacity-40 cursor-not-allowed'}`}
                     >
                       <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                         <path d="M22 2 11 13"/><path d="M22 2 15 22 11 13 2 9l20-7z"/>
@@ -477,8 +670,15 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                     </button>
                     <input
                       type="text"
-                      placeholder="שליחת הודעה..."
-                      className="flex-1 bg-slate-50 border border-slate-200 rounded-2xl px-4 py-2.5 text-sm text-right font-medium text-slate-400 placeholder:text-slate-300 outline-none cursor-not-allowed"
+                      value={isAgentMode ? agentMessage : ''}
+                      onChange={isAgentMode ? e => setAgentMessage(e.target.value) : undefined}
+                      onKeyDown={isAgentMode ? e => { if (e.key === 'Enter') sendAgentMsg(); } : undefined}
+                      placeholder={isAgentMode ? 'כתוב הודעה ללקוח...' : 'שליחת הודעה...'}
+                      disabled={!isAgentMode}
+                      className={`flex-1 bg-slate-50 border border-slate-200 rounded-2xl px-4 py-2.5 text-sm text-right font-medium outline-none transition-all
+                        ${isAgentMode
+                          ? 'text-slate-800 placeholder:text-slate-400 focus:ring-2 focus:ring-sky-500/20 focus:border-sky-400'
+                          : 'text-slate-400 placeholder:text-slate-300 cursor-not-allowed'}`}
                     />
                   </div>
                 </div>
@@ -488,6 +688,40 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
         </div>
 
       </div>
+
+      {/* Agent confirmation dialog */}
+      {showAgentConfirm && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" dir="rtl">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-sm w-full mx-4 overflow-hidden">
+            <div className="px-6 pt-6 pb-4">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-10 h-10 rounded-2xl bg-amber-100 flex items-center justify-center">
+                  <Headphones size={20} className="text-amber-600" />
+                </div>
+                <h3 className="text-lg font-black text-slate-900">שיחה עם נציג</h3>
+              </div>
+              <p className="text-sm text-slate-600 leading-relaxed">
+                לחיצה על אישור <strong>תשהה את תגובות הבוט ל-30 דקות</strong>.
+                <br />תוכל לשוחח ישירות עם הלקוח דרך שדה ההודעות.
+              </p>
+            </div>
+            <div className="px-6 pb-6 flex gap-3 justify-end">
+              <button
+                onClick={() => setShowAgentConfirm(false)}
+                className="px-5 py-2.5 rounded-2xl border border-slate-200 text-slate-700 text-sm font-bold hover:bg-slate-50 transition-colors"
+              >
+                ביטול
+              </button>
+              <button
+                onClick={activateAgent}
+                className="px-5 py-2.5 rounded-2xl bg-sky-500 text-white text-sm font-bold hover:bg-sky-600 transition-colors"
+              >
+                אישור — עבור למצב נציג
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

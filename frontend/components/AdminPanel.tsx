@@ -1521,7 +1521,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                           />
                         </div>
                         <div>
-                          <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1">שם משתנה (ב-‏--‍‍‍‏--)</label>
+                          <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1">שם משתנה</label>
                           <input
                             type="text"
                             placeholder='לדוגמה: comp_name'

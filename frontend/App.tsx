@@ -477,6 +477,9 @@ const FlowBuilder: React.FC = () => {
     const estimateHeight = (nodeId: string) => {
       const node = nodes.find(n => n.id === nodeId);
       if (!node) return 200;
+      // Use the actual rendered height from ReactFlow when available — this guarantees
+      // the vertical gap is always exactly `verticalGap` regardless of node content.
+      if (node.height) return node.height;
       if (node.type === NodeType.START) return 110;
       let height = 112; 
       switch(node.type) {
@@ -488,8 +491,8 @@ const FlowBuilder: React.FC = () => {
         case NodeType.OUTPUT_LINK: height += 180; break;
         case NodeType.OUTPUT_MENU:
           height += 80 + 40; 
-          if (node.data.options) height += node.data.options.length * 85; 
-          height += 70; 
+          if (node.data.options) height += node.data.options.length * 100; 
+          height += 100; 
           break;
         case NodeType.ACTION_WEB_SERVICE:
           height += 80 + 50; 
@@ -497,11 +500,14 @@ const FlowBuilder: React.FC = () => {
           height += 40; 
           break;
         case NodeType.ACTION_WAIT: height += 80; break;
-        case NodeType.ACTION_TIME_ROUTING:
-          height += 100; // Default option
-          if (node.data.timeRanges) height += node.data.timeRanges.length * 80;
-          height += 70; // Add button
+        case NodeType.ACTION_TIME_ROUTING: {
+          const trCount = (node.data.timeRanges || []).length;
+          const drCount = (node.data.dateRanges || []).length;
+          const rangeCount = Math.max(trCount, drCount);
+          height += 250; // mode toggle + label + default option + add button + space-y-4 gaps (~232px content)
+          height += rangeCount * 90; // per range row: p-3 + inputs (~70px) + space-y-4 gap (16px) ≈ 86px
           break;
+        }
         case NodeType.FIXED_PROCESS: height += 70; break;
         case NodeType.AUTOMATIC_RESPONSES:
           height += 80;
