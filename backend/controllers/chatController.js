@@ -573,6 +573,40 @@ export const respondToMessage = async (req, res) => {
       });
     }
 
+    // ── Agent mode bypass ────────────────────────────────────────────────────
+    // If a human agent has taken over this conversation (is_agent=true, activated
+    // within the last 30 minutes), save the incoming message but suppress the bot.
+    const agentCheckSession = await BotSession.findOne({
+      $or: [{ sender }, { customer_phone: phone }],
+      is_agent: true
+    }).sort({ updatedAt: -1 });
+
+    if (agentCheckSession) {
+      const agentAgeMinutes = (Date.now() - new Date(agentCheckSession.agent_since).getTime()) / 60000;
+      if (agentAgeMinutes <= 30) {
+        // Active agent — record user message only, return empty bot response
+        agentCheckSession.process_history = agentCheckSession.process_history || [];
+        agentCheckSession.process_history.push({
+          type: 'UserInput',
+          text: String(text),
+          sender: 'user',
+          name: 'משתמש',
+          node_id: 'user',
+          created: new Date().toISOString()
+        });
+        agentCheckSession.markModified('process_history');
+        await agentCheckSession.save();
+        return res.json({ StatusId: 1, StatusDescription: 'Agent mode active', sender, messages: [], agentMode: true });
+      } else {
+        // Agent mode expired — clear it so the bot resumes normally
+        agentCheckSession.is_agent = false;
+        agentCheckSession.agent_since = null;
+        await agentCheckSession.save();
+        console.log('[BOT] Agent mode expired, resuming bot for', phone);
+      }
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
     // Find or create session
     let session = await BotSession.findOne({
       sender,

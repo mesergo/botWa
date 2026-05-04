@@ -1,6 +1,6 @@
 
 import express from 'express';
-import { startSession, updateSessionParameters, addHistoryMessage, getContacts, getSessionsByPhone, getUserSessions, getAllSessions, toggleSessionActive, deactivateSession, sendExternalMessage, getSessionMessages } from '../controllers/sessionController.js';
+import { startSession, updateSessionParameters, addHistoryMessage, getContacts, getSessionsByPhone, getUserSessions, getAllSessions, toggleSessionActive, deactivateSession, setAgentMode, clearAgentMode, sendAgentMessage, sendExternalMessage, getSessionMessages } from '../controllers/sessionController.js';
 import { authenticateToken, optionalAuthToken, requireAdmin } from '../middleware/auth.js';
 
 const router = express.Router();
@@ -19,6 +19,11 @@ router.get('/all-sessions', authenticateToken, requireAdmin, getAllSessions);
 
 // Admin route to toggle session active state
 router.patch('/:id/toggle-active', authenticateToken, requireAdmin, toggleSessionActive);
+
+// Agent mode routes
+router.patch('/:id/set-agent', authenticateToken, setAgentMode);
+router.patch('/:id/clear-agent', authenticateToken, clearAgentMode);
+router.post('/:id/send-agent-message', authenticateToken, sendAgentMessage);
 
 // Public routes for simulator usage - optionalAuthToken stores user_id when token is present
 router.post('/start', optionalAuthToken, startSession);

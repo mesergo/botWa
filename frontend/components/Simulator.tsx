@@ -819,7 +819,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
       // Wait a bit for reset to complete
       await new Promise(r => setTimeout(r, 200));
       // Now send the message
-      setUserInput(text);
+      setUserInput(text); 
       // The reset will position us at automatic_responses, now trigger send again
       setTimeout(() => {
         const tempText = text;

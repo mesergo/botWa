@@ -191,7 +191,6 @@ export const StartNode = (props: any) => (
 
 export const InputTextNode = (props: any) => (
   <BaseNode id={props.id} title="קלט: טקסט" icon={<Type size={20} />} type={NodeType.INPUT_TEXT} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive}>
-  <BaseNode id={props.id} title="קלט: טקסט" icon={<Type size={20} />} type={NodeType.INPUT_TEXT} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive}>
     <InputFieldWrapper label="שאלה מהבוט">
       <SearchableInput value={props.data.label} onChange={(v: string) => props.data.onChange({ label: v })} placeholder="מה השם שלך?" searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
     </InputFieldWrapper>

@@ -14,7 +14,9 @@ const botSessionSchema = new mongoose.Schema({
   last_user_input: String,
   parameters: mongoose.Schema.Types.Mixed,
   process_history: [mongoose.Schema.Types.Mixed],
-  execution_stack: [mongoose.Schema.Types.Mixed]
+  execution_stack: [mongoose.Schema.Types.Mixed],
+  is_agent: { type: Boolean, default: false },
+  agent_since: { type: Date, default: null }
 }, {
   timestamps: true,
   collection: 'BotSession'
