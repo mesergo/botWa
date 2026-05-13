@@ -2,6 +2,9 @@
 import User from '../models/User.js';
 import jwt from 'jsonwebtoken';
 import { SECRET_KEY } from '../middleware/auth.js';
+import { OAuth2Client } from 'google-auth-library';
+
+const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 export const register = async (req, res) => {
   const { name, email, phone, password, role } = req.body;
@@ -101,6 +104,58 @@ export const checkEmail = async (req, res) => {
     res.json({ exists: !!existing });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+};
+
+// Google OAuth login/register
+export const googleAuth = async (req, res) => {
+  const { credential } = req.body;
+  if (!credential) return res.status(400).json({ error: 'Missing Google credential' });
+  try {
+    const ticket = await googleClient.verifyIdToken({
+      idToken: credential,
+      audience: process.env.GOOGLE_CLIENT_ID,
+    });
+    const payload = ticket.getPayload();
+    const { email, name, sub: googleId } = payload;
+
+    let user = await User.findOne({ email: email.toLowerCase() });
+
+    if (!user) {
+      const trialExpiresAt = new Date();
+      trialExpiresAt.setMonth(trialExpiresAt.getMonth() + 1);
+      user = await User.create({
+        name,
+        email: email.toLowerCase(),
+        googleId,
+        public_id: Math.random().toString(36).substring(2, 15),
+        account_type: 'Trial',
+        status: 'active',
+        trial_expires_at: trialExpiresAt,
+      });
+    } else if (!user.googleId) {
+      user.googleId = googleId;
+      await user.save();
+    }
+
+    const jwtToken = jwt.sign({ id: user._id.toString(), email: user.email }, SECRET_KEY);
+    res.json({
+      token: jwtToken,
+      user: {
+        id: user._id.toString(),
+        name: user.name,
+        email: user.email,
+        role: user.role || 'user',
+        public_id: user.public_id,
+        account_type: user.account_type || 'Trial',
+        status: user.status || 'active',
+        trial_expires_at: user.trial_expires_at || null,
+        api_token: user.token,
+      },
+    });
+  } catch (err) {
+    console.error('Google auth error:', err.message);
+    res.status(401).json({ error: 'אימות גוגל נכשל, נסה שנית' });
   }
 };
 

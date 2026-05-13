@@ -1,16 +1,40 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
+
+const GOOGLE_CLIENT_ID = '266548688904-n1qrelk64op0usdbf52ae2gupcjld0vv.apps.googleusercontent.com';
+
+declare global {
+  interface Window { google: any; }
+}
 
 interface AuthScreenProps {
   form: any;
   errors: Record<string, string>;
   onFormChange: (data: any) => void;
   onAuth: () => void;
+  onGoogleLogin?: (credential: string) => void;
 }
 
-const AuthScreen: React.FC<AuthScreenProps> = ({ form, errors, onFormChange, onAuth }) => {
+const AuthScreen: React.FC<AuthScreenProps> = ({ form, errors, onFormChange, onAuth, onGoogleLogin }) => {
   const [showPassword, setShowPassword] = useState(false);
+
+  useEffect(() => {
+    if (!GOOGLE_CLIENT_ID || !window.google || !onGoogleLogin) return;
+    window.google.accounts.id.initialize({
+      client_id: GOOGLE_CLIENT_ID,
+      callback: (response: { credential: string }) => onGoogleLogin(response.credential),
+    });
+    const btn = document.getElementById('google-login-btn');
+    if (btn) {
+      window.google.accounts.id.renderButton(btn, {
+        theme: 'outline',
+        size: 'large',
+        width: 320,
+        locale: 'he',
+      });
+    }
+  }, [onGoogleLogin]);
 
   return (
     <div className="h-screen w-screen bg-[#0f172a] flex items-center justify-center p-6 text-right">
@@ -54,6 +78,17 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ form, errors, onFormChange, onA
             </div>
           )}
           <button onClick={onAuth} className="w-full bg-blue-600 text-white py-5 rounded-2xl font-bold shadow-lg shadow-blue-600/20 uppercase tracking-widest hover:bg-blue-700 transition-all">כניסה</button>
+
+          {onGoogleLogin && (
+            <>
+              <div className="flex items-center gap-3 mt-2">
+                <div className="flex-1 h-px bg-slate-200" />
+                <span className="text-xs text-slate-400">או</span>
+                <div className="flex-1 h-px bg-slate-200" />
+              </div>
+              <div id="google-login-btn" className="flex justify-center mt-2" />
+            </>
+          )}
         </div>
       </div>
     </div>

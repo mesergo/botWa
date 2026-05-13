@@ -72,7 +72,8 @@ export const handleWebService = async (node, session, userInput = null) => {
   // Remove null values from URL
   url = url.replace(/=[^&]*null[^&]*/g, '').replace(/[?&]&/g, '?').replace(/[?&]$/, '');
 
-  console.log('[WS] Final URL:', url);
+  console.log('[WS] ▶▶▶ Final URL:', url);
+  console.log('[WS] ▶▶▶ Session params:', JSON.stringify(session.parameters || {}));
 
   // Retry mechanism with exponential backoff
   let lastError = null;
@@ -132,7 +133,7 @@ export const handleWebService = async (node, session, userInput = null) => {
         }
 
         const data = await response.json();
-        console.log('[WS] Received response:', JSON.stringify(data).substring(0, 200));
+        console.log('[WS] ◀◀◀ Received response:', JSON.stringify(data).substring(0, 500));
         
         // Validate response structure
         if (!data || typeof data !== 'object') {
@@ -341,12 +342,17 @@ export const findMatchingOption = (node, returnValue) => {
   const options = node.data.options || [];
   const operators = node.data.optionOperators || options.map(() => 'eq');
   
+  console.log(`[WS] 🔍 findMatchingOption: returnValue=${returnValue} | options=`, options);
+
   for (let i = 0; i < options.length; i++) {
-    if (evaluateCondition(operators[i], returnValue, options[i])) {
-      console.log(`[WS] Matched option ${i}: ${options[i]}`);
+    const matched = evaluateCondition(operators[i], returnValue, options[i]);
+    console.log(`[WS]   option[${i}]="${options[i]}" op=${operators[i]} → ${matched}`);
+    if (matched) {
+      console.log(`[WS] ✅ Matched option ${i}: "${options[i]}"`);
       return i;
     }
   }
   
+  console.log(`[WS] ⚠️ No option matched returnValue=${returnValue} → will use default`);
   return -1;
 };

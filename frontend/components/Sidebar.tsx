@@ -184,8 +184,8 @@ const Sidebar: React.FC<SidebarProps> = ({
                           : 'bg-white border-slate-100 hover:border-indigo-400 hover:bg-indigo-50/30'
                       }`}
                       onClick={() => isActive ? null : onEditFixedProcess(proc.id)}
-                      onDragStart={(event) => { if (!isActive) onDragStart(event, 'fixed_process', { id: proc.id, name: proc.name }); }}
-                      draggable={!isReadOnly && !isActive}
+                      onDragStart={(event) => { onDragStart(event, 'fixed_process', { id: proc.id, name: proc.name }); }}
+                      draggable={!isReadOnly}
                     >
                       <div className={`absolute top-1 left-1 flex items-center gap-0.5 transition-all ${isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
                         <button 

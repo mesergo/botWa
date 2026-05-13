@@ -330,7 +330,7 @@ export const getAllSessions = async (req, res) => {
       {
         $addFields: {
           _sortDate: { $ifNull: ['$created_at', '$createdAt'] },
-          _phone: { $ifNull: ['$customer_phone', { $ifNull: ['$sender', 'לא ידוע'] }] }
+          _phone: { $ifNull: ['$sender', { $ifNull: ['$customer_phone', 'לא ידוע'] }] }
         }
       },
       { $sort: { _sortDate: -1 } },
@@ -389,7 +389,7 @@ export const getAllSessions = async (req, res) => {
     // For accurate total when bot/user search is used, do a lightweight count pass
     const accurateTotal = search ? await (async () => {
       const countPipeline = [
-        { $addFields: { _sortDate: { $ifNull: ['$created_at', '$createdAt'] }, _phone: { $ifNull: ['$customer_phone', { $ifNull: ['$sender', 'לא ידוע'] }] } } },
+        { $addFields: { _sortDate: { $ifNull: ['$created_at', '$createdAt'] }, _phone: { $ifNull: ['$sender', { $ifNull: ['$customer_phone', 'לא ידוע'] }] } } },
         { $sort: { _sortDate: -1 } },
         { $count: 'total' }
       ];
@@ -563,43 +563,45 @@ export const sendAgentMessage = async (req, res) => {
     const msgText = String(message).trim();
     const now = new Date();
     const created = now.toISOString(); // for process_history
-    // WhatsApp API expects "Y-m-d H:i:s" format (like PHP's now()->format())
-    const waCreated = now.toISOString().replace('T', ' ').replace(/\.\d{3}Z$/, '');
 
     // Send message to customer via WhatsApp API
     const endpoint = process.env.WHATSAPP_ENDPOINT || 'dialog360/65aec7ebf1a1d64f29645fd9';
-    const waToken = crypto.createHash('sha1').update(endpoint + 'moomoo').digest('hex');
-    const phone = '0533339724'; // TODO: החזר ל- session.customer_phone לאחר בדיקות
-    const waId = phone.replace(/\D/g, '');
+    const waToken = process.env.WHATSAPP_API_TOKEN || crypto.createHash('sha1').update(endpoint + 'moomoo').digest('hex');
 
-    // Confirmed working format: contact array + messages array with text as plain string
+    // Normalize phone: strip non-digits, replace leading 0 with 972
+    const rawPhone = session.sender || session.customer_phone || '';
+    let normalizedPhone = rawPhone.replace(/[^0-9]/g, '');
+    normalizedPhone = normalizedPhone.replace(/^0/, '972');
+    normalizedPhone = normalizedPhone.replace(/^972972/, '972');
+
     const waBody = {
-      chat: phone,
-      contact: [{
-        name: { formatted_name: 'לקוח', first_name: 'לקוח' },
-        phones: [{ phone, type: 'CELL', wa_id: waId }]
-      }],
-      messages: [{ type: 'text', text: msgText, created: waCreated }]
+      phone: normalizedPhone,
+      text: msgText,
+      fromMe: 1
     };
 
     let waSent = false;
     let waError = null;
-    console.log(`[sendAgentMessage] 📤 Sending | endpoint=${endpoint} | phone=${phone}`);
+    console.log(`[sendAgentMessage] 📤 Sending | endpoint=${endpoint} | phone=${normalizedPhone}`);
     console.log(`[sendAgentMessage] 📤 Body:`, JSON.stringify(waBody, null, 2));
     try {
       const waRes = await fetch(`https://wa.message.co.il/api/${endpoint}/send`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', token: waToken },
+        headers: {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Accept': 'application/json',
+          token: waToken
+        },
         body: JSON.stringify(waBody)
       });
-      if (waRes.ok) {
+      if (waRes.ok) { 
         waSent = true;
         let responseBody = '';
         try { responseBody = await waRes.text(); } catch (_) {}
-        console.log(`[sendAgentMessage] ✅ WhatsApp OK | phone=${phone} | status=${waRes.status} | response=${responseBody}`);
+        console.log(`[sendAgentMessage] ✅ WhatsApp OK | phone=${normalizedPhone} | status=${waRes.status} | response=${responseBody}`);
       } else {
         waError = `HTTP ${waRes.status}: ${await waRes.text()}`;
-        console.error(`[sendAgentMessage] ❌ WhatsApp FAILED | phone=${phone} | ${waError}`);
+        console.error(`[sendAgentMessage] ❌ WhatsApp FAILED | phone=${normalizedPhone} | ${waError}`);
       }
     } catch (waErr) {
       waError = waErr.message;

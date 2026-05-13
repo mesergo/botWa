@@ -14,13 +14,23 @@ interface DashboardProps {
   onStopImpersonation?: () => void;
   onOpenContacts?: () => void;
   onOpenSessions?: () => void;
+  onConnectFacebook?: (bot: BotFlow) => Promise<void>;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, onDeleteBot, onSetDefaultBot, onLogout, currentUser, onOpenAdminPanel, onStopImpersonation, onOpenContacts, onOpenSessions }) => {
+const FacebookIcon: React.FC<{ size?: number; className?: string }> = ({ size = 18, className = '' }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" className={className}>
+    <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+  </svg>
+);
+
+const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, onDeleteBot, onSetDefaultBot, onLogout, currentUser, onOpenAdminPanel, onStopImpersonation, onOpenContacts, onOpenSessions, onConnectFacebook }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newBotName, setNewBotName] = useState('');
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement>(null);
+  const [facebookConfirmBot, setFacebookConfirmBot] = useState<BotFlow | null>(null);
+  const [facebookSending, setFacebookSending] = useState(false);
+  const [facebookDone, setFacebookDone] = useState(false);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -157,6 +167,15 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                           הגדר כברירת מחדל
                         </button>
                       )}
+                      {onConnectFacebook && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setFacebookConfirmBot(bot); setFacebookDone(false); }}
+                          className="p-2 text-slate-200 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all"
+                          title="חיבור לפייסבוק"
+                        >
+                          <FacebookIcon size={18} />
+                        </button>
+                      )}
                       <button 
                         onClick={(e) => { e.stopPropagation(); onDeleteBot(bot.id); }}
                         className="p-2 text-slate-200 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
@@ -188,6 +207,65 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
           </div>
         </div>
       </div>
+
+      {facebookConfirmBot && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[100] p-6 text-right">
+          <div className="bg-white w-full max-w-sm rounded-[2.5rem] shadow-2xl p-10 border border-slate-100" dir="rtl">
+            <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-3xl flex items-center justify-center mb-6">
+              <FacebookIcon size={32} />
+            </div>
+            {facebookDone ? (
+              <>
+                <h3 className="text-2xl font-bold text-slate-900 mb-2">הבקשה נשלחה!</h3>
+                <p className="text-slate-400 text-sm mb-8 font-medium leading-relaxed">הצוות שלנו יצור איתך קשר בקרוב לחיבור לפייסבוק.</p>
+                <button
+                  onClick={() => setFacebookConfirmBot(null)}
+                  className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold shadow-lg shadow-blue-600/20 hover:bg-blue-700"
+                >
+                  סגור
+                </button>
+              </>
+            ) : (
+              <>
+                <h3 className="text-2xl font-bold text-slate-900 mb-2">חיבור לפייסבוק</h3>
+                <p className="text-slate-400 text-sm mb-2 font-medium leading-relaxed">
+                  האם ברצונך לחבר את הבוט <strong className="text-slate-700">{facebookConfirmBot.name}</strong> לפייסבוק?
+                </p>
+                <p className="text-slate-400 text-sm mb-8 font-medium leading-relaxed">
+                  הצוות שלנו יקבל את הפרטים שלך ויצור איתך קשר.
+                </p>
+                <div className="flex gap-4">
+                  <button
+                    onClick={() => setFacebookConfirmBot(null)}
+                    className="flex-1 py-4 border border-slate-200 text-slate-400 rounded-2xl font-bold text-xs uppercase hover:bg-slate-50"
+                    disabled={facebookSending}
+                  >
+                    ביטול
+                  </button>
+                  <button
+                    onClick={async () => {
+                      if (!onConnectFacebook) return;
+                      setFacebookSending(true);
+                      try {
+                        await onConnectFacebook(facebookConfirmBot);
+                        setFacebookDone(true);
+                      } catch {
+                        alert('שגיאה בשליחת הבקשה. אנא נסה שוב.');
+                      } finally {
+                        setFacebookSending(false);
+                      }
+                    }}
+                    className="flex-1 py-4 bg-blue-600 text-white rounded-2xl font-bold text-xs uppercase shadow-lg shadow-blue-600/20 hover:bg-blue-700 disabled:opacity-60"
+                    disabled={facebookSending}
+                  >
+                    {facebookSending ? 'שולח...' : 'אישור'}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {isModalOpen && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[100] p-6 text-right">

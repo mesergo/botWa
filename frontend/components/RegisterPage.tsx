@@ -1,6 +1,12 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { CheckCircle, Mail, Phone, Lock, Eye, EyeOff, AlertCircle, Building2, Clock, ShieldCheck } from 'lucide-react';
 
+declare global {
+  interface Window { google: any; }
+}
+
+const GOOGLE_CLIENT_ID = '266548688904-n1qrelk64op0usdbf52ae2gupcjld0vv.apps.googleusercontent.com';
+
 const API_BASE = window.location.hostname === 'localhost'
   ? 'http://localhost:3001/api'
   : `${window.location.origin}/api`;
@@ -44,6 +50,45 @@ const RegisterPage: React.FC = () => {
     document.body.style.overflow = 'auto';
     return () => { document.body.style.overflow = ''; };
   }, []);
+
+  const handleGoogleSignIn = useCallback(async (credential: string) => {
+    setIsSubmitting(true);
+    try {
+      const res = await fetch(`${API_BASE}/auth/google`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ credential }),
+      });
+      const data = await res.json();
+      if (res.ok && data.token) {
+        setRegisteredEmail(data.user.email);
+        setSubmitted(true);
+      } else {
+        setErrors({ general: data.error || 'שגיאה בהתחברות עם גוגל' });
+      }
+    } catch {
+      setErrors({ general: 'אין חיבור לשרת. אנא נסה שנית מאוחר יותר.' });
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!GOOGLE_CLIENT_ID || !window.google) return;
+    window.google.accounts.id.initialize({
+      client_id: GOOGLE_CLIENT_ID,
+      callback: (response: { credential: string }) => handleGoogleSignIn(response.credential),
+    });
+    const btn = document.getElementById('google-signin-btn');
+    if (btn) {
+      window.google.accounts.id.renderButton(btn, {
+        theme: 'outline',
+        size: 'large',
+        width: 320,
+        locale: 'he',
+      });
+    }
+  }, [handleGoogleSignIn]);
 
   const validateField = useCallback(
     (field: keyof RegisterForm, value: string): string => {
@@ -394,8 +439,22 @@ const RegisterPage: React.FC = () => {
             </div>
           )}
 
+          {/* Google Sign-In */}
+          <div className="mt-12 max-w-sm mx-auto space-y-4">
+            {GOOGLE_CLIENT_ID ? (
+              <>
+                <div id="google-signin-btn" className="flex justify-center" />
+                <div className="flex items-center gap-3">
+                  <div className="flex-1 h-px bg-slate-200" />
+                  <span className="text-sm text-slate-400">או הרשמה ידנית</span>
+                  <div className="flex-1 h-px bg-slate-200" />
+                </div>
+              </>
+            ) : null}
+          </div>
+
           {/* Submit Button */}
-          <div className="mt-12 max-w-sm mx-auto">
+          <div className="mt-4 max-w-sm mx-auto">
             <button
               type="submit"
               disabled={isSubmitting || emailChecking}

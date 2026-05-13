@@ -7,6 +7,7 @@ import fetch from 'node-fetch';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import crypto from 'crypto';
 import { handleWebService, findMatchingOption } from '../utils/webserviceHandler.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -475,9 +476,12 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
         
         // If we have a return value, find matching option
         if (wsResult.returnValue !== null && wsResult.returnValue !== undefined) {
+          console.log(`[BOT] 🔄 WS returnValue=${wsResult.returnValue} — trying to match an option in node ${currentNodeId}`);
           const matchedIdx = findMatchingOption(node, wsResult.returnValue);
           if (matchedIdx !== -1) {
-            currentNodeId = findNextNode(currentNodeId, edges, `option-${matchedIdx}`);
+            const nextIdAfterWs = findNextNode(currentNodeId, edges, `option-${matchedIdx}`);
+            console.log(`[BOT] ✅ Matched option-${matchedIdx} → next node: ${nextIdAfterWs}`);
+            currentNodeId = nextIdAfterWs;
             session.waiting_webservice = false;
             break;
           }
@@ -486,6 +490,7 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
         // No match or no return value - take default exit
         session.waiting_webservice = false;
         const nextNode = findNextNode(currentNodeId, edges, 'default');
+        console.log(`[BOT] ➡️ Taking default exit from WS node → next: ${nextNode}`);
         
         if (!nextNode) {
           returnToMenu();
@@ -542,6 +547,125 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
   
   return messages;
 };
+
+// ─── Proactive WhatsApp push ──────────────────────────────────────────────────
+// Sends bot messages directly to WhatsApp via the dialog360 /send endpoint.
+// Handles all message types: Text, Options, Image, Video, Document, URL, SendItem.
+// Returns true if pushed successfully, false if WHATSAPP_ENDPOINT is not configured.
+const _sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+const pushMessagesToWhatsApp = async (phone, messages) => {
+  
+  const endpoint = process.env.WHATSAPP_ENDPOINT || 'dialog360/65aec7ebf1a1d64f29645fd9';
+  if (!endpoint || !messages.length) return false;
+
+  // Normalize phone: strip non-digits, replace leading 0 with 972
+  const normalizedPhone = String(phone).replace(/[^0-9]/g, '').replace(/^0/, '972').replace(/^972972/, '972');
+
+  const waToken = process.env.WHATSAPP_API_TOKEN ||
+    crypto.createHash('sha1').update(endpoint + 'moomoo').digest('hex');
+
+  console.log(`[WA-PUSH] 📞 Sending to phone=${normalizedPhone} via endpoint=${endpoint}`);
+
+  // Returns true on success, false on failure
+  const sendOne = async (body) => {
+    try {
+      const res = await fetch(`https://wa.message.co.il/api/${endpoint}/send`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Accept': 'application/json',
+          'token': waToken,
+        },
+        body: JSON.stringify({ ...body, phone: normalizedPhone, fromMe: 1 }),
+      });
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '');
+        console.error(`[WA-PUSH] ❌ HTTP ${res.status} | body: ${JSON.stringify(body).substring(0, 100)} | resp: ${errText.substring(0, 200)}`);
+        return false;
+      } else {
+        const kind = body.image ? 'image' : body.video ? 'video' : body.file ? 'file' : body.buttons ? 'buttons' : 'text';
+        console.log(`[WA-PUSH] ✅ Sent ${kind} to ${normalizedPhone}`);
+        return true;
+      }
+    } catch (err) {
+      console.error('[WA-PUSH] ❌ Exception:', err.message);
+      return false;
+    }
+  };
+
+  let textBuffer = '';
+  let anySuccess = false;
+
+  for (const msg of messages) {
+    switch (msg.type) {
+      case 'Text':
+        if (msg.text) textBuffer += msg.text + '\n';
+        break;
+
+      case 'Options': {
+        // Group accumulated text + options → buttons (≤3) or list (>3)
+        const headerText = textBuffer.trim() || ' ';
+        if (await sendOne({ text: headerText, buttons: msg.options })) anySuccess = true;
+        textBuffer = '';
+        await _sleep(400);
+        break;
+      }
+
+      case 'Image': {
+        if (textBuffer.trim()) { if (await sendOne({ text: textBuffer.trim() })) anySuccess = true; textBuffer = ''; await _sleep(400); }
+        if (await sendOne({ image: msg.url, text: msg.text || '' })) anySuccess = true;
+        await _sleep(600);
+        break;
+      }
+
+      case 'Video': {
+        if (textBuffer.trim()) { if (await sendOne({ text: textBuffer.trim() })) anySuccess = true; textBuffer = ''; await _sleep(400); }
+        if (await sendOne({ video: msg.url, text: msg.text || '' })) anySuccess = true;
+        await _sleep(600);
+        break;
+      }
+
+      case 'Document': {
+        if (textBuffer.trim()) { if (await sendOne({ text: textBuffer.trim() })) anySuccess = true; textBuffer = ''; await _sleep(400); }
+        if (await sendOne({ file: msg.url, filename: msg.filename || 'file', text: msg.text || '' })) anySuccess = true;
+        await _sleep(600);
+        break;
+      }
+
+      case 'URL':
+        // Append URL to text buffer — dialog360 linkifies plain URLs in text
+        textBuffer += `${msg.text ? msg.text + '\n' : ''}${msg.url}\n`;
+        break;
+
+      case 'SendItem': {
+        if (textBuffer.trim()) { if (await sendOne({ text: textBuffer.trim() })) anySuccess = true; textBuffer = ''; await _sleep(400); }
+        const itemText = [msg.title, msg.subtitle].filter(Boolean).join('\n');
+        const btnList = (msg.options || []).map(o =>
+          typeof o === 'string' ? o : (o.label || o.text || o.value || String(o))
+        );
+        if (await sendOne(btnList.length > 0 ? { text: itemText, buttons: btnList } : { text: itemText })) anySuccess = true;
+        await _sleep(400);
+        break;
+      }
+
+      default:
+        break;
+    }
+  }
+
+  // Flush any remaining accumulated text
+  if (textBuffer.trim()) {
+    if (await sendOne({ text: textBuffer.trim() })) anySuccess = true;
+  }
+
+  // Only return true if at least one message was actually delivered.
+  // If false, the caller will fall back to returning messages in the JSON response
+  // so that dialog360 can handle sending via its own handleShamirResponse.
+  console.log(`[WA-PUSH] 🏁 anySuccess=${anySuccess}`);
+  return anySuccess;
+};
+// ─────────────────────────────────────────────────────────────────────────────
 
 // Main API endpoint
 export const respondToMessage = async (req, res) => {
@@ -740,6 +864,10 @@ export const respondToMessage = async (req, res) => {
       console.log(`[BOT]    customer_phone: "${phone}"`);
       console.log(`[BOT]    sender: "${sender}"`);
       
+      // If WHATSAPP_BOT_ID env var is set, inject _simulatorId so that webservice
+      // nodes whose URL contains --_simulatorId-- receive a valid value (instead of null).
+      const waSimulatorId = process.env.WHATSAPP_BOT_ID || null;
+
       session = await BotSession.create({
         user_id: user._id,
         flow_id: bot._id.toString(),
@@ -747,7 +875,7 @@ export const respondToMessage = async (req, res) => {
         sender,
         current_node_id: autoResponseNode.id,
         is_active: true,
-        parameters: { ...botParamsObj, waPhone: sender },
+        parameters: { ...botParamsObj, waPhone: sender, ...(waSimulatorId ? { _simulatorId: waSimulatorId } : {}) },
         process_history: []
       });
       
@@ -834,7 +962,8 @@ export const respondToMessage = async (req, res) => {
             addToHistory(session, { type: 'UserInput', text }, 'user');
             messages = await walkChain(interruptNextId, flowData.nodes, flowData.edges, session, session.flow_id, req);
             await session.save();
-            return res.json({ StatusId: 1, StatusDescription: 'Success', sender, messages, control: null });
+            const waPushedInterrupt1 = await pushMessagesToWhatsApp(sender, messages);
+            return res.json({ StatusId: 1, StatusDescription: 'Success', sender, messages: waPushedInterrupt1 ? [] : messages, control: null, ...(waPushedInterrupt1 && { wa_pushed: true }) });
           }
         }
       }
@@ -866,7 +995,8 @@ export const respondToMessage = async (req, res) => {
               addToHistory(session, { type: 'UserInput', text }, 'user');
               messages = await walkChain(interruptNextId, flowData.nodes, flowData.edges, session, session.flow_id, req);
               await session.save();
-              return res.json({ StatusId: 1, StatusDescription: 'Success', sender, messages, control: null });
+              const waPushedInterrupt2 = await pushMessagesToWhatsApp(sender, messages);
+              return res.json({ StatusId: 1, StatusDescription: 'Success', sender, messages: waPushedInterrupt2 ? [] : messages, control: null, ...(waPushedInterrupt2 && { wa_pushed: true }) });
             }
           }
         }
@@ -880,9 +1010,12 @@ export const respondToMessage = async (req, res) => {
       const options = currentNode.data.options || [];
       const operators = currentNode.data.optionOperators || options.map(() => 'eq');
       
+      console.log(`[BOT] 🆕 NEW SESSION - matching "${text}" against options:`, options);
+
       let matchedIdx = -1;
       for (let i = 1; i < options.length; i++) {
         const matches = evaluateCondition(operators[i], text, options[i]);
+        console.log(`[BOT]   option[${i}]="${options[i]}" op=${operators[i]} → ${matches}`);
         if (matches) {
           matchedIdx = i;
           break;
@@ -892,8 +1025,10 @@ export const respondToMessage = async (req, res) => {
       // Default to first option (כניסה) if no match
       const finalIdx = matchedIdx !== -1 ? matchedIdx : 0;
       const nextNodeId = findNextNode(currentNode.id, flowData.edges, `option-${finalIdx}`);
+      console.log(`[BOT] 🎯 Matched option-${finalIdx} → nextNodeId=${nextNodeId}`);
       if (nextNodeId) {
         messages = await walkChain(nextNodeId, flowData.nodes, flowData.edges, session, session.flow_id, req);
+        console.log(`[BOT] 📦 walkChain returned ${messages.length} messages:`, messages.map(m => `[${m.type}]${m.text ? ' "'+m.text.substring(0,40)+'"' : ''}`)  );
       }
     } else if (session.waiting_webservice && currentNode.type === 'action_web_service') {
       // User is responding to a webservice InputText request
@@ -1020,12 +1155,22 @@ export const respondToMessage = async (req, res) => {
 
     console.log(`[BOT] → ${messages.length} messages | node=${session.current_node_id} | active=${session.is_active}`);
     console.log(`[BOT] 📤 RESPONSE - sender: ${sender}, session.sender: ${session.sender}, session.customer_phone: ${session.customer_phone}`);
+    console.log(`[BOT] 📋 Messages summary:`, messages.map(m => `[${m.type}]${m.text ? ' "'+m.text.substring(0,60)+'"' : ''}`));
+    console.log(`[BOT] 🌐 WHATSAPP_ENDPOINT=${process.env.WHATSAPP_ENDPOINT || '(not set)'}`);
+
+    // Proactively push messages to WhatsApp via dialog360 /send endpoint.
+    // When WHATSAPP_ENDPOINT is set and messages exist, push them directly and
+    // return an empty messages array so dialog360 does NOT double-send.
+    const waPushed = await pushMessagesToWhatsApp(sender, messages);
+    console.log(`[BOT] 🚀 pushMessagesToWhatsApp → waPushed=${waPushed}`);
+
     return res.json({
       StatusId: 1,
       StatusDescription: 'Success',
       sender,
-      messages,
-      control
+      messages: waPushed ? [] : messages,
+      control,
+      ...(waPushed && { wa_pushed: true }),
     });
 
   } catch (error) {

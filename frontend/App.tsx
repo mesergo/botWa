@@ -343,8 +343,18 @@ const FlowBuilder: React.FC = () => {
       }
       const data = await res.json();
       if (data.nodes?.length > 0) {
+        const loadedNodeIds = new Set((data.nodes as any[]).map((n: any) => n.id));
+        const seenHandles = new Set<string>();
+        const cleanEdges = (data.edges as any[])
+          .filter((e: any) => loadedNodeIds.has(e.source) && loadedNodeIds.has(e.target))
+          .filter((e: any) => {
+            const key = `${e.source}|${e.sourceHandle ?? ''}`;
+            if (seenHandles.has(key)) return false;
+            seenHandles.add(key);
+            return true;
+          });
         setNodes(data.nodes.map((n: any) => bindNodeCallbacks(n)));
-        setEdges(data.edges.map((e: any, i: number) => ({ ...e, type: 'button', id: e.id || `edge-${i}-${Date.now()}`, style: DEFAULT_EDGE_STYLE, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6' } })));
+        setEdges(cleanEdges.map((e: any, i: number) => ({ ...e, type: 'button', id: e.id || `edge-${i}-${Date.now()}`, style: DEFAULT_EDGE_STYLE, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6' } })));
       } else {
         const isSubProcess = !!processId;
         const start = bindNodeCallbacks({
@@ -613,6 +623,17 @@ const FlowBuilder: React.FC = () => {
     setBots(prev => prev.filter(b => b.id !== id));
   };
 
+  const handleConnectFacebook = async (bot: BotFlow) => {
+    const res = await fetch(`${API_BASE}/bots/${bot.id}/connect-facebook`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || 'שגיאה בשליחת הבקשה');
+    }
+  };
+
   const handleSetDefaultBot = async (id: string) => {
     try {
       const res = await fetch(`${API_BASE}/bots/${id}/set-default`, {
@@ -634,6 +655,29 @@ const FlowBuilder: React.FC = () => {
     }
   };
  
+  const handleGoogleLogin = async (credential: string) => {
+    setAuthErrors({});
+    try {
+      const res = await fetch(`${API_BASE}/auth/google`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ credential }),
+      });
+      const data = await res.json();
+      if (res.ok && data.token) {
+        setToken(data.token);
+        setCurrentUser(data.user);
+        localStorage.setItem('flowbot_token', data.token);
+        localStorage.setItem('flowbot_user', JSON.stringify(data.user));
+        setViewMode('dashboard');
+      } else {
+        setAuthErrors({ general: data.error || 'שגיאה בהתחברות עם גוגל' });
+      }
+    } catch {
+      setAuthErrors({ general: 'אין חיבור לשרת' });
+    }
+  };
+
   const handleAuth = async () => {
     setAuthErrors({});
     const endpoint = '/auth/login';
@@ -1018,8 +1062,18 @@ const FlowBuilder: React.FC = () => {
       });
       const data = await res.json();
       if (data.nodes?.length > 0) {
+        const loadedNodeIds2 = new Set((data.nodes as any[]).map((n: any) => n.id));
+        const seenHandles2 = new Set<string>();
+        const cleanEdges2 = (data.edges as any[])
+          .filter((e: any) => loadedNodeIds2.has(e.source) && loadedNodeIds2.has(e.target))
+          .filter((e: any) => {
+            const key = `${e.source}|${e.sourceHandle ?? ''}`;
+            if (seenHandles2.has(key)) return false;
+            seenHandles2.add(key);
+            return true;
+          });
         setNodes(data.nodes.map((n: any) => bindNodeCallbacks(n)));
-        setEdges(data.edges.map((e: any, i: number) => ({ ...e, type: 'button', id: e.id || `edge-${i}-${Date.now()}`, style: DEFAULT_EDGE_STYLE, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6' } })));
+        setEdges(cleanEdges2.map((e: any, i: number) => ({ ...e, type: 'button', id: e.id || `edge-${i}-${Date.now()}`, style: DEFAULT_EDGE_STYLE, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6' } })));
       } else {
         // Empty template - start with automatic responses node
         const start = bindNodeCallbacks({
@@ -1321,7 +1375,7 @@ const FlowBuilder: React.FC = () => {
   }
 
   if (!currentUser && viewMode !== 'simulator-only') {
-    return <AuthScreen form={authForm} errors={authErrors} onFormChange={(data) => { setAuthErrors({}); setAuthForm(data); }} onAuth={handleAuth} />;
+    return <AuthScreen form={authForm} errors={authErrors} onFormChange={(data) => { setAuthErrors({}); setAuthForm(data); }} onAuth={handleAuth} onGoogleLogin={handleGoogleLogin} />
   }
 
   // Trial expiry check — show blocking screen if trial has expired
@@ -1380,6 +1434,7 @@ const FlowBuilder: React.FC = () => {
           onOpenContacts={() => setViewMode('contacts')}
           onOpenSessions={() => { setSessionsOwnOnly(true); setViewMode('sessions'); }}
           onStopImpersonation={handleStopImpersonation}
+          onConnectFacebook={handleConnectFacebook}
         />
         {quotaError && quotaError.type === 'bots' && (
           <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[200] p-6 text-right">

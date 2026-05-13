@@ -1,7 +1,7 @@
 import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
 
-const SECRET_KEY = 'flowbot-secure-jwt-key';
+const SECRET_KEY = 'dfghjukiolp;[p0o9i8uytgbhnjmk,l.;p9876543t4rre2asd';
 
 export const authenticateToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
