@@ -118,6 +118,7 @@ export const getAllUsers = async (req, res) => {
         email: user.email,
         phone: user.phone,
         role: user.role,
+        dialog360_bot_id: user.dialog360_bot_id,
         public_id: user.public_id,
         account_type: user.account_type,
         status: user.status,
@@ -163,6 +164,7 @@ export const getUserDetails = async (req, res) => {
         account_type: user.account_type,
         status: user.status,
         api_token: user.token,
+        dialog360_bot_id: user.dialog360_bot_id,
         custom_limits: user.custom_limits,
         limits_in_effect: limits,
         createdAt: user.createdAt,
@@ -183,19 +185,22 @@ export const getUserDetails = async (req, res) => {
 export const updateUser = async (req, res) => {
   try {
     const { userId } = req.params;
-    const { name, email, phone, status, account_type, custom_limits } = req.body;
+    const { name, email, phone, status, account_type, custom_limits, dialog360_bot_id } = req.body;
+    
+    console.log('[Admin] Updating user:', userId, 'with data:', req.body);
     
     const user = await User.findById(userId);
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
     
-    // Update fields
+    // Update fields 
     if (name) user.name = name;
     if (email) user.email = email;
     if (phone) user.phone = phone;
     if (status) user.status = status;
     if (account_type) user.account_type = account_type;
+    if (dialog360_bot_id !== undefined) user.dialog360_bot_id = dialog360_bot_id;
     
     // Update custom limits if provided
     if (custom_limits) {
@@ -207,11 +212,40 @@ export const updateUser = async (req, res) => {
     
     await user.save();
     
+    console.log('[Admin] User saved successfully. dialog360_bot_id:', user.dialog360_bot_id);
+    
     await logAdminAction(req.userId, req.user.email, 'UPDATE_USER', userId, 'User', { 
-      name, email, status, account_type 
+      name, email, status, account_type, dialog360_bot_id 
     });
     
-    res.json({ message: 'User updated successfully', user });
+    // Return full user object with all fields
+    const limits = await getUserLimits(user);
+    const botCount = await BotFlow.countDocuments({ user_id: userId });
+    const sessionCount = await BotSession.countDocuments({ user_id: userId });
+    
+    res.json({ 
+      message: 'User updated successfully', 
+      user: {
+        id: user._id.toString(),
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+        role: user.role,
+        public_id: user.public_id,
+        account_type: user.account_type,
+        status: user.status,
+        api_token: user.token,
+        dialog360_bot_id: user.dialog360_bot_id,
+        custom_limits: user.custom_limits,
+        limits_in_effect: limits,
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt,
+        stats: {
+          bots: botCount,
+          flows: sessionCount
+        }
+      }
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

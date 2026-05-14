@@ -5,7 +5,7 @@ import {
   FileText, Save, Plus, Eye, EyeOff, Bot, ChevronRight, LayoutDashboard,
   CreditCard, MoreVertical, X, Star, Globe, Lock, Copy, List, Phone, Clock,
   ChevronDown, ChevronUp, ToggleLeft, ToggleRight, XCircle, MessageSquare,
-  User as UserIcon, ExternalLink, Sliders
+  User as UserIcon, ExternalLink, Sliders, Image as ImageIcon, Layers
 } from 'lucide-react';
 
 interface User {
@@ -17,6 +17,7 @@ interface User {
   public_id: string;
   account_type: string;
   status: string;
+  dialog360_bot_id?: string;
   createdAt: string;
   updatedAt: string;
   stats?: {
@@ -74,7 +75,7 @@ const API_BASE = window.location.hostname === 'localhost'
   : `${window.location.origin}/api`;
 
 const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onImpersonate, onEditTemplate, onCreateTemplate }) => {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'users' | 'templates' | 'settings' | 'sessions'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'users' | 'templates' | 'settings' | 'sessions' | 'dialog360'>('dashboard');
   const [users, setUsers] = useState<User[]>([]);
   const [stats, setStats] = useState<SystemStats | null>(null);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
@@ -125,6 +126,16 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
   // Edit Mode
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState<Partial<User>>({});
+  
+  // Dialog360 Templates
+  const [dialog360Templates, setDialog360Templates] = useState<any[]>([]);
+  const [dialog360Loading, setDialog360Loading] = useState(false);
+  
+  // Admin Sessions Message Input
+  const [adminNewMessage, setAdminNewMessage] = useState('');
+  const [showAdminTemplates, setShowAdminTemplates] = useState(false);
+  const [adminTemplates, setAdminTemplates] = useState<any[]>([]);
+  const [adminTemplatesLoading, setAdminTemplatesLoading] = useState(false);
 
   useEffect(() => {
     fetchStats();
@@ -132,6 +143,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
     if (activeTab === 'templates') fetchTemplates();
     if (activeTab === 'settings') fetchSystemConfig();
     if (activeTab === 'sessions') fetchAllSessions(1, sessionsSearch);
+    if (activeTab === 'dialog360') fetchDialog360Templates();
   }, [activeTab]);
 
   // Refetch when page changes
@@ -145,6 +157,13 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
       adminHistoryScrollRef.current.scrollTop = adminHistoryScrollRef.current.scrollHeight;
     }
   }, [adminHistoryOpenId]);
+
+  // Debug: Log when showAdminTemplates changes
+  useEffect(() => {
+    console.log('[Admin Templates] showAdminTemplates changed to:', showAdminTemplates);
+    console.log('[Admin Templates] adminTemplates count:', adminTemplates.length);
+    console.log('[Admin Templates] adminTemplatesLoading:', adminTemplatesLoading);
+  }, [showAdminTemplates, adminTemplates, adminTemplatesLoading]);
 
   const fetchStats = async () => {
     try {
@@ -230,6 +249,172 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
     }
   };
 
+  const fetchDialog360Templates = async () => {
+    console.log('[Dialog360] Starting fetch...');
+    try {
+      setDialog360Loading(true);
+      
+      console.log('[Dialog360] Calling API:', `${API_BASE}/auth/templates`);
+      console.log('[Dialog360] Token:', token ? 'Present' : 'Missing');
+      
+      const response = await fetch(`${API_BASE}/auth/templates`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      
+      console.log('[Dialog360] Response status:', response.status);
+      console.log('[Dialog360] Response ok:', response.ok);
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Failed to parse error' }));
+        console.error('[Dialog360] Failed to fetch templates:', errorData);
+        alert(`שגיאה בטעינת templates: ${errorData.error || 'Unknown error'}`);
+        setDialog360Templates([]);
+        return;
+      }
+      
+      const data = await response.json();
+      console.log('[Dialog360] Full response data:', data);
+      console.log('[Dialog360] data.success:', data.success);
+      console.log('[Dialog360] data.templates type:', typeof data.templates);
+      console.log('[Dialog360] data.templates:', data.templates);
+      
+      if (data.success && data.templates) {
+        // Handle different response structures from Dialog360
+        // Response is { success: true, templates: { data: [...], useful: [...], byName: {...}, waba_templates: [...] } }
+        let templateList = [];
+        
+        if (Array.isArray(data.templates)) {
+          console.log('[Dialog360] templates is array, length:', data.templates.length);
+          templateList = data.templates;
+        } else if (data.templates.data && Array.isArray(data.templates.data)) {
+          console.log('[Dialog360] templates.data is array, length:', data.templates.data.length);
+          templateList = data.templates.data;
+        } else if (data.templates.waba_templates && Array.isArray(data.templates.waba_templates)) {
+          console.log('[Dialog360] templates.waba_templates is array, length:', data.templates.waba_templates.length);
+          templateList = data.templates.waba_templates;
+        } else {
+          console.warn('[Dialog360] Could not find templates array in response');
+          templateList = [];
+        }
+        
+        console.log('[Dialog360] Final parsed templates:', templateList.length, 'templates');
+        console.log('[Dialog360] First template:', templateList[0]);
+        setDialog360Templates(templateList);
+      } else {
+        console.warn('[Dialog360] Response missing success or templates:', { success: data.success, hasTemplates: !!data.templates });
+        setDialog360Templates([]);
+      }
+    } catch (err) {
+      console.error('[Dialog360] Error fetching templates:', err);
+      alert(`שגיאה: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      setDialog360Templates([]);
+    } finally {
+      setDialog360Loading(false);
+    }
+  };
+
+  // Fetch templates for admin sessions chat input
+  const fetchAdminTemplates = async () => {
+    setAdminTemplatesLoading(true);
+    try {
+      const response = await fetch(`${API_BASE}/auth/templates`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('[Admin Sessions] Failed to fetch templates:', errorData);
+        setAdminTemplates([]);
+        return;
+      }
+      
+      const data = await response.json();
+      console.log('[Admin Sessions] Templates response:', data);
+      
+      if (data.success && data.templates) {
+        const templateList = Array.isArray(data.templates) ? data.templates : 
+                           (data.templates.data ? data.templates.data : 
+                           (data.templates.waba_templates ? data.templates.waba_templates : []));
+        console.log('[Admin Sessions] Parsed templates:', templateList.length, 'templates');
+        setAdminTemplates(templateList);
+      } else {
+        setAdminTemplates([]);
+      }
+    } catch (err) {
+      console.error('[Admin Sessions] Error fetching templates:', err);
+      setAdminTemplates([]);
+    } finally {
+      setAdminTemplatesLoading(false);
+    }
+  };
+
+  // Handle template selection in admin sessions
+  const handleAdminTemplateSelect = (template: any) => {
+    const templateName = template.name || template.elementName || template.template_name || '';
+    setAdminNewMessage(`/${templateName}`);
+    setShowAdminTemplates(false);
+  };
+
+  // Send message from admin to session
+  const sendAdminMessage = async () => {
+    if (!adminNewMessage.trim() || !adminHistoryOpenId) return;
+    
+    try {
+      console.log('[Admin] Sending message:', adminNewMessage, 'to session:', adminHistoryOpenId);
+      
+      const response = await fetch(`${API_BASE}/sessions/admin-send-message`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          sessionId: adminHistoryOpenId,
+          message: adminNewMessage
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('[Admin] Failed to send message:', errorData);
+        alert(`שגיאה בשליחת הודעה: ${errorData.error || 'Unknown error'}`);
+        return;
+      }
+
+      const data = await response.json();
+      console.log('[Admin] Message sent successfully:', data);
+
+      // Clear input
+      setAdminNewMessage('');
+      setShowAdminTemplates(false);
+
+      // Refresh the session to show the new message
+      await fetchAllSessions(sessionsPage, sessionsSearch);
+
+      // Scroll to bottom to show new message
+      if (adminHistoryScrollRef.current) {
+        setTimeout(() => {
+          adminHistoryScrollRef.current?.scrollTo({
+            top: adminHistoryScrollRef.current.scrollHeight,
+            behavior: 'smooth'
+          });
+        }, 100);
+      }
+
+      // Show success message
+      if (data.waSent) {
+        console.log('[Admin] ✅ Message sent via WhatsApp');
+      } else {
+        console.warn('[Admin] ⚠️ Message saved but WhatsApp delivery failed:', data.waError);
+        alert(`הודעה נשמרה אך השליחה לווטסאפ נכשלה: ${data.waError || 'Unknown error'}`);
+      }
+
+    } catch (err) {
+      console.error('[Admin] Error sending message:', err);
+      alert(`שגיאה: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    }
+  };
+
   const handleUpdateUser = async () => {
     if (!selectedUser) return;
     try {
@@ -247,6 +432,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
         custom_limits: cleanLimits
       };
 
+      console.log('[AdminPanel] Updating user with payload:', payload);
+      console.log('[AdminPanel] dialog360_bot_id in payload:', payload.dialog360_bot_id);
+
       const response = await fetch(`${API_BASE}/admin/users/${selectedUser.id}`, {
         method: 'PATCH',
         headers: {
@@ -256,9 +444,19 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
         body: JSON.stringify(payload)
       });
 
-      if (!response.ok) throw new Error('Update failed');
+      console.log('[AdminPanel] Response status:', response.status);
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        console.error('[AdminPanel] Update failed:', errorData);
+        throw new Error(errorData.error || 'Update failed');
+      }
       
       const data = await response.json();
+      console.log('[AdminPanel] Server response data:', data);
+      console.log('[AdminPanel] User from server:', data.user);
+      console.log('[AdminPanel] dialog360_bot_id from server:', data.user?.dialog360_bot_id);
+      
       setSelectedUser(data.user);
       setIsEditing(false);
       fetchAllUsers(); // Refresh list
@@ -580,9 +778,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
           
           <nav className="space-y-1.5">
             {[
-                          { id: 'dashboard', label: 'סקירה כללית', icon: LayoutDashboard },
+              { id: 'dashboard', label: 'סקירה כללית', icon: LayoutDashboard },
               { id: 'users', label: 'ניהול משתמשים', icon: Users },
               { id: 'sessions', label: 'סשנים', icon: List },
+              { id: 'dialog360', label: 'הודעות תבנית', icon: MessageSquare },
               { id: 'templates', label: 'מאגר תבניות', icon: FileText },
               { id: 'settings', label: 'הגדרות מערכת', icon: Settings },
             ].map(item => (
@@ -626,6 +825,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
               {activeTab === 'dashboard' && 'לוח בקרה'}
               {activeTab === 'users' && 'ניהול משתמשים'}
               {activeTab === 'sessions' && 'כל הסשנים'}
+              {activeTab === 'dialog360' && 'הודעות תבנית Dialog360'}
               {activeTab === 'templates' && 'ניהול תבניות'}
               {activeTab === 'settings' && 'הגדרות מערכת'}
             </h2>
@@ -633,6 +833,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
               {activeTab === 'dashboard' && 'סקירה מקיפה על נתוני וביצועי המערכת'}
               {activeTab === 'users' && 'צפייה, עריכה וניהול הרשאות משתמשים מתקדם'}
               {activeTab === 'sessions' && 'צפייה בכל הסשנים של כל המשתמשים במערכת'}
+              {activeTab === 'dialog360' && 'צפייה בהודעות תבנית מ-Dialog360'}
               {activeTab === 'templates' && 'ניהול ותחזוקת מאגר התבניות הגלובלי'}
               {activeTab === 'settings' && 'הגדרת מגבלות, מחירים ופרמטרים למערכת'}
             </p>
@@ -965,12 +1166,24 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                                     <p className="whitespace-pre-wrap leading-relaxed">{text}</p>
                                   )}
                                   {item.type === 'Image' && item.url && (
-                                    <img src={item.url} alt="תמונה" className="rounded-xl max-w-[160px] h-auto" />
+                                    <>
+                                      <img src={item.url} alt="תמונה" className="rounded-xl max-w-[160px] h-auto mb-2" />
+                                      {text && <p className="whitespace-pre-wrap leading-relaxed">{text}</p>}
+                                    </>
+                                  )}
+                                  {item.type === 'Video' && item.url && (
+                                    <>
+                                      <video src={item.url} controls className="rounded-xl max-w-[160px] mb-2" />
+                                      {text && <p className="whitespace-pre-wrap leading-relaxed">{text}</p>}
+                                    </>
                                   )}
                                   {item.type === 'Document' && item.url && (
-                                    <a href={item.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-sky-600 underline text-[11px]">
-                                      <ExternalLink size={10} /> פתח מסמך
-                                    </a>
+                                    <>
+                                      <a href={item.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-sky-600 underline text-[11px] mb-2">
+                                        <ExternalLink size={10} /> פתח מסמך
+                                      </a>
+                                      {text && <p className="whitespace-pre-wrap leading-relaxed">{text}</p>}
+                                    </>
                                   )}
                                   {item.type === 'URL' && (
                                     <div>
@@ -1034,6 +1247,112 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                         });
                       })()}
                     </div>
+                    
+                    {/* Admin Message Input - HIDDEN */}
+                    {false && (
+                    <div className="flex-shrink-0 border-t border-slate-200 bg-white p-3">
+                      <div className="relative">
+                        {/* Templates Dropdown */}
+                        {showAdminTemplates && (
+                          <div className="absolute bottom-full left-0 right-0 mb-2 bg-white border border-slate-200 rounded-xl shadow-lg max-h-64 overflow-y-auto z-50">
+                            {adminTemplatesLoading ? (
+                              <div className="p-4 text-center text-slate-400 text-xs">
+                                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-sky-600 mx-auto mb-2"></div>
+                                טוען טמפלייטים...
+                              </div>
+                            ) : adminTemplates.length === 0 ? (
+                              <div className="p-4 text-center text-slate-400 text-xs">
+                                לא נמצאו טמפלייטים. נא להגדיר Bot ID בהגדרות המשתמש.
+                              </div>
+                            ) : (() => {
+                              // Filter templates by search query (after "/")
+                              const searchQuery = adminNewMessage.substring(1).toLowerCase();
+                              const filteredTemplates = adminTemplates.filter((tpl: any) => {
+                                if (!searchQuery) return true;
+                                const name = (tpl.name || tpl.elementName || tpl.template_name || '').toLowerCase();
+                                return name.includes(searchQuery);
+                              });
+                              
+                              return filteredTemplates.length === 0 ? (
+                                <div className="p-4 text-center text-slate-400 text-xs">
+                                  לא נמצאו טמפלייטים התואמים לחיפוש "{searchQuery}"
+                                </div>
+                              ) : (
+                                <div className="divide-y divide-slate-100">
+                                  {filteredTemplates.map((tpl: any, idx: number) => (
+                                    <button
+                                      key={idx}
+                                      onClick={() => handleAdminTemplateSelect(tpl)}
+                                      className="w-full text-right px-4 py-3 hover:bg-slate-50 transition-colors"
+                                    >
+                                      <div className="font-bold text-sm text-slate-800 mb-1">
+                                        {tpl.name || tpl.elementName || tpl.template_name || 'ללא שם'}
+                                      </div>
+                                      {tpl.components && tpl.components.length > 0 && (() => {
+                                        const bodyComp = tpl.components.find((c: any) => c.type === 'BODY');
+                                        return bodyComp?.text ? (
+                                          <div className="text-xs text-slate-500 truncate">
+                                            {bodyComp.text.substring(0, 60)}...
+                                          </div>
+                                        ) : null;
+                                      })()}
+                                    </button>
+                                  ))}
+                                </div>
+                              );
+                            })()}
+                          </div>
+                        )}
+                        
+                        {/* Input Field */}
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            value={adminNewMessage}
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              console.log('[Admin Input] Value changed:', value);
+                              setAdminNewMessage(value);
+                              
+                              // Show templates dropdown when typing "/" or anything starting with "/"
+                              if (value === '/' || value.startsWith('/')) {
+                                console.log('[Admin Input] Starts with "/", showing templates');
+                                setShowAdminTemplates(true);
+                                if (value === '/') {
+                                  fetchAdminTemplates();
+                                }
+                              } else {
+                                console.log('[Admin Input] Not starting with "/", hiding templates');
+                                setShowAdminTemplates(false);
+                              }
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' && !e.shiftKey) {
+                                e.preventDefault();
+                                sendAdminMessage();
+                              } else if (e.key === 'Escape') {
+                                setShowAdminTemplates(false);
+                              }
+                            }}
+                            placeholder="כתוב הודעה לליקוט... (הקלד / לטמפלייטים)"
+                            className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-sky-500 focus:border-sky-500 outline-none transition-all"
+                            dir="rtl"
+                          />
+                          <button
+                            onClick={sendAdminMessage}
+                            disabled={!adminNewMessage.trim()}
+                            className="px-4 py-2 bg-sky-500 text-white rounded-lg text-xs font-bold hover:bg-sky-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-1"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <line x1="22" y1="2" x2="11" y2="13"></line>
+                              <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                            </svg>
+                            שלח
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                    )}
                   </div>
                 );
               })()}
@@ -1262,6 +1581,40 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                             </div>
                         </div>
 
+                         {/* Dialog360 Settings - Full Width */}
+                        <div className="col-span-12 bg-white p-8 rounded-3xl border border-slate-100 shadow-sm hover:shadow-md transition-shadow">
+                            <h3 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-6 flex items-center gap-2 border-b border-slate-50 pb-4">
+                                <MessageSquare size={16} className="text-slate-400" /> הגדרות Dialog360
+                            </h3>
+                            <div className="flex flex-col gap-2">
+                                <label className="text-xs font-bold text-slate-400">Bot ID</label>
+                                {isEditing ? (
+                                    <div className="space-y-2">
+                                        <input 
+                                            className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-sky-500 outline-none transition-all font-mono" 
+                                            value={editForm.dialog360_bot_id || ''} 
+                                            onChange={e => setEditForm(prev => ({...prev, dialog360_bot_id: e.target.value}))}
+                                            placeholder="676bc253356d6d0fdf7bb242"
+                                        />
+                                        <div className="text-xs text-slate-500 px-2">
+                                            הזן רק את Bot ID. הקישור ייבנה אוטומטית: <code className="bg-slate-100 px-1 rounded">dialog360/{'{bot_id}'}</code>
+                                        </div>
+                                    </div>
+                                ) : ( 
+                                    <div className="space-y-2">
+                                        <div className="text-slate-800 font-medium text-sm select-all px-2 font-mono bg-slate-50 p-3 rounded-xl" title={selectedUser.dialog360_bot_id || ''}>
+                                            {selectedUser.dialog360_bot_id || '-'}
+                                        </div>
+                                        {selectedUser.dialog360_bot_id && (
+                                            <div className="text-xs text-slate-500 px-2">
+                                                Endpoint: <code className="bg-slate-100 px-1 rounded">dialog360/{selectedUser.dialog360_bot_id}</code>
+                                            </div>
+                                        )}
+                                    </div>
+                                ) }
+                            </div>
+                        </div>
+
                          {/* Right Column Layout */}
                         <div className="col-span-12 md:col-span-5 space-y-6 flex flex-col h-full">
                              {/* Stats - Hero Cards */}
@@ -1371,6 +1724,132 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                   </div>
                 )}
               </div>
+            </div>
+          )}
+
+          {/* DIALOG360 TEMPLATES TAB */}
+          {activeTab === 'dialog360' && (
+            <div className="space-y-6 animate-fade-in-up">
+              {dialog360Loading ? (
+                <div className="flex items-center justify-center py-20">
+                  <div className="text-slate-400 text-center">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-sky-600 mx-auto mb-4"></div>
+                    <div className="text-sm">טוען הודעות תבנית...</div>
+                  </div>
+                </div>
+              ) : dialog360Templates.length === 0 ? (
+                <div className="bg-slate-50 border-2 border-dashed border-slate-200 rounded-2xl p-12 text-center">
+                  <MessageSquare size={48} className="text-slate-300 mx-auto mb-4" />
+                  <h3 className="text-lg font-bold text-slate-600 mb-2">לא נמצאו הודעות תבנית</h3>
+                  <p className="text-sm text-slate-400 max-w-md mx-auto">
+                    אנא ודא שהגדרת את Bot ID בהגדרות המשתמש. <br/>
+                    לאחר הגדרת Bot ID, ההודעות יופיעו כאן.
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {dialog360Templates.map((template, idx) => {
+                    const name = template.name || template.elementName || template.template_name || `Template ${idx + 1}`;
+                    const language = template.language || '';
+                    const status = template.status || '';
+                    const category = template.category || '';
+                    const components = template.components || [];
+                    
+                    // Extract components
+                    const headerComponent = components.find((c: any) => c.type === 'HEADER');
+                    const bodyComponent = components.find((c: any) => c.type === 'BODY');
+                    const footerComponent = components.find((c: any) => c.type === 'FOOTER');
+                    const buttonsComponent = components.find((c: any) => c.type === 'BUTTONS');
+                    
+                    const bodyText = bodyComponent?.text || '';
+                    const hasImage = headerComponent?.format === 'IMAGE';
+                    const hasButtons = !!buttonsComponent;
+                    const buttonCount = buttonsComponent?.buttons?.length || 0;
+                    
+                    return (
+                      <div 
+                        key={template.id || idx} 
+                        className="bg-white border border-slate-200 rounded-2xl overflow-hidden hover:shadow-xl transition-all hover:border-sky-300 group"
+                      >
+                        {/* Header section with image indicator */}
+                        <div className={`p-6 ${hasImage ? 'bg-gradient-to-br from-sky-50 to-blue-50' : 'bg-slate-50'} border-b border-slate-200`}>
+                          <div className="flex items-start justify-between mb-3">
+                            <div className="flex-1">
+                              <h3 className="text-lg font-bold text-slate-800 mb-2 group-hover:text-sky-700 transition-colors">
+                                {name}
+                              </h3>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                {language && (
+                                  <span className="bg-white text-slate-600 px-2.5 py-1 rounded-lg text-xs font-bold border border-slate-200 flex items-center gap-1">
+                                    <Globe size={12} />
+                                    {language.toUpperCase()}
+                                  </span>
+                                )}
+                                {status && (
+                                  <span className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1 ${
+                                    status === 'APPROVED' ? 'bg-emerald-500 text-white' : 
+                                    status === 'PENDING' ? 'bg-amber-500 text-white' : 
+                                    'bg-slate-400 text-white'
+                                  }`}>
+                                    {status === 'APPROVED' ? <CheckCircle size={12} /> : <Clock size={12} />}
+                                    {status}
+                                  </span>
+                                )}
+                                {category && (
+                                  <span className="bg-sky-500 text-white px-2.5 py-1 rounded-lg text-xs font-bold">
+                                    {category}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            {hasImage && (
+                              <div className="ml-3 p-2 bg-white rounded-lg shadow-sm border border-slate-200">
+                                <ImageIcon size={20} className="text-sky-600" />
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        
+                        {/* Body section */}
+                        <div className="p-6">
+                          {bodyText && (
+                            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 mb-4">
+                              <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap line-clamp-4">
+                                {bodyText.substring(0, 200)}{bodyText.length > 200 ? '...' : ''}
+                              </p>
+                            </div>
+                          )}
+                          
+                          {/* Components info */}
+                          <div className="flex items-center justify-between text-xs mb-4">
+                            <div className="flex items-center gap-3 text-slate-500">
+                              <span className="flex items-center gap-1">
+                                <Layers size={14} />
+                                {components.length} רכיבים
+                              </span>
+                              {hasButtons && (
+                                <span className="flex items-center gap-1 text-sky-600 font-bold">
+                                  <MessageSquare size={14} />
+                                  {buttonCount} כפתורים
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          
+                          {/* Footer info */}
+                          <div className="flex items-center justify-between pt-4 border-t border-slate-100">
+                            {template.id && (
+                              <span className="font-mono text-xs bg-slate-100 text-slate-600 px-2.5 py-1 rounded-lg border border-slate-200">
+                                ID: {template.id.substring(0, 10)}...
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
 

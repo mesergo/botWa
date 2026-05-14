@@ -177,3 +177,104 @@ export const getApiToken = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
+
+// Get Dialog360 templates for authenticated user
+export const getTemplates = async (req, res) => {
+  try {
+    console.log('[Dialog360] getTemplates called, userId:', req.userId);
+    
+    const userId = req.userId; // From auth middleware
+    const user = await User.findById(userId);
+    
+    if (!user) {
+      console.error('[Dialog360] User not found:', userId);
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    console.log('[Dialog360] User found:', user.email);
+    console.log('[Dialog360] Bot ID from DB:', user.dialog360_bot_id);
+     
+    if (!user.dialog360_bot_id) {
+      console.warn('[Dialog360] Bot ID not configured for user:', user.email);
+      return res.status(400).json({ 
+        error: 'Dialog360 Bot ID not configured. Please set Bot ID in user settings.',
+        success: false 
+      });
+    }
+    
+    // Build endpoint URL and token from bot_id
+    const botId = user.dialog360_bot_id;
+    const endpoint = `https://app.chatgo.live/api/dialog360/${botId}/message_templates`;
+    
+    // Generate SHA1 token: SHA1(bot_id + "moomoo")
+    const crypto = await import('crypto');
+    const token = crypto.createHash('sha1').update(botId + 'moomoo').digest('hex');
+    
+    console.log('[Dialog360] Fetching from endpoint:', endpoint);
+    console.log('[Dialog360] Generated token:', token.substring(0, 10) + '...');
+    
+    // Fetch templates from Dialog360
+    const response = await fetch(endpoint, {
+      headers: {
+        "token": token
+      }
+    });
+    
+    console.log('[Dialog360] Response status:', response.status);
+    console.log('[Dialog360] Response ok:', response.ok);
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[Dialog360] API error:', response.status, errorText);
+      return res.status(response.status).json({
+        error: `Dialog360 API returned status ${response.status}: ${errorText}`,
+        success: false
+      });
+    }
+    
+    const data = await response.json();
+    console.log('[Dialog360] Response data keys:', Object.keys(data));
+    console.log('[Dialog360] data.data length:', data.data?.length || 0);
+    console.log('[Dialog360] First template:', data.data?.[0]?.name || 'N/A');
+    
+    res.json({ 
+      templates: data,
+      success: true 
+    });
+    
+  } catch (err) {
+    console.error('[Dialog360] Error fetching templates:', err);
+    res.status(500).json({ 
+      error: err.message,
+      success: false 
+    });
+  }
+};
+
+// Update Dialog360 Bot ID for authenticated user
+export const updateDialog360Credentials = async (req, res) => {
+  try {
+    const userId = req.userId;
+    const { dialog360_bot_id } = req.body;
+    
+    const user = await User.findByIdAndUpdate(
+      userId,
+      { 
+        dialog360_bot_id: dialog360_bot_id || ''
+      },
+      { new: true }
+    );
+    
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    res.json({ 
+      message: 'Dialog360 Bot ID updated successfully',
+      dialog360_bot_id: user.dialog360_bot_id
+    });
+    
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};

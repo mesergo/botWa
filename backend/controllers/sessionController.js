@@ -553,7 +553,7 @@ export const clearAgentMode = async (req, res) => {
 export const sendAgentMessage = async (req, res) => {
   try {
     const { id } = req.params;
-    const { message } = req.body;
+    const { message, isTemplate, templateData } = req.body;
     if (!message || !String(message).trim()) {
       return res.status(400).json({ error: 'message is required' });
     }
@@ -564,9 +564,18 @@ export const sendAgentMessage = async (req, res) => {
     const now = new Date();
     const created = now.toISOString(); // for process_history
 
-    // Send message to customer via WhatsApp API
-    const endpoint = process.env.WHATSAPP_ENDPOINT || 'dialog360/65aec7ebf1a1d64f29645fd9';
-    const waToken = process.env.WHATSAPP_API_TOKEN || crypto.createHash('sha1').update(endpoint + 'moomoo').digest('hex');
+    // Get user to access Dialog360 credentials
+    const user = await User.findById(req.user.id);
+    
+    // Build WhatsApp API endpoint and token
+    let endpoint, waToken;
+    if (user && user.dialog360_bot_id) {
+      endpoint = `dialog360/${user.dialog360_bot_id}`;
+      waToken = crypto.createHash('sha1').update(user.dialog360_bot_id + 'moomoo').digest('hex');
+    } else {
+      endpoint = process.env.WHATSAPP_ENDPOINT || 'dialog360/65aec7ebf1a1d64f29645fd9';
+      waToken = process.env.WHATSAPP_API_TOKEN || crypto.createHash('sha1').update(endpoint + 'moomoo').digest('hex');
+    }
 
     // Normalize phone: strip non-digits, replace leading 0 with 972
     const rawPhone = session.sender || session.customer_phone || '';
@@ -574,11 +583,71 @@ export const sendAgentMessage = async (req, res) => {
     normalizedPhone = normalizedPhone.replace(/^0/, '972');
     normalizedPhone = normalizedPhone.replace(/^972972/, '972');
 
-    const waBody = {
-      phone: normalizedPhone,
-      text: msgText,
-      fromMe: 1
-    };
+    // Build WhatsApp body - different structure for template vs text
+    let waBody;
+    
+    if (isTemplate && templateData) {
+      // Template message structure FOR NODE.JS FUNCTION sendTemplate
+      console.log(`[sendAgentMessage] 📋 Sending TEMPLATE | id=${templateData.id} | name=${templateData.name} | lang=${templateData.language}`);
+      
+      waBody = {
+        chat: normalizedPhone,
+        template: templateData.name,  // Use NAME not ID!
+        language: templateData.language || 'he',
+        fromMe: 1
+      };
+      
+      // Add user-provided parameters
+      if (templateData.params) {
+        // Header media (image/video/document) - sendTemplate expects object format
+        if (templateData.params.header && templateData.params.header.url) {
+          const mediaType = templateData.params.header.type || 'image';
+          waBody.header = [{
+            type: mediaType,
+            [mediaType]: { link: templateData.params.header.url }
+          }];
+          console.log(`[sendAgentMessage] 📋 HEADER added:`, waBody.header);
+        }
+        
+        // Body variables {{1}}, {{2}} - sendTemplate expects array of strings
+        if (templateData.params.body && Array.isArray(templateData.params.body)) {
+          waBody.params = templateData.params.body.filter(p => p && String(p).trim());
+          console.log(`[sendAgentMessage] 📋 PARAMS added:`, waBody.params);
+        }
+      } else {
+        // Fallback: try to use example data from template definition
+        console.log(`[sendAgentMessage] ⚠️ No params provided, using fallback from template components`);
+        if (templateData.components && Array.isArray(templateData.components)) {
+          const headerComponent = templateData.components.find(c => c.type === 'HEADER');
+          if (headerComponent) {
+            if (headerComponent.format === 'IMAGE' && headerComponent.example?.header_handle) {
+              waBody.header = [{
+                type: 'image',
+                image: { link: headerComponent.example.header_handle[0] || '' }
+              }];
+            } else if (headerComponent.format === 'VIDEO' && headerComponent.example?.header_handle) {
+              waBody.header = [{
+                type: 'video',
+                video: { link: headerComponent.example.header_handle[0] || '' }
+              }];
+            } else if (headerComponent.format === 'DOCUMENT' && headerComponent.example?.header_handle) {
+              waBody.header = [{
+                type: 'document',
+                document: { link: headerComponent.example.header_handle[0] || '' }
+              }];
+            }
+          }
+        }
+      }
+    } else {
+      // Regular text message
+      console.log(`[sendAgentMessage] 💬 Sending TEXT | phone=${normalizedPhone}`);
+      waBody = {
+        phone: normalizedPhone,
+        text: msgText,
+        fromMe: 1
+      };
+    }
 
     let waSent = false;
     let waError = null;
@@ -609,26 +678,283 @@ export const sendAgentMessage = async (req, res) => {
     }
 
     // Always save to history (for audit trail), but mark if not delivered
+    let historyEntry = {
+      sender: 'agent',
+      name: 'נציג',
+      node_id: 'agent',
+      created,
+      wa_sent: waSent
+    };
+    
+    // Build display content based on template or text
+    console.log(`[sendAgentMessage] 📝 Building history entry | isTemplate=${isTemplate} | hasTemplateData=${!!templateData}`);
+    if (isTemplate && templateData) {
+      console.log(`[sendAgentMessage] 📝 Template components:`, JSON.stringify(templateData.components, null, 2));
+      // Extract text from BODY component and replace variables
+      let displayText = '';
+      if (templateData.components && Array.isArray(templateData.components)) {
+        const bodyComp = templateData.components.find(c => c.type === 'BODY');
+        if (bodyComp && bodyComp.text) {
+          displayText = bodyComp.text;
+          // Replace {{1}}, {{2}} with actual values
+          if (templateData.params && templateData.params.body && Array.isArray(templateData.params.body)) {
+            templateData.params.body.forEach((val, idx) => {
+              displayText = displayText.replace(new RegExp(`\\{\\{${idx + 1}\\}\\}`, 'g'), val);
+            });
+          }
+        }
+        
+        const footerComp = templateData.components.find(c => c.type === 'FOOTER');
+        if (footerComp && footerComp.text) {
+          displayText += (displayText ? '\n\n' : '') + `― ${footerComp.text}`;
+        }
+      }
+      
+      // Check if there's header media
+      if (templateData.params && templateData.params.header && templateData.params.header.url) {
+        const mediaType = templateData.params.header.type || 'image';
+        historyEntry.type = mediaType === 'image' ? 'Image' : mediaType === 'video' ? 'Video' : 'Document';
+        historyEntry.url = templateData.params.header.url;
+        historyEntry.text = displayText;
+      } else {
+        historyEntry.type = 'Text';
+        historyEntry.text = displayText || msgText;
+      }
+    } else {
+      // Regular text message
+      historyEntry.type = 'Text';
+      historyEntry.text = msgText;
+    }
+    
+    console.log(`[sendAgentMessage] 💾 Saving history entry:`, JSON.stringify(historyEntry, null, 2));
+    
     await collection.updateOne(
       { _id: new mongoose.Types.ObjectId(id) },
-      {
-        $push: {
-          process_history: {
-            type: 'Text',
-            text: msgText,
-            sender: 'agent',
-            name: 'נציג',
-            node_id: 'agent',
-            created,
-            wa_sent: waSent
+      { $push: { process_history: historyEntry } }
+    );
+
+    res.json({ success: true, waSent, waError, created, historyEntry });
+  } catch (err) {
+    console.error('sendAgentMessage error:', err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// Admin sends message to session and activates agent mode (pauses bot for 30 minutes)
+export const sendAdminMessageToSession = async (req, res) => {
+  try {
+    const { sessionId, message, isTemplate, templateData } = req.body;
+    
+    if (!sessionId) {
+      return res.status(400).json({ error: 'sessionId is required' });
+    }
+    
+    if (!message || !String(message).trim()) {
+      return res.status(400).json({ error: 'message is required' });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(sessionId)) {
+      return res.status(400).json({ error: 'Invalid sessionId format' });
+    }
+
+    const collection = mongoose.connection.collection('BotSession');
+    const session = await collection.findOne({ _id: new mongoose.Types.ObjectId(sessionId) });
+    
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+
+    const msgText = String(message).trim();
+    const now = new Date();
+    const created = now.toISOString();
+
+    // Get user's Dialog360 credentials
+    const user = await User.findById(session.user_id);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Build WhatsApp API endpoint and token
+    let endpoint, waToken;
+    if (user.dialog360_bot_id) {
+      endpoint = `dialog360/${user.dialog360_bot_id}`;
+      waToken = crypto.createHash('sha1').update(user.dialog360_bot_id + 'moomoo').digest('hex');
+    } else {
+      // Fallback to env variables
+      endpoint = process.env.WHATSAPP_ENDPOINT || 'dialog360/65aec7ebf1a1d64f29645fd9';
+      waToken = process.env.WHATSAPP_API_TOKEN || crypto.createHash('sha1').update(endpoint + 'moomoo').digest('hex');
+    }
+
+    // Normalize phone
+    const rawPhone = session.sender || session.customer_phone || '';
+    let normalizedPhone = rawPhone.replace(/[^0-9]/g, '');
+    normalizedPhone = normalizedPhone.replace(/^0/, '972');
+    normalizedPhone = normalizedPhone.replace(/^972972/, '972');
+
+    // Build WhatsApp body - different structure for template vs text
+    let waBody;
+    
+    if (isTemplate && templateData) {
+      // Template message structure FOR NODE.JS FUNCTION sendTemplate
+      console.log(`[sendAdminMessageToSession] 📋 Sending TEMPLATE | id=${templateData.id} | name=${templateData.name} | lang=${templateData.language}`);
+      
+      waBody = {
+        chat: normalizedPhone,
+        template: templateData.name,  // Use NAME not ID!
+        language: templateData.language || 'he',
+        fromMe: 1
+      };
+      
+      // Add user-provided parameters
+      if (templateData.params) {
+        // Header media (image/video/document) - sendTemplate expects object format
+        if (templateData.params.header && templateData.params.header.url) {
+          const mediaType = templateData.params.header.type || 'image';
+          waBody.header = [{
+            type: mediaType,
+            [mediaType]: { link: templateData.params.header.url }
+          }];
+          console.log(`[sendAdminMessageToSession] 📋 HEADER added:`, waBody.header);
+        }
+        
+        // Body variables {{1}}, {{2}} - sendTemplate expects array of strings
+        if (templateData.params.body && Array.isArray(templateData.params.body)) {
+          waBody.params = templateData.params.body.filter(p => p && String(p).trim());
+          console.log(`[sendAdminMessageToSession] 📋 PARAMS added:`, waBody.params);
+        }
+      } else {
+        // Fallback: try to use example data from template definition
+        console.log(`[sendAdminMessageToSession] ⚠️ No params provided, using fallback from template components`);
+        if (templateData.components && Array.isArray(templateData.components)) {
+          const headerComponent = templateData.components.find(c => c.type === 'HEADER');
+          if (headerComponent) {
+            if (headerComponent.format === 'IMAGE' && headerComponent.example?.header_handle) {
+              waBody.header = [{
+                type: 'image',
+                image: { link: headerComponent.example.header_handle[0] || '' }
+              }];
+            } else if (headerComponent.format === 'VIDEO' && headerComponent.example?.header_handle) {
+              waBody.header = [{
+                type: 'video',
+                video: { link: headerComponent.example.header_handle[0] || '' }
+              }];
+            } else if (headerComponent.format === 'DOCUMENT' && headerComponent.example?.header_handle) {
+              waBody.header = [{
+                type: 'document',
+                document: { link: headerComponent.example.header_handle[0] || '' }
+              }];
+            }
           }
+        }
+      }
+    } else {
+      // Regular text message
+      console.log(`[sendAdminMessageToSession] 💬 Sending TEXT | phone=${normalizedPhone}`);
+      waBody = {
+        phone: normalizedPhone,
+        text: msgText,
+        fromMe: 1
+      };
+    }
+
+    let waSent = false;
+    let waError = null;
+    
+    console.log(`[sendAdminMessageToSession] 📤 Sending | endpoint=${endpoint} | phone=${normalizedPhone}`);
+    console.log(`[sendAdminMessageToSession] 📤 Body:`, JSON.stringify(waBody, null, 2));
+    
+    try {
+      const waRes = await fetch(`https://wa.message.co.il/api/${endpoint}/send`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Accept': 'application/json',
+          token: waToken
+        },
+        body: JSON.stringify(waBody)
+      });
+      
+      if (waRes.ok) { 
+        waSent = true;
+        let responseBody = '';
+        try { responseBody = await waRes.text(); } catch (_) {}
+        console.log(`[sendAdminMessageToSession] ✅ WhatsApp OK | phone=${normalizedPhone} | status=${waRes.status} | response=${responseBody}`);
+      } else {
+        waError = `HTTP ${waRes.status}: ${await waRes.text()}`;
+        console.error(`[sendAdminMessageToSession] ❌ WhatsApp FAILED | phone=${normalizedPhone} | ${waError}`);
+      }
+    } catch (waErr) {
+      waError = waErr.message;
+      console.error(`[sendAdminMessageToSession] ❌ WhatsApp exception:`, waErr.message);
+    }
+
+    // Update session: add message to history + activate agent mode (pause bot for 30 minutes)
+    let historyEntry = {
+      sender: 'agent',
+      name: 'נציג',
+      node_id: 'agent',
+      created,
+      wa_sent: waSent
+    };
+    
+    // Build display content based on template or text
+    console.log(`[sendAdminMessageToSession] 📝 Building history entry | isTemplate=${isTemplate} | hasTemplateData=${!!templateData}`);
+    if (isTemplate && templateData) {
+      console.log(`[sendAdminMessageToSession] 📝 Template components:`, JSON.stringify(templateData.components, null, 2));
+      // Extract text from BODY component and replace variables
+      let displayText = '';
+      if (templateData.components && Array.isArray(templateData.components)) {
+        const bodyComp = templateData.components.find(c => c.type === 'BODY');
+        if (bodyComp && bodyComp.text) {
+          displayText = bodyComp.text;
+          // Replace {{1}}, {{2}} with actual values
+          if (templateData.params && templateData.params.body && Array.isArray(templateData.params.body)) {
+            templateData.params.body.forEach((val, idx) => {
+              displayText = displayText.replace(new RegExp(`\\{\\{${idx + 1}\\}\\}`, 'g'), val);
+            });
+          }
+        }
+        
+        const footerComp = templateData.components.find(c => c.type === 'FOOTER');
+        if (footerComp && footerComp.text) {
+          displayText += (displayText ? '\n\n' : '') + `— ${footerComp.text}`;
+        }
+      }
+      
+      // Check if there's header media
+      if (templateData.params && templateData.params.header && templateData.params.header.url) {
+        const mediaType = templateData.params.header.type || 'image';
+        historyEntry.type = mediaType === 'image' ? 'Image' : mediaType === 'video' ? 'Video' : 'Document';
+        historyEntry.url = templateData.params.header.url;
+        historyEntry.text = displayText;
+      } else {
+        historyEntry.type = 'Text';
+        historyEntry.text = displayText || msgText;
+      }
+    } else {
+      // Regular text message
+      historyEntry.type = 'Text';
+      historyEntry.text = msgText;
+    }
+    
+    console.log(`[sendAdminMessageToSession] 💾 Saving history entry:`, JSON.stringify(historyEntry, null, 2));
+    
+    await collection.updateOne(
+      { _id: new mongoose.Types.ObjectId(sessionId) },
+      {
+        $push: { process_history: historyEntry },
+        $set: {
+          is_agent: true,
+          agent_since: now
         }
       }
     );
 
-    res.json({ success: true, waSent, waError, created });
+    console.log(`[sendAdminMessageToSession] ✅ Agent mode activated for 30 minutes | session=${sessionId}`);
+
+    res.json({ success: true, waSent, waError, created, agentMode: true, historyEntry });
   } catch (err) {
-    console.error('sendAgentMessage error:', err);
+    console.error('sendAdminMessageToSession error:', err);
     res.status(500).json({ error: err.message });
   }
 };

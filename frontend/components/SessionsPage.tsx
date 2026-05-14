@@ -1,5 +1,6 @@
 ﻿import React, { useState, useEffect, useRef } from 'react';
 import { Clock, MessageSquare, Search, Bot, LogOut, User, Phone, List, Users, ExternalLink, X, Headphones, RefreshCw } from 'lucide-react';
+import { FileUploader } from './FileUploader';
 
 interface Session {
   id: string;
@@ -57,6 +58,16 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
   const [agentSending, setAgentSending] = useState(false);
   const [agentWaFailed, setAgentWaFailed] = useState(false);
 
+  // Template dropdown state
+  const [showTemplates, setShowTemplates] = useState(false);
+  const [templates, setTemplates] = useState<any[]>([]);
+  const [templatesLoading, setTemplatesLoading] = useState(false);
+  const [selectedTemplate, setSelectedTemplate] = useState<any>(null);
+  
+  // Template parameters modal
+  const [showTemplateParamsModal, setShowTemplateParamsModal] = useState(false);
+  const [templateParams, setTemplateParams] = useState<Record<string, any>>({});
+
   const chatScrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -104,6 +115,15 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
       chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
     }
   }, [phoneSessions]);
+
+  // Clear message input when switching contacts
+  useEffect(() => {
+    setAgentMessage('');
+    setShowTemplates(false);
+    setSelectedTemplate(null);
+    setTemplateParams({});
+    setShowTemplateParamsModal(false);
+  }, [selectedPhone]);
 
   // Detect agent mode from last session
   useEffect(() => {
@@ -220,18 +240,40 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
     const created = new Date().toISOString();
     setAgentSending(true);
     setAgentWaFailed(false);
+    
+    // Check if it's a template message (starts with /)
+    const isTemplate = msgText.startsWith('/') && selectedTemplate;
+    let requestBody: any = { message: msgText };
+    
+    if (isTemplate) {
+      // Build template data with user parameters
+      requestBody.isTemplate = true;
+      requestBody.templateData = {
+        id: selectedTemplate.id,
+        name: selectedTemplate.name || selectedTemplate.elementName || selectedTemplate.template_name,
+        language: selectedTemplate.language || 'he',
+        components: selectedTemplate.components || [],
+        params: templateParams // Add user-provided parameters
+      };
+      console.log('[SessionsPage] Sending template:', requestBody.templateData);
+    }
+    
     try {
       const r = await fetch(`${API_BASE}/sessions/${agentSessionId}/send-agent-message`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ message: msgText })
+        body: JSON.stringify(requestBody)
       });
       if (r.ok) {
         const data = await r.json();
+        console.log('[SessionsPage] Response from server:', data);
+        console.log('[SessionsPage] History entry:', data.historyEntry);
         setAgentMessage('');
+        setSelectedTemplate(null);
+        setTemplateParams({});
         setPhoneSessions(prev => prev.map((s, i) =>
           i === prev.length - 1
-            ? { ...s, process_history: [...s.process_history, { type: 'Text', text: msgText, sender: 'agent', name: 'נציג', created, wa_sent: data.waSent }] }
+            ? { ...s, process_history: [...s.process_history, data.historyEntry || { type: 'Text', text: msgText, sender: 'agent', name: 'נציג', created, wa_sent: data.waSent }] }
             : s
         ));
         if (!data.waSent) {
@@ -244,6 +286,91 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
     } finally {
       setAgentSending(false);
     }
+  };
+
+  // Fetch templates from Dialog360
+  const fetchTemplates = async () => {
+    setTemplatesLoading(true);
+    try {
+      const response = await fetch(`${API_BASE}/auth/templates`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      
+      if (!response.ok) {
+        console.error('[SessionsPage] Failed to fetch templates');
+        setTemplates([]);
+        return;
+      }
+      
+      const data = await response.json();
+      if (data.success && data.templates) {
+        const templateList = Array.isArray(data.templates) ? data.templates : 
+                           (data.templates.data ? data.templates.data : 
+                           (data.templates.waba_templates ? data.templates.waba_templates : []));
+        setTemplates(templateList);
+      } else {
+        setTemplates([]);
+      }
+    } catch (err) {
+      console.error('[SessionsPage] Error fetching templates:', err);
+      setTemplates([]);
+    } finally {
+      setTemplatesLoading(false);
+    }
+  };
+
+  // Handle template selection
+  const handleTemplateSelect = (template: any) => {
+    const templateName = template.name || template.elementName || template.template_name || '';
+    setAgentMessage(`/${templateName}`);
+    setSelectedTemplate(template);
+    setShowTemplates(false);
+    
+    // Check if template needs parameters
+    const needsParams = checkTemplateNeedsParams(template);
+    if (needsParams) {
+      // Initialize params structure
+      const initialParams: Record<string, any> = {};
+      if (template.components && Array.isArray(template.components)) {
+        template.components.forEach((comp: any) => {
+          if (comp.type === 'HEADER' && ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(comp.format)) {
+            initialParams.header = { type: comp.format.toLowerCase(), url: '' };
+          }
+          if (comp.type === 'BODY' && comp.text) {
+            // Extract {{1}}, {{2}} etc from body text
+            const matches = comp.text.match(/\{\{\d+\}\}/g);
+            if (matches) {
+              initialParams.body = matches.map((m: string) => '');
+            }
+          }
+        });
+      }
+      setTemplateParams(initialParams);
+      setShowTemplateParamsModal(true);
+    }
+  };
+  
+  // Check if template needs parameters
+  const checkTemplateNeedsParams = (template: any): boolean => {
+    if (!template.components || !Array.isArray(template.components)) return false;
+    
+    for (const comp of template.components) {
+      // Header with media
+      if (comp.type === 'HEADER' && ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(comp.format)) {
+        return true;
+      }
+      // Body with variables {{1}}, {{2}}
+      if (comp.type === 'BODY' && comp.text && /\{\{\d+\}\}/.test(comp.text)) {
+        return true;
+      }
+    }
+    return false;
+  };
+  
+  // Confirm and send template with parameters
+  const confirmTemplateParams = () => {
+    setShowTemplateParamsModal(false);
+    // Parameters are stored, will be sent when user clicks send
   };
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -300,6 +427,18 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
               <div className="flex flex-col gap-1 items-end">
                 <div className="px-4 py-2.5 rounded-3xl text-sm font-semibold shadow-sm text-right bg-purple-50 border border-purple-200 text-purple-900 rounded-tr-none">
                   <p className="text-[9px] text-purple-400 font-black mb-1 uppercase tracking-widest">נציג</p>
+                  {item.type === 'Image' && item.url && (
+                    <img src={item.url} alt="תמונה" className="rounded-xl max-w-[200px] h-auto mb-2" />
+                  )}
+                  {item.type === 'Video' && item.url && (
+                    <video src={item.url} controls className="rounded-xl max-w-[200px] mb-2" />
+                  )}
+                  {item.type === 'Document' && item.url && (
+                    <a href={item.url} target="_blank" rel="noopener noreferrer"
+                      className="flex items-center gap-2 p-2 bg-purple-100 rounded-xl hover:bg-purple-200 transition-colors text-purple-700 text-xs font-bold mb-2">
+                      <ExternalLink size={13} /> פתח מסמך
+                    </a>
+                  )}
                   {text && <p className="whitespace-pre-wrap leading-relaxed">{text}</p>}
                 </div>
                 {item.wa_sent === false && (
@@ -332,16 +471,25 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                   <p className="whitespace-pre-wrap leading-relaxed">{text}</p>
                 )}
                 {item.type === 'Image' && item.url && (
-                  <img src={item.url} alt="תמונה" className="rounded-xl max-w-[200px] h-auto mt-1" />
+                  <>
+                    <img src={item.url} alt="תמונה" className="rounded-xl max-w-[200px] h-auto mb-2" />
+                    {text && <p className="whitespace-pre-wrap leading-relaxed">{text}</p>}
+                  </>
                 )}
                 {item.type === 'Video' && item.url && (
-                  <video src={item.url} controls className="rounded-xl max-w-[200px] mt-1" />
+                  <>
+                    <video src={item.url} controls className="rounded-xl max-w-[200px] mb-2" />
+                    {text && <p className="whitespace-pre-wrap leading-relaxed">{text}</p>}
+                  </>
                 )}
                 {item.type === 'Document' && item.url && (
-                  <a href={item.url} target="_blank" rel="noopener noreferrer"
-                    className="flex items-center gap-2 p-2 bg-slate-50 rounded-xl hover:bg-slate-100 transition-colors text-sky-600 text-xs font-bold">
-                    <ExternalLink size={13} /> פתח מסמך
-                  </a>
+                  <>
+                    <a href={item.url} target="_blank" rel="noopener noreferrer"
+                      className="flex items-center gap-2 p-2 bg-slate-50 rounded-xl hover:bg-slate-100 transition-colors text-sky-600 text-xs font-bold mb-2">
+                      <ExternalLink size={13} /> פתח מסמך
+                    </a>
+                    {text && <p className="whitespace-pre-wrap leading-relaxed">{text}</p>}
+                  </>
                 )}
                 {item.type === 'URL' && (
                   <div>
@@ -655,7 +803,70 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
               {/* Message input bar */}
               {!phoneSessionsLoading && (
                 <div className="flex-shrink-0 bg-white border-t border-slate-100 px-4 py-3" dir="rtl">
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-3 relative">
+                    {/* Template dropdown */}
+                    {showTemplates && isAgentMode && (
+                      <div className="absolute bottom-full left-0 right-0 mb-2 bg-white border border-slate-200 rounded-xl shadow-xl max-h-80 overflow-y-auto z-50">
+                        {templatesLoading ? (
+                          <div className="p-4 text-center text-slate-400 text-sm">טוען טמפלייטים...</div>
+                        ) : templates.length === 0 ? (
+                          <div className="p-4 text-center text-slate-400 text-sm">לא נמצאו טמפלייטים</div>
+                        ) : (
+                          <div className="p-2">
+                            {(() => {
+                              const searchQuery = agentMessage.startsWith('/') ? agentMessage.slice(1).toLowerCase() : '';
+                              const filtered = searchQuery
+                                ? templates.filter(t => {
+                                    const name = t.name || t.elementName || t.template_name || '';
+                                    return name.toLowerCase().includes(searchQuery);
+                                  })
+                                : templates;
+
+                              return filtered.length > 0 ? (
+                                filtered.map((template: any, idx: number) => {
+                                  const name = template.name || template.elementName || template.template_name || 'ללא שם';
+                                  const lang = template.language || 'he';
+                                  const status = template.status || '';
+                                  
+                                  // Extract body text
+                                  let bodyText = '';
+                                  if (template.components && Array.isArray(template.components)) {
+                                    const bodyComponent = template.components.find((c: any) => c.type === 'BODY');
+                                    if (bodyComponent && bodyComponent.text) {
+                                      bodyText = bodyComponent.text.substring(0, 60) + (bodyComponent.text.length > 60 ? '...' : '');
+                                    }
+                                  }
+
+                                  return (
+                                    <button
+                                      key={idx}
+                                      onClick={() => handleTemplateSelect(template)}
+                                      className="w-full text-right px-3 py-2 hover:bg-sky-50 rounded-lg transition-colors"
+                                    >
+                                      <div className="flex items-center justify-between mb-1">
+                                        <span className="font-medium text-slate-800 text-sm">/{name}</span>
+                                        <div className="flex items-center gap-1">
+                                          <span className="text-xs text-slate-500">{lang}</span>
+                                          {status === 'APPROVED' && (
+                                            <span className="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded">מאושר</span>
+                                          )}
+                                        </div>
+                                      </div>
+                                      {bodyText && (
+                                        <div className="text-xs text-slate-500">{bodyText}</div>
+                                      )}
+                                    </button>
+                                  );
+                                })
+                              ) : (
+                                <div className="p-4 text-center text-slate-400 text-sm">לא נמצאו תוצאות</div>
+                              );
+                            })()}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
                     <button
                       onClick={sendAgentMsg}
                       disabled={!isAgentMode || !agentMessage.trim() || agentSending}
@@ -671,9 +882,18 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                     <input
                       type="text"
                       value={isAgentMode ? agentMessage : ''}
-                      onChange={isAgentMode ? e => setAgentMessage(e.target.value) : undefined}
+                      onChange={isAgentMode ? e => {
+                        const value = e.target.value;
+                        setAgentMessage(value);
+                        if (value === '/' || value.startsWith('/')) {
+                          setShowTemplates(true);
+                          if (value === '/') fetchTemplates();
+                        } else {
+                          setShowTemplates(false);
+                        }
+                      } : undefined}
                       onKeyDown={isAgentMode ? e => { if (e.key === 'Enter') sendAgentMsg(); } : undefined}
-                      placeholder={isAgentMode ? 'כתוב הודעה ללקוח...' : 'שליחת הודעה...'}
+                      placeholder={isAgentMode ? 'כתוב הודעה ללקוח... (/ לטמפלייטים)' : 'שליחת הודעה...'}
                       disabled={!isAgentMode}
                       className={`flex-1 bg-slate-50 border border-slate-200 rounded-2xl px-4 py-2.5 text-sm text-right font-medium outline-none transition-all
                         ${isAgentMode
@@ -717,6 +937,116 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 className="px-5 py-2.5 rounded-2xl bg-sky-500 text-white text-sm font-bold hover:bg-sky-600 transition-colors"
               >
                 אישור — עבור למצב נציג
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Template parameters modal */}
+      {showTemplateParamsModal && selectedTemplate && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" dir="rtl">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-hidden flex flex-col">
+            {/* Header */}
+            <div className="px-6 pt-6 pb-4 border-b border-slate-100">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-lg font-black text-slate-900">מילוי פרמטרים לטמפלייט</h3>
+                <button
+                  onClick={() => setShowTemplateParamsModal(false)}
+                  className="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+              <p className="text-sm text-slate-600">
+                {selectedTemplate.name || 'טמפלייט'}
+              </p>
+            </div>
+
+            {/* Body - scrollable */}
+            <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+              {selectedTemplate.components && selectedTemplate.components.map((comp: any, idx: number) => {
+                // Header with media
+                if (comp.type === 'HEADER' && ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(comp.format)) {
+                  const mediaType = comp.format.toLowerCase() as 'image' | 'video' | 'document';
+                  return (
+                    <div key={idx} className="space-y-2">
+                      <label className="block text-sm font-bold text-slate-700">
+                        {mediaType === 'image' ? '🖼️ תמונה' : mediaType === 'video' ? '🎥 וידאו' : '📄 מסמך'}
+                      </label>
+                      <FileUploader
+                        value={templateParams.header?.url || ''}
+                        onChange={(url) => {
+                          setTemplateParams(prev => ({
+                            ...prev,
+                            header: { type: mediaType, url }
+                          }));
+                        }}
+                        accept={
+                          mediaType === 'image' ? 'image/*' :
+                          mediaType === 'video' ? 'video/*' : '*/*'
+                        }
+                        label={mediaType === 'image' ? 'תמונה' : mediaType === 'video' ? 'וידאו' : 'מסמך'}
+                        mediaType={mediaType}
+                        token={token || ''}
+                      />
+                    </div>
+                  );
+                }
+
+                // Body with variables
+                if (comp.type === 'BODY' && comp.text) {
+                  const matches = comp.text.match(/\{\{\d+\}\}/g);
+                  if (matches && matches.length > 0) {
+                    return (
+                      <div key={idx} className="space-y-3">
+                        <label className="block text-sm font-bold text-slate-700">💬 משתנים בהודעה</label>
+                        <div className="text-xs text-slate-500 bg-slate-50 p-3 rounded-lg mb-2">
+                          {comp.text}
+                        </div>
+                        {matches.map((match: string, varIdx: number) => {
+                          const varNum = match.match(/\d+/)?.[0];
+                          return (
+                            <div key={varIdx}>
+                              <label className="block text-xs font-semibold text-slate-600 mb-1">
+                                {match} - משתנה מספר {varNum}
+                              </label>
+                              <input
+                                type="text"
+                                value={templateParams.body?.[varIdx] || ''}
+                                onChange={(e) => {
+                                  const newBody = [...(templateParams.body || [])];
+                                  newBody[varIdx] = e.target.value;
+                                  setTemplateParams(prev => ({ ...prev, body: newBody }));
+                                }}
+                                placeholder={`הזן ערך ל-${match}`}
+                                className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-sky-500/20 focus:border-sky-400 outline-none"
+                              />
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  }
+                }
+
+                return null;
+              })}
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 pb-6 pt-4 border-t border-slate-100 flex gap-3 justify-end">
+              <button
+                onClick={() => setShowTemplateParamsModal(false)}
+                className="px-5 py-2.5 rounded-2xl border border-slate-200 text-slate-700 text-sm font-bold hover:bg-slate-50 transition-colors"
+              >
+                ביטול
+              </button>
+              <button
+                onClick={confirmTemplateParams}
+                className="px-5 py-2.5 rounded-2xl bg-sky-500 text-white text-sm font-bold hover:bg-sky-600 transition-colors"
+              >
+                אישור
               </button>
             </div>
           </div>

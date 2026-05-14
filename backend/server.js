@@ -2,6 +2,8 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import connectDB from './config/db.js';
 import authRoutes from './routes/authRoutes.js';
 import botRoutes from './routes/botRoutes.js';
@@ -13,7 +15,11 @@ import sessionRoutes from './routes/sessionRoutes.js';
 import versionRoutes from './routes/versionRoutes.js';
 import templateRoutes from './routes/templateRoutes.js';
 import adminRoutes from './routes/adminRoutes.js';
+import uploadRoutes from './routes/uploadRoutes.js';
 import { seedTemplates } from './controllers/templateController.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Load environment variables
 dotenv.config();
@@ -47,6 +53,9 @@ async function startServer() {
     // Seed templates AFTER database connection
     await seedTemplates();
     
+    // Serve static files from uploads directory
+    app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+    
     // Register routes AFTER database connection
     app.use('/api/auth', authRoutes);
     app.use('/api/bots', botRoutes);
@@ -58,6 +67,7 @@ async function startServer() {
     app.use('/api/versions', versionRoutes);
     app.use('/api/templates', templateRoutes);
     app.use('/api/admin', adminRoutes);
+    app.use('/api', uploadRoutes);  // Upload route
 
     // ── Global error handler ─────────────────────────────────────────────────
     // Catches body-parser JSON parse failures (and any other errors) and

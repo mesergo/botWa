@@ -3,6 +3,7 @@ import multer from 'multer';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
+import { authenticateToken } from '../middleware/auth.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -30,8 +31,8 @@ const upload = multer({
   limits: { fileSize: 50 * 1024 * 1024 } // 50MB limit
 });
 
-// Upload endpoint
-router.post('/upload', upload.single('file'), (req, res) => {
+// Upload endpoint - requires authentication
+router.post('/upload', authenticateToken, upload.single('file'), (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No file uploaded' });
@@ -40,6 +41,8 @@ router.post('/upload', upload.single('file'), (req, res) => {
     const protocol = req.protocol;
     const host = req.get('host');
     const url = `${protocol}://${host}/uploads/${req.file.filename}`;
+
+    console.log(`[Upload] File uploaded successfully | user=${req.user.id} | filename=${req.file.filename} | size=${req.file.size}`);
 
     res.json({ 
       success: true, 
