@@ -1,6 +1,6 @@
 
-import React, { memo } from 'react';
-import { Handle, Position } from 'reactflow';
+import React, { memo, useState } from 'react';
+import { Handle, Position, useReactFlow } from 'reactflow';
 import { Trash2 } from 'lucide-react';
 import { NodeType } from '../../types';
 
@@ -17,6 +17,8 @@ interface BaseNodeProps {
 }
 
 const BaseNode: React.FC<BaseNodeProps> = ({ id, title, icon, children, type, selected, onDelete, serialId, isSimulatorActive }) => {
+  const [isHovered, setIsHovered] = useState(false);
+  const { setEdges } = useReactFlow();
   const isStart = type === NodeType.START;
   const isAutomaticResponses = type === NodeType.AUTOMATIC_RESPONSES;
   const isBranchingNode = type === NodeType.OUTPUT_MENU || type === NodeType.ACTION_WEB_SERVICE || type === NodeType.AUTOMATIC_RESPONSES || type === NodeType.ACTION_TIME_ROUTING;
@@ -49,13 +51,30 @@ const BaseNode: React.FC<BaseNodeProps> = ({ id, title, icon, children, type, se
   const theme = getNodeTheme(type);
 
   return (
-    <div className={`${isMediaNode ? 'min-w-[380px] max-w-[450px]' : 'min-w-[280px]'} bg-white border-2 rounded-[2.5rem] shadow-[0_15px_40px_-10px_rgba(0,0,0,0.06)] transition-all duration-400 ${
-      isSimulatorActive
-        ? 'border-green-400 ring-8 ring-green-400/25 shadow-[0_0_28px_6px_rgba(34,197,94,0.35)] scale-[1.03]'
-        : selected
-          ? `ring-8 ${theme.ring} !border-slate-400 scale-[1.01] border-slate-200`
-          : 'border-slate-200'
-    }`}>
+    <div
+      className={`${isMediaNode ? 'min-w-[380px] max-w-[450px]' : 'min-w-[280px]'} bg-white border-2 rounded-[2.5rem] shadow-[0_15px_40px_-10px_rgba(0,0,0,0.06)] transition-all duration-400 ${
+        isSimulatorActive
+          ? 'border-green-400 ring-8 ring-green-400/25 shadow-[0_0_28px_6px_rgba(34,197,94,0.35)] scale-[1.03]'
+          : selected
+            ? `ring-8 ${theme.ring} !border-slate-400 scale-[1.01] border-slate-200`
+            : 'border-slate-200'
+      }`}
+      onMouseEnter={() => {
+        setIsHovered(true);
+        setEdges(eds => eds.map(e => {
+          if (e.source === id) return { ...e, data: { ...e.data, nodeHoverType: 'source' } };
+          if (e.target === id) return { ...e, data: { ...e.data, nodeHoverType: 'target' } };
+          return e;
+        }));
+      }}
+      onMouseLeave={() => {
+        setIsHovered(false);
+        setEdges(eds => eds.map(e => {
+          if (e.source === id || e.target === id) return { ...e, data: { ...e.data, nodeHoverType: null } };
+          return e;
+        }));
+      }}
+    >
       {/* Top indicator bar with rounded corners to match the parent */}
       <div className={`h-1.5 w-full ${theme.bar} rounded-t-[2.5rem]`} />
       
@@ -63,7 +82,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ id, title, icon, children, type, se
         <Handle
           type="target"
           position={Position.Left}
-          className="w-4 h-4 bg-slate-400 border-2 border-white rounded-full -left-[8px] shadow-lg"
+          className={`w-4 h-4 border-2 border-white rounded-full -left-[8px] shadow-lg transition-colors duration-200 ${isHovered ? 'bg-blue-500' : 'bg-slate-400'}`}
         />
       )}
       
@@ -94,7 +113,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ id, title, icon, children, type, se
         <Handle
           type="source"
           position={Position.Right}
-          className="w-4 h-4 bg-slate-400 border-2 border-white rounded-full -right-[8px] shadow-lg"
+          className={`w-4 h-4 border-2 border-white rounded-full -right-[8px] shadow-lg transition-colors duration-200 ${isHovered ? 'bg-emerald-500' : 'bg-slate-400'}`}
         />
       )}
     </div>

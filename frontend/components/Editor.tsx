@@ -64,20 +64,39 @@ interface EditorProps {
   onFixedProcessActive?: (fixedProcessNodeId: string | null) => void;
   /** When true, hides the canvas during flow transitions to prevent the visible viewport jump */
   isTransitioning?: boolean;
+  /** Cross-process search results shown in the dropdown panel */
+  globalSearchResults?: { processId: string; processName: string; nodeId: string; matchText: string }[];
+  /** Called when user clicks a global search result to navigate into the process */
+  onNavigateToProcessResult?: (processId: string, nodeId: string) => void;
 }
+
+const HighlightedText: React.FC<{ text: string; query: string }> = ({ text, query }) => {
+  if (!query || !text) return <>{text}</>;
+  const idx = text.toLowerCase().indexOf(query.toLowerCase());
+  if (idx === -1) return <>{text}</>;
+  return (
+    <>
+      {text.slice(0, idx)}
+      <mark className="bg-yellow-200 rounded-sm px-0.5 not-italic">{text.slice(idx, idx + query.length)}</mark>
+      {text.slice(idx + query.length)}
+    </>
+  );
+};
 
 const Editor: React.FC<EditorProps> = ({
   selectedBot, nodes, edges, fixedProcesses, versions, currentUser, token, viewMode, activeProcessId,
   searchQuery, searchResults, currentSearchIndex, reactFlowWrapper, nodeTypes, edgeTypes, isSimulatorOpen,
   onNodesChange, onEdgesChange, onConnect, onInit, onDrop, onSearchChange, onSearchNav, onTidy, onPublish,
   onCloseEditor, onHome, onSimulatorOpen, onSimulatorClose, onDuplicate, onChangeTemplate, sidebarProps,
-  isEditingTemplate, onSaveTemplate, existingTemplateData, onOpenContacts, onOpenSessions, initialParams, onManageParams, onNodeFocus, onFixedProcessActive, isTransitioning
+  isEditingTemplate, onSaveTemplate, existingTemplateData, onOpenContacts, onOpenSessions, initialParams, onManageParams, onNodeFocus, onFixedProcessActive, isTransitioning,
+  globalSearchResults, onNavigateToProcessResult
 }) => {
   const [showSaveModal, setShowSaveModal] = React.useState(false);
   const [templateName, setTemplateName] = React.useState(existingTemplateData?.name || '');
   const [templateDescription, setTemplateDescription] = React.useState(existingTemplateData?.description || '');
   const [templateIsPublic, setTemplateIsPublic] = React.useState(existingTemplateData?.isPublic ?? true);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const [globalSearchPanelOpen, setGlobalSearchPanelOpen] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement>(null);
 
   React.useEffect(() => {
@@ -185,6 +204,39 @@ const Editor: React.FC<EditorProps> = ({
                 <span className="text-[10px] font-bold text-blue-600 mr-1">{currentSearchIndex + 1}/{searchResults.length}</span>
                 <button onClick={() => onSearchNav('up')} className="p-1 hover:bg-slate-100 rounded text-slate-400"><ChevronUp size={14} /></button>
                 <button onClick={() => onSearchNav('down')} className="p-1 hover:bg-slate-100 rounded text-slate-400"><ChevronDown size={14} /></button>
+              </div>
+            )}
+            {/* Global cross-process search results panel */}
+            {viewMode === 'main' && globalSearchResults && globalSearchResults.length > 0 && searchQuery && (
+              <div
+                className="absolute top-full mt-2 right-0 w-[360px] bg-white border border-slate-200 rounded-2xl shadow-2xl z-50"
+                dir="rtl"
+              >
+                <button
+                  onClick={() => setGlobalSearchPanelOpen(v => !v)}
+                  className="w-full px-4 py-2.5 flex items-center justify-between text-[11px] font-bold text-slate-400 border-b border-slate-100 bg-white rounded-t-2xl hover:bg-slate-50 transition-colors"
+                >
+                  <span>תוצאות מתהליכים קבועים ({globalSearchResults.length})</span>
+                  {globalSearchPanelOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                </button>
+                {globalSearchPanelOpen && (
+                  <div className="max-h-64 overflow-y-auto">
+                    {globalSearchResults.map((result) => (
+                      <button
+                        key={`${result.processId}-${result.nodeId}`}
+                        onClick={() => onNavigateToProcessResult?.(result.processId, result.nodeId)}
+                        className="w-full text-right flex items-center gap-3 px-4 py-3 hover:bg-slate-50 border-b border-slate-50 last:border-b-0 transition-colors"
+                      >
+                        <span className="flex-1 text-sm font-medium text-slate-700 truncate">
+                          <HighlightedText text={result.matchText} query={searchQuery} />
+                        </span>
+                        <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-full whitespace-nowrap flex-shrink-0">
+                          {result.processName}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </div>

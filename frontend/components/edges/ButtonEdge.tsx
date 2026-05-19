@@ -17,6 +17,21 @@ export default function ButtonEdge({
 }: EdgeProps) {
   const [isHovered, setIsHovered] = useState(false);
 
+  const nodeHoverType: string | null = data?.nodeHoverType ?? null;
+  const strokeColor =
+    nodeHoverType === 'source'
+      ? '#10b981'  // emerald-500
+      : nodeHoverType === 'target'
+      ? '#3b82f6'  // blue-500 (brighter)
+      : '#93c5fd'; // blue-300 (default)
+
+  const pathStyle = {
+    ...style,
+    stroke: strokeColor,
+    strokeWidth: nodeHoverType ? 3 : (style as any)?.strokeWidth ?? 2,
+    transition: 'stroke 0.2s ease, stroke-width 0.2s ease',
+  };
+
   const [edgePath, labelX, labelY] = getBezierPath({
     sourceX,
     sourceY,
@@ -36,8 +51,8 @@ export default function ButtonEdge({
     <>
       <path
         id={id}
-        style={style}
-        className="react-flow__edge-path stroke-[3] stroke-blue-400 hover:stroke-blue-600 transition-colors"
+        style={pathStyle}
+        className="react-flow__edge-path"
         d={edgePath}
         markerEnd={markerEnd}
       />

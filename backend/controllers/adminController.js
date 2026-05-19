@@ -292,6 +292,8 @@ export const impersonateUser = async (req, res) => {
       { 
         id: userId, 
         email: user.email,
+        role: user.role,
+        manager_id: user.manager_id || null,
         impersonatedBy: req.userId, // Track who is impersonating
         isImpersonating: true
       }, 

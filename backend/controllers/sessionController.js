@@ -5,6 +5,7 @@ import BotFlow from '../models/BotFlow.js';
 import Widget from '../models/Widget.js';
 import User from '../models/User.js';
 import fetch from 'node-fetch';
+import { getEffectiveUserId } from '../middleware/auth.js';
 
 export const startSession = async (req, res) => {
   // Safe extraction: explicitly check for req.user to avoid 'undefined' values in DB insert
@@ -116,7 +117,7 @@ export const addHistoryMessage = async (req, res) => {
 };
 
 export const getContacts = async (req, res) => {
-  const userId = req.user.id;
+  const userId = getEffectiveUserId(req);
   try {
     // Get all bots owned by this user
     const userBots = await BotFlow.find({ user_id: userId });
@@ -202,7 +203,7 @@ export const getContacts = async (req, res) => {
 };
 
 export const getUserSessions = async (req, res) => {
-  const userId = req.user.id;
+  const userId = getEffectiveUserId(req);
   try {
     const PAGE_SIZE = 10;
     const page = Math.max(1, parseInt(req.query.page) || 1);

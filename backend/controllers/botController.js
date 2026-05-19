@@ -4,6 +4,7 @@ import Widget from '../models/Widget.js';
 import Version from '../models/Version.js';
 import { getUserLimits } from '../utils/limits.js';
 import fetch from 'node-fetch';
+import { getEffectiveUserId } from '../middleware/auth.js';
 
 const ACCOUNTS_CONFIG = {
   Basic: { maxBots: 3, maxVersions: 5, versionPrice: 5, botPrice: 30 },
@@ -12,6 +13,10 @@ const ACCOUNTS_CONFIG = {
 
 export const createBot = async (req, res) => {
   const { name } = req.body;
+  const role = req.user?.role;
+  if (role === 'rep' || role === 'rep_bot') {
+    return res.status(403).json({ error: 'Access denied. Representatives cannot create bots.' });
+  }
   const userId = req.user.id;
   try {
     const user = await User.findById(userId);
@@ -56,7 +61,7 @@ export const createBot = async (req, res) => {
 };
 
 export const getBots = async (req, res) => {
-  const userId = req.user.id;
+  const userId = getEffectiveUserId(req);
   try {
     const bots = await BotFlow.find({ user_id: userId }).sort({ created_at: -1 });
     res.json(bots.map(b => ({
@@ -74,6 +79,10 @@ export const getBots = async (req, res) => {
 
 export const deleteBot = async (req, res) => {
   const { id } = req.params;
+  const role = req.user?.role;
+  if (role === 'rep' || role === 'rep_bot') {
+    return res.status(403).json({ error: 'Access denied. Representatives cannot delete bots.' });
+  }
   const userId = req.user.id;
   try {
     // Check if the bot being deleted is the default
@@ -101,6 +110,10 @@ export const deleteBot = async (req, res) => {
 
 export const setDefaultBot = async (req, res) => {
   const { id } = req.params;
+  const role = req.user?.role;
+  if (role === 'rep' || role === 'rep_bot') {
+    return res.status(403).json({ error: 'Access denied. Representatives cannot change default bot.' });
+  }
   const userId = req.user.id;
   try {
     // Verify bot belongs to user

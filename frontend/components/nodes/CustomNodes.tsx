@@ -3,7 +3,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Handle, Position, useReactFlow } from 'reactflow';
 import { 
   Type, Calendar, Upload, MessageSquare, 
-  Image as ImageIcon, ExternalLink, List, Globe, Clock, PlayCircle, Plus, Layers, X, GitBranch, Trash2, ChevronDown, Zap
+  Image as ImageIcon, ExternalLink, List, Globe, Clock, PlayCircle, Plus, Layers, X, GitBranch, Trash2, ChevronDown, Zap,
+  Mail, Phone, CreditCard, Link
 } from 'lucide-react';
 import BaseNode from './BaseNode';
 import { NodeType } from '../../types';
@@ -125,6 +126,56 @@ const ResponseOperatorSelector = ({ value, onChange, disabled = false }: { value
   );
 };
 
+const VALIDATION_TYPES = [
+  { id: 'none',  label: 'ללא ולידציה',  icon: <X size={12} /> },
+  { id: 'email', label: 'מייל',         icon: <Mail size={12} /> },
+  { id: 'phone', label: 'טלפון',        icon: <Phone size={12} /> },
+  { id: 'id',    label: 'ת.ז',          icon: <CreditCard size={12} /> },
+  { id: 'url',   label: 'כתובת אתר',   icon: <Link size={12} /> },
+];
+
+const ValidationTypeSelector = ({ value, onChange, disabled = false }: { value?: string; onChange: (v: string) => void; disabled?: boolean }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const currentType = VALIDATION_TYPES.find(t => t.id === (value || 'none')) || VALIDATION_TYPES[0];
+  const hasValidation = value && value !== 'none';
+
+  return (
+    <div className="relative">
+      <button
+        disabled={disabled}
+        onClick={() => setIsOpen(!isOpen)}
+        className={`flex items-center gap-1.5 px-3 h-8 border rounded-lg text-[11px] font-bold transition-all nodrag ${
+          hasValidation
+            ? 'bg-blue-50 border-blue-300 text-blue-600'
+            : 'bg-slate-50 border-slate-200 text-slate-500 hover:border-blue-400'
+        } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+        title="סוג ולידציה"
+      >
+        {currentType.icon}
+        <span>{hasValidation ? currentType.label : 'ולידציה'}</span>
+        <ChevronDown size={10} />
+      </button>
+
+      {!disabled && isOpen && (
+        <div className="absolute right-0 top-full mt-1 w-40 bg-white border border-slate-100 rounded-xl shadow-2xl z-[100] overflow-hidden">
+          {VALIDATION_TYPES.map((t) => (
+            <button
+              key={t.id}
+              onClick={() => { onChange(t.id === 'none' ? '' : t.id); setIsOpen(false); }}
+              className={`w-full flex items-center justify-end gap-2 px-3 py-2 hover:bg-slate-50 transition-colors text-right ${
+                (value || 'none') === t.id ? 'bg-blue-50 text-blue-600' : 'text-slate-700'
+              }`}
+            >
+              <span className="text-[11px] font-bold">{t.label}</span>
+              {t.icon}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const OPERATORS = [
   { id: 'eq', label: 'שווה', icon: '=' },
   { id: 'gt', label: 'גדול', icon: '<' },
@@ -197,6 +248,15 @@ export const InputTextNode = (props: any) => (
     <InputFieldWrapper label="שם משתנה לאחסון">
       <SearchableInput value={props.data.variableName} onChange={(v: string) => props.data.onChange({ variableName: v })} placeholder="user_name" searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
     </InputFieldWrapper>
+    <div className="mb-3 p-1">
+      <div className="flex items-center justify-between">
+        <ValidationTypeSelector
+          value={props.data.validationType}
+          onChange={(v: string) => props.data.onChange({ validationType: v || undefined })}
+        />
+        <label className="text-[14px] font-bold text-slate-400 uppercase tracking-wider">סוג ולידציה</label>
+      </div>
+    </div>
   </BaseNode>
 );
 
@@ -456,6 +516,11 @@ export const OutputMenuNode = (props: any) => {
       </InputFieldWrapper>
       <div className="space-y-4 relative text-right">
         <label className="block text-[14px] font-bold text-slate-400 uppercase tracking-widest">רשימת אפשרויות</label>
+        {/* Default (catch-all) handle — always first */}
+        <div className="flex items-center gap-2 p-2 bg-slate-50 border border-dashed border-slate-300 rounded-2xl relative">
+          <Handle type="source" position={Position.Right} id="option-default" style={{ top: '50%', right: -16 }} className="w-4 h-4 bg-slate-400 border-2 border-white rounded-full shadow-lg" />
+          <span className="flex-1 text-[12px] font-black text-slate-400 uppercase tracking-widest px-2 text-right">ברירת מחדל</span>
+        </div>
         {options.map((opt: string, i: number) => (
           <div key={i} className="flex items-center gap-2 p-2 bg-slate-50 border border-slate-100 rounded-2xl group/item relative transition-colors hover:bg-white hover:border-blue-100">
             <Handle type="source" position={Position.Right} id={`option-${i}`} style={{ top: '50%', right: -16 }} className="w-4 h-4 bg-slate-400 border-2 border-white rounded-full shadow-lg" />

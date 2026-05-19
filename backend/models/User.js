@@ -11,6 +11,7 @@ const userSchema = new mongoose.Schema({
   public_id: String,
   account_type: { type: String, default: 'Basic' },
   status: { type: String, default: 'active' },
+  manager_id: { type: String, default: null },
   dialog360_bot_id: { type: String, default: '' },
   custom_limits: {
     max_bots: { type: Number, default: null },

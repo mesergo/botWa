@@ -21,6 +21,7 @@ export enum NodeType {
 export interface NodeData {
   label: string;
   variableName?: string;
+  validationType?: 'email' | 'phone' | 'id' | 'url';
   content?: string;
   url?: string;
   urlVariable?: string;   // variable name whose value is used as the URL (e.g. "link_var")
@@ -108,7 +109,8 @@ export interface User {
   id: string;
   name: string;
   email: string;
-  role?: 'admin' | 'user';
+  role?: 'admin' | 'user' | 'rep_bot' | 'rep';
+  manager_id?: string | null;
   public_id: string;
   account_type: 'Trial' | 'Basic' | 'Premium';
   status: 'active' | 'inActive' | 'pause';

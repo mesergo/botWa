@@ -17,6 +17,31 @@ export const authenticateToken = (req, res, next) => {
   });
 };
 
+// Returns the effective owner user ID:
+// For rep roles (rep / rep_bot), returns their manager's ID so they see the manager's data.
+// For all other roles, returns the authenticated user's own ID.
+export const getEffectiveUserId = (req) => {
+  const role = req.user?.role;
+  if ((role === 'rep' || role === 'rep_bot') && req.user?.manager_id) {
+    return req.user.manager_id;
+  }
+  return req.userId;
+};
+
+// Middleware: only company managers (role === 'user') may access this route.
+// Also allows admins who are impersonating a company manager.
+export const requireCompanyManager = (req, res, next) => {
+  if (!req.user) {
+    return res.status(403).json({ error: 'Access denied. Company manager role required.' });
+  }
+  const role = req.user.role;
+  // Allow: company manager, OR admin impersonating someone
+  if (role === 'user' || role === 'admin' || req.user.isImpersonating) {
+    return next();
+  }
+  return res.status(403).json({ error: 'Access denied. Company manager role required.' });
+};
+
 // Middleware to check if user is admin
 export const requireAdmin = async (req, res, next) => {
   try {

@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Phone, Clock, MessageSquare, Search, Bot, Users, LogOut, List } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Phone, Clock, MessageSquare, Search, Bot, Users, LogOut, List, Shield, Settings, UserCog } from 'lucide-react';
+import ImpersonationBanner from './ImpersonationBanner';
 
 interface Contact {
   phone: string;
@@ -10,32 +11,24 @@ interface Contact {
 
 interface ContactsPageProps {
   token: string | null;
-  currentUser?: { name?: string; email?: string; role?: string } | null;
+  currentUser?: { name?: string; email?: string; role?: string; isImpersonating?: boolean } | null;
   onBack: () => void;
   onLogout: () => void;
   onOpenSessions?: () => void;
+  onOpenAdminPanel?: () => void;
+  onOpenSettings?: () => void;
+  onOpenSubUsers?: () => void;
+  onStopImpersonation?: () => void;
 }
 
 const API_BASE = window.location.hostname === 'localhost'
   ? 'http://localhost:3001/api'
   : `${window.location.origin}/api`;
 
-const ContactsPage: React.FC<ContactsPageProps> = ({ token, currentUser, onBack, onLogout, onOpenSessions }) => {
+const ContactsPage: React.FC<ContactsPageProps> = ({ token, currentUser, onBack, onLogout, onOpenSessions, onOpenAdminPanel, onOpenSettings, onOpenSubUsers, onStopImpersonation }) => {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
-  const profileMenuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (profileMenuRef.current && !profileMenuRef.current.contains(e.target as Node)) {
-        setProfileMenuOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
 
   useEffect(() => {
     const fetchContacts = async () => {
@@ -75,44 +68,69 @@ const ContactsPage: React.FC<ContactsPageProps> = ({ token, currentUser, onBack,
 
   return (
     <div className="h-screen w-screen bg-[#f8fafc] flex flex-col font-medium text-right overflow-hidden" dir="rtl">
+      {/* Impersonation Banner */}
+      <ImpersonationBanner currentUser={currentUser} onStopImpersonation={onStopImpersonation} />
       {/* Navbar */}
-      <nav className="h-20 bg-white border-b border-slate-100 flex items-center justify-between px-10 z-20 flex-shrink-0">
+      <nav className="h-20 bg-white border-b border-slate-100 flex items-center justify-between px-10 z-20 flex-shrink-0" dir="ltr">
         <div className="flex items-center gap-4">
           <img src="/images/mesergo-logo.png" alt="Logo" className="h-10 w-auto cursor-pointer" onClick={onBack} />
+        </div>
+        {/* ── Navigation tabs ── */}
+        <div className="flex items-center gap-1 bg-slate-100 rounded-2xl p-1" dir="rtl">
+          <button
+            onClick={onBack}
+            className="flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm text-slate-500 hover:text-slate-700 transition-all"
+          >
+            <Bot size={16} /> הבוטים שלי
+          </button>
+          {onOpenSessions && (
+            <button
+              onClick={onOpenSessions}
+              className="flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm text-slate-500 hover:text-slate-700 transition-all"
+            >
+              <List size={16} /> שיחות
+            </button>
+          )}
+          <button
+            className="flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm bg-white text-slate-900 shadow-sm transition-all"
+          >
+            <Users size={16} /> אנשי קשר
+          </button>
+          {onOpenSettings && (
+            <button
+              onClick={onOpenSettings}
+              className="flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm text-slate-500 hover:text-slate-700 transition-all"
+            >
+              <Settings size={16} /> הגדרות
+            </button>
+          )}
+          {onOpenSubUsers && currentUser?.role === 'user' && (
+            <button
+              onClick={onOpenSubUsers}
+              className="flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm text-slate-500 hover:text-slate-700 transition-all"
+            >
+              <UserCog size={16} /> משתמשים
+            </button>
+          )}
         </div>
         <div className="flex items-center gap-4">
           {currentUser && (
             <span className="text-sm font-bold text-slate-600">שלום, {currentUser.name || currentUser.email}</span>
           )}
-          {/* User Avatar - dropdown menu */}
-          <div className="relative" ref={profileMenuRef}>
+          {currentUser?.role === 'admin' && onOpenAdminPanel && (
             <button
-              onClick={() => setProfileMenuOpen(v => !v)}
-              title="תפריט פרופיל"
-              className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-sm hover:scale-110 transition-transform shadow-md select-none"
+              onClick={onOpenAdminPanel}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-100 text-blue-700 rounded-lg font-bold hover:bg-blue-200 transition-colors"
             >
-              {firstName}
+              <Shield size={18} />
+              פאנל ניהול
             </button>
-            {profileMenuOpen && (
-              <div className="absolute right-0 top-12 bg-white border border-slate-100 rounded-2xl shadow-xl z-50 min-w-[180px] overflow-hidden" dir="rtl">
-                <button
-                  onClick={() => setProfileMenuOpen(false)}
-                  className="w-full flex items-center gap-3 px-5 py-3.5 text-sm font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 transition-colors"
-                >
-                  <Users size={16} className="text-blue-500 flex-shrink-0" />
-                  אנשי קשר
-                </button>
-                {onOpenSessions && (
-                  <button
-                    onClick={() => { setProfileMenuOpen(false); onOpenSessions(); }}
-                    className="w-full flex items-center gap-3 px-5 py-3.5 text-sm font-bold text-slate-700 hover:bg-slate-50 transition-colors"
-                  >
-                    <List size={16} className="text-indigo-500 flex-shrink-0" />
-                    שיחות שלי
-                  </button>
-                )}
-              </div>
-            )}
+          )}
+          <div
+            title={currentUser?.name || currentUser?.email || ''}
+            className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-sm shadow-md select-none"
+          >
+            {firstName}
           </div>
           <button onClick={onLogout} className="p-2.5 text-slate-300 hover:text-red-500 transition-colors rounded-xl hover:bg-red-50">
             <LogOut size={22} />

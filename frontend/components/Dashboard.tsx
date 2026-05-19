@@ -1,6 +1,12 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { Plus, Bot, ArrowLeft, Trash2, Calendar, LogOut, Shield, UserCog, Users, List } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Plus, Bot, ArrowLeft, Trash2, Calendar, LogOut, Shield, UserCog, Users, List, Settings, Save, User as UserIcon, Phone, Mail, Star, Copy, Check, Wifi, Gauge, MessageSquare, Globe, Layers, CheckCircle } from 'lucide-react';
+import ImpersonationBanner from './ImpersonationBanner';
 import { BotFlow } from '../types';
+import SubUsersTab from './SubUsersTab';
+
+const API_BASE = window.location.hostname === 'localhost'
+  ? 'http://localhost:3001/api'
+  : `${window.location.origin}/api`;
 
 interface DashboardProps {
   bots: BotFlow[];
@@ -15,6 +21,37 @@ interface DashboardProps {
   onOpenContacts?: () => void;
   onOpenSessions?: () => void;
   onConnectFacebook?: (bot: BotFlow) => Promise<void>;
+  token?: string | null;
+  initialTab?: 'bots' | 'settings' | 'users';
+}
+
+interface UserProfile {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  role: string;
+  public_id: string;
+  account_type: string;
+  status: string;
+  dialog360_bot_id: string;
+  createdAt: string;
+  trial_expires_at: string | null;
+  custom_limits?: {
+    max_bots: number | null;
+    max_versions: number | null;
+    version_price: number | null;
+    bot_price: number | null;
+  };
+  limits_in_effect?: {
+    maxBots: number;
+    maxVersions: number;
+    versionPrice: number;
+    botPrice: number;
+    canPublish?: boolean;
+  };
+  active_bots_count?: number;
+  flows_count?: number;
 }
 
 const FacebookIcon: React.FC<{ size?: number; className?: string }> = ({ size = 18, className = '' }) => (
@@ -23,24 +60,117 @@ const FacebookIcon: React.FC<{ size?: number; className?: string }> = ({ size = 
   </svg>
 );
 
-const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, onDeleteBot, onSetDefaultBot, onLogout, currentUser, onOpenAdminPanel, onStopImpersonation, onOpenContacts, onOpenSessions, onConnectFacebook }) => {
+const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, onDeleteBot, onSetDefaultBot, onLogout, currentUser, onOpenAdminPanel, onStopImpersonation, onOpenContacts, onOpenSessions, onConnectFacebook, token, initialTab }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newBotName, setNewBotName] = useState('');
-  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
-  const profileMenuRef = useRef<HTMLDivElement>(null);
   const [facebookConfirmBot, setFacebookConfirmBot] = useState<BotFlow | null>(null);
   const [facebookSending, setFacebookSending] = useState(false);
   const [facebookDone, setFacebookDone] = useState(false);
+  const [activeTab, setActiveTab] = useState<'bots' | 'settings' | 'users'>(initialTab ?? 'bots');
+
+  // Settings tab state
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [editName, setEditName] = useState('');
+  const [editEmail, setEditEmail] = useState('');
+  const [editPhone, setEditPhone] = useState('');
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [profileError, setProfileError] = useState<string | null>(null);
+  const [profileSuccess, setProfileSuccess] = useState(false);
+  const [copiedId, setCopiedId] = useState(false);
+
+  // WA templates state (Settings tab)
+  const [waTemplates, setWaTemplates] = useState<any[]>([]);
+  const [waTemplatesLoading, setWaTemplatesLoading] = useState(false);
+
+  const loadProfile = async () => {
+    if (!token) return;
+    setProfileLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/auth/profile`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data: UserProfile = await res.json();
+        setProfile(data);
+        setEditName(data.name);
+        setEditEmail(data.email);
+        setEditPhone(data.phone || '');
+      }
+    } finally {
+      setProfileLoading(false);
+    }
+  };
+
+  const loadWaTemplates = async () => {
+    if (!token) return;
+    setWaTemplatesLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/auth/templates`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) { setWaTemplates([]); return; }
+      const data = await res.json();
+      if (data.success && data.templates) {
+        const list = Array.isArray(data.templates) ? data.templates
+          : data.templates.data ? data.templates.data
+          : data.templates.waba_templates ? data.templates.waba_templates
+          : [];
+        setWaTemplates(list);
+      } else {
+        setWaTemplates([]);
+      }
+    } catch { setWaTemplates([]); } finally { setWaTemplatesLoading(false); }
+  };
 
   useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (profileMenuRef.current && !profileMenuRef.current.contains(e.target as Node)) {
-        setProfileMenuOpen(false);
+    if (activeTab === 'settings' && !profile) {
+      loadProfile();
+    }
+    if (activeTab === 'settings' && waTemplates.length === 0 && !waTemplatesLoading) {
+      loadWaTemplates();
+    }
+  }, [activeTab]);
+
+  const isRep = currentUser?.role === 'rep' || currentUser?.role === 'rep_bot';
+  const isCompanyManager = currentUser?.role === 'user';
+
+  const handleSaveProfile = async () => {
+    if (!token) return;
+    setProfileSaving(true);
+    setProfileError(null);
+    setProfileSuccess(false);
+    try {
+      const res = await fetch(`${API_BASE}/auth/profile`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ name: editName, email: editEmail, phone: editPhone }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setProfileError(data.error || 'שגיאה בשמירת הפרטים');
+      } else {
+        setProfile(data);
+        setEditName(data.name);
+        setEditEmail(data.email);
+        setEditPhone(data.phone || '');
+        setProfileSuccess(true);
+        setTimeout(() => setProfileSuccess(false), 3000);
       }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+    } catch {
+      setProfileError('שגיאה בחיבור לשרת');
+    } finally {
+      setProfileSaving(false);
+    }
+  };
+
+  const copyPublicId = () => {
+    if (!profile) return;
+    navigator.clipboard.writeText(profile.public_id).then(() => {
+      setCopiedId(true);
+      setTimeout(() => setCopiedId(false), 2000);
+    });
+  };
 
   const handleCreate = () => {
     if (!newBotName.trim()) return;
@@ -58,26 +188,58 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
   return (
     <div className="h-screen w-screen bg-[#f8fafc] flex flex-col font-medium text-right overflow-hidden">
       {/* Impersonation Banner */}
-      {currentUser?.isImpersonating && (
-        <div className="bg-gradient-to-r from-orange-500 to-red-500 text-white px-6 py-3 flex items-center justify-between z-30">
-          <div className="flex items-center gap-3">
-            <UserCog className="w-5 h-5" />
-            <span className="font-bold">מצב התחזות - אתה רואה את המערכת כמשתמש: {currentUser.name || currentUser.email}</span>
-          </div>
-          {onStopImpersonation && (
-            <button
-              onClick={onStopImpersonation}
-              className="bg-white text-orange-600 px-4 py-2 rounded-lg font-bold hover:bg-orange-50 transition-colors"
-            >
-              חזור למצב מנהל
-            </button>
-          )}
-        </div>
-      )}
+      <ImpersonationBanner currentUser={currentUser} onStopImpersonation={onStopImpersonation} />
       
       <nav className="h-20 bg-white border-b border-slate-100 flex items-center justify-between px-10 z-20">
         <div className="flex items-center gap-4">
           <img src="/images/mesergo-logo.png" alt="Logo" className="h-10 w-auto" />
+        </div>
+        {/* ── Navigation tabs ── */}
+        <div className="flex items-center gap-1 bg-slate-100 rounded-2xl p-1" dir="rtl">
+          <button
+            onClick={() => setActiveTab('bots')}
+            className={`flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm transition-all ${
+              activeTab === 'bots' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            <Bot size={16} /> הבוטים שלי
+          </button>
+          {onOpenSessions && (
+            <button
+              onClick={onOpenSessions}
+              className="flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm text-slate-500 hover:text-slate-700 transition-all"
+            >
+              <List size={16} /> שיחות
+            </button>
+          )}
+          {onOpenContacts && !isRep && (
+            <button
+              onClick={onOpenContacts}
+              className="flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm text-slate-500 hover:text-slate-700 transition-all"
+            >
+              <Users size={16} /> אנשי קשר
+            </button>
+          )}
+          {!isRep && (
+            <button
+              onClick={() => setActiveTab('settings')}
+              className={`flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm transition-all ${
+                activeTab === 'settings' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              <Settings size={16} /> הגדרות
+            </button>
+          )}
+          {isCompanyManager && (
+            <button
+              onClick={() => setActiveTab('users')}
+              className={`flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm transition-all ${
+                activeTab === 'users' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              <UserCog size={16} /> משתמשים
+            </button>
+          )}
         </div>
         <div className="flex items-center gap-4">
           {currentUser && (
@@ -92,52 +254,302 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
               פאנל ניהול
             </button>
           )}
-          {/* User Avatar - dropdown menu */}
-          <div className="relative" ref={profileMenuRef}>
-            <button
-              onClick={() => setProfileMenuOpen(v => !v)}
-              title="תפריט פרופיל"
-              className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-sm hover:scale-110 transition-transform shadow-md select-none"
-            >
-              {(currentUser?.name?.charAt(0) || currentUser?.email?.charAt(0) || '?').toUpperCase()}
-            </button>
-            {profileMenuOpen && (
-              <div className="absolute right-0 top-12 bg-white border border-slate-100 rounded-2xl shadow-xl z-50 min-w-[180px] overflow-hidden" dir="rtl">
-                {onOpenContacts && (
-                  <button
-                    onClick={() => { setProfileMenuOpen(false); onOpenContacts(); }}
-                    className="w-full flex items-center gap-3 px-5 py-3.5 text-sm font-bold text-slate-700 hover:bg-slate-50 transition-colors"
-                  >
-                    <Users size={16} className="text-blue-500 flex-shrink-0" />
-                    אנשי קשר
-                  </button>
-                )}
-                {onOpenSessions && (
-                  <button
-                    onClick={() => { setProfileMenuOpen(false); onOpenSessions(); }}
-                    className="w-full flex items-center gap-3 px-5 py-3.5 text-sm font-bold text-slate-700 hover:bg-slate-50 transition-colors"
-                  >
-                    <List size={16} className="text-indigo-500 flex-shrink-0" />
-                    שיחות שלי
-                  </button>
-                )}
-              </div>
-            )}
+          <div
+            title={currentUser?.name || currentUser?.email || ''}
+            className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-sm shadow-md select-none"
+          >
+            {(currentUser?.name?.charAt(0) || currentUser?.email?.charAt(0) || '?').toUpperCase()}
           </div>
           <button onClick={onLogout} className="p-2.5 text-slate-300 hover:text-red-500 transition-colors rounded-xl hover:bg-red-50"><LogOut size={22} /></button>
         </div>
       </nav>
 
+      {/* ── Settings Tab ── */}
+      {activeTab === 'settings' && (
+        <div className="flex-1 overflow-y-auto p-12">
+          <div className="max-w-5xl mx-auto">
+            <h1 className="text-3xl font-black text-slate-900 mb-10 text-right">הגדרות</h1>
+
+            {profileLoading ? (
+              <div className="text-center text-slate-400 py-20 font-bold">טוען פרטים...</div>
+            ) : profile ? (
+              <>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6" dir="rtl">
+
+                {/* Editable personal details */}
+                <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-8">
+                  <h2 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-6 flex items-center gap-2 border-b border-slate-100 pb-4">
+                    <UserIcon size={14} /> פרטים אישיים
+                  </h2>
+                  <div className="space-y-5">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-400 mb-2">שם מלא</label>
+                      <input
+                        className="w-full px-5 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600 transition-all text-right"
+                        value={editName}
+                        onChange={e => setEditName(e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-400 mb-2">אימייל</label>
+                      <input
+                        type="email"
+                        className="w-full px-5 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600 transition-all text-right"
+                        value={editEmail}
+                        onChange={e => setEditEmail(e.target.value)}
+                        dir="ltr"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-400 mb-2">טלפון</label>
+                      <input
+                        type="tel"
+                        className="w-full px-5 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600 transition-all text-right"
+                        value={editPhone}
+                        onChange={e => setEditPhone(e.target.value)}
+                        placeholder="05X-XXXXXXX"
+                      />
+                    </div>
+                  </div>
+
+                  {profileError && (
+                    <div className="mt-4 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-red-600 text-sm font-bold text-right">
+                      {profileError}
+                    </div>
+                  )}
+                  {profileSuccess && (
+                    <div className="mt-4 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 text-emerald-600 text-sm font-bold text-right flex items-center gap-2">
+                      <Check size={16} /> הפרטים נשמרו בהצלחה
+                    </div>
+                  )}
+
+                  <button
+                    onClick={handleSaveProfile}
+                    disabled={profileSaving}
+                    className="mt-6 flex items-center gap-2 px-8 py-4 bg-blue-600 text-white rounded-2xl font-bold shadow-lg shadow-blue-600/20 hover:bg-blue-700 transition-all disabled:opacity-60 active:scale-95"
+                  >
+                    <Save size={18} />
+                    {profileSaving ? 'שומר...' : 'שמור שינויים'}
+                  </button>
+                </div>
+
+                {/* Read-only account details */}
+                <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-8">
+                  <h2 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-6 flex items-center gap-2 border-b border-slate-100 pb-4">
+                    <Shield size={14} /> פרטי חשבון
+                  </h2>
+                  <div className="space-y-5">
+
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-400">מזהה ציבורי</span>
+                      <div className="flex items-center gap-3">
+                        <button onClick={copyPublicId} className="p-2 text-slate-400 hover:text-blue-600 transition-colors" title="העתק מזהה">
+                          {copiedId ? <Check size={16} className="text-emerald-500" /> : <Copy size={16} />}
+                        </button>
+                        <span className="text-slate-800 font-mono text-sm bg-slate-50 px-3 py-1 rounded-lg border border-slate-100 select-all">{profile.public_id}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between py-1">
+                      <span className="text-xs font-bold text-slate-400">סוג חשבון</span>
+                      <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold border ${
+                        profile.account_type === 'Premium' ? 'bg-amber-50 text-amber-600 border-amber-100'
+                        : profile.account_type === 'Trial' ? 'bg-orange-50 text-orange-600 border-orange-100'
+                        : 'bg-slate-100 text-slate-600 border-slate-200'
+                      }`}>
+                        <Star size={12} className="fill-current" />
+                        {profile.account_type === 'Trial' ? 'ניסיוני' : profile.account_type}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between py-1">
+                      <span className="text-xs font-bold text-slate-400">סטטוס</span>
+                      <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold border ${
+                        profile.status === 'active' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-red-50 text-red-600 border-red-100'
+                      }`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${ profile.status === 'active' ? 'bg-emerald-500' : 'bg-red-500'}`} />
+                        {profile.status === 'active' ? 'פעיל' : 'חסום'}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between py-1">
+                      <span className="text-xs font-bold text-slate-400">תפקיד</span>
+                      <span className="text-slate-700 font-bold text-sm">{profile.role === 'admin' ? 'מנהל' : 'משתמש'}</span>
+                    </div>
+
+                    <div className="flex items-center justify-between py-1">
+                      <span className="text-xs font-bold text-slate-400">תאריך הצטרפות</span>
+                      <span className="text-slate-700 font-bold text-sm">{profile.createdAt ? new Date(profile.createdAt).toLocaleDateString('he-IL') : '-'}</span>
+                    </div>
+
+                    {profile.trial_expires_at && (
+                      <div className="flex items-center justify-between py-1">
+                        <span className="text-xs font-bold text-slate-400">תפוגת תקופת ניסיון</span>
+                        <span className="text-orange-600 font-bold text-sm">{new Date(profile.trial_expires_at).toLocaleDateString('he-IL')}</span>
+                      </div>
+                    )}
+
+                    {profile.dialog360_bot_id && (
+                      <div className="flex items-center justify-between py-1">
+                        <span className="text-xs font-bold text-slate-400">Bot ID (WhatsApp)</span>
+                        <span className="text-slate-800 font-mono text-sm bg-slate-50 px-3 py-1 rounded-lg border border-slate-100 select-all">{profile.dialog360_bot_id}</span>
+                      </div>
+                    )}
+
+                  </div>
+                </div>
+
+                {/* Connection Settings */}
+                <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-8">
+                  <h2 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-6 flex items-center gap-2 border-b border-slate-100 pb-4">
+                    <Wifi size={14} /> הגדרות חיבור
+                  </h2>
+                  <div className="space-y-5">
+                    <div className="flex items-center justify-between py-1">
+                      <span className="text-xs font-bold text-slate-400">Bot ID</span>
+                      <span className="text-slate-800 font-mono text-sm bg-slate-50 px-3 py-1 rounded-lg border border-slate-100 select-all">{profile.dialog360_bot_id || '-'}</span>
+                    </div>
+                    <div className="flex items-center justify-between py-1">
+                      <span className="text-xs font-bold text-slate-400">בוטים פעילים</span>
+                      <span className="text-slate-700 font-bold text-sm">{profile.active_bots_count ?? 0}</span>
+                    </div>
+                    <div className="flex items-center justify-between py-1">
+                      <span className="text-xs font-bold text-slate-400">זרימות שיחה</span>
+                      <span className="text-slate-700 font-bold text-sm">{profile.flows_count ?? 0}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Personal Quota */}
+                <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-8">
+                  <h2 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-6 flex items-center gap-2 border-b border-slate-100 pb-4">
+                    <Gauge size={14} /> מכסה אישיות
+                  </h2>
+                  <div className="space-y-5">
+                    <div className="flex items-center justify-between py-1">
+                      <span className="text-xs font-bold text-slate-400">מקסימום בוטים</span>
+                      <span className="text-slate-700 font-bold text-sm">{profile.limits_in_effect?.maxBots ?? '-'}</span>
+                    </div>
+                    <div className="flex items-center justify-between py-1">
+                      <span className="text-xs font-bold text-slate-400">מקסימום גרסאות</span>
+                      <span className="text-slate-700 font-bold text-sm">{profile.limits_in_effect?.maxVersions ?? '-'}</span>
+                    </div>
+                    <div className="flex items-center justify-between py-1">
+                      <span className="text-xs font-bold text-slate-400">עלות גרסה</span>
+                      <span className="text-slate-700 font-bold text-sm">{profile.limits_in_effect?.versionPrice != null ? `₪${profile.limits_in_effect.versionPrice}` : '-'}</span>
+                    </div>
+                    <div className="flex items-center justify-between py-1">
+                      <span className="text-xs font-bold text-slate-400">עלות בוט</span>
+                      <span className="text-slate-700 font-bold text-sm">{profile.limits_in_effect?.botPrice != null ? `₪${profile.limits_in_effect.botPrice}` : '-'}</span>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+
+              {/* ── WA Message Templates ── */}
+              <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-8 mt-2">
+                <h2 dir="rtl" className="text-xs font-black text-slate-400 uppercase tracking-wider mb-6 flex items-center gap-2 border-b border-slate-100 pb-4">
+                  <MessageSquare size={14} /> הודעות תבנית
+                </h2>
+                {waTemplatesLoading ? (
+                  <div className="flex items-center justify-center py-12">
+                    <div className="text-center text-slate-400">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-sky-600 mx-auto mb-3"></div>
+                      <div className="text-sm font-bold">טוען הודעות תבנית...</div>
+                    </div>
+                  </div>
+                ) : waTemplates.length === 0 ? (
+                  <div className="text-center py-12">
+                    <MessageSquare size={32} className="text-slate-300 mx-auto mb-3" />
+                    <p className="text-sm font-bold text-slate-500">לא נמצאו הודעות תבנית</p>
+                    <p className="text-xs text-slate-400 mt-1">ודא שהגדרת Bot ID בהגדרות החיבור</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                    {waTemplates.map((tmpl: any, idx: number) => {
+                      const name = tmpl.name || tmpl.elementName || tmpl.template_name || `Template ${idx + 1}`;
+                      const language = tmpl.language || '';
+                      const status = tmpl.status || '';
+                      const category = tmpl.category || '';
+                      const components = tmpl.components || [];
+                      const bodyComponent = components.find((c: any) => c.type === 'BODY');
+                      const headerComponent = components.find((c: any) => c.type === 'HEADER');
+                      const buttonsComponent = components.find((c: any) => c.type === 'BUTTONS');
+                      const bodyText = bodyComponent?.text || '';
+                      const hasImage = headerComponent?.format === 'IMAGE';
+                      const buttonCount = buttonsComponent?.buttons?.length || 0;
+                      return (
+                        <div key={tmpl.id || idx} className="bg-slate-50 border border-slate-200 rounded-2xl overflow-hidden hover:shadow-md transition-all hover:border-sky-300 group">
+                          <div className={`px-5 py-4 border-b border-slate-200 ${hasImage ? 'bg-sky-50' : 'bg-white'}`}>
+                            <div className="flex items-start gap-2">
+                              <div className="flex-1 min-w-0">
+                                <h3 className="text-sm font-black text-slate-800 truncate group-hover:text-sky-700 transition-colors">{name}</h3>
+                                <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                                  {language && (
+                                    <span className="flex items-center gap-1 bg-white border border-slate-200 text-slate-500 px-2 py-0.5 rounded-lg text-[10px] font-bold">
+                                      <Globe size={10} />{language.toUpperCase()}
+                                    </span>
+                                  )}
+                                  {status && (
+                                    <span className={`flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-bold ${
+                                      status === 'APPROVED' ? 'bg-emerald-500 text-white'
+                                      : status === 'PENDING' ? 'bg-amber-500 text-white'
+                                      : 'bg-slate-400 text-white'
+                                    }`}>
+                                      {status === 'APPROVED' ? <CheckCircle size={9} /> : null}
+                                      {status}
+                                    </span>
+                                  )}
+                                  {category && (
+                                    <span className="bg-sky-500 text-white px-2 py-0.5 rounded-lg text-[10px] font-bold">{category}</span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="p-5">
+                            {bodyText ? (
+                              <p className="text-xs text-slate-700 leading-relaxed whitespace-pre-wrap line-clamp-4 bg-white border border-slate-100 rounded-xl p-3">
+                                {bodyText.substring(0, 200)}{bodyText.length > 200 ? '...' : ''}
+                              </p>
+                            ) : (
+                              <p className="text-xs text-slate-400 italic">אין תוכן</p>
+                            )}
+                            <div className="flex items-center gap-3 mt-3 text-[10px] text-slate-400 font-bold">
+                              <span className="flex items-center gap-1"><Layers size={11} />{components.length} רכיבים</span>
+                              {buttonCount > 0 && <span>{buttonCount} כפתורים</span>}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+            </>
+            ) : (
+              <div className="text-center text-slate-400 py-20 font-bold">לא ניתן לטעון פרטים. אנא נסה שוב.</div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Bots Tab ── */}
+      {activeTab === 'bots' && (
       <div className="flex-1 overflow-y-auto p-12">
         <div className="max-w-6xl mx-auto">
           <div className="flex items-center justify-between mb-10 flex-row-reverse">
             <h1 className="text-3xl font-black text-slate-900">הבוטים שלי</h1>
-            <button 
-              onClick={() => setIsModalOpen(true)}
-              className="flex items-center gap-3 px-8 py-4 bg-blue-600 text-white rounded-2xl font-bold shadow-lg shadow-blue-600/20 hover:bg-blue-700 transition-all scale-100 active:scale-95"
-            >
-              <Plus size={20} /> צור תזרים חדש
-            </button>
+            {!isRep && (
+              <button 
+                onClick={() => setIsModalOpen(true)}
+                className="flex items-center gap-3 px-8 py-4 bg-blue-600 text-white rounded-2xl font-bold shadow-lg shadow-blue-600/20 hover:bg-blue-700 transition-all scale-100 active:scale-95"
+              >
+                <Plus size={20} /> צור תזרים חדש
+              </button>
+            )}
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -158,7 +570,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                           ברירת מחדל
                         </div>
                       )}
-                      {!bot.is_default && (
+                      {!isRep && !bot.is_default && (
                         <button
                           onClick={(e) => { e.stopPropagation(); onSetDefaultBot(bot.id); }}
                           className="px-3 py-1 text-slate-400 hover:text-yellow-600 hover:bg-yellow-50 rounded-lg transition-all text-xs font-bold"
@@ -176,12 +588,14 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                           <FacebookIcon size={18} />
                         </button>
                       )}
+                      {!isRep && (
                       <button 
                         onClick={(e) => { e.stopPropagation(); onDeleteBot(bot.id); }}
                         className="p-2 text-slate-200 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
                       >
                         <Trash2 size={18} />
                       </button>
+                      )}
                     </div>
                   </div>
                   <h3 className="text-2xl font-black text-slate-900 mb-2 truncate">{bot.name}</h3>
@@ -207,6 +621,16 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
           </div>
         </div>
       </div>
+      )}
+
+      {/* ── Users Tab ── */}
+      {activeTab === 'users' && isCompanyManager && (
+        <div className="flex-1 overflow-y-auto p-12">
+          <div className="max-w-5xl mx-auto">
+            <SubUsersTab token={token} />
+          </div>
+        </div>
+      )}
 
       {facebookConfirmBot && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[100] p-6 text-right">

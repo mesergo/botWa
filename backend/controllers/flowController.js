@@ -3,6 +3,7 @@ import Version from '../models/Version.js';
 import Widget from '../models/Widget.js';
 import Option from '../models/Option.js';
 import { mongoose } from '../config/db.js';
+import { getEffectiveUserId } from '../middleware/auth.js';
 
 const fetchFlowData = async (userId, flow_id, standard_process_id = null, versionId = null) => {
   if (versionId) {
@@ -82,8 +83,8 @@ const fetchFlowData = async (userId, flow_id, standard_process_id = null, versio
       };
     }
     
-    // For action_web_service: exclude the 'default' option from the conditional branches data
-    const conditionalOptions = w.type === 'action_web_service'
+    // For action_web_service and output_menu: exclude the 'default' option from the conditional branches data
+    const conditionalOptions = (w.type === 'action_web_service' || w.type === 'output_menu')
       ? nodeOptions.filter(o => o.operator !== 'default')
       : nodeOptions;
 
@@ -129,9 +130,10 @@ const fetchFlowData = async (userId, flow_id, standard_process_id = null, versio
         }
       });
     } else {
-      // For action_web_service: separate 'default' options from conditional ones
-      const defaultOpts = w.type === 'action_web_service' ? wOptions.filter(o => o.operator === 'default') : [];
-      const conditionalOpts = w.type === 'action_web_service' ? wOptions.filter(o => o.operator !== 'default') : wOptions;
+      // For action_web_service and output_menu: separate 'default' options from conditional ones
+      const isDefaultSeparated = w.type === 'action_web_service' || w.type === 'output_menu';
+      const defaultOpts = isDefaultSeparated ? wOptions.filter(o => o.operator === 'default') : [];
+      const conditionalOpts = isDefaultSeparated ? wOptions.filter(o => o.operator !== 'default') : wOptions;
 
       conditionalOpts.forEach((o, i) => { 
         if (o.next) { 
@@ -140,11 +142,22 @@ const fetchFlowData = async (userId, flow_id, standard_process_id = null, versio
       });
 
       // Reconstruct the 'default' exit edge for action_web_service
-      defaultOpts.forEach(o => {
-        if (o.next) {
-          edges.push({ id: `e-${w.id}-default-${o.next}`, source: w.id, sourceHandle: 'default', target: o.next, type: 'button', style: { stroke: '#3b82f6', strokeWidth: 2, strokeDasharray: '6,4' } });
-        }
-      });
+      if (w.type === 'action_web_service') {
+        defaultOpts.forEach(o => {
+          if (o.next) {
+            edges.push({ id: `e-${w.id}-default-${o.next}`, source: w.id, sourceHandle: 'default', target: o.next, type: 'button', style: { stroke: '#3b82f6', strokeWidth: 2, strokeDasharray: '6,4' } });
+          }
+        });
+      }
+
+      // Reconstruct the 'option-default' exit edge for output_menu
+      if (w.type === 'output_menu') {
+        defaultOpts.forEach(o => {
+          if (o.next) {
+            edges.push({ id: `e-${w.id}-option-default-${o.next}`, source: w.id, sourceHandle: 'option-default', target: o.next, type: 'button', style: { stroke: '#3b82f6', strokeWidth: 2, strokeDasharray: '6,4' } });
+          }
+        });
+      }
     }
   });
 
@@ -167,7 +180,11 @@ const withFlowLock = (lockKey, fn) => {
 };
 
 export const syncFlow = async (req, res) => {
-  const userId = req.user.id;
+  // rep (sessions-only) cannot edit flows
+  if (req.user?.role === 'rep') {
+    return res.status(403).json({ error: 'Access denied. Representatives without bot access cannot edit flows.' });
+  }
+  const userId = getEffectiveUserId(req);
   const { nodes, edges, flow_id, standard_process_id = null } = req.body;
 
   console.log('🔵 syncFlow - התחלה:', {
@@ -307,6 +324,31 @@ export const syncFlow = async (req, res) => {
             operator: 'default'
           });
         }
+      } else if (node.type === 'output_menu') {
+        // output_menu gets its own block so edges are always saved even when
+        // node.data.options is undefined (user connected handles without typing)
+        const menuOptions = node.data.options || [];
+        for (let i = 0; i < menuOptions.length; i++) {
+          const optionEdge = findLastEdge(e => e.source === node.id && e.sourceHandle === `option-${i}`);
+          await Option.create({
+            widget_id: node.id,
+            value: menuOptions[i],
+            next: optionEdge ? optionEdge.target : null,
+            image_url: node.data.optionImages?.[i] || null,
+            operator: node.data.optionOperators?.[i] || 'eq'
+          });
+        }
+        // Always save the option-default edge regardless of whether there are options
+        const menuDefaultEdge = findLastEdge(e => e.source === node.id && e.sourceHandle === 'option-default');
+        if (menuDefaultEdge) {
+          await Option.create({
+            widget_id: node.id,
+            value: 'default',
+            next: menuDefaultEdge.target,
+            image_url: null,
+            operator: 'default'
+          });
+        }
       } else if (isBranching && node.data.options) {
         for (let i = 0; i < node.data.options.length; i++) {
           const branchValue = node.data.options[i];
@@ -357,7 +399,7 @@ export const syncFlow = async (req, res) => {
 };
 
 export const getFlow = async (req, res) => {
-  const userId = req.user.id;
+  const userId = getEffectiveUserId(req);
   const { flow_id, standard_process_id = null, version_id = null } = req.query;
   try {
     const data = await fetchFlowData(userId, flow_id, standard_process_id, version_id);

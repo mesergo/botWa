@@ -1,6 +1,9 @@
 
 import User from '../models/User.js';
+import BotFlow from '../models/BotFlow.js';
+import Version from '../models/Version.js';
 import jwt from 'jsonwebtoken';
+import { getUserLimits } from '../utils/limits.js';
 import { SECRET_KEY } from '../middleware/auth.js';
 import { OAuth2Client } from 'google-auth-library';
 
@@ -45,7 +48,7 @@ export const register = async (req, res) => {
     });
     
     const userId = user._id.toString();
-    const jwtToken = jwt.sign({ id: userId, email }, SECRET_KEY);
+    const jwtToken = jwt.sign({ id: userId, email }, SECRET_KEY, { expiresIn: '24h' });
     
     // Return both JWT token (for dashboard) and API token (for WhatsApp)
     res.json({ 
@@ -74,7 +77,9 @@ export const login = async (req, res) => {
     if (!user) return res.status(401).json({ error: 'Invalid credentials' });
     
     const userId = user._id.toString();
-    const jwtToken = jwt.sign({ id: userId, email: user.email }, SECRET_KEY);
+    const userRole = user.role || 'user';
+    const managerId = user.manager_id || null;
+    const jwtToken = jwt.sign({ id: userId, email: user.email, role: userRole, manager_id: managerId }, SECRET_KEY, { expiresIn: '24h' });
     
     res.json({ 
       token: jwtToken, 
@@ -82,7 +87,8 @@ export const login = async (req, res) => {
         id: userId, 
         name: user.name, 
         email: user.email, 
-        role: user.role || 'user',
+        role: userRole,
+        manager_id: managerId,
         public_id: user.public_id,
         account_type: user.account_type || 'Basic',
         status: user.status || 'active',
@@ -138,14 +144,17 @@ export const googleAuth = async (req, res) => {
       await user.save();
     }
 
-    const jwtToken = jwt.sign({ id: user._id.toString(), email: user.email }, SECRET_KEY);
+    const googleRole = user.role || 'user';
+    const googleManagerId = user.manager_id || null;
+    const jwtToken = jwt.sign({ id: user._id.toString(), email: user.email, role: googleRole, manager_id: googleManagerId }, SECRET_KEY, { expiresIn: '24h' });
     res.json({
       token: jwtToken,
       user: {
         id: user._id.toString(),
         name: user.name,
         email: user.email,
-        role: user.role || 'user',
+        role: googleRole,
+        manager_id: googleManagerId,
         public_id: user.public_id,
         account_type: user.account_type || 'Trial',
         status: user.status || 'active',
@@ -248,6 +257,90 @@ export const getTemplates = async (req, res) => {
       error: err.message,
       success: false 
     });
+  }
+};
+
+// Get current user's full profile
+export const getProfile = async (req, res) => {
+  try {
+    const userId = req.userId;
+    const [user, active_bots_count, flows_count] = await Promise.all([
+      User.findById(userId),
+      BotFlow.countDocuments({ user_id: userId }),
+      Version.countDocuments({ user_id: userId }),
+    ]);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    const limits_in_effect = await getUserLimits(user);
+    res.json({
+      id: user._id.toString(),
+      name: user.name,
+      email: user.email,
+      phone: user.phone || '',
+      role: user.role,
+      public_id: user.public_id,
+      account_type: user.account_type,
+      status: user.status,
+      dialog360_bot_id: user.dialog360_bot_id || '',
+      createdAt: user.createdAt,
+      trial_expires_at: user.trial_expires_at || null,
+      custom_limits: {
+        max_bots: user.custom_limits?.max_bots ?? null,
+        max_versions: user.custom_limits?.max_versions ?? null,
+        version_price: user.custom_limits?.version_price ?? null,
+        bot_price: user.custom_limits?.bot_price ?? null,
+      },
+      limits_in_effect,
+      active_bots_count,
+      flows_count,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// Update current user's editable profile fields (name, email, phone)
+export const updateProfile = async (req, res) => {
+  try {
+    const userId = req.userId;
+    const { name, email, phone } = req.body;
+
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    if (email) {
+      const normalizedEmail = email.toLowerCase().trim();
+      const existing = await User.findOne({ email: normalizedEmail, _id: { $ne: user._id } });
+      if (existing) return res.status(400).json({ error: 'כתובת האימייל כבר קיימת במערכת' });
+      user.email = normalizedEmail;
+    }
+    if (name && name.trim()) user.name = name.trim();
+    if (phone !== undefined) user.phone = phone;
+
+    await user.save();
+
+    const limits_in_effect = await getUserLimits(user);
+    res.json({
+      id: user._id.toString(),
+      name: user.name,
+      email: user.email,
+      phone: user.phone || '',
+      role: user.role,
+      public_id: user.public_id,
+      account_type: user.account_type,
+      status: user.status,
+      dialog360_bot_id: user.dialog360_bot_id || '',
+      createdAt: user.createdAt,
+      trial_expires_at: user.trial_expires_at || null,
+      custom_limits: {
+        max_bots: user.custom_limits?.max_bots ?? null,
+        max_versions: user.custom_limits?.max_versions ?? null,
+        version_price: user.custom_limits?.version_price ?? null,
+        bot_price: user.custom_limits?.bot_price ?? null,
+      },
+      limits_in_effect,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 };
 

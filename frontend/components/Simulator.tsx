@@ -65,6 +65,33 @@ const evaluateCondition = (op: string, val: any, target: any) => {
   }
 };
 
+// Validate user input by validationType (mirrors backend validateInput)
+const validateIsraeliID = (id: string): boolean => {
+  const str = id.trim().replace(/[-\s]/g, '').padStart(9, '0');
+  if (!/^\d{9}$/.test(str)) return false;
+  let sum = 0;
+  for (let i = 0; i < 9; i++) {
+    let val = parseInt(str[i]) * ((i % 2) + 1);
+    if (val > 9) val -= 9;
+    sum += val;
+  }
+  return sum % 10 === 0;
+};
+
+const validateSimInput = (type: string | undefined, value: string): boolean => {
+  const v = (value || '').trim();
+  switch (type) {
+    case 'email': return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
+    case 'phone': {
+      const digits = v.replace(/[-\s()]/g, '');
+      return /^(\+972|0)([5][0-9]{8}|[2-9][0-9]{7,8})$/.test(digits);
+    }
+    case 'id': return validateIsraeliID(v);
+    case 'url': return /^https?:\/\/.+\..+/.test(v);
+    default: return true;
+  }
+};
+
 const Carousel: React.FC<{ items: CarouselItem[], onSelect: (text: string, idx: number, val?: string) => void }> = ({ items, onSelect }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const scroll = (direction: 'left' | 'right') => {
@@ -820,7 +847,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
         setIsBotTyping(false);
         return processNext(findNextNodeId(nodeId, instance), instance, depth + 1, stack);
       }
-      case NodeType.OUTPUT_MENU: setIsBotTyping(true); await new Promise(r => setTimeout(r, 400)); if (cancelled()) return; menuInstanceMapRef.current[nodeId] = instance; addMessage({ sender: 'bot', type: 'menu', content: node.data.content, options: node.data.options, optionImages: node.data.optionImages, sourceNodeId: nodeId }); setIsBotTyping(false); break;
+      case NodeType.OUTPUT_MENU: { setIsBotTyping(true); await new Promise(r => setTimeout(r, 400)); if (cancelled()) return; menuInstanceMapRef.current[nodeId] = instance; const menuOpts = (node.data.options || []).filter((o: any) => o !== 'default'); const menuImgs = (node.data.optionImages || []).filter((_: any, i: number) => (node.data.options || [])[i] !== 'default'); addMessage({ sender: 'bot', type: 'menu', content: node.data.content, options: menuOpts, optionImages: menuImgs, sourceNodeId: nodeId }); setIsBotTyping(false); break; }
       case NodeType.INPUT_TEXT: case NodeType.INPUT_DATE: case NodeType.INPUT_FILE: setIsBotTyping(true); await new Promise(r => setTimeout(r, 300)); if (cancelled()) return; if (node.data.label) { addMessage({ sender: 'bot', type: node.type as any, content: node.data.label }); } setIsBotTyping(false); break;
       case NodeType.ACTION_WAIT: await new Promise(r => setTimeout(r, (node.data.waitTime || 1) * 1000)); return processNext(findNextNodeId(nodeId, instance), instance, depth + 1, stack);
       case NodeType.ACTION_TIME_ROUTING: {
@@ -917,11 +944,13 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
     const node = nodesList.find((n: any) => n.id === currentNodeId);
     
     const isInputNode = node?.type === NodeType.INPUT_TEXT || node?.type === NodeType.INPUT_DATE || node?.type === NodeType.INPUT_FILE;
+    const isMenuNode = node?.type === NodeType.OUTPUT_MENU;
 
     // Check if current node has no next edges (end of flow)
     // Skip this check for input nodes — they are EXPECTED to be the last node and must
     // save their parameter before deciding what to do next.
-    const nextNodeId = findNextNodeId(currentNodeId, currentInstance);
+    // Skip for menu nodes — they always have handle-specific edges (no generic next).
+    const nextNodeId = !isMenuNode ? findNextNodeId(currentNodeId, currentInstance) : 'skip';
     if (!node || (!nextNodeId && !isInputNode)) {
       console.log('[Simulator] End of flow detected - resetting and starting fresh with new message');
       addMessage({ sender: 'user', type: 'text', content: text });
@@ -938,13 +967,39 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
       return;
     }
     
-    if (node && node.data.variableName) updateParam(node.data.variableName, text);
     addMessage({ sender: 'user', type: 'text', content: text });
+
+    // Validate INPUT_TEXT if a validationType is configured
+    if (isInputNode && node.type === NodeType.INPUT_TEXT && node.data.validationType) {
+      if (!validateSimInput(node.data.validationType, text)) {
+        setIsBotTyping(true);
+        await new Promise(r => setTimeout(r, 350));
+        setIsBotTyping(false);
+        addMessage({ sender: 'bot', type: 'text', content: 'הערך שהוזן אינו חוקי, אנא הזן ערך מתאים.' });
+        if (node.data.label) {
+          setIsBotTyping(true);
+          await new Promise(r => setTimeout(r, 250));
+          setIsBotTyping(false);
+          addMessage({ sender: 'bot', type: NodeType.INPUT_TEXT as any, content: node.data.label });
+        }
+        return; // Stay on the same node
+      }
+    }
+
+    if (node && node.data.variableName) updateParam(node.data.variableName, text);
+    updateParam('open', text);
     
     if (node.type === NodeType.AUTOMATIC_RESPONSES) {
        await processNext(currentNodeId, currentInstance, 0, executionStack, newValue, null);
     } else if (isWaitingForWebserviceResponse && node.type === NodeType.ACTION_WEB_SERVICE) { 
        await processNext(currentNodeId, currentInstance, 0, executionStack, newValue, null); 
+    } else if (node.type === NodeType.OUTPUT_MENU) {
+      // Find matching option; fall back to option-default if none match
+      const menuOpts = (node.data.options || []).filter((o: any) => o !== 'default');
+      const matchedIdx = menuOpts.findIndex((o: any) => String(o).trim().toLowerCase() === text.trim().toLowerCase());
+      const handle = matchedIdx !== -1 ? `option-${matchedIdx}` : 'option-default';
+      if (node.data.variableName && matchedIdx !== -1) updateParam(node.data.variableName, text);
+      await processNext(findNextNodeId(currentNodeId, currentInstance, handle), currentInstance, 0, executionStack);
     } else if (isInputNode && !nextNodeId) {
       // Last node in this (sub-)flow is an input — param already saved above.
       // processNext(null) will pop executionStack and continue in parent flow if any,
@@ -964,6 +1019,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
     const node = nodesList.find((n: any) => n.id === currentNodeId);
     if (node && node.data.variableName) updateParam(node.data.variableName, formattedDate);
     addMessage({ sender: 'user', type: 'text', content: formattedDate });
+    updateParam('open', formattedDate);
     await processNext(findNextNodeId(currentNodeId, currentInstance), currentInstance, 0, executionStack);
   };
 
@@ -973,6 +1029,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
     
     const fileName = file.name;
     addMessage({ sender: 'user', type: 'text', content: `קובץ הועלה: ${fileName}` });
+    updateParam('open', fileName);
     
     const nodesList = currentInstance.getNodes() || [];
     const node = nodesList.find((n: any) => n.id === currentNodeId);
@@ -992,6 +1049,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
         // Show a visual separator so the user understands the context switched
         addMessage({ sender: 'bot', type: 'separator', content: '↩ חזרת לתפריט' });
         addMessage({ sender: 'user', type: 'text', content: option });
+        updateParam('open', option);
         setLastUserValue({ string: option, number: null });
         setIsWaitingForWebserviceResponse(false);
         // Save the newly selected option to session parameters
@@ -1023,6 +1081,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
     console.log('[Simulator] 🔘 Current node:', { id: node?.id, type: node?.type });
     
     addMessage({ sender: 'user', type: 'text', content: option });
+    updateParam('open', option);
     if (isWaitingForWebserviceResponse && node.type === NodeType.ACTION_WEB_SERVICE) {
       console.log('[Simulator] 🔘 Responding to webservice with option');
       const cmd = optionValue || option; setCurrentCommand(cmd);

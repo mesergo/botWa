@@ -15,6 +15,7 @@ import ButtonEdge from './components/edges/ButtonEdge';
 import { CloudUpload, RotateCcw, Plus, AlertTriangle, Copy, X, Lock, Wallet, Sliders, Save } from 'lucide-react';
 import Simulator from './components/Simulator';
 import AdminPanel from './components/AdminPanel';
+import HomePage from './components/HomePage';
 
 // ── Trial Expired Screen ─────────────────────────────────────────────────────
 const TrialExpiredScreen: React.FC<{ userName: string; onLogout: () => void }> = ({ userName, onLogout }) => (
@@ -79,7 +80,7 @@ const nodeTypes = {
 const edgeTypes = { button: ButtonEdge };
 const DEFAULT_EDGE_STYLE = { stroke: '#3b82f6', strokeWidth: 2, strokeDasharray: '6,4' };
  
-type ViewMode = 'dashboard' | 'editor' | 'editing-process' | 'viewing-process' | 'simulator-only' | 'template-selection' | 'template-form' | 'admin-panel' | 'editing-template' | 'creating-template' | 'contacts' | 'sessions';
+type ViewMode = 'home' | 'dashboard' | 'editor' | 'editing-process' | 'viewing-process' | 'simulator-only' | 'template-selection' | 'template-form' | 'admin-panel' | 'editing-template' | 'creating-template' | 'contacts' | 'sessions';
 
 const FlowBuilder: React.FC = () => {
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
@@ -94,12 +95,21 @@ const FlowBuilder: React.FC = () => {
     }
   });
   const [token, setToken] = useState<string | null>(localStorage.getItem('flowbot_token'));
+  const [sessionExpired, setSessionExpired] = useState(false);
   
   const [bots, setBots] = useState<BotFlow[]>([]);
   const [selectedBot, setSelectedBot] = useState<BotFlow | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
     const params = new URLSearchParams(window.location.search);
-    return params.get('mode') === 'simulator' ? 'simulator-only' : 'dashboard';
+    if (params.get('mode') === 'simulator') return 'simulator-only';
+    try {
+      const saved = localStorage.getItem('flowbot_user');
+      if (saved && saved !== 'undefined') {
+        const user = JSON.parse(saved);
+        if (user?.role === 'rep' || user?.role === 'rep_bot') return 'sessions';
+      }
+    } catch {}
+    return 'dashboard';
   });
 
   const [nodes, setNodes] = useState<Node[]>([]);
@@ -118,6 +128,10 @@ const FlowBuilder: React.FC = () => {
   const [searchResults, setSearchResults] = useState<string[]>([]);
   const [currentSearchIndex, setCurrentSearchIndex] = useState(-1);
   const lastSearchQueryRef = useRef('');
+  const [globalSearchResults, setGlobalSearchResults] = useState<{ processId: string; processName: string; nodeId: string; matchText: string }[]>([]);
+  const processNodesCacheRef = useRef<Record<string, any[]>>({});
+  const pendingFocusNodeIdRef = useRef<string | null>(null);
+  const [globalSearchTrigger, setGlobalSearchTrigger] = useState(0);
 
   const [authForm, setAuthForm] = useState({ name: '', email: '', password: '' });
   const [authErrors, setAuthErrors] = useState<Record<string, string>>({});
@@ -156,6 +170,7 @@ const FlowBuilder: React.FC = () => {
   // Change Template State
   const [isChangeTemplateModalOpen, setIsChangeTemplateModalOpen] = useState(false);
   const [sessionsOwnOnly, setSessionsOwnOnly] = useState(false);
+  const [dashboardInitialTab, setDashboardInitialTab] = useState<'bots' | 'settings' | 'users'>('bots');
 
   // --- Edge Delete Listener ---
   useEffect(() => {
@@ -225,7 +240,7 @@ const FlowBuilder: React.FC = () => {
             reasons.push(`options`);
           break;
         case NodeType.FIXED_PROCESS:
-          if (check(d.label)) reasons.push(`label: "${d.label}"`);
+          // Do not include fixed-process nodes in search results (name comes from the process definition, not user input)
           break;
         default:
           if (check(d.label))   reasons.push(`label: "${d.label}"`);
@@ -242,7 +257,11 @@ const FlowBuilder: React.FC = () => {
     const matchesArr = Array.from(uniqueMatches);
     setSearchResults(matchesArr);
     
-    if (searchQuery !== lastSearchQueryRef.current) {
+    if (pendingFocusNodeIdRef.current) {
+      const idx = matchesArr.indexOf(pendingFocusNodeIdRef.current);
+      setCurrentSearchIndex(idx >= 0 ? idx : matchesArr.length > 0 ? 0 : -1);
+      pendingFocusNodeIdRef.current = null;
+    } else if (searchQuery !== lastSearchQueryRef.current) {
       setCurrentSearchIndex(matchesArr.length > 0 ? 0 : -1);
       lastSearchQueryRef.current = searchQuery;
     }
@@ -256,6 +275,87 @@ const FlowBuilder: React.FC = () => {
       }
     }
   }, [currentSearchIndex, searchResults, reactFlowInstance, nodes]);
+
+  // --- Pre-fetch process nodes into cache when fixedProcesses list changes ---
+  useEffect(() => {
+    if (!token || fixedProcesses.length === 0) return;
+    const cache = processNodesCacheRef.current;
+    const newProcessIds = fixedProcesses.map(p => p.id).filter(id => !cache[id]);
+    if (newProcessIds.length === 0) return;
+    (async () => {
+      for (const procId of newProcessIds) {
+        try {
+          const res = await fetch(`${API_BASE}/flow?standard_process_id=${procId}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          if (res.ok) {
+            const data = await res.json();
+            cache[procId] = data.nodes || [];
+          }
+        } catch (e) { /* silent */ }
+      }
+    })();
+  }, [fixedProcesses, token]);
+
+  // --- Global cross-process search (only when in main flow) ---
+  useEffect(() => {
+    if (!searchQuery.trim() || activeProcessId !== null) {
+      setGlobalSearchResults([]);
+      return;
+    }
+    const q = searchQuery.toLowerCase();
+    const results: { processId: string; processName: string; nodeId: string; matchText: string }[] = [];
+    const check = (val?: string) => typeof val === 'string' && val.toLowerCase().includes(q);
+
+    fixedProcesses.forEach(proc => {
+      const procNodes: any[] = processNodesCacheRef.current[proc.id] || [];
+      procNodes.forEach(node => {
+        const d = node.data || {};
+        let matchText = '';
+        switch (node.type as NodeType) {
+          case NodeType.INPUT_TEXT:
+          case NodeType.INPUT_DATE:
+          case NodeType.INPUT_FILE:
+            matchText = check(d.label) ? d.label : check(d.variableName) ? d.variableName : '';
+            break;
+          case NodeType.OUTPUT_TEXT:
+            matchText = check(d.content) ? d.content : '';
+            break;
+          case NodeType.OUTPUT_IMAGE:
+            matchText = check(d.caption) ? d.caption : check(d.url) ? d.url : '';
+            break;
+          case NodeType.OUTPUT_LINK:
+            matchText = check(d.linkLabel) ? d.linkLabel : check(d.url) ? d.url : '';
+            break;
+          case NodeType.OUTPUT_MENU:
+            if (check(d.content)) matchText = d.content;
+            else if (Array.isArray(d.options)) {
+              const m = (d.options as string[]).find(opt => check(opt));
+              if (m) matchText = m;
+            }
+            break;
+          case NodeType.ACTION_WEB_SERVICE:
+            matchText = check(d.url) ? d.url : '';
+            break;
+          case NodeType.AUTOMATIC_RESPONSES:
+            if (Array.isArray(d.options)) {
+              const m = (d.options as string[]).find(opt => check(opt));
+              if (m) matchText = m;
+            }
+            break;
+          case NodeType.FIXED_PROCESS:
+            // Do not include fixed-process nodes in search results (name comes from the process definition, not user input)
+            break;
+          default:
+            matchText = check(d.label) ? d.label : check(d.content) ? d.content : '';
+        }
+        if (matchText) {
+          results.push({ processId: proc.id, processName: proc.name, nodeId: node.id, matchText });
+        }
+      });
+    });
+    setGlobalSearchResults(results);
+  }, [searchQuery, fixedProcesses, activeProcessId, globalSearchTrigger]);
 
   const onNodeDataChange = useCallback((nodeId: string, data: Partial<NodeData>) => {
     setNodes((nds) => nds.map((n) => n.id === nodeId ? { ...n, data: { ...n.data, ...data } } : n));
@@ -275,19 +375,22 @@ const FlowBuilder: React.FC = () => {
     }
   }), [onNodeDataChange, onDeleteNode]);
 
+  // Centralized session-expiry handler — called from any place that gets 401/403
+  const handleSessionExpired = useCallback(() => {
+    setToken(null);
+    setCurrentUser(null);
+    localStorage.removeItem('flowbot_token');
+    localStorage.removeItem('flowbot_user');
+    setSessionExpired(true);
+  }, []);
+
   const loadBots = useCallback(async (overrideToken?: string) => {
     const activeToken = overrideToken ?? token;
     if (!activeToken) return;
     try {
       const res = await fetch(`${API_BASE}/bots`, { headers: { 'Authorization': `Bearer ${activeToken}` } });
       if (!res.ok) {
-        if (res.status === 401 || res.status === 403) {
-            console.error("Authentication error loading bots - forcing logout");
-            setToken(null);
-            setCurrentUser(null);
-            localStorage.removeItem('flowbot_token');
-            localStorage.removeItem('flowbot_user');
-        }
+        if (res.status === 401 || res.status === 403) handleSessionExpired();
         return;
       }
       const data = await res.json();
@@ -299,14 +402,8 @@ const FlowBuilder: React.FC = () => {
     if (!token) return;
     try {
       const res = await fetch(`${API_BASE}/processes`, { headers: { 'Authorization': `Bearer ${token}` } });
-       if (!res.ok) {
-        if (res.status === 401 || res.status === 403) {
-            console.error("Authentication error loading processes - forcing logout");
-            setToken(null);
-            setCurrentUser(null);
-            localStorage.removeItem('flowbot_token');
-            localStorage.removeItem('flowbot_user');
-        }
+      if (!res.ok) {
+        if (res.status === 401 || res.status === 403) handleSessionExpired();
         return;
       }
       const data = await res.json();
@@ -441,17 +538,26 @@ const FlowBuilder: React.FC = () => {
       // If editing/creating template, sync to template endpoint
       if (editingTemplateId || creatingTemplate) {
         if (editingTemplateId) {
-          await fetch(`${API_BASE}/templates/${editingTemplateId}/flow`, {
+          const templateResponse = await fetch(`${API_BASE}/templates/${editingTemplateId}/flow`, {
             method: 'PUT',
             signal: controller.signal,
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
             body: JSON.stringify({ nodes: n, edges: e })
           });
+
+          // Check for authentication errors in template save
+          if (!templateResponse.ok) {
+            if (templateResponse.status === 401 || templateResponse.status === 403) {
+              handleSessionExpired();
+            } else {
+              console.error('Failed to save template:', templateResponse.status, templateResponse.statusText);
+            }
+          }
         }
         return;
       }
 
-      await fetch(`${API_BASE}/flow/sync`, {
+      const response = await fetch(`${API_BASE}/flow/sync`, {
         method: 'POST',
         signal: controller.signal,
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
@@ -462,6 +568,15 @@ const FlowBuilder: React.FC = () => {
           standard_process_id: pId 
         })
       });
+
+      // Check for authentication errors
+      if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          handleSessionExpired();
+          return;
+        }
+        console.error('Failed to save flow:', response.status, response.statusText);
+      }
     } catch (err: any) {
       if (err.name === 'AbortError') return; // Superseded by a newer sync – ignore
       throw err;
@@ -619,8 +734,19 @@ const FlowBuilder: React.FC = () => {
 
   const handleDeleteBot = async (id: string) => {
     if (!window.confirm("בטוח שברצונך למחוק את הבוט?")) return;
-    await fetch(`${API_BASE}/bots/${id}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
-    setBots(prev => prev.filter(b => b.id !== id));
+    try {
+      const res = await fetch(`${API_BASE}/bots/${id}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
+      
+      if (!res.ok) {
+        if (res.status === 401 || res.status === 403) { handleSessionExpired(); return; }
+        throw new Error('Failed to delete bot');
+      }
+      
+      setBots(prev => prev.filter(b => b.id !== id));
+    } catch (error) {
+      console.error('Error deleting bot:', error);
+      alert('שגיאה במחיקת הבוט. נסה שוב.');
+    }
   };
 
   const handleConnectFacebook = async (bot: BotFlow) => {
@@ -669,7 +795,13 @@ const FlowBuilder: React.FC = () => {
         setCurrentUser(data.user);
         localStorage.setItem('flowbot_token', data.token);
         localStorage.setItem('flowbot_user', JSON.stringify(data.user));
-        setViewMode('dashboard');
+        // Route reps directly to sessions view
+        if (data.user?.role === 'rep' || data.user?.role === 'rep_bot') {
+          setSessionsOwnOnly(false);
+          setViewMode('sessions');
+        } else {
+          setViewMode('home');
+        }
       } else {
         setAuthErrors({ general: data.error || 'שגיאה בהתחברות עם גוגל' });
       }
@@ -692,7 +824,13 @@ const FlowBuilder: React.FC = () => {
       setCurrentUser(data.user);
       localStorage.setItem('flowbot_token', data.token);
       localStorage.setItem('flowbot_user', JSON.stringify(data.user));
-      setViewMode('dashboard');
+      // Route reps directly to sessions view
+      if (data.user?.role === 'rep' || data.user?.role === 'rep_bot') {
+        setSessionsOwnOnly(false);
+        setViewMode('sessions');
+      } else {
+        setViewMode('home');
+      }
     } else {
       setAuthErrors({ general: data.error === 'Invalid credentials' ? 'שם משתמש או סיסמה שגויים' : (data.error || 'שם משתמש או סיסמה שגויים') });
     }
@@ -1241,6 +1379,7 @@ const FlowBuilder: React.FC = () => {
     const zoom = reactFlowInstance?.getViewport().zoom ?? 1;
     setIsFlowTransitioning(true);
     await syncFlowRef.current();
+    const closingProcessId = activeProcessId;
     setActiveProcessId(null);
     setViewMode('editor');
     loadFlow(selectedBot?.id || null).then(() => {
@@ -1252,8 +1391,17 @@ const FlowBuilder: React.FC = () => {
           })
         )
       );
+      // Background-refresh the cache for the process we just edited, then re-run global search
+      if (closingProcessId && token) {
+        fetch(`${API_BASE}/flow?standard_process_id=${closingProcessId}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        }).then(r => r.json()).then(data => {
+          processNodesCacheRef.current[closingProcessId] = data.nodes || [];
+          setGlobalSearchTrigger(t => t + 1);
+        }).catch(() => {});
+      }
     });
-  }, [reactFlowInstance, selectedBot, loadFlow]);
+  }, [reactFlowInstance, selectedBot, loadFlow, activeProcessId, token]);
 
   const handleEditFixedProcess = useCallback(async (id: string) => {
     const zoom = reactFlowInstance?.getViewport().zoom ?? 1;
@@ -1291,6 +1439,13 @@ const FlowBuilder: React.FC = () => {
       );
     });
   }, [reactFlowInstance, selectedBot, loadFlow]);
+
+  // Navigate from a global search result into the fixed process and highlight the node
+  const navigateToProcessResult = useCallback(async (processId: string, nodeId: string) => {
+    pendingFocusNodeIdRef.current = nodeId;
+    setGlobalSearchResults([]);
+    await handleEditFixedProcess(processId);
+  }, [handleEditFixedProcess]);
 
   const onNodesChange: OnNodesChange = useCallback((changes) => setNodes((nds) => applyNodeChanges(changes, nds)), []);
   const onEdgesChange: OnEdgesChange = useCallback((changes) => setEdges((eds) => applyEdgeChanges(changes, eds)), []);
@@ -1374,6 +1529,28 @@ const FlowBuilder: React.FC = () => {
     return <RegisterPage />;
   }
 
+  if (sessionExpired) {
+    return (
+      <div className="fixed inset-0 z-[9999] bg-[#0f172a] flex items-center justify-center p-6">
+        <div className="bg-white rounded-[2.5rem] shadow-2xl p-12 max-w-sm w-full text-center flex flex-col items-center gap-6">
+          <div className="w-20 h-20 rounded-3xl bg-amber-50 flex items-center justify-center">
+            <svg width="40" height="40" fill="none" viewBox="0 0 24 24"><path stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
+          </div>
+          <div>
+            <h2 className="text-2xl font-bold text-slate-900 mb-2">הסשן פג תוקף</h2>
+            <p className="text-slate-500 text-sm">כל השינויים שביצעת עד כה נשמרו.<br/>אנא התחבר מחדש כדי להמשיך לעבוד.</p>
+          </div>
+          <button
+            onClick={() => { setSessionExpired(false); window.location.reload(); }}
+            className="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold text-sm uppercase tracking-widest shadow-lg shadow-blue-600/20 hover:bg-blue-700 transition-all"
+          >
+            התחבר מחדש
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (!currentUser && viewMode !== 'simulator-only') {
     return <AuthScreen form={authForm} errors={authErrors} onFormChange={(data) => { setAuthErrors({}); setAuthForm(data); }} onAuth={handleAuth} onGoogleLogin={handleGoogleLogin} />
   }
@@ -1394,6 +1571,20 @@ const FlowBuilder: React.FC = () => {
     );
   }
 
+  if (viewMode === 'home') {
+    return (
+      <HomePage
+        currentUser={currentUser}
+        onGoToBots={() => setViewMode('dashboard')}
+        onGoToChats={() => { setSessionsOwnOnly(true); setViewMode('sessions'); }}
+        onGoToContacts={() => setViewMode('contacts')}
+        onGoToSettings={() => { setDashboardInitialTab('settings'); setViewMode('dashboard'); }}
+        onOpenAdminPanel={currentUser?.role === 'admin' ? () => setViewMode('admin-panel') : undefined}
+        onLogout={() => { localStorage.clear(); window.location.reload(); }}
+      />
+    );
+  }
+
   if (viewMode === 'contacts') {
     return (
       <ContactsPage
@@ -1402,6 +1593,10 @@ const FlowBuilder: React.FC = () => {
         onBack={() => setViewMode('dashboard')}
         onLogout={() => { localStorage.clear(); window.location.reload(); }}
         onOpenSessions={() => { setSessionsOwnOnly(true); setViewMode('sessions'); }}
+        onOpenAdminPanel={() => setViewMode('admin-panel')}
+        onOpenSettings={() => { setDashboardInitialTab('settings'); setViewMode('dashboard'); }}
+        onOpenSubUsers={currentUser?.role === 'user' ? () => { setDashboardInitialTab('users'); setViewMode('dashboard'); } : undefined}
+        onStopImpersonation={handleStopImpersonation}
       />
     );
   }
@@ -1411,10 +1606,14 @@ const FlowBuilder: React.FC = () => {
       <SessionsPage
         token={token}
         currentUser={currentUser}
-        onBack={() => setViewMode('dashboard')}
+        onBack={currentUser?.role === 'rep' ? undefined : () => setViewMode('dashboard')}
         onLogout={() => { localStorage.clear(); window.location.reload(); }}
-        onOpenContacts={() => setViewMode('contacts')}
+        onOpenContacts={currentUser?.role !== 'rep' && currentUser?.role !== 'rep_bot' ? () => setViewMode('contacts') : undefined}
+        onOpenAdminPanel={() => setViewMode('admin-panel')}
         ownOnly={sessionsOwnOnly}
+        onOpenSettings={currentUser?.role !== 'rep' && currentUser?.role !== 'rep_bot' ? () => { setDashboardInitialTab('settings'); setViewMode('dashboard'); } : undefined}
+        onOpenSubUsers={currentUser?.role === 'user' ? () => { setDashboardInitialTab('users'); setViewMode('dashboard'); } : undefined}
+        onStopImpersonation={handleStopImpersonation}
       />
     );
   }
@@ -1435,6 +1634,8 @@ const FlowBuilder: React.FC = () => {
           onOpenSessions={() => { setSessionsOwnOnly(true); setViewMode('sessions'); }}
           onStopImpersonation={handleStopImpersonation}
           onConnectFacebook={handleConnectFacebook}
+          token={token}
+          initialTab={dashboardInitialTab}
         />
         {quotaError && quotaError.type === 'bots' && (
           <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[200] p-6 text-right">
@@ -1718,6 +1919,8 @@ const FlowBuilder: React.FC = () => {
         onNodeFocus={setSimulatorActiveNodeId}
         onFixedProcessActive={setSimulatorFixedProcessNodeId}
         isTransitioning={isFlowTransitioning}
+        globalSearchResults={globalSearchResults}
+        onNavigateToProcessResult={navigateToProcessResult}
         sidebarProps={{
           fixedProcesses,
           versions,

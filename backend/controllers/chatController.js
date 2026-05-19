@@ -89,6 +89,38 @@ const evaluateCondition = (operator, value, target) => {
   }
 };
 
+// Helper: Validate Israeli ID (9-digit Luhn-style checksum)
+const validateIsraeliID = (id) => {
+  const str = String(id).trim().replace(/[-\s]/g, '').padStart(9, '0');
+  if (!/^\d{9}$/.test(str)) return false;
+  let sum = 0;
+  for (let i = 0; i < 9; i++) {
+    let val = parseInt(str[i]) * ((i % 2) + 1);
+    if (val > 9) val -= 9;
+    sum += val;
+  }
+  return sum % 10 === 0;
+};
+
+// Helper: Validate input by validation type
+const validateInput = (type, value) => {
+  const v = String(value || '').trim();
+  switch (type) {
+    case 'email':
+      return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
+    case 'phone': {
+      const digits = v.replace(/[-\s()]/g, '');
+      return /^(\+972|0)([5][0-9]{8}|[2-9][0-9]{7,8})$/.test(digits);
+    }
+    case 'id':
+      return validateIsraeliID(v);
+    case 'url':
+      return /^https?:\/\/.+\..+/.test(v);
+    default:
+      return true;
+  }
+};
+
 // Helper: Get flow data (nodes + edges)
 const getFlowData = async (flowId, processId = null) => {
   let query = {};
@@ -942,23 +974,38 @@ export const respondToMessage = async (req, res) => {
         const matchedMenuIdx = menuOptions.findIndex(
           opt => String(opt).trim().toLowerCase() === text.trim().toLowerCase()
         );
-        if (matchedMenuIdx !== -1) {
-          console.log(`[BOT] ⚡ interrupt: output_menu "${menuNode.id}" option ${matchedMenuIdx}`);
-            session.execution_stack    = [];
-          session.markModified('execution_stack');
-          session.waiting_webservice = false;
-          session.waiting_text_input = false;
 
-          // Save the newly selected option to session parameters
-          if (menuNode.data.variableName) {
-            const interruptParams = session.parameters || {};
-            interruptParams[menuNode.data.variableName] = text.trim();
-            session.parameters = interruptParams;
-            session.markModified('parameters');
-          }
+        // Determine which edge to follow: matched option or default
+        const isCurrentMenuNode = menuNode.id === session.current_node_id;
+        const useDefault = matchedMenuIdx === -1 && isCurrentMenuNode;
+        const edgeHandle = matchedMenuIdx !== -1
+          ? `option-${matchedMenuIdx}`
+          : (useDefault ? 'option-default' : null);
 
-          const interruptNextId = findNextNode(menuNode.id, flowData.edges, `option-${matchedMenuIdx}`);
+        if (edgeHandle) {
+          const interruptNextId = findNextNode(menuNode.id, flowData.edges, edgeHandle);
           if (interruptNextId) {
+            if (matchedMenuIdx !== -1) {
+              console.log(`[BOT] ⚡ interrupt: output_menu "${menuNode.id}" option ${matchedMenuIdx}`);
+            } else {
+              console.log(`[BOT] ⚡ interrupt: output_menu "${menuNode.id}" no match → option-default`);
+            }
+            session.execution_stack    = [];
+            session.markModified('execution_stack');
+            session.waiting_webservice = false;
+            session.waiting_text_input = false;
+
+            // Save the newly selected option to session parameters
+            {
+              const interruptParams = session.parameters || {};
+              if (menuNode.data.variableName && matchedMenuIdx !== -1) {
+                interruptParams[menuNode.data.variableName] = text.trim();
+              }
+              interruptParams['open'] = text.trim();
+              session.parameters = interruptParams;
+              session.markModified('parameters');
+            }
+
             addToHistory(session, { type: 'UserInput', text }, 'user');
             messages = await walkChain(interruptNextId, flowData.nodes, flowData.edges, session, session.flow_id, req);
             await session.save();
@@ -989,6 +1036,12 @@ export const respondToMessage = async (req, res) => {
             session.markModified('execution_stack');
             session.waiting_webservice = false;
             session.waiting_text_input = false;
+            {
+              const interruptParams = session.parameters || {};
+              interruptParams['open'] = text.trim();
+              session.parameters = interruptParams;
+              session.markModified('parameters');
+            }
 
             const interruptNextId = findNextNode(autoNode.id, flowData.edges, `option-${interruptIdx}`);
             if (interruptNextId) {
@@ -1024,6 +1077,9 @@ export const respondToMessage = async (req, res) => {
       
       // Default to first option (כניסה) if no match
       const finalIdx = matchedIdx !== -1 ? matchedIdx : 0;
+      params['open'] = text.trim();
+      session.parameters = params;
+      session.markModified('parameters');
       const nextNodeId = findNextNode(currentNode.id, flowData.edges, `option-${finalIdx}`);
       console.log(`[BOT] 🎯 Matched option-${finalIdx} → nextNodeId=${nextNodeId}`);
       if (nextNodeId) {
@@ -1039,6 +1095,17 @@ export const respondToMessage = async (req, res) => {
       // Re-call the webservice with the user input
       messages = await walkChain(currentNode.id, flowData.nodes, flowData.edges, session, session.flow_id, req);
     } else if (currentNode.type === 'input_text' || currentNode.type === 'input_date' || currentNode.type === 'input_file') {
+      // Validate input type if configured on input_text nodes
+      const validationType = currentNode.data.validationType;
+      if (currentNode.type === 'input_text' && validationType && !validateInput(validationType, text)) {
+        // Invalid input — notify user and re-prompt without advancing
+        messages.push({ type: 'Text', text: 'הערך שהוזן אינו חוקי, אנא הזן ערך מתאים.', created: new Date().toISOString() });
+        if (currentNode.data.label) {
+          messages.push({ type: 'Text', text: replaceParameters(currentNode.data.label, params), created: new Date().toISOString() });
+        }
+        session.waiting_text_input = true;
+        // current_node_id stays unchanged — fall through to session.save()
+      } else {
       // We received the answer — no longer waiting
       session.waiting_text_input = false;
 
@@ -1046,9 +1113,10 @@ export const respondToMessage = async (req, res) => {
       const varName = currentNode.data.variableName;
       if (varName) {
         params[varName] = text;
-        session.parameters = params;
-        session.markModified('parameters');
       }
+      params['open'] = text;
+      session.parameters = params;
+      session.markModified('parameters');
 
       // Use sub-flow edges if the node lives inside a fixed_process
       const activeNodes = subFlowContext ? subFlowContext.nodes : flowData.nodes;
@@ -1093,6 +1161,7 @@ export const respondToMessage = async (req, res) => {
           session.current_node_id   = null;
         }
       }
+      }
     } else if (currentNode.type === 'output_menu') {
       // Handle menu selection
       const selectedValue = text.trim();
@@ -1100,23 +1169,34 @@ export const respondToMessage = async (req, res) => {
       const selectedIdx = options.findIndex(opt => opt.trim() === selectedValue);
       
       if (selectedIdx !== -1) {
-        // Save selection to parameters if menu has a variable name
+        // Save selection to parameters
         if (currentNode.data.variableName) {
           params[currentNode.data.variableName] = selectedValue;
-          session.parameters = params;
-          session.markModified('parameters');
         }
+        params['open'] = selectedValue;
+        session.parameters = params;
+        session.markModified('parameters');
         
         const nextNodeId = findNextNode(currentNode.id, flowData.edges, `option-${selectedIdx}`);
         if (nextNodeId) {
           messages = await walkChain(nextNodeId, flowData.nodes, flowData.edges, session, session.flow_id, req);
         }
       } else {
-        messages.push({ 
-          type: 'Text', 
-          text: '⚠️ לא נמצאה אפשרות תואמת לתשובה שלך.',
-          created: new Date().toISOString()
-        });
+        // No matching option — try the default handle
+        const defaultNextId = findNextNode(currentNode.id, flowData.edges, 'option-default');
+        if (defaultNextId) {
+          console.log(`[BOT] 🔀 output_menu: no match for "${selectedValue}", routing to option-default`);
+          params['open'] = selectedValue;
+          session.parameters = params;
+          session.markModified('parameters');
+          messages = await walkChain(defaultNextId, flowData.nodes, flowData.edges, session, session.flow_id, req);
+        } else {
+          messages.push({ 
+            type: 'Text', 
+            text: '⚠️ לא נמצאה אפשרות תואמת לתשובה שלך.',
+            created: new Date().toISOString()
+          });
+        }
       }
     } else if (currentNode.type === 'automatic_responses' && !isNewSession) {
       // Re-match on automatic responses
@@ -1132,6 +1212,9 @@ export const respondToMessage = async (req, res) => {
         }
       }
       
+      params['open'] = text.trim();
+      session.parameters = params;
+      session.markModified('parameters');
       const finalIdx = matchedIdx !== -1 ? matchedIdx : 0;
       const nextNodeId = findNextNode(currentNode.id, flowData.edges, `option-${finalIdx}`);
       if (nextNodeId) {

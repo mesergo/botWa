@@ -1478,16 +1478,24 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                           {user.role === 'admin' && <div className="bg-sky-50 p-1 rounded text-sky-600" title="מנהל"><Shield size={12} fill="currentColor" className="opacity-40" /> </div>}
                         </div>
                         <div className="flex items-center justify-between mt-2 pl-2">
-                          <div className="flex gap-2">
+                          <div className="flex gap-2 flex-wrap">
                             <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${user.status === 'active' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-rose-50 text-rose-600 border border-rose-100'}`}>
                                 {user.status === 'active' ? 'פעיל' : 'חסום'}
                             </span>
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
-                              user.account_type === 'Premium' ? 'bg-amber-50 text-amber-600 border-amber-100'
-                              : user.account_type === 'Trial' ? 'bg-orange-50 text-orange-600 border-orange-100'
-                              : 'bg-slate-50 text-slate-500 border-slate-100'}`}>
-                                {user.account_type === 'Trial' ? 'ניסיוני' : user.account_type}
-                            </span>
+                            {user.role === 'rep_bot' && (
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold border bg-blue-50 text-blue-600 border-blue-100">נציג עריכה</span>
+                            )}
+                            {user.role === 'rep' && (
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold border bg-slate-100 text-slate-500 border-slate-200">נציג</span>
+                            )}
+                            {user.role !== 'rep' && user.role !== 'rep_bot' && (
+                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
+                                user.account_type === 'Premium' ? 'bg-amber-50 text-amber-600 border-amber-100'
+                                : user.account_type === 'Trial' ? 'bg-orange-50 text-orange-600 border-orange-100'
+                                : 'bg-slate-50 text-slate-500 border-slate-100'}`}>
+                                  {user.account_type === 'Trial' ? 'ניסיוני' : user.account_type}
+                              </span>
+                            )}
                           </div>
                           <ChevronRight size={14} className={`transition-transform duration-300 ${selectedUser?.id === user.id ? 'text-sky-500 translate-x-1' : 'text-slate-300 opacity-0 group-hover:opacity-100'}`} />
                         </div>
@@ -1584,7 +1592,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                          {/* Dialog360 Settings - Full Width */}
                         <div className="col-span-12 bg-white p-8 rounded-3xl border border-slate-100 shadow-sm hover:shadow-md transition-shadow">
                             <h3 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-6 flex items-center gap-2 border-b border-slate-50 pb-4">
-                                <MessageSquare size={16} className="text-slate-400" /> הגדרות Dialog360
+                                <MessageSquare size={16} className="text-slate-400" /> הגדרות חיבור
                             </h3>
                             <div className="flex flex-col gap-2">
                                 <label className="text-xs font-bold text-slate-400">Bot ID</label>
@@ -1652,15 +1660,19 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                                     <div>
                                         <label className="block text-xs font-bold text-slate-400 mb-2">סוג מנוי</label>
                                         {isEditing ? (
-                                            <select className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none cursor-pointer" value={editForm.account_type || 'Basic'} onChange={e => setEditForm(prev => ({...prev, account_type: e.target.value}))}>
-                                                <option value="Trial">Trial (ניסיוני)</option>
-                                                <option value="Basic">Basic (בסיסי)</option>
-                                                <option value="Premium">Premium (מתקדם)</option>
-                                            </select>
+                                            selectedUser.role === 'rep' || selectedUser.role === 'rep_bot' ? (
+                                                <div className="w-full bg-slate-50 px-4 py-3 rounded-xl border border-slate-100 text-slate-400 font-bold text-sm">— (נציג)</div>
+                                            ) : (
+                                                <select className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none cursor-pointer" value={editForm.account_type || 'Basic'} onChange={e => setEditForm(prev => ({...prev, account_type: e.target.value}))}>
+                                                    <option value="Trial">Trial (ניסיוני)</option>
+                                                    <option value="Basic">Basic (בסיסי)</option>
+                                                    <option value="Premium">Premium (מתקדם)</option>
+                                                </select>
+                                            )
                                         ) : (
                                             <div className="w-full bg-slate-50 px-4 py-3 rounded-xl border border-slate-100 text-slate-800 font-bold text-sm flex justify-between items-center">
-                                                {selectedUser.account_type}
-                                                <Star size={16} className="text-amber-400 fill-amber-400" />
+                                                {(selectedUser.role === 'rep' || selectedUser.role === 'rep_bot') ? '—' : (selectedUser.account_type || '—')}
+                                                {selectedUser.role !== 'rep' && selectedUser.role !== 'rep_bot' && <Star size={16} className="text-amber-400 fill-amber-400" />}
                                             </div>
                                         )}
                                     </div>

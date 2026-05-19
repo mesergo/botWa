@@ -89,6 +89,16 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ form, errors, onFormChange, onA
               <div id="google-login-btn" className="flex justify-center mt-2" />
             </>
           )}
+
+          <p className="text-center text-sm text-slate-500 mt-2">
+            אין לך חשבון?{' '}
+            <a
+              href="?register=1"
+              className="text-blue-600 font-bold hover:underline"
+            >
+              הירשם כאן
+            </a>
+          </p>
         </div>
       </div>
     </div>
