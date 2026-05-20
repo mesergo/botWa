@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Bot, ArrowLeft, Trash2, Calendar, LogOut, Shield, UserCog, Users, List, Settings, Save, User as UserIcon, Phone, Mail, Star, Copy, Check, Wifi, Gauge, MessageSquare, Globe, Layers, CheckCircle } from 'lucide-react';
+import { Plus, Bot, ArrowLeft, Trash2, Calendar, LogOut, Shield, UserCog, Users, List, Settings, Save, User as UserIcon, Phone, Mail, Star, Copy, Check, Wifi, Gauge, MessageSquare, Globe, Layers, CheckCircle, Eye, EyeOff, X, Image as ImageIcon } from 'lucide-react';
 import ImpersonationBanner from './ImpersonationBanner';
 import { BotFlow } from '../types';
 import SubUsersTab from './SubUsersTab';
@@ -82,6 +82,8 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
   // WA templates state (Settings tab)
   const [waTemplates, setWaTemplates] = useState<any[]>([]);
   const [waTemplatesLoading, setWaTemplatesLoading] = useState(false);
+  const [templateSettings, setTemplateSettings] = useState<Record<string, boolean>>({});
+  const [previewTemplate, setPreviewTemplate] = useState<any | null>(null);
 
   const loadProfile = async () => {
     if (!token) return;
@@ -117,18 +119,80 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
           : data.templates.waba_templates ? data.templates.waba_templates
           : [];
         setWaTemplates(list);
+        await fetchTemplateSettings();
       } else {
         setWaTemplates([]);
       }
     } catch { setWaTemplates([]); } finally { setWaTemplatesLoading(false); }
   };
 
-  useEffect(() => {
-    if (activeTab === 'settings' && !profile) {
-      loadProfile();
+  const fetchTemplateSettings = async () => {
+    if (!token) return;
+    try {
+      const res = await fetch(`${API_BASE}/dialog360-templates`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.success && Array.isArray(data.settings)) {
+        const settingsMap: Record<string, boolean> = {};
+        data.settings.forEach((s: any) => {
+          if (s.templateName) {
+            settingsMap[s.templateName] = s.showInChat ?? true;
+          }
+        });
+        setTemplateSettings(settingsMap);
+      }
+    } catch (err) {
+      console.error('Failed to fetch template settings:', err);
     }
-    if (activeTab === 'settings' && waTemplates.length === 0 && !waTemplatesLoading) {
-      loadWaTemplates();
+  };
+
+  const toggleShowInChat = async (template: any) => {
+    if (!token) return;
+    const currentValue = templateSettings[template.name] ?? true;
+    const newValue = !currentValue;
+    
+    // Optimistic update
+    setTemplateSettings(prev => ({ ...prev, [template.name]: newValue }));
+    
+    try {
+      const res = await fetch(`${API_BASE}/dialog360-templates/toggle`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}` 
+        },
+        body: JSON.stringify({
+          templateName: template.name,
+          templateId: template.id,
+          showInChat: newValue,
+          language: template.language,
+          category: template.category,
+          status: template.status
+        }),
+      });
+      
+      if (!res.ok) {
+        // Revert on error
+        setTemplateSettings(prev => ({ ...prev, [template.name]: currentValue }));
+        console.error('Failed to toggle template setting');
+      }
+    } catch (err) {
+      // Revert on error
+      setTemplateSettings(prev => ({ ...prev, [template.name]: currentValue }));
+      console.error('Error toggling template setting:', err);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'settings') {
+      if (!profile) {
+        loadProfile();
+      }
+      if (!waTemplatesLoading) {
+        loadWaTemplates();
+      }
     }
   }, [activeTab]);
 
@@ -480,11 +544,31 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                       const hasImage = headerComponent?.format === 'IMAGE';
                       const buttonCount = buttonsComponent?.buttons?.length || 0;
                       return (
-                        <div key={tmpl.id || idx} className="bg-slate-50 border border-slate-200 rounded-2xl overflow-hidden hover:shadow-md transition-all hover:border-sky-300 group">
+                        <div 
+                          key={tmpl.id || idx} 
+                          className="bg-slate-50 border border-slate-200 rounded-2xl overflow-hidden hover:shadow-md transition-all hover:border-sky-300 group cursor-pointer"
+                          onClick={() => setPreviewTemplate(tmpl)}
+                        >
                           <div className={`px-5 py-4 border-b border-slate-200 ${hasImage ? 'bg-sky-50' : 'bg-white'}`}>
                             <div className="flex items-start gap-2">
                               <div className="flex-1 min-w-0">
-                                <h3 className="text-sm font-black text-slate-800 truncate group-hover:text-sky-700 transition-colors">{name}</h3>
+                                <div className="flex items-center gap-2 mb-2">
+                                  <h3 className="text-sm font-black text-slate-800 truncate group-hover:text-sky-700 transition-colors flex-1">{name}</h3>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      toggleShowInChat(tmpl);
+                                    }}
+                                    className={`shrink-0 p-1.5 rounded-lg transition-all ${
+                                      (templateSettings[name] ?? true)
+                                        ? 'bg-emerald-500 hover:bg-emerald-600 text-white'
+                                        : 'bg-slate-300 hover:bg-slate-400 text-slate-700'
+                                    }`}
+                                    title={(templateSettings[name] ?? true) ? 'מוצג בשיחות' : 'מוסתר בשיחות'}
+                                  >
+                                    {(templateSettings[name] ?? true) ? <Eye size={14} /> : <EyeOff size={14} />}
+                                  </button>
+                                </div>
                                 <div className="flex flex-wrap items-center gap-1.5 mt-2">
                                   {language && (
                                     <span className="flex items-center gap-1 bg-white border border-slate-200 text-slate-500 px-2 py-0.5 rounded-lg text-[10px] font-bold">
@@ -713,6 +797,127 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
           </div>
         </div>
       )}
+
+      {/* ── Template Preview Modal ── */}
+      {previewTemplate && (() => {
+        const components = previewTemplate.components || [];
+        const headerComponent = components.find((c: any) => c.type === 'HEADER');
+        const bodyComponent = components.find((c: any) => c.type === 'BODY');
+        const footerComponent = components.find((c: any) => c.type === 'FOOTER');
+        const buttonsComponent = components.find((c: any) => c.type === 'BUTTONS');
+        
+        const templateName = previewTemplate.name || previewTemplate.elementName || previewTemplate.template_name || '';
+        const hasImage = headerComponent?.format === 'IMAGE';
+        const headerText = headerComponent?.type === 'HEADER' && headerComponent?.format === 'TEXT' ? headerComponent.text : '';
+        const bodyText = bodyComponent?.text || '';
+        const footerText = footerComponent?.text || '';
+        const buttons = buttonsComponent?.buttons || [];
+
+        return (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[100] p-6" onClick={() => setPreviewTemplate(null)}>
+            <div className="bg-white w-full max-w-4xl rounded-3xl shadow-2xl overflow-auto max-h-[95vh]" onClick={(e) => e.stopPropagation()}>
+              {/* Header */}
+              <div className="bg-gradient-to-r from-emerald-500 to-emerald-600 px-6 py-4 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center">
+                    <MessageSquare size={20} className="text-white" />
+                  </div>
+                  <div>
+                    <h3 className="text-white font-bold text-lg">{templateName}</h3>
+                    <p className="text-emerald-100 text-xs font-medium">תצוגה מקדימה</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setPreviewTemplate(null)}
+                  className="text-white/80 hover:text-white hover:bg-white/10 rounded-full p-2 transition-colors"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              {/* WhatsApp-like Preview */}
+              <div className="p-4 bg-gradient-to-b from-slate-50 to-white">
+                <div className="max-w-md mx-auto">
+                  {/* Message Bubble */}
+                  <div className="bg-white rounded-2xl shadow-lg overflow-hidden border border-slate-100">
+                    {/* Header Image or Text */}
+                    {hasImage && (
+                      <div className="relative bg-gradient-to-br from-slate-100 to-slate-200 h-32 flex items-center justify-center">
+                        <div className="text-center">
+                          <ImageIcon size={32} className="text-slate-400 mx-auto mb-1" />
+                          <p className="text-slate-500 text-xs font-medium">תמונת ברירת מחדל</p>
+                        </div>
+                      </div>
+                    )}
+                    {headerText && (
+                      <div className="px-3 pt-3 pb-1">
+                        <p className="text-slate-900 font-bold text-sm">{headerText}</p>
+                      </div>
+                    )}
+
+                    {/* Body */}
+                    {bodyText && (
+                      <div className="px-3 py-2">
+                        <p className="text-slate-700 text-xs leading-relaxed whitespace-pre-wrap">{bodyText}</p>
+                      </div>
+                    )}
+
+                    {/* Footer */}
+                    {footerText && (
+                      <div className="px-3 pb-2">
+                        <p className="text-slate-400 text-[10px]">{footerText}</p>
+                      </div>
+                    )}
+
+                    {/* Buttons */}
+                    {buttons.length > 0 && (
+                      <div className="border-t border-slate-200">
+                        {buttons.map((btn: any, idx: number) => (
+                          <div
+                            key={idx}
+                            className={`px-3 py-2 text-center ${idx < buttons.length - 1 ? 'border-b border-slate-200' : ''}`}
+                          >
+                            <span className="text-sky-600 font-bold text-xs">
+                              {btn.text || `כפתור ${idx + 1}`}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Template Info */}
+                  <div className="mt-3 px-2">
+                    <div className="flex items-center gap-1.5 flex-wrap justify-center">
+                      {previewTemplate.language && (
+                        <span className="bg-white border border-slate-200 text-slate-600 px-2 py-0.5 rounded text-[10px] font-bold flex items-center gap-1">
+                          <Globe size={10} />
+                          {previewTemplate.language.toUpperCase()}
+                        </span>
+                      )}
+                      {previewTemplate.category && (
+                        <span className="bg-sky-500 text-white px-2 py-0.5 rounded text-[10px] font-bold">
+                          {previewTemplate.category}
+                        </span>
+                      )}
+                      {previewTemplate.status && (
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold flex items-center gap-1 ${
+                          previewTemplate.status === 'APPROVED' ? 'bg-emerald-500 text-white'
+                          : previewTemplate.status === 'PENDING' ? 'bg-amber-500 text-white'
+                          : 'bg-slate-400 text-white'
+                        }`}>
+                          {previewTemplate.status === 'APPROVED' && <CheckCircle size={10} />}
+                          {previewTemplate.status}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 };

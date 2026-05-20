@@ -13,6 +13,8 @@ const templateSchema = new mongoose.Schema({
   // type: 'public' = visible to all, 'public_paid' = visible but requires payment, 'admin' = admin-only
   type: { type: String, enum: ['public', 'public_paid', 'admin'], default: 'public' },
   price: { type: Number, default: 0 }, // Price for public_paid templates
+  // Whether to show this template in chat when typing "/" (if false, only shown when searching)
+  showInChat: { type: Boolean, default: true },
   // Parameters the user fills in before using this template
   params: { type: [templateParamSchema], default: [] },
   nodes: [mongoose.Schema.Types.Mixed],

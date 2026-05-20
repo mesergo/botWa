@@ -14,6 +14,7 @@ import proxyRoutes from './routes/proxyRoutes.js';
 import sessionRoutes from './routes/sessionRoutes.js';
 import versionRoutes from './routes/versionRoutes.js';
 import templateRoutes from './routes/templateRoutes.js';
+import dialog360TemplateRoutes from './routes/dialog360TemplateRoutes.js';
 import adminRoutes from './routes/adminRoutes.js';
 import uploadRoutes from './routes/uploadRoutes.js';
 import subUserRoutes from './routes/subUserRoutes.js';
@@ -67,6 +68,7 @@ async function startServer() {
     app.use('/api/sessions', sessionRoutes);
     app.use('/api/versions', versionRoutes);
     app.use('/api/templates', templateRoutes);
+    app.use('/api/dialog360-templates', dialog360TemplateRoutes);
     app.use('/api/admin', adminRoutes);
     app.use('/api/sub-users', subUserRoutes);
     app.use('/api', uploadRoutes);  // Upload route

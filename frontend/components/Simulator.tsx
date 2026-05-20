@@ -160,6 +160,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
   const [templates, setTemplates] = useState<any[]>([]);
   const [showTemplates, setShowTemplates] = useState(false);
   const [templatesLoading, setTemplatesLoading] = useState(false);
+  const [templateSettings, setTemplateSettings] = useState<Record<string, boolean>>({});
   const wsAbortControllerRef = useRef<AbortController | null>(null);
   // Track last message timestamp for polling external messages
   const lastMessageTimestampRef = useRef<string | null>(null);
@@ -411,6 +412,9 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
                            (data.templates.waba_templates ? data.templates.waba_templates : []));
         console.log('[Simulator] Parsed templates:', templateList.length, 'templates');
         setTemplates(templateList);
+        
+        // Fetch showInChat settings
+        fetchTemplateSettings();
       } else {
         setTemplates([]);
       }
@@ -419,6 +423,27 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
       setTemplates([]);
     } finally {
       setTemplatesLoading(false);
+    }
+  };
+
+  // Fetch template settings (showInChat)
+  const fetchTemplateSettings = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/dialog360-templates`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        const settingsList = data.success && Array.isArray(data.settings) ? data.settings : [];
+        const settingsMap: Record<string, boolean> = {};
+        settingsList.forEach((s: any) => {
+          settingsMap[s.templateName] = s.showInChat ?? true;
+        });
+        setTemplateSettings(settingsMap);
+      }
+    } catch (err) {
+      console.error('Error fetching template settings:', err);
     }
   };
   
@@ -1304,25 +1329,38 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
                   ) : (
                     <div className="p-2">
                       <div className="text-xs font-bold text-slate-400 px-3 py-2">בחר תבנית</div>
-                      {templates.map((template, idx) => {
-                        const name = template.name || template.elementName || template.template_name || `Template ${idx + 1}`;
-                        const language = template.language || '';
-                        const status = template.status || '';
-                        return (
-                          <button
-                            key={idx}
-                            onClick={() => handleTemplateSelect(template)}
-                            className="w-full text-right px-3 py-2 hover:bg-slate-50 rounded-lg transition-colors flex items-center justify-between"
-                          >
-                            <div className="flex-1">
-                              <div className="font-bold text-sm text-slate-800">/{name}</div>
-                              {language && (
-                                <div className="text-xs text-slate-500">{language} {status && `• ${status}`}</div>
-                              )}
-                            </div>
-                          </button>
-                        );
-                      })}
+                      {(() => {
+                        const searchQuery = userInput.startsWith('/') && userInput.length > 1 ? userInput.slice(1).toLowerCase() : '';
+                        const filteredTemplates = searchQuery
+                          ? templates.filter(t => {
+                              const name = t.name || t.elementName || t.template_name || '';
+                              return name.toLowerCase().includes(searchQuery);
+                            })
+                          : templates.filter(t => {
+                              const name = t.name || t.elementName || t.template_name || '';
+                              return templateSettings[name] ?? true;
+                            });
+                        
+                        return filteredTemplates.map((template, idx) => {
+                          const name = template.name || template.elementName || template.template_name || `Template ${idx + 1}`;
+                          const language = template.language || '';
+                          const status = template.status || '';
+                          return (
+                            <button
+                              key={idx}
+                              onClick={() => handleTemplateSelect(template)}
+                              className="w-full text-right px-3 py-2 hover:bg-slate-50 rounded-lg transition-colors flex items-center justify-between"
+                            >
+                              <div className="flex-1">
+                                <div className="font-bold text-sm text-slate-800">/{name}</div>
+                                {language && (
+                                  <div className="text-xs text-slate-500">{language} {status && `• ${status}`}</div>
+                                )}
+                              </div>
+                            </button>
+                          );
+                        });
+                      })()}
                     </div>
                   )}
                 </div>

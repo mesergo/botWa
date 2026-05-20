@@ -411,7 +411,7 @@ export const createTemplate = async (req, res) => {
 };
 
 export const updateTemplate = async (req, res) => {
-  const { name, description, nodes, edges, template_id, isPublic, type, price } = req.body;
+  const { name, description, nodes, edges, template_id, isPublic, type, price, showInChat } = req.body;
   
   // Build update object dynamically
   const updateData = {};
@@ -424,6 +424,7 @@ export const updateTemplate = async (req, res) => {
     updateData.isPublic = isPublic;
   }
   if (price !== undefined) updateData.price = price;
+  if (showInChat !== undefined) updateData.showInChat = showInChat;
   if (nodes) updateData.nodes = nodes;
   if (edges) updateData.edges = edges;
   if (template_id) updateData.template_id = template_id; // Allow updating ID if needed, but be careful

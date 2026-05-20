@@ -46,6 +46,7 @@ interface Template {
   isPublic: boolean;
   type: 'public' | 'public_paid' | 'admin';
   price?: number;
+  showInChat?: boolean;
   createdAt: string;
   /** Parameters the admin has defined for this template */
   params?: Array<{ label: string; variableName: string }>;
@@ -130,6 +131,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
   // Dialog360 Templates
   const [dialog360Templates, setDialog360Templates] = useState<any[]>([]);
   const [dialog360Loading, setDialog360Loading] = useState(false);
+  const [dialog360TemplateSettings, setDialog360TemplateSettings] = useState<Record<string, boolean>>({});
   
   // Admin Sessions Message Input
   const [adminNewMessage, setAdminNewMessage] = useState('');
@@ -300,6 +302,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
         console.log('[Dialog360] Final parsed templates:', templateList.length, 'templates');
         console.log('[Dialog360] First template:', templateList[0]);
         setDialog360Templates(templateList);
+        
+        // Fetch showInChat settings for these templates
+        fetchDialog360TemplateSettings();
       } else {
         console.warn('[Dialog360] Response missing success or templates:', { success: data.success, hasTemplates: !!data.templates });
         setDialog360Templates([]);
@@ -310,6 +315,61 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
       setDialog360Templates([]);
     } finally {
       setDialog360Loading(false);
+    }
+  };
+
+  const fetchDialog360TemplateSettings = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/dialog360-templates`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        const settingsList = data.success && Array.isArray(data.settings) ? data.settings : [];
+        const settingsMap: Record<string, boolean> = {};
+        settingsList.forEach((s: any) => {
+          settingsMap[s.templateName] = s.showInChat ?? true;
+        });
+        setDialog360TemplateSettings(settingsMap);
+      }
+    } catch (err) {
+      console.error('Error fetching template settings:', err);
+    }
+  };
+
+  const toggleDialog360ShowInChat = async (template: any) => {
+    const templateName = template.name || template.elementName || template.template_name || '';
+    const currentShowInChat = dialog360TemplateSettings[templateName] ?? true;
+    
+    try {
+      const response = await fetch(`${API_BASE}/dialog360-templates/toggle`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          templateName,
+          templateId: template.id,
+          language: template.language,
+          category: template.category,
+          status: template.status,
+          showInChat: !currentShowInChat
+        })
+      });
+      
+      if (response.ok) {
+        setDialog360TemplateSettings(prev => ({
+          ...prev,
+          [templateName]: !currentShowInChat
+        }));
+      } else {
+        alert('שגיאה בעדכון הגדרות התבנית');
+      }
+    } catch (err) {
+      console.error('Error toggling showInChat:', err);
+      alert('שגיאה בעדכון הגדרות התבנית');
     }
   };
 
@@ -623,6 +683,22 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                 'Authorization': `Bearer ${token}` 
             },
             body: JSON.stringify({ type: nextType })
+        });
+        fetchTemplates();
+    } catch (err) {
+        console.error(err);
+    }
+  };
+
+  const toggleShowInChat = async (template: any) => {
+    try {
+        await fetch(`${API_BASE}/templates/${template._id}`, {
+            method: 'PUT',
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}` 
+            },
+            body: JSON.stringify({ showInChat: !template.showInChat })
         });
         fetchTemplates();
     } catch (err) {
@@ -1777,6 +1853,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                     const hasImage = headerComponent?.format === 'IMAGE';
                     const hasButtons = !!buttonsComponent;
                     const buttonCount = buttonsComponent?.buttons?.length || 0;
+                    const showInChat = dialog360TemplateSettings[name] ?? true;
                     
                     return (
                       <div 
@@ -1787,9 +1864,19 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                         <div className={`p-6 ${hasImage ? 'bg-gradient-to-br from-sky-50 to-blue-50' : 'bg-slate-50'} border-b border-slate-200`}>
                           <div className="flex items-start justify-between mb-3">
                             <div className="flex-1">
-                              <h3 className="text-lg font-bold text-slate-800 mb-2 group-hover:text-sky-700 transition-colors">
-                                {name}
-                              </h3>
+                              <div className="flex items-center justify-between mb-2">
+                                <h3 className="text-lg font-bold text-slate-800 group-hover:text-sky-700 transition-colors">
+                                  {name}
+                                </h3>
+                                {/* Show in chat toggle button */}
+                                <button 
+                                  onClick={() => toggleDialog360ShowInChat(template)} 
+                                  className={`p-2 rounded-lg transition-colors border ${showInChat ? 'bg-green-50 text-green-600 border-green-200' : 'bg-slate-50 text-slate-400 border-slate-200'}`} 
+                                  title={showInChat ? 'מוצג בשיחות (/)' : 'מוסתר בשיחות (/)'}
+                                >
+                                  {showInChat ? <Eye size={16} /> : <EyeOff size={16} />}
+                                </button>
+                              </div>
                               <div className="flex items-center gap-2 flex-wrap">
                                 {language && (
                                   <span className="bg-white text-slate-600 px-2.5 py-1 rounded-lg text-xs font-bold border border-slate-200 flex items-center gap-1">
@@ -1894,6 +1981,14 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                         <FileText size={20} />
                       </div>
                       <div className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity translate-y-2 group-hover:translate-y-0 duration-200">
+                         {/* Show in chat toggle */}
+                         <button 
+                            onClick={() => toggleShowInChat(tpl)} 
+                            className={`p-2 rounded-lg transition-colors border ${tpl.showInChat !== false ? 'bg-green-50 text-green-600 border-green-200' : 'bg-slate-50 text-slate-400 border-slate-200'}`} 
+                            title={tpl.showInChat !== false ? 'מוצג בשיחות (/)' : 'מוסתר בשיחות (/)'}
+                         >
+                            {tpl.showInChat !== false ? <Eye size={16} /> : <EyeOff size={16} />}
+                         </button>
                          {/* Cycle type button */}
                          <button onClick={() => cycleTemplateType(tpl)} className={`p-2 rounded-lg transition-colors border ${typeConfig.color}`} title="שנה סוג">
                             <TypeIcon size={14} />

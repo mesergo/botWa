@@ -65,6 +65,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
   const [templates, setTemplates] = useState<any[]>([]);
   const [templatesLoading, setTemplatesLoading] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<any>(null);
+  const [templateSettings, setTemplateSettings] = useState<Record<string, boolean>>({});
   
   // Template parameters modal
   const [showTemplateParamsModal, setShowTemplateParamsModal] = useState(false);
@@ -188,6 +189,9 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
   const activateAgent = async () => {
     const sid = agentSessionId || (phoneSessions.length > 0 ? phoneSessions[phoneSessions.length - 1].id : null);
     if (!sid) return;
+    
+    const messageToSend = agentMessage.trim();
+    
     try {
       const r = await fetch(`${API_BASE}/sessions/${sid}/set-agent`, {
         method: 'PATCH',
@@ -201,6 +205,55 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
         setPhoneSessions(prev => prev.map((s, i) =>
           i === prev.length - 1 ? { ...s, is_agent: true, agent_since: data.agent_since } : s
         ));
+        
+        // אם יש הודעה שנכתבה, שלח אותה מיד
+        if (messageToSend) {
+          const created = new Date().toISOString();
+          setAgentSending(true);
+          setAgentWaFailed(false);
+          
+          const isTemplate = messageToSend.startsWith('/') && selectedTemplate;
+          let requestBody: any = { message: messageToSend };
+          
+          if (isTemplate) {
+            requestBody.isTemplate = true;
+            requestBody.templateData = {
+              id: selectedTemplate.id,
+              name: selectedTemplate.name || selectedTemplate.elementName || selectedTemplate.template_name,
+              language: selectedTemplate.language || 'he',
+              components: selectedTemplate.components || [],
+              params: templateParams
+            };
+          }
+          
+          try {
+            const msgResponse = await fetch(`${API_BASE}/sessions/${sid}/send-agent-message`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+              body: JSON.stringify(requestBody)
+            });
+            
+            if (msgResponse.ok) {
+              const msgData = await msgResponse.json();
+              setAgentMessage('');
+              setSelectedTemplate(null);
+              setTemplateParams({});
+              setPhoneSessions(prev => prev.map((s, i) =>
+                i === prev.length - 1
+                  ? { ...s, process_history: [...s.process_history, msgData.historyEntry || { type: 'Text', text: messageToSend, sender: 'agent', name: 'נציג', created, wa_sent: msgData.waSent }] }
+                  : s
+              ));
+              if (!msgData.waSent) {
+                setAgentWaFailed(true);
+                setTimeout(() => setAgentWaFailed(false), 8000);
+              }
+            }
+          } catch (msgError) {
+            console.error('Failed to send message after activating agent', msgError);
+          } finally {
+            setAgentSending(false);
+          }
+        }
       }
     } catch (e) {
       console.error('Failed to set agent mode', e);
@@ -227,7 +280,21 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
   };
 
   const sendAgentMsg = async () => {
-    if (!agentMessage.trim() || !agentSessionId || agentSending) return;
+    if (!agentMessage.trim() || agentSending) return;
+    
+    // אם לא במצב נציג, הצג דיאלוג אישור
+    if (!isAgentMode) {
+      if (phoneSessions.length > 0) {
+        setAgentSessionId(phoneSessions[phoneSessions.length - 1].id);
+      }
+      setShowAgentConfirm(true);
+      return;
+    }
+    
+    // אם אין agentSessionId, נסה לקחת מהסשן האחרון
+    const sessionId = agentSessionId || (phoneSessions.length > 0 ? phoneSessions[phoneSessions.length - 1].id : null);
+    if (!sessionId) return;
+    
     const msgText = agentMessage.trim();
     const created = new Date().toISOString();
     setAgentSending(true);
@@ -251,7 +318,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
     }
     
     try {
-      const r = await fetch(`${API_BASE}/sessions/${agentSessionId}/send-agent-message`, {
+      const r = await fetch(`${API_BASE}/sessions/${sessionId}/send-agent-message`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify(requestBody)
@@ -300,6 +367,9 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                            (data.templates.data ? data.templates.data : 
                            (data.templates.waba_templates ? data.templates.waba_templates : []));
         setTemplates(templateList);
+        
+        // Fetch showInChat settings
+        fetchTemplateSettings();
       } else {
         setTemplates([]);
       }
@@ -308,6 +378,27 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
       setTemplates([]);
     } finally {
       setTemplatesLoading(false);
+    }
+  };
+
+  // Fetch template settings (showInChat)
+  const fetchTemplateSettings = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/dialog360-templates`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        const settingsList = data.success && Array.isArray(data.settings) ? data.settings : [];
+        const settingsMap: Record<string, boolean> = {};
+        settingsList.forEach((s: any) => {
+          settingsMap[s.templateName] = s.showInChat ?? true;
+        });
+        setTemplateSettings(settingsMap);
+      }
+    } catch (err) {
+      console.error('Error fetching template settings:', err);
     }
   };
 
@@ -728,23 +819,13 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                     )}
                   </p>
                 </div>
-                {!isSimulator(selectedPhone) && (
-                  isAgentMode ? (
-                    <button
-                      onClick={deactivateAgent}
-                      className="flex items-center gap-2 px-4 py-2 rounded-2xl bg-emerald-500 text-white text-xs font-black hover:bg-emerald-600 transition-colors shadow-sm"
-                    >
-                      <RefreshCw size={14} /> החזרת השיחה לבוט
-                    </button>
-                  ) : (
-                    <button
-                      onClick={handleOpenAgentConfirm}
-                      disabled={phoneSessions.length === 0}
-                      className="flex items-center gap-2 px-4 py-2 rounded-2xl border-2 border-sky-400 text-sky-600 text-xs font-black hover:bg-sky-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                    >
-                      <Headphones size={14} /> שיחה עם נציג
-                    </button>
-                  )
+                {!isSimulator(selectedPhone) && isAgentMode && (
+                  <button
+                    onClick={deactivateAgent}
+                    className="flex items-center gap-2 px-4 py-2 rounded-2xl bg-emerald-500 text-white text-xs font-black hover:bg-emerald-600 transition-colors shadow-sm"
+                  >
+                    <RefreshCw size={14} /> החזרת השיחה לבוט
+                  </button>
                 )}
                 <button
                   onClick={() => setSelectedPhone(null)}
@@ -827,7 +908,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 <div className="flex-shrink-0 bg-white border-t border-slate-100 px-4 py-3" dir="rtl">
                   <div className="flex items-center gap-3 relative">
                     {/* Template dropdown */}
-                    {showTemplates && isAgentMode && (
+                    {showTemplates && selectedPhone && (
                       <div className="absolute bottom-full left-0 right-0 mb-2 bg-white border border-slate-200 rounded-xl shadow-xl max-h-80 overflow-y-auto z-50">
                         {templatesLoading ? (
                           <div className="p-4 text-center text-slate-400 text-sm">טוען טמפלייטים...</div>
@@ -842,7 +923,10 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                                     const name = t.name || t.elementName || t.template_name || '';
                                     return name.toLowerCase().includes(searchQuery);
                                   })
-                                : templates;
+                                : templates.filter(t => {
+                                    const name = t.name || t.elementName || t.template_name || '';
+                                    return templateSettings[name] ?? true;
+                                  });
 
                               return filtered.length > 0 ? (
                                 filtered.map((template: any, idx: number) => {
@@ -891,9 +975,9 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
 
                     <button
                       onClick={sendAgentMsg}
-                      disabled={!isAgentMode || !agentMessage.trim() || agentSending}
+                      disabled={!agentMessage.trim() || agentSending}
                       className={`w-10 h-10 flex-shrink-0 flex items-center justify-center rounded-2xl transition-colors
-                        ${isAgentMode && agentMessage.trim() && !agentSending
+                        ${agentMessage.trim() && !agentSending
                           ? 'bg-sky-500 text-white hover:bg-sky-600 cursor-pointer'
                           : 'bg-sky-500 text-white opacity-40 cursor-not-allowed'}`}
                     >
@@ -903,8 +987,8 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                     </button>
                     <input
                       type="text"
-                      value={isAgentMode ? agentMessage : ''}
-                      onChange={isAgentMode ? e => {
+                      value={agentMessage}
+                      onChange={e => {
                         const value = e.target.value;
                         setAgentMessage(value);
                         if (value === '/' || value.startsWith('/')) {
@@ -913,14 +997,11 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                         } else {
                           setShowTemplates(false);
                         }
-                      } : undefined}
-                      onKeyDown={isAgentMode ? e => { if (e.key === 'Enter') sendAgentMsg(); } : undefined}
-                      placeholder={isAgentMode ? 'כתוב הודעה ללקוח... (/ לטמפלייטים)' : 'שליחת הודעה...'}
-                      disabled={!isAgentMode}
+                      }}
+                      onKeyDown={e => { if (e.key === 'Enter') sendAgentMsg(); }}
+                      placeholder='כתוב הודעה ללקוח... (/ לטמפלייטים)'
                       className={`flex-1 bg-slate-50 border border-slate-200 rounded-2xl px-4 py-2.5 text-sm text-right font-medium outline-none transition-all
-                        ${isAgentMode
-                          ? 'text-slate-800 placeholder:text-slate-400 focus:ring-2 focus:ring-sky-500/20 focus:border-sky-400'
-                          : 'text-slate-400 placeholder:text-slate-300 cursor-not-allowed'}`}
+                        text-slate-800 placeholder:text-slate-400 focus:ring-2 focus:ring-sky-500/20 focus:border-sky-400`}
                     />
                   </div>
                 </div>
@@ -968,7 +1049,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
       {/* Template parameters modal */}
       {showTemplateParamsModal && selectedTemplate && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" dir="rtl">
-          <div className="bg-white rounded-3xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-hidden flex flex-col">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
             {/* Header */}
             <div className="px-6 pt-6 pb-4 border-b border-slate-100">
               <div className="flex items-center justify-between mb-2">
@@ -985,8 +1066,10 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
               </p>
             </div>
 
-            {/* Body - scrollable */}
-            <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+            {/* Body - Two columns: Form on right, Preview on left */}
+            <div className="flex-1 overflow-hidden flex flex-col lg:flex-row">
+              {/* Right Side - Form */}
+              <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4 border-l border-slate-100">
               {selectedTemplate.components && selectedTemplate.components.map((comp: any, idx: number) => {
                 // Header with media
                 if (comp.type === 'HEADER' && ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(comp.format)) {
@@ -1054,9 +1137,152 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
 
                 return null;
               })}
+              </div>
+
+              {/* Left Side - Preview */}
+              <div className="flex-1 overflow-y-auto px-6 py-4 bg-gradient-to-br from-slate-50 to-slate-100">
+                <div className="sticky top-0">
+                  <h4 className="text-sm font-black text-slate-700 mb-4 flex items-center gap-2">
+                    <span className="w-6 h-6 bg-sky-500 text-white rounded-lg flex items-center justify-center text-xs">👁️</span>
+                    תצוגה מקדימה
+                  </h4>
+                  
+                  {/* WhatsApp-like message preview */}
+                  <div className="bg-[#DCF8C6] rounded-2xl shadow-lg overflow-hidden border border-[#34B7F1]/20 max-w-sm">
+                    {/* Header Media */}
+                    {(() => {
+                      const headerComp = selectedTemplate.components?.find((c: any) => c.type === 'HEADER');
+                      if (headerComp && ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(headerComp.format)) {
+                        const mediaUrl = templateParams.header?.url;
+                        const mediaType = headerComp.format.toLowerCase();
+                        
+                        if (mediaType === 'image') {
+                          return (
+                            <div className="w-full aspect-video bg-slate-200 flex items-center justify-center overflow-hidden">
+                              {mediaUrl ? (
+                                <img 
+                                  src={mediaUrl} 
+                                  alt="תמונת תבנית" 
+                                  className="w-full h-full object-cover"
+                                />
+                              ) : (
+                                <div className="flex flex-col items-center gap-3 text-slate-400 py-8">
+                                  <svg className="w-20 h-20 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                  </svg>
+                                  <span className="text-xs font-semibold">העלה תמונה ראשית</span>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        } else if (mediaType === 'video') {
+                          return mediaUrl ? (
+                            <video src={mediaUrl} controls className="w-full bg-black" />
+                          ) : (
+                            <div className="w-full aspect-video bg-slate-200 flex items-center justify-center">
+                              <div className="flex flex-col items-center gap-2 text-slate-400">
+                                <span className="text-4xl">🎥</span>
+                                <span className="text-xs font-semibold">העלה וידאו</span>
+                              </div>
+                            </div>
+                          );
+                        } else if (mediaType === 'document') {
+                          return mediaUrl ? (
+                            <div className="p-4 bg-white/80 flex items-center gap-3">
+                              <div className="w-12 h-12 bg-blue-500 text-white rounded-lg flex items-center justify-center text-xl">📄</div>
+                              <div className="flex-1">
+                                <div className="text-sm font-bold text-slate-700">מסמך מצורף</div>
+                                <div className="text-xs text-slate-500">קובץ מסמך</div>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="p-4 bg-slate-200 text-slate-400 text-sm text-center flex flex-col items-center gap-2">
+                              <span className="text-3xl">📄</span>
+                              <span className="text-xs font-semibold">העלה מסמך</span>
+                            </div>
+                          );
+                        }
+                      }
+                      return null;
+                    })()}
+
+                    {/* Body Text */}
+                    <div className="p-4">
+                      {(() => {
+                        const bodyComp = selectedTemplate.components?.find((c: any) => c.type === 'BODY');
+                        if (bodyComp && bodyComp.text) {
+                          let bodyText = bodyComp.text;
+                          
+                          // Replace {{1}}, {{2}}, etc. with actual values
+                          const matches = bodyText.match(/\{\{\d+\}\}/g);
+                          if (matches && templateParams.body) {
+                            matches.forEach((match: string, idx: number) => {
+                              const value = templateParams.body[idx] || `<span class="text-slate-500 italic">${match}</span>`;
+                              bodyText = bodyText.replace(match, `<strong class="text-green-700">${value}</strong>`);
+                            });
+                          }
+                          
+                          return (
+                            <p 
+                              className="text-sm text-slate-900 leading-relaxed whitespace-pre-wrap"
+                              dangerouslySetInnerHTML={{ __html: bodyText }}
+                            />
+                          );
+                        }
+                        return <p className="text-sm text-slate-500 italic">אין תוכן להצגה</p>;
+                      })()}
+                    </div>
+
+                    {/* Footer */}
+                    {(() => {
+                      const footerComp = selectedTemplate.components?.find((c: any) => c.type === 'FOOTER');
+                      if (footerComp && footerComp.text) {
+                        return (
+                          <div className="px-4 pb-3 text-xs text-slate-600">
+                            {footerComp.text}
+                          </div>
+                        );
+                      }
+                      return null;
+                    })()}
+
+                    {/* Buttons */}
+                    {(() => {
+                      const buttonsComp = selectedTemplate.components?.find((c: any) => c.type === 'BUTTONS');
+                      if (buttonsComp && buttonsComp.buttons && buttonsComp.buttons.length > 0) {
+                        return (
+                          <div className="border-t border-green-700/20">
+                            {buttonsComp.buttons.map((btn: any, idx: number) => (
+                              <button
+                                key={idx}
+                                className="w-full py-3 text-sm font-bold text-[#34B7F1] hover:bg-white/50 transition-colors border-b border-green-700/10 last:border-b-0"
+                              >
+                                {btn.text}
+                              </button>
+                            ))}
+                          </div>
+                        );
+                      }
+                      return null;
+                    })()}
+
+                    {/* WhatsApp timestamp */}
+                    <div className="px-4 pb-2 flex justify-end">
+                      <span className="text-[10px] text-slate-600">
+                        {new Date().toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-slate-500 mt-3 text-center flex items-center justify-center gap-1">
+                    <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+                    התצוגה מתעדכנת אוטומטית
+                  </p>
+                </div>
+              </div>
             </div>
 
-            {/* Footer */}
+            {/* Footer - Action Buttons */}
             <div className="px-6 pb-6 pt-4 border-t border-slate-100 flex gap-3 justify-end">
               <button
                 onClick={() => setShowTemplateParamsModal(false)}
