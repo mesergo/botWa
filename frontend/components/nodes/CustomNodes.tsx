@@ -257,6 +257,17 @@ export const InputTextNode = (props: any) => (
         <label className="text-[14px] font-bold text-slate-400 uppercase tracking-wider">סוג ולידציה</label>
       </div>
     </div>
+    <div className="mb-2 p-1">
+      <div className="flex items-center justify-end gap-2">
+        <label className="text-[14px] font-bold text-slate-400 uppercase tracking-wider">שמור בפרטי איש קשר</label>
+        <input
+          type="checkbox"
+          className="w-4 h-4 cursor-pointer accent-blue-500"
+          checked={!!props.data.saveToContact}
+          onChange={(e) => props.data.onChange({ saveToContact: e.target.checked })}
+        />
+      </div>
+    </div>
   </BaseNode>
 );
 

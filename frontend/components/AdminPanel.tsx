@@ -18,6 +18,7 @@ interface User {
   account_type: string;
   status: string;
   dialog360_bot_id?: string;
+  manager_id?: string | null;
   createdAt: string;
   updatedAt: string;
   stats?: {
@@ -152,6 +153,17 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
   useEffect(() => {
     if (activeTab === 'sessions') fetchAllSessions(sessionsPage, sessionsSearch);
   }, [sessionsPage]);
+
+  // Debounced search: fire API call 400ms after user stops typing
+  useEffect(() => {
+    if (activeTab !== 'sessions') return;
+    const timer = setTimeout(() => {
+      setSessionsSearch(sessionsSearchInput);
+      setSessionsPage(1);
+      fetchAllSessions(1, sessionsSearchInput);
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [sessionsSearchInput]);
 
   // Scroll history panel to bottom when it opens/changes
   useEffect(() => {
@@ -936,32 +948,17 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
               <div className="flex-1 overflow-y-auto px-10 pb-10 pt-2">
                 <div className="space-y-4 animate-fade-in-up" dir="rtl">
                   {/* Search bar with submit */}
-                  <form
-                    className="relative max-w-md mb-6 flex gap-2"
-                    onSubmit={e => {
-                      e.preventDefault();
-                      setSessionsSearch(sessionsSearchInput);
-                      fetchAllSessions(1, sessionsSearchInput);
-                    }}
-                  >
-                    <div className="relative flex-1">
-                      <Search size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-300" />
-                      <input
-                        type="text"
-                        value={sessionsSearchInput}
-                        onChange={e => setSessionsSearchInput(e.target.value)}
-                        placeholder="חיפוש לפי טלפון, בוט או משתמש..."
-                        className="w-full pr-10 pl-4 py-3 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700 placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all shadow-sm"
-                        dir="rtl"
-                      />
-                    </div>
-                    <button
-                      type="submit"
-                      className="px-4 py-3 bg-blue-50 text-blue-500 rounded-xl text-sm font-bold hover:bg-blue-100 hover:text-blue-600 transition-colors flex-shrink-0 border border-blue-100"
-                    >
-                      חפש
-                    </button>
-                  </form>
+                  <div className="relative max-w-md mb-6">
+                    <Search size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-300" />
+                    <input
+                      type="text"
+                      value={sessionsSearchInput}
+                      onChange={e => setSessionsSearchInput(e.target.value)}
+                      placeholder="חיפוש לפי טלפון, בוט או משתמש..."
+                      className="w-full pr-10 pl-4 py-3 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700 placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all shadow-sm"
+                      dir="rtl"
+                    />
+                  </div>
 
                   {sessionsLoading ? (
                     <div className="flex items-center justify-center py-24 text-slate-400 font-bold">
@@ -1523,7 +1520,12 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-3 space-y-2 bg-slate-50/50">
-                  {filteredUsers.length === 0 ? (
+                  {loading ? (
+                     <div className="flex flex-col items-center justify-center h-48 text-slate-400">
+                        <div className="w-10 h-10 border-4 border-slate-200 border-t-sky-500 rounded-full animate-spin mb-3"></div>
+                        <p className="font-medium text-sm">טוען משתמשים...</p>
+                     </div>
+                  ) : filteredUsers.length === 0 ? (
                      <div className="flex flex-col items-center justify-center h-48 text-slate-400">
                         <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center mb-3"><Search size={20} className="opacity-40" /></div>
                         <p className="font-medium text-sm">לא נמצאו משתמשים</p>
@@ -1575,6 +1577,15 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                           </div>
                           <ChevronRight size={14} className={`transition-transform duration-300 ${selectedUser?.id === user.id ? 'text-sky-500 translate-x-1' : 'text-slate-300 opacity-0 group-hover:opacity-100'}`} />
                         </div>
+                        {(user.role === 'rep' || user.role === 'rep_bot') && user.manager_id && (() => {
+                          const parentUser = users.find(u => u.id === user.manager_id);
+                          return parentUser ? (
+                            <div className="mt-1.5 flex items-center gap-1 text-[10px] text-slate-400">
+                              <UserIcon size={10} className="shrink-0" />
+                              <span className="truncate">קשור ל: <span className="font-semibold text-slate-600">{parentUser.name}</span></span>
+                            </div>
+                          ) : null;
+                        })()}
                       </div>
                     ))
                   )}

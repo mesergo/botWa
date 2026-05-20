@@ -1,0 +1,182 @@
+import Contact from '../models/Contact.js';
+import { getEffectiveUserId } from '../middleware/auth.js';
+import XLSX from 'xlsx';
+import fs from 'fs';
+
+// GET /api/contacts — paginated list of contacts for the current user
+export const getContacts = async (req, res) => {
+  const userId = getEffectiveUserId(req);
+  const page  = Math.max(1, parseInt(req.query.page)  || 1);
+  const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 10));
+  const search = (req.query.search || '').trim();
+
+  try {
+    const filter = { user_id: userId };
+    if (search) {
+      const re = new RegExp(search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+      filter.$or = [
+        { phone: re },
+        { full_name: re },
+        { whatsapp_name: re },
+        { email: re },
+      ];
+    }
+
+    const [contacts, total] = await Promise.all([
+      Contact.find(filter).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit),
+      Contact.countDocuments(filter),
+    ]);
+
+    res.json({ contacts, total, page, totalPages: Math.ceil(total / limit) || 1 });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// GET /api/contacts/:id — single contact
+export const getContact = async (req, res) => {
+  const userId = getEffectiveUserId(req);
+  try {
+    const contact = await Contact.findOne({ _id: req.params.id, user_id: userId });
+    if (!contact) return res.status(404).json({ error: 'Contact not found' });
+    res.json(contact);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// POST /api/contacts — create a new contact (or upsert by phone)
+export const createContact = async (req, res) => {
+  const userId = getEffectiveUserId(req);
+  const { phone, full_name, whatsapp_name, email, custom_field_values } = req.body;
+
+  if (!phone || !phone.trim()) {
+    return res.status(400).json({ error: 'Phone is required' });
+  }
+
+  try {
+    const contact = await Contact.findOneAndUpdate(
+      { user_id: userId, phone: phone.trim() },
+      { $set: { full_name: full_name || '', whatsapp_name: whatsapp_name || '', email: email || '', custom_field_values: custom_field_values || {} } },
+      { upsert: true, new: true, runValidators: true }
+    );
+    res.json(contact);
+  } catch (err) {
+    if (err.code === 11000) {
+      return res.status(409).json({ error: 'Contact with this phone already exists' });
+    }
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// PUT /api/contacts/:id — update existing contact
+export const updateContact = async (req, res) => {
+  const userId = getEffectiveUserId(req);
+  const { phone, full_name, whatsapp_name, email, custom_field_values } = req.body;
+
+  try {
+    const update = { full_name: full_name || '', whatsapp_name: whatsapp_name || '', email: email || '' };
+    if (phone && phone.trim()) update.phone = phone.trim();
+    if (custom_field_values !== undefined) update.custom_field_values = custom_field_values;
+
+    const contact = await Contact.findOneAndUpdate(
+      { _id: req.params.id, user_id: userId },
+      { $set: update },
+      { new: true, runValidators: true }
+    );
+    if (!contact) return res.status(404).json({ error: 'Contact not found' });
+    res.json(contact);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// DELETE /api/contacts/:id
+export const deleteContact = async (req, res) => {
+  const userId = getEffectiveUserId(req);
+  try {
+    const contact = await Contact.findOneAndDelete({ _id: req.params.id, user_id: userId });
+    if (!contact) return res.status(404).json({ error: 'Contact not found' });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// POST /api/contacts/upsert-by-phone
+// Used internally (e.g. by chat flow when a bot input saves contact data)
+export const upsertContactByPhone = async (req, res) => {
+  const userId = getEffectiveUserId(req);
+  const { phone, full_name, whatsapp_name, email, custom_field_values } = req.body;
+
+  if (!phone || !phone.trim()) {
+    return res.status(400).json({ error: 'Phone is required' });
+  }
+
+  try {
+    const setFields = {};
+    if (full_name !== undefined) setFields.full_name = full_name;
+    if (whatsapp_name !== undefined) setFields.whatsapp_name = whatsapp_name;
+    if (email !== undefined) setFields.email = email;
+    if (custom_field_values && typeof custom_field_values === 'object') {
+      Object.entries(custom_field_values).forEach(([k, v]) => {
+        setFields[`custom_field_values.${k}`] = v;
+      });
+    }
+
+    const contact = await Contact.findOneAndUpdate(
+      { user_id: userId, phone: phone.trim() },
+      { $set: setFields },
+      { upsert: true, new: true }
+    );
+    res.json(contact);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// POST /api/contacts/import — bulk import from Excel/CSV file
+export const importContacts = async (req, res) => {
+  const userId = getEffectiveUserId(req);
+  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+
+  const filePath = req.file.path;
+  try {
+    const workbook = XLSX.readFile(filePath);
+    const sheetName = workbook.SheetNames[0];
+    const rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: '' });
+
+    let imported = 0, skipped = 0;
+    const errors = [];
+
+    for (const row of rows) {
+      // Accept Hebrew or English column headers
+      const phone = String(
+        row['טלפון'] ?? row['phone'] ?? row['Phone'] ?? ''
+      ).trim();
+
+      const full_name = String(row['שם מלא'] ?? row['full_name'] ?? row['Full Name'] ?? '').trim();
+
+      if (!phone || !full_name) { skipped++; continue; }
+      const whatsapp_name = String(row['שם וואטסאפ'] ?? row['whatsapp_name'] ?? row['WhatsApp Name'] ?? '').trim();
+      const email = String(row['מייל'] ?? row['email'] ?? row['Email'] ?? '').trim();
+
+      try {
+        await Contact.findOneAndUpdate(
+          { user_id: userId, phone },
+          { $set: { full_name, whatsapp_name, email } },
+          { upsert: true }
+        );
+        imported++;
+      } catch (e) {
+        errors.push({ phone, error: e.message });
+      }
+    }
+
+    res.json({ imported, skipped, errors });
+  } catch (err) {
+    res.status(400).json({ error: 'Failed to parse file: ' + err.message });
+  } finally {
+    fs.unlink(filePath, () => {});
+  }
+};
