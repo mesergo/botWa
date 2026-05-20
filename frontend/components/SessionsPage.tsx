@@ -29,26 +29,27 @@ interface SessionsPageProps {
   currentUser?: { name?: string; email?: string; role?: string; isImpersonating?: boolean } | null;
   onBack: () => void;
   onLogout: () => void;
-  onOpenContacts?: () => void;
+  onOpenContacts?: (phone?: string) => void;
   onOpenAdminPanel?: () => void;
   onOpenSettings?: () => void;
   onOpenSubUsers?: () => void;
   onStopImpersonation?: () => void;
   ownOnly?: boolean;
+  initialPhone?: string | null;
 }
 
 const API_BASE = window.location.hostname === 'localhost'
   ? 'http://localhost:3001/api'
   : `${window.location.origin}/api`;
 
-const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack, onLogout, onOpenContacts, onOpenAdminPanel, onOpenSettings, onOpenSubUsers, onStopImpersonation }) => {
+const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack, onLogout, onOpenContacts, onOpenAdminPanel, onOpenSettings, onOpenSubUsers, onStopImpersonation, initialPhone }) => {
   // Contacts panel state
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [contactsLoading, setContactsLoading] = useState(true);
   const [contactSearch, setContactSearch] = useState('');
 
   // Selected contact sessions
-  const [selectedPhone, setSelectedPhone] = useState<string | null>(null);
+  const [selectedPhone, setSelectedPhone] = useState<string | null>(initialPhone ?? null);
   const [phoneSessions, setPhoneSessions] = useState<Session[]>([]);
   const [phoneSessionsLoading, setPhoneSessionsLoading] = useState(false);
 
@@ -718,9 +719,20 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                   {isSimulator(selectedPhone) ? <MessageSquare size={20} /> : <Phone size={20} />}
                 </div>
                 <div className="flex-1">
-                  <p className="text-base font-black text-slate-900">
-                    {isSimulator(selectedPhone) ? 'סימולטור' : selectedPhone}
-                  </p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-base font-black text-slate-900">
+                      {isSimulator(selectedPhone) ? 'סימולטור' : selectedPhone}
+                    </p>
+                    {!isSimulator(selectedPhone) && onOpenContacts && (
+                      <button
+                        onClick={() => onOpenContacts(selectedPhone)}
+                        title="פתח פרטי איש קשר"
+                        className="p-1 text-slate-400 hover:text-sky-500 transition-colors rounded-lg hover:bg-sky-50"
+                      >
+                        <ExternalLink size={14} />
+                      </button>
+                    )}
+                  </div>
                   <p className="text-xs text-slate-400 font-semibold mt-0.5">
                     {selectedContact?.sessionCount ?? 0} שיחות
                     {selectedContact?.bots && selectedContact.bots.length > 0 && (

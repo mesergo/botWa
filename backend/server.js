@@ -17,6 +17,7 @@ import templateRoutes from './routes/templateRoutes.js';
 import adminRoutes from './routes/adminRoutes.js';
 import uploadRoutes from './routes/uploadRoutes.js';
 import subUserRoutes from './routes/subUserRoutes.js';
+import contactRoutes from './routes/contactRoutes.js';
 import { seedTemplates } from './controllers/templateController.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -69,6 +70,7 @@ async function startServer() {
     app.use('/api/templates', templateRoutes);
     app.use('/api/admin', adminRoutes);
     app.use('/api/sub-users', subUserRoutes);
+    app.use('/api/contacts', contactRoutes);
     app.use('/api', uploadRoutes);  // Upload route
 
     // ── Global error handler ─────────────────────────────────────────────────

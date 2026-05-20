@@ -170,6 +170,8 @@ const FlowBuilder: React.FC = () => {
   // Change Template State
   const [isChangeTemplateModalOpen, setIsChangeTemplateModalOpen] = useState(false);
   const [sessionsOwnOnly, setSessionsOwnOnly] = useState(false);
+  const [sessionsInitialPhone, setSessionsInitialPhone] = useState<string | null>(null);
+  const [contactsInitialPhone, setContactsInitialPhone] = useState<string | null>(null);
   const [dashboardInitialTab, setDashboardInitialTab] = useState<'bots' | 'settings' | 'users'>('bots');
 
   // --- Edge Delete Listener ---
@@ -841,7 +843,14 @@ const FlowBuilder: React.FC = () => {
     setCurrentUser(userData);
     localStorage.setItem('flowbot_token', impersonationToken);
     localStorage.setItem('flowbot_user', JSON.stringify(userData));
-    setViewMode('dashboard');
+    // Route based on role — same logic as normal login
+    if (userData.role === 'rep' || userData.role === 'rep_bot') {
+      setSessionsOwnOnly(false);
+      setViewMode('sessions');
+    } else {
+      setDashboardInitialTab('bots'); // Reset stale tab (e.g. settings left from before)
+      setViewMode('dashboard');
+    }
     // Pass the new token directly to avoid stale closure with the old admin token
     loadBots(impersonationToken);
   }, [loadBots]);
@@ -1590,13 +1599,14 @@ const FlowBuilder: React.FC = () => {
       <ContactsPage
         token={token}
         currentUser={currentUser}
-        onBack={() => setViewMode('dashboard')}
+        onBack={() => { setDashboardInitialTab('bots'); setViewMode('dashboard'); }}
         onLogout={() => { localStorage.clear(); window.location.reload(); }}
-        onOpenSessions={() => { setSessionsOwnOnly(true); setViewMode('sessions'); }}
+        onOpenSessions={(phone?: string) => { setSessionsInitialPhone(phone ?? null); setSessionsOwnOnly(true); setViewMode('sessions'); }}
         onOpenAdminPanel={() => setViewMode('admin-panel')}
         onOpenSettings={() => { setDashboardInitialTab('settings'); setViewMode('dashboard'); }}
         onOpenSubUsers={currentUser?.role === 'user' ? () => { setDashboardInitialTab('users'); setViewMode('dashboard'); } : undefined}
         onStopImpersonation={handleStopImpersonation}
+        initialPhone={contactsInitialPhone}
       />
     );
   }
@@ -1606,11 +1616,12 @@ const FlowBuilder: React.FC = () => {
       <SessionsPage
         token={token}
         currentUser={currentUser}
-        onBack={currentUser?.role === 'rep' ? undefined : () => setViewMode('dashboard')}
+        onBack={currentUser?.role === 'rep' ? undefined : () => { setDashboardInitialTab('bots'); setViewMode('dashboard'); }}
         onLogout={() => { localStorage.clear(); window.location.reload(); }}
-        onOpenContacts={currentUser?.role !== 'rep' && currentUser?.role !== 'rep_bot' ? () => setViewMode('contacts') : undefined}
+        onOpenContacts={currentUser?.role !== 'rep' && currentUser?.role !== 'rep_bot' ? (phone?: string) => { setContactsInitialPhone(phone ?? null); setViewMode('contacts'); } : undefined}
         onOpenAdminPanel={() => setViewMode('admin-panel')}
         ownOnly={sessionsOwnOnly}
+        initialPhone={sessionsInitialPhone}
         onOpenSettings={currentUser?.role !== 'rep' && currentUser?.role !== 'rep_bot' ? () => { setDashboardInitialTab('settings'); setViewMode('dashboard'); } : undefined}
         onOpenSubUsers={currentUser?.role === 'user' ? () => { setDashboardInitialTab('users'); setViewMode('dashboard'); } : undefined}
         onStopImpersonation={handleStopImpersonation}

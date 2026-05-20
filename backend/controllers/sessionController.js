@@ -326,8 +326,48 @@ export const getAllSessions = async (req, res) => {
     const userNameMap = {};
     allUsers.forEach(u => { userNameMap[u._id.toString()] = u.name || u.email; });
 
+    // Build DB-level match conditions that cover phone, bot name, and user name
+    let matchStage = null;
+    if (search) {
+      const searchLower = search.toLowerCase();
+
+      // Bot IDs whose name matches the search
+      const matchingBotIds = allBots
+        .filter(b => b.name?.toLowerCase().includes(searchLower))
+        .map(b => b._id.toString());
+
+      // User IDs whose name/email matches the search
+      const matchingUserIds = allUsers
+        .filter(u => (u.name || u.email || '').toLowerCase().includes(searchLower))
+        .map(u => u._id.toString());
+
+      // Also include bots owned by matching users
+      const botIdsFromUsers = allBots
+        .filter(b => matchingUserIds.includes(b.user_id?.toString()))
+        .map(b => b._id.toString());
+
+      const allMatchingBotIds = [...new Set([...matchingBotIds, ...botIdsFromUsers])];
+
+      // Widget IDs that map to matching bots
+      const matchingWidgetIds = allWidgets
+        .filter(w => allMatchingBotIds.includes(w.flow_id?.toString()))
+        .map(w => w.id);
+
+      const orConditions = [
+        { sender: { $regex: search, $options: 'i' } },
+        { customer_phone: { $regex: search, $options: 'i' } },
+      ];
+      if (matchingWidgetIds.length > 0) {
+        orConditions.push({ widget_id: { $in: matchingWidgetIds } });
+      }
+      if (allMatchingBotIds.length > 0) {
+        orConditions.push({ flow_id: { $in: allMatchingBotIds } });
+      }
+
+      matchStage = { $or: orConditions };
+    }
+
     const pipeline = [
-      // Normalise date field and derive searchable bot/user name fields via $addFields
       {
         $addFields: {
           _sortDate: { $ifNull: ['$created_at', '$createdAt'] },
@@ -335,13 +375,7 @@ export const getAllSessions = async (req, res) => {
         }
       },
       { $sort: { _sortDate: -1 } },
-      // Text search filter (regex on phone — bot/user names are resolved post-fetch)
-      ...(search ? [{
-        $match: {
-          _phone: { $regex: search, $options: 'i' }
-        }
-      }] : []),
-      // Count + paginate in one pass
+      ...(matchStage ? [{ $match: matchStage }] : []),
       {
         $facet: {
           meta: [{ $count: 'total' }],
@@ -352,6 +386,7 @@ export const getAllSessions = async (req, res) => {
 
     const [result] = await collection.aggregate(pipeline).toArray();
     const rawData = result.data ?? [];
+    const total = result.meta[0]?.total ?? 0;
 
     // Resolve bot / user names from lookup maps
     const sessions = rawData.map(s => {
@@ -373,35 +408,10 @@ export const getAllSessions = async (req, res) => {
       };
     });
 
-    // If search also needs to match bot_name / user_name (resolved JS-side), filter further
-    const finalSessions = search
-      ? sessions.filter(s =>
-          s.phone.toLowerCase().includes(search.toLowerCase()) ||
-          s.bot_name.toLowerCase().includes(search.toLowerCase()) ||
-          s.user_name.toLowerCase().includes(search.toLowerCase())
-        )
-      : sessions;
-
-    // Recount after JS-side filter (only differs when search matches bot/user name)
-    const total = search
-      ? (result.meta[0]?.total ?? 0)   // approximate from DB; full accuracy below
-      : (result.meta[0]?.total ?? 0);
-
-    // For accurate total when bot/user search is used, do a lightweight count pass
-    const accurateTotal = search ? await (async () => {
-      const countPipeline = [
-        { $addFields: { _sortDate: { $ifNull: ['$created_at', '$createdAt'] }, _phone: { $ifNull: ['$sender', { $ifNull: ['$customer_phone', 'לא ידוע'] }] } } },
-        { $sort: { _sortDate: -1 } },
-        { $count: 'total' }
-      ];
-      const [cr] = await collection.aggregate(countPipeline).toArray();
-      return cr?.total ?? 0;
-    })() : total;
-
-    const totalPages = Math.max(1, Math.ceil(accurateTotal / PAGE_SIZE));
+    const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
     const safePage = Math.min(page, totalPages);
 
-    res.json({ sessions: finalSessions, total: accurateTotal, page: safePage, totalPages });
+    res.json({ sessions, total, page: safePage, totalPages });
   } catch (err) {
     console.error('getAllSessions error:', err);
     res.status(500).json({ error: err.message });

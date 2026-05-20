@@ -122,6 +122,7 @@ export const getAllUsers = async (req, res) => {
         public_id: user.public_id,
         account_type: user.account_type,
         status: user.status,
+        manager_id: user.manager_id || null,
         createdAt: user.createdAt,
         updatedAt: user.updatedAt,
         custom_limits: user.custom_limits,

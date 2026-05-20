@@ -3,6 +3,7 @@ import BotFlow from '../models/BotFlow.js';
 import Widget from '../models/Widget.js';
 import Option from '../models/Option.js';
 import BotSession from '../models/BotSession.js';
+import Contact from '../models/Contact.js';
 import fetch from 'node-fetch';
 import fs from 'fs';
 import path from 'path';
@@ -706,7 +707,7 @@ export const respondToMessage = async (req, res) => {
     const isGetRequest = req.method === 'GET';
     const source = isGetRequest ? req.query : req.body;
     
-    const { phone, text = '', sender = 'unknown', token: tokenParam, bot_id } = source;
+    const { phone, text = '', sender = 'unknown', token: tokenParam, bot_id, name = '' } = source;
     const token = req.headers.authorization?.replace('Bearer ', '') || tokenParam;
 
     console.log(`[BOT] ← ${req.method} | phone=${phone} sender=${sender} text="${String(text).substring(0, 40)}"`)
@@ -915,6 +916,27 @@ export const respondToMessage = async (req, res) => {
       console.log(`[BOT]    Saved sender: "${session.sender}"`);
       console.log(`[BOT]    Saved phone: "${session.customer_phone}"`);
 
+      // Auto-add contact — only for real WhatsApp numbers (not simulator)
+      const isSimulatedPhone = !sender || sender === 'Simulated' || sender.toLowerCase() === 'simulator';
+      if (!isSimulatedPhone && sender) {
+        const contactSet = {};
+        const contactSetOnInsert = { full_name: '', email: '' };
+        // Always update whatsapp_name if a name was provided
+        if (name && name.trim()) {
+          contactSet.whatsapp_name = name.trim();
+        } else {
+          contactSetOnInsert.whatsapp_name = '';
+        }
+        const updateOp = Object.keys(contactSet).length > 0
+          ? { $set: contactSet, $setOnInsert: contactSetOnInsert }
+          : { $setOnInsert: { ...contactSetOnInsert, whatsapp_name: '' } };
+        Contact.findOneAndUpdate(
+          { user_id: String(user._id), phone: sender },
+          updateOp,
+          { upsert: true, new: true }
+        ).catch(err => console.error('[BOT] Failed to upsert contact:', err.message));
+      }
+
       isNewSession = true;
     }
 
@@ -1117,6 +1139,15 @@ export const respondToMessage = async (req, res) => {
       params['open'] = text;
       session.parameters = params;
       session.markModified('parameters');
+
+      // Save to contact custom_field_values if flagged
+      if (varName && currentNode.data.saveToContact) {
+        Contact.findOneAndUpdate(
+          { user_id: session.user_id, phone: session.customer_phone },
+          { $set: { [`custom_field_values.${varName}`]: text } },
+          { upsert: true, new: true }
+        ).catch(err => console.error('[BOT] Failed to save contact field:', err));
+      }
 
       // Use sub-flow edges if the node lives inside a fixed_process
       const activeNodes = subFlowContext ? subFlowContext.nodes : flowData.nodes;

@@ -196,6 +196,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
         </div>
         {/* ── Navigation tabs ── */}
         <div className="flex items-center gap-1 bg-slate-100 rounded-2xl p-1" dir="rtl">
+          {currentUser?.role !== 'rep' && (
           <button
             onClick={() => setActiveTab('bots')}
             className={`flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm transition-all ${
@@ -204,6 +205,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
           >
             <Bot size={16} /> הבוטים שלי
           </button>
+          )}
           {onOpenSessions && (
             <button
               onClick={onOpenSessions}
@@ -537,7 +539,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
       )}
 
       {/* ── Bots Tab ── */}
-      {activeTab === 'bots' && (
+      {activeTab === 'bots' && currentUser?.role !== 'rep' && (
       <div className="flex-1 overflow-y-auto p-12">
         <div className="max-w-6xl mx-auto">
           <div className="flex items-center justify-between mb-10 flex-row-reverse">
