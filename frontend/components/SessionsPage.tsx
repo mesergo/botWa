@@ -454,7 +454,8 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
   // Confirm and send template with parameters
   const confirmTemplateParams = () => {
     setShowTemplateParamsModal(false);
-    // Parameters are stored, will be sent when user clicks send
+    // Send immediately after confirming parameters
+    setTimeout(() => sendAgentMsg(), 0);
   };
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -667,7 +668,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
           </button>
           {onOpenContacts && (
             <button
-              onClick={onOpenContacts}
+              onClick={() => onOpenContacts()}
               className="flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm text-slate-500 hover:text-slate-700 transition-all"
             >
               <Users size={16} /> אנשי קשר

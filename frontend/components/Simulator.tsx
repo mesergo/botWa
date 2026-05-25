@@ -156,11 +156,6 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
   const runIdRef = useRef(0);
   // AbortController for cancelling in-flight webservice fetch
   
-  // Templates state
-  const [templates, setTemplates] = useState<any[]>([]);
-  const [showTemplates, setShowTemplates] = useState(false);
-  const [templatesLoading, setTemplatesLoading] = useState(false);
-  const [templateSettings, setTemplateSettings] = useState<Record<string, boolean>>({});
   const wsAbortControllerRef = useRef<AbortController | null>(null);
   // Track last message timestamp for polling external messages
   const lastMessageTimestampRef = useRef<string | null>(null);
@@ -379,94 +374,6 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
     if (startNode) { 
       setCurrentInstance(instance); 
       processNext(startNode.id, instance, 0, []); 
-    }
-  };
-
-  // Fetch templates from Dialog360
-  const fetchTemplates = async () => {
-    if (templatesLoading || !token) return;
-    
-    setTemplatesLoading(true);
-    try {
-      const response = await fetch(`${API_BASE}/auth/templates`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      
-      if (!response.ok) {
-        const errorData = await response.json();
-        console.error('[Simulator] Failed to fetch templates:', errorData);
-        setTemplates([]);
-        return;
-      }
-      
-      const data = await response.json();
-      console.log('[Simulator] Templates response:', data);
-      
-      if (data.success && data.templates) {
-        // Handle different response structures from Dialog360
-        // Response is { success: true, templates: { data: [...], useful: [...], byName: {...}, waba_templates: [...] } }
-        const templateList = Array.isArray(data.templates) ? data.templates : 
-                           (data.templates.data ? data.templates.data : 
-                           (data.templates.waba_templates ? data.templates.waba_templates : []));
-        console.log('[Simulator] Parsed templates:', templateList.length, 'templates');
-        setTemplates(templateList);
-        
-        // Fetch showInChat settings
-        fetchTemplateSettings();
-      } else {
-        setTemplates([]);
-      }
-    } catch (err) {
-      console.error('[Simulator] Error fetching templates:', err);
-      setTemplates([]);
-    } finally {
-      setTemplatesLoading(false);
-    }
-  };
-
-  // Fetch template settings (showInChat)
-  const fetchTemplateSettings = async () => {
-    try {
-      const response = await fetch(`${API_BASE}/dialog360-templates`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      
-      if (response.ok) {
-        const data = await response.json();
-        const settingsList = data.success && Array.isArray(data.settings) ? data.settings : [];
-        const settingsMap: Record<string, boolean> = {};
-        settingsList.forEach((s: any) => {
-          settingsMap[s.templateName] = s.showInChat ?? true;
-        });
-        setTemplateSettings(settingsMap);
-      }
-    } catch (err) {
-      console.error('Error fetching template settings:', err);
-    }
-  };
-  
-  // Handle template selection
-  const handleTemplateSelect = (template: any) => {
-    const templateName = template.name || template.elementName || template.template_name || '';
-    setUserInput(`/${templateName}`);
-    setShowTemplates(false);
-  };
-  
-  // Handle input change and detect "/" for templates
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value;
-    setUserInput(value);
-    
-    // Show templates when user types "/"
-    if (value === '/' && !showTemplates) {
-      setShowTemplates(true);
-      if (templates.length === 0) {
-        fetchTemplates();
-      }
-    } else if (value !== '/' && value.indexOf('/') !== 0) {
-      setShowTemplates(false);
     }
   };
 
@@ -1316,64 +1223,14 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
             </div>
           ) : (
             <div className="relative">
-              {/* Templates dropdown */}
-              {showTemplates && (
-                <div className="absolute bottom-full left-0 right-0 mb-2 bg-white border border-slate-200 rounded-2xl shadow-xl max-h-64 overflow-y-auto z-50">
-                  {templatesLoading ? (
-                    <div className="p-4 text-center text-slate-500 text-sm">טוען תבניות...</div>
-                  ) : templates.length === 0 ? (
-                    <div className="p-4 text-center text-slate-500 text-sm">
-                      לא נמצאו תבניות. <br />
-                      <span className="text-xs">אנא הגדר את פרטי Dialog360 בהגדרות המשתמש</span>
-                    </div>
-                  ) : (
-                    <div className="p-2">
-                      <div className="text-xs font-bold text-slate-400 px-3 py-2">בחר תבנית</div>
-                      {(() => {
-                        const searchQuery = userInput.startsWith('/') && userInput.length > 1 ? userInput.slice(1).toLowerCase() : '';
-                        const filteredTemplates = searchQuery
-                          ? templates.filter(t => {
-                              const name = t.name || t.elementName || t.template_name || '';
-                              return name.toLowerCase().includes(searchQuery);
-                            })
-                          : templates.filter(t => {
-                              const name = t.name || t.elementName || t.template_name || '';
-                              return templateSettings[name] ?? true;
-                            });
-                        
-                        return filteredTemplates.map((template, idx) => {
-                          const name = template.name || template.elementName || template.template_name || `Template ${idx + 1}`;
-                          const language = template.language || '';
-                          const status = template.status || '';
-                          return (
-                            <button
-                              key={idx}
-                              onClick={() => handleTemplateSelect(template)}
-                              className="w-full text-right px-3 py-2 hover:bg-slate-50 rounded-lg transition-colors flex items-center justify-between"
-                            >
-                              <div className="flex-1">
-                                <div className="font-bold text-sm text-slate-800">/{name}</div>
-                                {language && (
-                                  <div className="text-xs text-slate-500">{language} {status && `• ${status}`}</div>
-                                )}
-                              </div>
-                            </button>
-                          );
-                        });
-                      })()}
-                    </div>
-                  )}
-                </div>
-              )}
-              
               <div className="flex items-center gap-3 bg-slate-50 rounded-[1.5rem] p-2.5 pr-6 border border-slate-100 flex-row-reverse">
                 <input 
                   type="text" 
-                  placeholder="הקלד תשובה... (/ לתבניות)" 
+                  placeholder="הקלד תגובה..." 
                   dir="rtl" 
                   className="flex-1 bg-transparent border-none outline-none text-sm font-bold text-black h-10 text-right" 
                   value={userInput} 
-                  onChange={handleInputChange} 
+                  onChange={e => setUserInput(e.target.value)} 
                   onKeyDown={e => e.key === 'Enter' && handleSend()} 
                 />
                 <button 

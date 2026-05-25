@@ -721,8 +721,15 @@ export const respondToMessage = async (req, res) => {
       });
     }
 
-    // Find user by public_id (used as the API token)
-    const user = await User.findOne({ public_id: token });
+    // Find bot directly by its public_id (used as the API token)
+    const tokenBot = await BotFlow.findOne({ public_id: token });
+    if (!tokenBot) {
+      return res.status(404).json({ 
+        StatusId: 0, 
+        StatusDescription: 'Bot not found' 
+      });
+    }
+    const user = await User.findById(tokenBot.user_id);
     if (!user) {
       return res.status(404).json({ 
         StatusId: 0, 
@@ -836,33 +843,8 @@ export const respondToMessage = async (req, res) => {
     // Create new session if needed
     if (!session) {
       console.log('[BOT] creating new session');
-      let bot;
-      
-      // If bot_id provided, use that specific bot
-      if (bot_id) {
-        bot = await BotFlow.findOne({ _id: bot_id, user_id: user._id });
-        if (!bot) {
-          return res.status(404).json({ 
-            StatusId: 0, 
-            StatusDescription: 'Bot not found or does not belong to user' 
-          });
-        }
-      } else {
-        // No bot_id provided - use default bot
-        bot = await BotFlow.findOne({ user_id: user._id, is_default: true });
-        
-        if (!bot) {
-          // No default bot - use first bot
-          const userBots = await BotFlow.find({ user_id: user._id });
-          if (userBots.length === 0) {
-            return res.status(404).json({ 
-              StatusId: 0, 
-              StatusDescription: 'No bots found for user' 
-            });
-          }
-          bot = userBots[0];
-        }
-      }
+      // Bot is already identified from the token (public_id)
+      const bot = tokenBot;
       
       const flowData = await getFlowData(bot._id);
 

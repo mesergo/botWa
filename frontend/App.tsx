@@ -174,6 +174,12 @@ const FlowBuilder: React.FC = () => {
   const [contactsInitialPhone, setContactsInitialPhone] = useState<string | null>(null);
   const [dashboardInitialTab, setDashboardInitialTab] = useState<'bots' | 'settings' | 'users'>('bots');
 
+  // Clear initialPhone when navigating away so it doesn't re-open on return
+  useEffect(() => {
+    if (viewMode !== 'contacts') setContactsInitialPhone(null);
+    if (viewMode !== 'sessions') setSessionsInitialPhone(null);
+  }, [viewMode]);
+
   // --- Edge Delete Listener ---
   useEffect(() => {
     const handleEdgeDelete = (e: any) => {
@@ -781,6 +787,20 @@ const FlowBuilder: React.FC = () => {
       console.error('Error setting default bot:', error);
       alert('שגיאה בהגדרת ברירת מחדל');
     }
+  };
+
+  const handleUpdateBotPublicId = async (id: string, publicId: string) => {
+    const res = await fetch(`${API_BASE}/bots/${id}/public-id`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify({ public_id: publicId }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || 'שגיאה בעדכון המזהה');
+    }
+    const data = await res.json();
+    setBots(prev => prev.map(b => b.id === id ? { ...b, public_id: data.public_id } : b));
   };
  
   const handleGoogleLogin = async (credential: string) => {
@@ -1645,6 +1665,7 @@ const FlowBuilder: React.FC = () => {
           onOpenSessions={() => { setSessionsOwnOnly(true); setViewMode('sessions'); }}
           onStopImpersonation={handleStopImpersonation}
           onConnectFacebook={handleConnectFacebook}
+          onUpdateBotPublicId={handleUpdateBotPublicId}
           token={token}
           initialTab={dashboardInitialTab}
         />

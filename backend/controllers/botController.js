@@ -245,3 +245,29 @@ export const updateBotParams = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
+
+/**
+ * Update the bot's public_id (used as the API token for get-reply-text).
+ */
+export const updateBotPublicId = async (req, res) => {
+  const { id } = req.params;
+  const { public_id } = req.body;
+  const userId = req.user.id;
+  const trimmed = String(public_id || '').trim();
+  if (!trimmed) {
+    return res.status(400).json({ error: 'מזהה ציבורי לא יכול להיות ריק' });
+  }
+  try {
+    const bot = await BotFlow.findOne({ _id: id, user_id: userId });
+    if (!bot) return res.status(404).json({ error: 'Bot not found' });
+    const existing = await BotFlow.findOne({ public_id: trimmed, _id: { $ne: id } });
+    if (existing) {
+      return res.status(400).json({ error: 'מזהה ציבורי זה כבר בשימוש' });
+    }
+    bot.public_id = trimmed;
+    await bot.save();
+    res.json({ success: true, public_id: bot.public_id });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
