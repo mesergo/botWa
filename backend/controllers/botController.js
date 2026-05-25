@@ -139,7 +139,9 @@ export const setDefaultBot = async (req, res) => {
 };
 
 /**
- * Send a Facebook connection request email to the admin using Mesergo XML API.
+ * Facebction: previously sent an email via Mesergo XML API.
+ * The flow has been moved to the client (popup OAuth login). This endpoint
+ * is kept as a no-op for backward compatibility.
  */
 export const connectFacebook = async (req, res) => {
   const { id } = req.params;
@@ -151,11 +153,15 @@ export const connectFacebook = async (req, res) => {
     const user = await User.findById(userId);
     if (!user) return res.status(404).json({ error: 'User not found' });
 
+    // ──────────────────────────────────────────────────────────────
+    // ⛔ קוד שליחת המייל הושבת — תהליך החיבור עבר לחלונית פייסבוק בצד הלקוח.
+    // ──────────────────────────────────────────────────────────────
+    /*
     const username = process.env.MESERGO_EMAIL_USERNAME || 'admin@chatgo.live';
     const token = process.env.MESERGO_EMAIL_TOKEN || '1aa14226-ceae-4104-ba86-899eca88631d';
     const fromAddress = process.env.MESERGO_FROM_ADDRESS || 'admin@chatgo.live';
     const toEmail = 'go@mesergo.co.il';
-    
+
     const subject = 'חיבור לפייסבוק';
     const htmlBody = `<div dir="rtl" style="font-family:Arial,sans-serif;">
       <h2 style="color:#1877F2;">בקשת חיבור לפייסבוק</h2>
@@ -204,10 +210,10 @@ export const connectFacebook = async (req, res) => {
     // Parse XML response
     const statusMatch = rawText.match(/<Status>(.*?)<\/Status>/);
     const campaignIdMatch = rawText.match(/<CampaignId>(.*?)<\/CampaignId>/);
-    
+
     const status = statusMatch ? statusMatch[1].trim() : null;
     const campaignId = campaignIdMatch ? campaignIdMatch[1].trim() : null;
-    
+
     const isSuccess = status && (
       status.toLowerCase().includes('success') ||
       status.toLowerCase() === 'ok' ||
@@ -221,6 +227,10 @@ export const connectFacebook = async (req, res) => {
       console.error('❌ Mesergo mail error:', status || rawText);
       res.status(500).json({ error: 'שגיאה בשליחת הבקשה', details: status || rawText });
     }
+    */
+
+    // החיבור מתבצע מצד הלקוח דרך OAuth של פייסבוק בחלונית קופצת.
+    res.json({ success: true, mode: 'client-popup' });
   } catch (err) {
     console.error('❌ Exception in connectFacebook:', err);
     res.status(500).json({ error: err.message });

@@ -774,8 +774,10 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
             </div>
             {facebookDone ? (
               <>
-                <h3 className="text-2xl font-bold text-slate-900 mb-2">הבקשה נשלחה!</h3>
-                <p className="text-slate-400 text-sm mb-8 font-medium leading-relaxed">הצוות שלנו יצור איתך קשר בקרוב לחיבור לפייסבוק.</p>
+                <h3 className="text-2xl font-bold text-slate-900 mb-2">החלונית נפתחה!</h3>
+                <p className="text-slate-400 text-sm mb-8 font-medium leading-relaxed">
+                  המשך את תהליך החיבור בחלונית פייסבוק שנפתחה. אם החלונית לא נפתחה — אפשר את החלונות הקופצים בדפדפן ונסה שוב.
+                </p>
                 <button
                   onClick={() => setFacebookConfirmBot(null)}
                   className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold shadow-lg shadow-blue-600/20 hover:bg-blue-700"
@@ -790,7 +792,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                   האם ברצונך לחבר את הבוט <strong className="text-slate-700">{facebookConfirmBot.name}</strong> לפייסבוק?
                 </p>
                 <p className="text-slate-400 text-sm mb-8 font-medium leading-relaxed">
-                  הצוות שלנו יקבל את הפרטים שלך ויצור איתך קשר.
+                  לחיצה על &quot;אישור&quot; תפתח חלונית של פייסבוק להתחברות והרשאה. השלם/י את התהליך בתוך החלונית.
                 </p>
                 <div className="flex gap-4">
                   <button
@@ -801,14 +803,42 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                     ביטול
                   </button>
                   <button
-                    onClick={async () => {
-                      if (!onConnectFacebook) return;
+                    onClick={() => {
                       setFacebookSending(true);
                       try {
-                        await onConnectFacebook(facebookConfirmBot);
+                        // ── פתיחת חלונית רישום/חיבור לפייסבוק (OAuth popup) ──
+                        const FB_APP_ID = '1804015866785615';
+                        const FB_CONFIG_ID = '2370568819800874';
+                        const redirectUri = encodeURIComponent(window.location.origin + '/');
+                        const state = encodeURIComponent(JSON.stringify({ botId: facebookConfirmBot.id }));
+                        const fbUrl =
+                          `https://www.facebook.com/v19.0/dialog/oauth` +
+                          `?app_id=${FB_APP_ID}` +
+                          `&client_id=${FB_APP_ID}` +
+                          `&config_id=${FB_CONFIG_ID}` +
+                          `&display=popup` +
+                          `&response_type=code` +
+                          `&override_default_response_type=true` +
+                          `&redirect_uri=${redirectUri}` +
+                          `&state=${state}` +
+                          `&locale=he_IL`;
+
+                        const width = 600;
+                        const height = 700;
+                        const left = window.screenX + (window.outerWidth - width) / 2;
+                        const top = window.screenY + (window.outerHeight - height) / 2;
+                        const popup = window.open(
+                          fbUrl,
+                          'facebookLogin',
+                          `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes,status=yes`
+                        );
+
+                        if (!popup) {
+                          alert('הדפדפן חסם את החלונית הקופצת. אנא אפשר חלונות קופצים ונסה שוב.');
+                          return;
+                        }
+                        popup.focus();
                         setFacebookDone(true);
-                      } catch {
-                        alert('שגיאה בשליחת הבקשה. אנא נסה שוב.');
                       } finally {
                         setFacebookSending(false);
                       }
@@ -816,7 +846,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                     className="flex-1 py-4 bg-blue-600 text-white rounded-2xl font-bold text-xs uppercase shadow-lg shadow-blue-600/20 hover:bg-blue-700 disabled:opacity-60"
                     disabled={facebookSending}
                   >
-                    {facebookSending ? 'שולח...' : 'אישור'}
+                    {facebookSending ? 'פותח...' : 'אישור'}
                   </button>
                 </div>
               </>
@@ -885,8 +915,8 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                 )}
               </div>
 
-              {/* Facebook connection */}
-              {onConnectFacebook && (
+              {/* Facebook connection — admin only */}
+              {onConnectFacebook && currentUser?.role === 'admin' && (
                 <div>
                   <h4 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
                     <FacebookIcon size={12} /> חיבור לפייסבוק
