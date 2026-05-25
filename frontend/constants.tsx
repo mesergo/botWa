@@ -10,7 +10,9 @@ import {
   List, 
   Globe, 
   Clock, 
-  PlayCircle
+  PlayCircle,
+  Users,
+  UserMinus
 } from 'lucide-react';
 import { NodeType } from './types';
 
@@ -38,6 +40,8 @@ export const COMPONENT_GROUPS = [
       { type: NodeType.ACTION_WEB_SERVICE, label: 'קריאת API', icon: <Globe size={18} /> },
       { type: NodeType.ACTION_WAIT, label: 'המתנה', icon: <Clock size={18} /> },
       { type: NodeType.ACTION_TIME_ROUTING, label: 'ניתוב לפי שעה/תאריך', icon: <Clock size={18} /> },
+      { type: NodeType.ACTION_ADD_TO_GROUP, label: 'הוספה לקבוצה', icon: <Users size={18} /> },
+      { type: NodeType.ACTION_REMOVE_FROM_GROUP, label: 'הסר מקבוצה', icon: <UserMinus size={18} /> },
     ]
   }
 ];

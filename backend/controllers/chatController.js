@@ -1,9 +1,11 @@
+import mongoose from 'mongoose';
 import User from '../models/User.js';
 import BotFlow from '../models/BotFlow.js';
 import Widget from '../models/Widget.js';
 import Option from '../models/Option.js';
 import BotSession from '../models/BotSession.js';
 import Contact from '../models/Contact.js';
+import Group from '../models/Group.js';
 import fetch from 'node-fetch';
 import fs from 'fs';
 import path from 'path';
@@ -418,6 +420,89 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
       case 'action_wait': {
         const waitTime = parseInt(nodeData.waitTime) || 1;
         await new Promise(resolve => setTimeout(resolve, waitTime * 1000));
+        currentNodeId = findNextNode(currentNodeId, edges);
+        break;
+      }
+
+      case 'action_add_to_group': {
+        const waPhone = session.parameters?.waPhone;
+        // In simulator mode waPhone is absent or 'Simulated' — skip silently
+        const isSimulated = !waPhone || waPhone === 'Simulated' || waPhone.toLowerCase() === 'simulator';
+        if (!isSimulated && nodeData.groupId) {
+          try {
+            const userId = String(session.user_id);
+            const group = await Group.findOne({ _id: nodeData.groupId, user_id: userId });
+            if (group) {
+              let contact = await Contact.findOne({ user_id: userId, phone: waPhone });
+              if (!contact) {
+                contact = await Contact.create({ user_id: userId, phone: waPhone });
+              }
+              const existing = new Set((group.contact_ids || []).map(String));
+              existing.add(String(contact._id));
+              group.contact_ids = Array.from(existing).map(id => new mongoose.Types.ObjectId(id));
+              await group.save();
+              console.log(`[BOT] ✅ Added ${waPhone} to group "${group.name}"`);
+            } else {
+              console.warn(`[BOT] action_add_to_group: group ${nodeData.groupId} not found`);
+            }
+          } catch (err) {
+            console.error('[BOT] action_add_to_group error:', err.message);
+          }
+        } else {
+          console.log(`[BOT] action_add_to_group: skipping (simulator or no groupId)`);
+        }
+        currentNodeId = findNextNode(currentNodeId, edges);
+        break;
+      }
+
+      case 'action_remove_from_group': {
+        const waPhone = session.parameters?.waPhone;
+        const isSimulated = !waPhone || waPhone === 'Simulated' || waPhone.toLowerCase() === 'simulator';
+        if (!isSimulated) {
+          const userId = String(session.user_id);
+          const removeMode = nodeData.removeFromGroupMode || 'specific';
+          try {
+            if (removeMode === 'specific' && nodeData.removeGroupId) {
+              // Remove contact from the specified group if present
+              const group = await Group.findOne({ _id: nodeData.removeGroupId, user_id: userId });
+              if (group) {
+                const contact = await Contact.findOne({ user_id: userId, phone: waPhone });
+                if (contact) {
+                  const beforeCount = group.contact_ids.length;
+                  group.contact_ids = group.contact_ids.filter(id => String(id) !== String(contact._id));
+                  if (group.contact_ids.length < beforeCount) {
+                    await group.save();
+                    console.log(`[BOT] ✅ Removed ${waPhone} from group "${group.name}"`);
+                  } else {
+                    console.log(`[BOT] action_remove_from_group: ${waPhone} not found in group "${group.name}", skipping`);
+                  }
+                } else {
+                  console.log(`[BOT] action_remove_from_group: contact ${waPhone} not found, skipping`);
+                }
+              } else {
+                console.warn(`[BOT] action_remove_from_group: group ${nodeData.removeGroupId} not found`);
+              }
+            } else if (removeMode === 'all') {
+              // Add waPhone to the blocklist (רשימת הסרה)
+              let blocklist = await Group.findOne({ user_id: userId, is_blocklist: true });
+              if (!blocklist) {
+                blocklist = await Group.create({ user_id: userId, name: 'רשימת הסרה', is_blocklist: true, contact_ids: [], phones: [] });
+              }
+              const phonesSet = new Set(blocklist.phones || []);
+              if (!phonesSet.has(waPhone)) {
+                blocklist.phones = [...phonesSet, waPhone];
+                await blocklist.save();
+                console.log(`[BOT] ✅ Added ${waPhone} to blocklist (רשימת הסרה)`);
+              } else {
+                console.log(`[BOT] action_remove_from_group: ${waPhone} already in blocklist`);
+              }
+            }
+          } catch (err) {
+            console.error('[BOT] action_remove_from_group error:', err.message);
+          }
+        } else {
+          console.log(`[BOT] action_remove_from_group: skipping (simulator or no waPhone)`);
+        }
         currentNodeId = findNextNode(currentNodeId, edges);
         break;
       }
