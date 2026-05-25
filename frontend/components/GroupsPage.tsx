@@ -3,9 +3,10 @@ import {
   Phone, Search, Users, LogOut, List, Shield, Settings, UserCog, Plus,
   Edit2, Trash2, X, Check, Bot, Send, UserPlus, UserMinus, Ban, Layers,
   ChevronRight, ChevronLeft, ArrowRight, MessageSquare, FileText, History,
-  Calendar, Eye, AlertTriangle, CheckCircle2, Clock
+  Calendar, Eye, AlertTriangle, CheckCircle2, Clock, Paperclip, Image as ImageIcon, Video, File as FileLucide
 } from 'lucide-react';
 import ImpersonationBanner from './ImpersonationBanner';
+import { FileUploader } from './FileUploader';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -13,7 +14,7 @@ interface GroupSummary {
   _id: string;
   name: string;
   is_blocklist: boolean;
-  contact_count: number;
+  contact_count: number; 
 }
 
 interface ContactRecord {
@@ -104,14 +105,26 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
   const [templatesLoading, setTemplatesLoading] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<any | null>(null);
   const [templateParams, setTemplateParams] = useState<any>({});
+
+  // Free-form media attachment (when not using a template)
+  const [mediaType, setMediaType] = useState<'image' | 'video' | 'document' | null>(null);
+  const [mediaUrl, setMediaUrl] = useState<string>('');
+  const [mediaFilename, setMediaFilename] = useState<string>('');
   const [templateSearch, setTemplateSearch] = useState('');
   const [showTemplatePicker, setShowTemplatePicker] = useState(false);
 
   // Broadcast history
-  const [activeTab, setActiveTab] = useState<'members' | 'history'>('members');
+  const [activeTab, setActiveTab] = useState<'members' | 'history' | 'removals'>('members');
   const [broadcasts, setBroadcasts] = useState<any[]>([]);
   const [broadcastsLoading, setBroadcastsLoading] = useState(false);
   const [selectedBroadcast, setSelectedBroadcast] = useState<any | null>(null);
+
+  // Remove-member confirmation + removals report
+  const [removeTarget, setRemoveTarget] = useState<ContactRecord | null>(null);
+  const [removeReason, setRemoveReason] = useState('');
+  const [removing, setRemoving] = useState(false);
+  const [removals, setRemovals] = useState<any[]>([]);
+  const [removalsLoading, setRemovalsLoading] = useState(false);
 
   const authHeader = useMemo(() => ({ Authorization: `Bearer ${token}` }), [token]);
 
@@ -271,26 +284,56 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
   };
 
   // ── Remove member ───────────────────────────────────────────────────────
-  const removeMember = async (contactId: string) => {
-    if (!selectedGroup) return;
+  const openRemoveMember = (contact: ContactRecord) => {
+    setRemoveTarget(contact);
+    setRemoveReason('');
+  };
+  const closeRemoveMember = () => {
+    if (removing) return;
+    setRemoveTarget(null);
+    setRemoveReason('');
+  };
+  const confirmRemoveMember = async () => {
+    if (!selectedGroup || !removeTarget) return;
+    setRemoving(true);
     try {
-      const res = await fetch(`${API_BASE}/groups/${selectedGroup._id}/members/${contactId}`, {
+      const res = await fetch(`${API_BASE}/groups/${selectedGroup._id}/members/${removeTarget._id}`, {
         method: 'DELETE',
-        headers: authHeader,
+        headers: { ...authHeader, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: removeReason.trim() }),
       });
       if (res.ok) {
+        setRemoveTarget(null);
+        setRemoveReason('');
         await fetchGroupDetail(selectedGroup._id);
         fetchGroups();
+        if (activeTab === 'removals') fetchRemovals();
       }
     } catch (e) { console.error(e); }
+    finally { setRemoving(false); }
   };
+
+  // ── Removals report ─────────────────────────────────────────────────────
+  const fetchRemovals = useCallback(async () => {
+    if (!selectedGroup) return;
+    setRemovalsLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/groups/removals/log?group_id=${selectedGroup._id}`, { headers: authHeader });
+      if (res.ok) {
+        const data = await res.json();
+        setRemovals(data.items || []);
+      }
+    } catch (e) { console.error(e); }
+    finally { setRemovalsLoading(false); }
+  }, [selectedGroup, authHeader]);
 
   // ── Send broadcast (enqueues; processes in background) ─────────────────
   const submitSend = async () => {
     if (!selectedGroup) return;
     const message = sendText.trim();
     const usingTemplate = !!selectedTemplate;
-    if (!usingTemplate && !message) return;
+    const usingMedia = !!(mediaType && mediaUrl);
+    if (!usingTemplate && !usingMedia && !message) return;
     setSending(true);
     setSendResult(null);
     try {
@@ -304,6 +347,8 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
           components: selectedTemplate.components || [],
           params: templateParams,
         };
+      } else if (usingMedia) {
+        body.media = { type: mediaType, url: mediaUrl, filename: mediaFilename || undefined };
       }
       const res = await fetch(`${API_BASE}/groups/${selectedGroup._id}/send`, {
         method: 'POST',
@@ -327,6 +372,9 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
         setSendText('');
         setSelectedTemplate(null);
         setTemplateParams({});
+        setMediaType(null);
+        setMediaUrl('');
+        setMediaFilename('');
       } else {
         alert(data.error || 'שגיאה בשליחה');
       }
@@ -459,7 +507,8 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
 
   useEffect(() => {
     if (activeTab === 'history' && selectedGroup) fetchBroadcasts();
-  }, [activeTab, selectedGroup, fetchBroadcasts]);
+    if (activeTab === 'removals' && selectedGroup) fetchRemovals();
+  }, [activeTab, selectedGroup, fetchBroadcasts, fetchRemovals]);
 
   const openSendModal = () => {
     setSendOpen(true);
@@ -714,16 +763,16 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
               </div>
 
               {/* Tabs */}
-              {!selectedGroup.is_blocklist && (
-                <div className="flex items-center gap-1 bg-slate-100 rounded-2xl p-1 mb-6 w-fit">
-                  <button
-                    onClick={() => setActiveTab('members')}
-                    className={`flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm transition-all ${
-                      activeTab === 'members' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-                    }`}
-                  >
-                    <Users size={16} /> אנשי קשר
-                  </button>
+              <div className="flex items-center gap-1 bg-slate-100 rounded-2xl p-1 mb-6 w-fit">
+                <button
+                  onClick={() => setActiveTab('members')}
+                  className={`flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm transition-all ${
+                    activeTab === 'members' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  <Users size={16} /> אנשי קשר
+                </button>
+                {!selectedGroup.is_blocklist && (
                   <button
                     onClick={() => setActiveTab('history')}
                     className={`flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm transition-all ${
@@ -732,8 +781,16 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                   >
                     <History size={16} /> דוח שליחות
                   </button>
-                </div>
-              )}
+                )}
+                <button
+                  onClick={() => setActiveTab('removals')}
+                  className={`flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm transition-all ${
+                    activeTab === 'removals' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  <Trash2 size={16} /> דוח מחיקות
+                </button>
+              </div>
 
               {/* Members table */}
               {activeTab === 'members' && (loadingDetail ? (
@@ -779,7 +836,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                       </div>
                       <div className="flex items-center justify-end">
                         <button
-                          onClick={() => removeMember(c._id)}
+                          onClick={() => openRemoveMember(c)}
                           title="הסר מהקבוצה"
                           className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
                         >
@@ -838,6 +895,45 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                         <span className="text-sm font-black text-red-500">{b.failed}</span>
                         <span className="text-sm font-black text-amber-500">{b.skipped}</span>
                         <Eye size={16} className="text-slate-300" />
+                      </div>
+                    ))}
+                  </div>
+                )
+              )}
+
+              {/* Removals tab */}
+              {activeTab === 'removals' && (
+                removalsLoading ? (
+                  <div className="flex items-center justify-center py-24 text-slate-300">
+                    <div className="animate-spin w-10 h-10 border-4 border-slate-200 border-t-blue-500 rounded-full" />
+                  </div>
+                ) : removals.length === 0 ? (
+                  <div className="py-24 bg-white border-2 border-dashed border-slate-200 rounded-[2.5rem] flex flex-col items-center justify-center gap-4 text-slate-300">
+                    <Trash2 size={64} strokeWidth={1} />
+                    <p className="text-xl font-bold">לא בוצעו מחיקות בקבוצה זו</p>
+                  </div>
+                ) : (
+                  <div className="bg-white border border-slate-100 rounded-2xl overflow-hidden shadow-sm">
+                    <div className="grid grid-cols-[10rem_1.4fr_1.4fr_2fr_1fr] gap-3 px-6 py-3 bg-slate-50 border-b border-slate-100 text-xs font-bold text-slate-400 uppercase tracking-wide">
+                      <span>תאריך</span>
+                      <span>טלפון</span>
+                      <span>שם</span>
+                      <span>סיבת הסרה</span>
+                      <span>בוצע ע"י</span>
+                    </div>
+                    {removals.map((r, idx) => (
+                      <div
+                        key={r._id}
+                        className={`grid grid-cols-[10rem_1.4fr_1.4fr_2fr_1fr] gap-3 px-6 py-3.5 items-center hover:bg-slate-50/70 transition-colors ${idx !== removals.length - 1 ? 'border-b border-slate-100' : ''}`}
+                      >
+                        <div className="flex items-center gap-2 text-xs font-bold text-slate-600">
+                          <Calendar size={13} className="text-slate-400" />
+                          {new Date(r.createdAt).toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' })}
+                        </div>
+                        <p className="text-sm font-bold text-slate-900 truncate">{r.phone || <span className="text-slate-300 font-normal">—</span>}</p>
+                        <p className="text-sm font-semibold text-slate-700 truncate">{r.full_name || r.whatsapp_name || <span className="text-slate-300 font-normal">—</span>}</p>
+                        <p className="text-sm text-slate-600 truncate" title={r.reason}>{r.reason || <span className="text-slate-300">ללא סיבה</span>}</p>
+                        <p className="text-xs font-semibold text-slate-400 truncate">{r.removed_by || '—'}</p>
                       </div>
                     ))}
                   </div>
@@ -1032,9 +1128,71 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                     value={sendText}
                     onChange={e => setSendText(e.target.value)}
                     rows={6}
-                    placeholder="הקלד את ההודעה כאן..."
+                    placeholder={mediaType ? 'כיתוב למדיה (אופציונלי)...' : 'הקלד את ההודעה כאן...'}
                     className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm outline-none focus:ring-4 focus:ring-green-600/10 focus:border-green-600 resize-none"
                   />
+
+                  {/* Media attachment */}
+                  <div className="mt-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="text-xs font-black text-slate-500">צירוף מדיה (אופציונלי):</label>
+                      {(mediaType || mediaUrl) && (
+                        <button
+                          onClick={() => { setMediaType(null); setMediaUrl(''); setMediaFilename(''); }}
+                          className="text-xs font-bold text-slate-400 hover:text-red-500 flex items-center gap-1"
+                        >
+                          <X size={12} /> הסר מדיה
+                        </button>
+                      )}
+                    </div>
+
+                    {!mediaType ? (
+                      <div className="grid grid-cols-3 gap-2">
+                        <button
+                          onClick={() => setMediaType('image')}
+                          className="flex flex-col items-center gap-1 p-3 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-2xl text-blue-700 font-bold text-xs transition-colors"
+                        >
+                          <ImageIcon size={18} /> תמונה
+                        </button>
+                        <button
+                          onClick={() => setMediaType('video')}
+                          className="flex flex-col items-center gap-1 p-3 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-2xl text-rose-700 font-bold text-xs transition-colors"
+                        >
+                          <Video size={18} /> וידאו
+                        </button>
+                        <button
+                          onClick={() => setMediaType('document')}
+                          className="flex flex-col items-center gap-1 p-3 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-2xl text-amber-700 font-bold text-xs transition-colors"
+                        >
+                          <FileLucide size={18} /> מסמך
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl">
+                        <div className="flex items-center gap-2 mb-3 text-xs font-black text-slate-600">
+                          <Paperclip size={14} />
+                          {mediaType === 'image' ? 'העלה תמונה' : mediaType === 'video' ? 'העלה וידאו' : 'העלה מסמך'}
+                        </div>
+                        <FileUploader
+                          value={mediaUrl}
+                          onChange={(url) => {
+                            setMediaUrl(url);
+                            try {
+                              const name = decodeURIComponent(url.split('/').pop() || '');
+                              setMediaFilename(name);
+                            } catch { setMediaFilename(''); }
+                          }}
+                          accept={mediaType === 'image' ? 'image/*' : mediaType === 'video' ? 'video/*' : '*/*'}
+                          mediaType={mediaType}
+                          label={mediaType === 'image' ? 'תמונה' : mediaType === 'video' ? 'וידאו' : 'מסמך'}
+                          token={token || ''}
+                        />
+                        {mediaUrl && (
+                          <p className="mt-2 text-xs font-bold text-green-600 break-all">✓ {mediaFilename || mediaUrl}</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
 
@@ -1055,7 +1213,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
               >סגור</button>
               <button
                 onClick={submitSend}
-                disabled={sending || (!selectedTemplate && !sendText.trim())}
+                disabled={sending || (!selectedTemplate && !mediaUrl && !sendText.trim())}
                 className="flex items-center gap-2 px-6 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-xl font-bold text-sm disabled:opacity-50"
               >
                 <Send size={15} />
@@ -1233,6 +1391,66 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
         </div>
       )}
       {/* Floating progress toast — running broadcast */}
+      {/* Remove member confirmation */}
+      {removeTarget && selectedGroup && (
+        <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md" dir="rtl">
+            <div className="p-6 border-b border-slate-100">
+              <div className="flex items-start gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-red-100 text-red-600 flex items-center justify-center flex-shrink-0">
+                  <AlertTriangle size={22} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h2 className="text-lg font-black text-slate-900">האם אתה בטוח שברצונך להסיר?</h2>
+                  <p className="text-sm font-semibold text-slate-500 mt-1 truncate">
+                    {removeTarget.full_name || removeTarget.whatsapp_name || removeTarget.phone}
+                    {selectedGroup.is_blocklist ? ' מרשימת ההסרה' : ` מהקבוצה "${selectedGroup.name}"`}
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="p-6">
+              {selectedGroup.is_blocklist ? (
+                <>
+                  <label className="text-xs font-black text-slate-500 mb-2 block">
+                    סיבת ההסרה <span className="text-red-500">*</span>
+                  </label>
+                  <textarea
+                    value={removeReason}
+                    onChange={e => setRemoveReason(e.target.value)}
+                    placeholder="הסבר קצר על סיבת ההסרה..."
+                    rows={3}
+                    autoFocus
+                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl text-sm outline-none focus:ring-4 focus:ring-red-500/10 focus:border-red-400 resize-none"
+                  />
+                  {!removeReason.trim() && (
+                    <p className="text-xs font-bold text-red-500 mt-2">יש להזין סיבת הסרה לפני אישור</p>
+                  )}
+                </>
+              ) : (
+                <p className="text-sm text-slate-600 font-semibold">
+                  פעולה זו תסיר את איש הקשר מהקבוצה. ניתן להוסיף אותו שוב בכל עת.
+                </p>
+              )}
+            </div>
+            <div className="flex items-center justify-end gap-3 p-6 pt-0">
+              <button
+                onClick={closeRemoveMember}
+                disabled={removing}
+                className="px-5 py-2.5 text-slate-500 hover:text-slate-700 rounded-xl font-bold text-sm disabled:opacity-50"
+              >ביטול</button>
+              <button
+                onClick={confirmRemoveMember}
+                disabled={removing || (selectedGroup.is_blocklist && !removeReason.trim())}
+                className="px-6 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold text-sm disabled:opacity-50"
+              >
+                {removing ? 'מסיר...' : 'הסר'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {activeBroadcast && !completionToast && (
         <div className="fixed bottom-6 left-6 z-[70] bg-white border border-slate-200 shadow-2xl rounded-2xl p-4 w-80" dir="rtl">
           <div className="flex items-center gap-3 mb-3">

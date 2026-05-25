@@ -16,8 +16,8 @@ import ButtonEdge from './components/edges/ButtonEdge';
 import { CloudUpload, RotateCcw, Plus, AlertTriangle, Copy, X, Lock, Wallet, Sliders, Save } from 'lucide-react';
 import Simulator from './components/Simulator';
 import AdminPanel from './components/AdminPanel';
-import HomePage from './components/HomePage';
-
+import HomePage from './components/HomePage'; 
+  
 // ── Trial Expired Screen ─────────────────────────────────────────────────────
 const TrialExpiredScreen: React.FC<{ userName: string; onLogout: () => void }> = ({ userName, onLogout }) => (
   <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6" dir="rtl">

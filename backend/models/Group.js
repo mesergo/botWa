@@ -10,7 +10,7 @@ import mongoose from 'mongoose';
  * A phone in the blocklist is excluded from ALL broadcasts even if it belongs to other groups.
  */
 const groupSchema = new mongoose.Schema(
-  {
+  {  
     user_id: { type: String, required: true, index: true },
     name: { type: String, required: true, trim: true },
     is_blocklist: { type: Boolean, default: false, index: true },

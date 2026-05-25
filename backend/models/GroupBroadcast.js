@@ -12,7 +12,10 @@ const groupBroadcastSchema = new mongoose.Schema({
   template_language: { type: String, default: '' },
   template_data: { type: mongoose.Schema.Types.Mixed }, // full templateData snapshot
 
-  // Results
+  // Free-form media attachment (when not using template) — { type: 'image'|'video'|'document', url, filename?, caption? }
+  media: { type: mongoose.Schema.Types.Mixed },
+ 
+  // Results  
   status: { type: String, enum: ['queued', 'running', 'completed', 'failed'], default: 'queued', index: true },
   total: { type: Number, default: 0 },
   processed: { type: Number, default: 0 }, // total processed so far (for progress)

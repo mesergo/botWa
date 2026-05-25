@@ -12,8 +12,9 @@ import {
   sendToGroup,
   listBroadcasts,
   getBroadcast,
+  listRemovals,
 } from '../controllers/groupController.js';
-
+ 
 const router = express.Router();
 router.use(authenticateToken);
 
@@ -21,6 +22,7 @@ router.use(authenticateToken);
 router.post('/blocklist/add', addToBlocklist);
 router.get('/broadcasts', listBroadcasts);
 router.get('/broadcasts/:id', getBroadcast);
+router.get('/removals/log', listRemovals);
 
 router.get('/', listGroups);
 router.post('/', createGroup);

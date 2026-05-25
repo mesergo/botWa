@@ -5,15 +5,16 @@ import Group from '../models/Group.js';
 import Contact from '../models/Contact.js';
 import User from '../models/User.js';
 import GroupBroadcast from '../models/GroupBroadcast.js';
+import GroupRemovalLog from '../models/GroupRemovalLog.js';
 import { getEffectiveUserId } from '../middleware/auth.js';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
-
+    
 const normalizePhone = (raw = '') => {
   let p = String(raw).replace(/[^0-9]/g, '');
   if (!p) return '';
-  p = p.replace(/^0/, '972');
-  p = p.replace(/^972972/, '972');
+  p = p.replace(/^0/, '972'); 
+  p = p.replace(/^972972/, '972');  
   return p;
 };
 
@@ -190,18 +191,67 @@ export const addMembers = async (req, res) => {
 };
 
 // DELETE /api/groups/:id/members/:contactId — remove one contact from group
+// Body (optional): { reason: string }
 export const removeMember = async (req, res) => {
   try {
     const userId = getEffectiveUserId(req);
     const { id, contactId } = req.params;
+    const reason = String((req.body && req.body.reason) || req.query.reason || '').trim();
     const group = await Group.findOne({ _id: id, user_id: userId });
     if (!group) return res.status(404).json({ error: 'Group not found' });
+    if (group.is_blocklist && !reason) {
+      return res.status(400).json({ error: 'reason is required when removing from the blocklist' });
+    }
 
+    const wasMember = (group.contact_ids || []).some(c => String(c) === String(contactId));
     group.contact_ids = (group.contact_ids || []).filter(c => String(c) !== String(contactId));
     await group.save();
+
+    if (wasMember) {
+      // Snapshot contact details so the removal report stays readable.
+      let contactSnap = null;
+      try {
+        contactSnap = await Contact.findOne({ _id: contactId, user_id: userId });
+      } catch (_) { /* ignore invalid id */ }
+      try {
+        await GroupRemovalLog.create({
+          user_id: userId,
+          group_id: group._id,
+          group_name: group.name,
+          is_blocklist: !!group.is_blocklist,
+          contact_id: contactSnap?._id || null,
+          phone: contactSnap?.phone || '',
+          full_name: contactSnap?.full_name || '',
+          whatsapp_name: contactSnap?.whatsapp_name || '',
+          email: contactSnap?.email || '',
+          reason,
+          removed_by: req.user?.email || req.user?.name || '',
+        });
+      } catch (logErr) {
+        console.error('[groups.removeMember] failed to write removal log:', logErr);
+      }
+    }
+
     res.json({ success: true });
   } catch (err) {
     console.error('[groups.removeMember] error:', err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// GET /api/groups/removals/log — list removal log entries for current user
+// Optional query: group_id, limit (default 200)
+export const listRemovals = async (req, res) => {
+  try {
+    const userId = getEffectiveUserId(req);
+    const { group_id } = req.query || {};
+    const limit = Math.min(parseInt(req.query.limit, 10) || 200, 1000);
+    const filter = { user_id: userId };
+    if (group_id) filter.group_id = group_id;
+    const items = await GroupRemovalLog.find(filter).sort({ createdAt: -1 }).limit(limit);
+    res.json({ items });
+  } catch (err) {
+    console.error('[groups.listRemovals] error:', err);
     res.status(500).json({ error: err.message });
   }
 };
@@ -254,10 +304,11 @@ export const sendToGroup = async (req, res) => {
   try {
     const userId = getEffectiveUserId(req);
     const { id } = req.params;
-    const { message, isTemplate, templateData } = req.body || {};
+    const { message, isTemplate, templateData, media } = req.body || {};
 
-    if (!isTemplate && (!message || !String(message).trim())) {
-      return res.status(400).json({ error: 'message is required' });
+    const hasMedia = media && media.url && media.type;
+    if (!isTemplate && !hasMedia && (!message || !String(message).trim())) {
+      return res.status(400).json({ error: 'message or media is required' });
     }
 
     const group = await Group.findOne({ _id: id, user_id: userId });
@@ -279,6 +330,7 @@ export const sendToGroup = async (req, res) => {
       template_name: isTemplate && templateData ? (templateData.name || '') : '',
       template_language: isTemplate && templateData ? (templateData.language || '') : '',
       template_data: isTemplate ? templateData : undefined,
+      media: hasMedia ? media : undefined,
       total: contacts.length,
       processed: 0,
       sent: 0,
@@ -297,7 +349,7 @@ export const sendToGroup = async (req, res) => {
     });
 
     // Fire & forget — process in background
-    processBroadcast(broadcast._id, userId, group, contacts, { isTemplate, templateData, msgText })
+    processBroadcast(broadcast._id, userId, group, contacts, { isTemplate, templateData, msgText, media: hasMedia ? media : null })
       .catch(err => console.error('[groups.processBroadcast] background error:', err));
   } catch (err) {
     console.error('[groups.sendToGroup] error:', err);
@@ -307,7 +359,7 @@ export const sendToGroup = async (req, res) => {
 
 // Background worker: sends one-by-one and updates progress on the broadcast record
 async function processBroadcast(broadcastId, userId, group, contacts, opts) {
-  const { isTemplate, templateData, msgText } = opts;
+  const { isTemplate, templateData, msgText, media } = opts;
   try {
     await GroupBroadcast.findByIdAndUpdate(broadcastId, { status: 'running', started_at: new Date() });
 
@@ -357,6 +409,17 @@ async function processBroadcast(broadcastId, userId, group, contacts, opts) {
               waBody.params = templateData.params.body.filter(p => p && String(p).trim());
             }
           }
+        } else if (media && media.url && media.type) {
+          // Free-form media (image/video/document/audio) with optional caption (msgText)
+          const mediaType = String(media.type).toLowerCase();
+          const mediaPayload = { link: media.url };
+          if (msgText && (mediaType === 'image' || mediaType === 'video' || mediaType === 'document')) {
+            mediaPayload.caption = msgText;
+          }
+          if (mediaType === 'document' && media.filename) {
+            mediaPayload.filename = media.filename;
+          }
+          waBody = { phone: normalized, [mediaType]: mediaPayload, fromMe: 1 };
         } else {
           waBody = { phone: normalized, text: msgText, fromMe: 1 };
         }
