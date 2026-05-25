@@ -12,6 +12,8 @@ export enum NodeType {
   ACTION_WEB_SERVICE = 'action_web_service',
   ACTION_WAIT = 'action_wait',
   ACTION_TIME_ROUTING = 'action_time_routing',
+  ACTION_ADD_TO_GROUP = 'action_add_to_group',
+  ACTION_REMOVE_FROM_GROUP = 'action_remove_from_group',
   // Special
   START = 'start',
   FIXED_PROCESS = 'fixed_process',
@@ -35,6 +37,9 @@ export interface NodeData {
   routingMode?: 'time' | 'date';
   timeRanges?: Array<{ fromHour: number; toHour: number; }>;
   dateRanges?: Array<{ fromDate: string; toDate: string; }>;
+  groupId?: string;
+  removeFromGroupMode?: 'specific' | 'all';
+  removeGroupId?: string;
   processId?: string;
   onChange?: (data: Partial<NodeData>) => void;
   onDelete?: () => void;

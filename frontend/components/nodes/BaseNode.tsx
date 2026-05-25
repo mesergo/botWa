@@ -38,6 +38,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ id, title, icon, children, type, se
       case NodeType.ACTION_WEB_SERVICE:
       case NodeType.ACTION_WAIT:
       case NodeType.ACTION_TIME_ROUTING:
+      case NodeType.ACTION_ADD_TO_GROUP:
         return { bar: 'bg-orange-500', iconColor: 'text-orange-600', ring: 'ring-orange-600/10' };
       case NodeType.FIXED_PROCESS:
         return { bar: 'bg-indigo-500', iconColor: 'text-indigo-600', ring: 'ring-indigo-600/10' };

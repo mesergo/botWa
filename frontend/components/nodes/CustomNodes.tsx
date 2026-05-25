@@ -4,7 +4,7 @@ import { Handle, Position, useReactFlow } from 'reactflow';
 import { 
   Type, Calendar, Upload, MessageSquare, 
   Image as ImageIcon, ExternalLink, List, Globe, Clock, PlayCircle, Plus, Layers, X, GitBranch, Trash2, ChevronDown, Zap,
-  Mail, Phone, CreditCard, Link
+  Mail, Phone, CreditCard, Link, Users, UserMinus
 } from 'lucide-react';
 import BaseNode from './BaseNode';
 import { NodeType } from '../../types';
@@ -826,6 +826,92 @@ export const ActionTimeRoutingNode = (props: any) => {
           <Plus size={18} /> {isDateMode ? 'הוסף טווח תאריכים' : 'הוסף טווח שעות'}
         </button>
       </div>
+    </BaseNode>
+  );
+};
+
+export const ActionAddToGroupNode = (props: any) => {
+  const groups: Array<{ _id: string; name: string }> = props.data.groups || [];
+
+  return (
+    <BaseNode id={props.id} title="הוספה לקבוצה" icon={<Users size={20} />} type={NodeType.ACTION_ADD_TO_GROUP} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive}>
+      <InputFieldWrapper label="בחר קבוצה">
+        <div className="relative">
+          <select
+            className="nodrag w-full h-12 px-4 border border-slate-200 rounded-xl bg-white text-slate-900 text-right focus:outline-none focus:ring-2 focus:ring-orange-400 appearance-none"
+            value={props.data.groupId || ''}
+            onChange={(e) => props.data.onChange({ groupId: e.target.value })}
+            style={{ fontFamily: 'Heebo, sans-serif' }}
+          >
+            <option value="">-- בחר קבוצה --</option>
+            {groups.map(g => (
+              <option key={g._id} value={g._id}>{g.name}</option>
+            ))}
+          </select>
+          <ChevronDown size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+        </div>
+        {!props.data.groupId && (
+          <p className="mt-2 text-[12px] text-slate-400 text-right">בסימולטור הרכיב ידולג (אין waPhone)</p>
+        )}
+      </InputFieldWrapper>
+    </BaseNode>
+  );
+};
+
+export const ActionRemoveFromGroupNode = (props: any) => {
+  const groups: Array<{ _id: string; name: string; is_blocklist?: boolean }> = (props.data.groups || []).filter((g: any) => !g.is_blocklist);
+  const mode: 'specific' | 'all' = props.data.removeFromGroupMode || 'specific';
+
+  return (
+    <BaseNode id={props.id} title="הסר מקבוצה" icon={<UserMinus size={20} />} type={NodeType.ACTION_REMOVE_FROM_GROUP} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive}>
+      <InputFieldWrapper label="סוג הסרה">
+        <div className="flex flex-col gap-2 nodrag">
+          <label className="flex items-center gap-2 cursor-pointer text-slate-700 text-sm font-medium">
+            <input
+              type="radio"
+              className="nodrag accent-orange-500"
+              checked={mode === 'specific'}
+              onChange={() => props.data.onChange({ removeFromGroupMode: 'specific', removeGroupId: '' })}
+            />
+            הסר מקבוצה מסויימת
+          </label>
+          <label className="flex items-center gap-2 cursor-pointer text-slate-700 text-sm font-medium">
+            <input
+              type="radio"
+              className="nodrag accent-orange-500"
+              checked={mode === 'all'}
+              onChange={() => props.data.onChange({ removeFromGroupMode: 'all', removeGroupId: '' })}
+            />
+            הסר מכל הקבוצות (רשימת הסרה)
+          </label>
+        </div>
+      </InputFieldWrapper>
+
+      {mode === 'specific' && (
+        <InputFieldWrapper label="בחר קבוצה">
+          <div className="relative">
+            <select
+              className="nodrag w-full h-12 px-4 border border-slate-200 rounded-xl bg-white text-slate-900 text-right focus:outline-none focus:ring-2 focus:ring-orange-400 appearance-none"
+              value={props.data.removeGroupId || ''}
+              onChange={(e) => props.data.onChange({ removeGroupId: e.target.value })}
+              style={{ fontFamily: 'Heebo, sans-serif' }}
+            >
+              <option value="">-- בחר קבוצה --</option>
+              {groups.map(g => (
+                <option key={g._id} value={g._id}>{g.name}</option>
+              ))}
+            </select>
+            <ChevronDown size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+          </div>
+          {!props.data.removeGroupId && (
+            <p className="mt-2 text-[12px] text-slate-400 text-right">בסימולטור הרכיב ידולג (אין waPhone)</p>
+          )}
+        </InputFieldWrapper>
+      )}
+
+      {mode === 'all' && (
+        <p className="text-[12px] text-slate-500 text-right mt-1">מספר הטלפון יתווסף לרשימת ההסרה</p>
+      )}
     </BaseNode>
   );
 };
