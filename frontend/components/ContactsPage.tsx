@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Phone, Clock, MessageSquare, Search, Users, LogOut, List, Shield,
   Settings, UserCog, ExternalLink, Plus, Edit2, Trash2, Mail, X, Check, Bot,
-  Upload, Download, Eye, ChevronRight, ChevronLeft
+  Upload, Download, Eye, ChevronRight, ChevronLeft, Layers
 } from 'lucide-react';
 import ImpersonationBanner from './ImpersonationBanner';
 
@@ -36,6 +36,7 @@ interface ContactsPageProps {
   onBack: () => void;
   onLogout: () => void;
   onOpenSessions?: (phone?: string) => void;
+  onOpenGroups?: () => void;
   onOpenAdminPanel?: () => void;
   onOpenSettings?: () => void;
   onOpenSubUsers?: () => void;
@@ -54,7 +55,7 @@ const EMPTY_FORM = { phone: '', full_name: '', whatsapp_name: '', email: '' };
 // ─── Component ────────────────────────────────────────────────────────────────
 
 const ContactsPage: React.FC<ContactsPageProps> = ({
-  token, currentUser, onBack, onLogout, onOpenSessions,
+  token, currentUser, onBack, onLogout, onOpenSessions, onOpenGroups,
   onOpenAdminPanel, onOpenSettings, onOpenSubUsers, onStopImpersonation, initialPhone
 }) => {
   const [contacts, setContacts] = useState<MergedContact[]>([]);
@@ -305,6 +306,11 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
           <button className="flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm bg-white text-slate-900 shadow-sm transition-all">
             <Users size={16} /> אנשי קשר
           </button>
+          {onOpenGroups && (
+            <button onClick={onOpenGroups} className="flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm text-slate-500 hover:text-slate-700 transition-all">
+              <Layers size={16} /> קבוצות
+            </button>
+          )}
           {onOpenSettings && (
             <button onClick={onOpenSettings} className="flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm text-slate-500 hover:text-slate-700 transition-all">
               <Settings size={16} /> הגדרות

@@ -20,6 +20,7 @@ interface DashboardProps {
   onStopImpersonation?: () => void;
   onOpenContacts?: () => void;
   onOpenSessions?: () => void;
+  onOpenGroups?: () => void;
   onConnectFacebook?: (bot: BotFlow) => Promise<void>;
   onUpdateBotPublicId?: (id: string, publicId: string) => Promise<void>;
   token?: string | null;
@@ -61,7 +62,7 @@ const FacebookIcon: React.FC<{ size?: number; className?: string }> = ({ size = 
   </svg>
 );
 
-const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, onDeleteBot, onSetDefaultBot, onLogout, currentUser, onOpenAdminPanel, onStopImpersonation, onOpenContacts, onOpenSessions, onConnectFacebook, onUpdateBotPublicId, token, initialTab }) => {
+const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, onDeleteBot, onSetDefaultBot, onLogout, currentUser, onOpenAdminPanel, onStopImpersonation, onOpenContacts, onOpenSessions, onOpenGroups, onConnectFacebook, onUpdateBotPublicId, token, initialTab }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newBotName, setNewBotName] = useState('');
   const [facebookConfirmBot, setFacebookConfirmBot] = useState<BotFlow | null>(null);
@@ -310,6 +311,14 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
               className="flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm text-slate-500 hover:text-slate-700 transition-all"
             >
               <Users size={16} /> אנשי קשר
+            </button>
+          )}
+          {onOpenGroups && !isRep && (
+            <button
+              onClick={onOpenGroups}
+              className="flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm text-slate-500 hover:text-slate-700 transition-all"
+            >
+              <Layers size={16} /> קבוצות
             </button>
           )}
           {!isRep && (

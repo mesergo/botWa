@@ -10,6 +10,7 @@ import TemplateSelection from './components/TemplateSelection';
 import TemplateForm from './components/TemplateForm';
 import ContactsPage from './components/ContactsPage';
 import SessionsPage from './components/SessionsPage';
+import GroupsPage from './components/GroupsPage';
 import { StartNode, InputTextNode, InputDateNode, InputFileNode, OutputTextNode, OutputImageNode, OutputLinkNode, OutputMenuNode, ActionWebServiceNode, ActionWaitNode, ActionTimeRoutingNode, FixedProcessNode, AutomaticResponsesNode } from './components/nodes/CustomNodes';
 import ButtonEdge from './components/edges/ButtonEdge';
 import { CloudUpload, RotateCcw, Plus, AlertTriangle, Copy, X, Lock, Wallet, Sliders, Save } from 'lucide-react';
@@ -80,7 +81,7 @@ const nodeTypes = {
 const edgeTypes = { button: ButtonEdge };
 const DEFAULT_EDGE_STYLE = { stroke: '#3b82f6', strokeWidth: 2, strokeDasharray: '6,4' };
  
-type ViewMode = 'home' | 'dashboard' | 'editor' | 'editing-process' | 'viewing-process' | 'simulator-only' | 'template-selection' | 'template-form' | 'admin-panel' | 'editing-template' | 'creating-template' | 'contacts' | 'sessions';
+type ViewMode = 'home' | 'dashboard' | 'editor' | 'editing-process' | 'viewing-process' | 'simulator-only' | 'template-selection' | 'template-form' | 'admin-panel' | 'editing-template' | 'creating-template' | 'contacts' | 'sessions' | 'groups';
 
 const FlowBuilder: React.FC = () => {
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
@@ -596,7 +597,7 @@ const FlowBuilder: React.FC = () => {
   useEffect(() => { syncFlowRef.current = syncFlow; });
 
   useEffect(() => {
-    if (viewMode !== 'dashboard' && viewMode !== 'template-selection' && viewMode !== 'template-form' && viewMode !== 'simulator-only' && viewMode !== 'admin-panel' && viewMode !== 'contacts' && viewMode !== 'sessions' && (selectedBot || activeProcessId || editingTemplateId)) {
+    if (viewMode !== 'dashboard' && viewMode !== 'template-selection' && viewMode !== 'template-form' && viewMode !== 'simulator-only' && viewMode !== 'admin-panel' && viewMode !== 'contacts' && viewMode !== 'sessions' && viewMode !== 'groups' && (selectedBot || activeProcessId || editingTemplateId)) {
       const timer = setTimeout(() => syncFlowRef.current(), 1500);
       return () => clearTimeout(timer);
     }
@@ -1622,11 +1623,29 @@ const FlowBuilder: React.FC = () => {
         onBack={() => { setDashboardInitialTab('bots'); setViewMode('dashboard'); }}
         onLogout={() => { localStorage.clear(); window.location.reload(); }}
         onOpenSessions={(phone?: string) => { setSessionsInitialPhone(phone ?? null); setSessionsOwnOnly(true); setViewMode('sessions'); }}
+        onOpenGroups={() => setViewMode('groups')}
         onOpenAdminPanel={() => setViewMode('admin-panel')}
         onOpenSettings={() => { setDashboardInitialTab('settings'); setViewMode('dashboard'); }}
         onOpenSubUsers={currentUser?.role === 'user' ? () => { setDashboardInitialTab('users'); setViewMode('dashboard'); } : undefined}
         onStopImpersonation={handleStopImpersonation}
         initialPhone={contactsInitialPhone}
+      />
+    );
+  }
+
+  if (viewMode === 'groups') {
+    return (
+      <GroupsPage
+        token={token}
+        currentUser={currentUser}
+        onBack={() => { setDashboardInitialTab('bots'); setViewMode('dashboard'); }}
+        onLogout={() => { localStorage.clear(); window.location.reload(); }}
+        onOpenContacts={(phone?: string) => { setContactsInitialPhone(phone ?? null); setViewMode('contacts'); }}
+        onOpenSessions={(phone?: string) => { setSessionsInitialPhone(phone ?? null); setSessionsOwnOnly(true); setViewMode('sessions'); }}
+        onOpenAdminPanel={() => setViewMode('admin-panel')}
+        onOpenSettings={() => { setDashboardInitialTab('settings'); setViewMode('dashboard'); }}
+        onOpenSubUsers={currentUser?.role === 'user' ? () => { setDashboardInitialTab('users'); setViewMode('dashboard'); } : undefined}
+        onStopImpersonation={handleStopImpersonation}
       />
     );
   }
@@ -1639,6 +1658,7 @@ const FlowBuilder: React.FC = () => {
         onBack={currentUser?.role === 'rep' ? undefined : () => { setDashboardInitialTab('bots'); setViewMode('dashboard'); }}
         onLogout={() => { localStorage.clear(); window.location.reload(); }}
         onOpenContacts={currentUser?.role !== 'rep' && currentUser?.role !== 'rep_bot' ? (phone?: string) => { setContactsInitialPhone(phone ?? null); setViewMode('contacts'); } : undefined}
+        onOpenGroups={currentUser?.role !== 'rep' && currentUser?.role !== 'rep_bot' ? () => setViewMode('groups') : undefined}
         onOpenAdminPanel={() => setViewMode('admin-panel')}
         ownOnly={sessionsOwnOnly}
         initialPhone={sessionsInitialPhone}
@@ -1663,6 +1683,7 @@ const FlowBuilder: React.FC = () => {
           onOpenAdminPanel={() => setViewMode('admin-panel')}
           onOpenContacts={() => setViewMode('contacts')}
           onOpenSessions={() => { setSessionsOwnOnly(true); setViewMode('sessions'); }}
+          onOpenGroups={() => setViewMode('groups')}
           onStopImpersonation={handleStopImpersonation}
           onConnectFacebook={handleConnectFacebook}
           onUpdateBotPublicId={handleUpdateBotPublicId}
@@ -1767,6 +1788,7 @@ const FlowBuilder: React.FC = () => {
           onChangeTemplate={() => {}}
           onOpenContacts={() => setViewMode('contacts')}
           onOpenSessions={() => { setSessionsOwnOnly(true); setViewMode('sessions'); }}
+          onOpenGroups={() => setViewMode('groups')}
           sidebarProps={{
             fixedProcesses,
             versions: [],
@@ -1947,6 +1969,7 @@ const FlowBuilder: React.FC = () => {
         onChangeTemplate={() => setIsChangeTemplateModalOpen(true)}
         onOpenContacts={() => setViewMode('contacts')}
         onOpenSessions={() => { setSessionsOwnOnly(true); setViewMode('sessions'); }}
+        onOpenGroups={() => setViewMode('groups')}
         initialParams={selectedBot?.botParams}
         onNodeFocus={setSimulatorActiveNodeId}
         onFixedProcessActive={setSimulatorFixedProcessNodeId}
