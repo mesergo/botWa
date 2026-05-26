@@ -203,6 +203,9 @@ const getFlowData = async (flowId, processId = null) => {
         linkLabel: metadata.linkLabel,
         variableName: metadata.variableName,
         waitTime: metadata.waitTime,
+        groupId: metadata.groupId,
+        removeFromGroupMode: metadata.removeFromGroupMode,
+        removeGroupId: metadata.removeGroupId,
         // For nested fixed_process refs: old format stores child processId in image_file,
         // new format stores it in standard_process_id (parent_process_id holds the parent).
         processId: (w.type === 'fixed_process' ? (metadata.processId || w.standard_process_id) : w.standard_process_id),
@@ -458,6 +461,7 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
       case 'action_remove_from_group': {
         const waPhone = session.parameters?.waPhone;
         const isSimulated = !waPhone || waPhone === 'Simulated' || waPhone.toLowerCase() === 'simulator';
+        console.log(`[BOT] action_remove_from_group | waPhone=${waPhone} | isSimulated=${isSimulated} | mode=${nodeData.removeFromGroupMode} | removeGroupId=${nodeData.removeGroupId}`);
         if (!isSimulated) {
           const userId = String(session.user_id);
           const removeMode = nodeData.removeFromGroupMode || 'specific';
@@ -488,10 +492,22 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
               if (!blocklist) {
                 blocklist = await Group.create({ user_id: userId, name: 'רשימת הסרה', is_blocklist: true, contact_ids: [], phones: [] });
               }
-              const phonesSet = new Set(blocklist.phones || []);
-              if (!phonesSet.has(waPhone)) {
-                blocklist.phones = [...phonesSet, waPhone];
-                await blocklist.save();
+              // Find or create a Contact record so it shows up in the UI
+              let contact = await Contact.findOne({ user_id: userId, phone: waPhone });
+              if (!contact) {
+                contact = await Contact.create({ user_id: userId, phone: waPhone });
+              }
+              // Add to both contact_ids and phones
+              const result = await Group.updateOne(
+                { _id: blocklist._id },
+                {
+                  $addToSet: {
+                    phones: waPhone,
+                    contact_ids: contact._id,
+                  }
+                }
+              );
+              if (result.modifiedCount > 0) {
                 console.log(`[BOT] ✅ Added ${waPhone} to blocklist (רשימת הסרה)`);
               } else {
                 console.log(`[BOT] action_remove_from_group: ${waPhone} already in blocklist`);

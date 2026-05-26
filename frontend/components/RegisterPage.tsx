@@ -74,20 +74,38 @@ const RegisterPage: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (!GOOGLE_CLIENT_ID || !window.google) return;
-    window.google.accounts.id.initialize({
-      client_id: GOOGLE_CLIENT_ID,
-      callback: (response: { credential: string }) => handleGoogleSignIn(response.credential),
-    });
-    const btn = document.getElementById('google-signin-btn');
-    if (btn) {
-      window.google.accounts.id.renderButton(btn, {
-        theme: 'outline',
-        size: 'large',
-        width: 320,
-        locale: 'he',
+    if (!GOOGLE_CLIENT_ID) return;
+    let cancelled = false;
+
+    const init = () => {
+      if (cancelled || !window.google) return;
+      window.google.accounts.id.initialize({
+        client_id: GOOGLE_CLIENT_ID,
+        callback: (response: { credential: string }) => handleGoogleSignIn(response.credential),
       });
+      const btn = document.getElementById('google-signin-btn');
+      if (btn) {
+        window.google.accounts.id.renderButton(btn, {
+          theme: 'outline',
+          size: 'large',
+          width: 320,
+          locale: 'he',
+        });
+      }
+    };
+
+    if (window.google) {
+      init();
+    } else {
+      const scriptEl = document.querySelector<HTMLScriptElement>('script[src*="accounts.google.com/gsi"]');
+      if (scriptEl) scriptEl.addEventListener('load', init);
     }
+
+    return () => {
+      cancelled = true;
+      const scriptEl = document.querySelector<HTMLScriptElement>('script[src*="accounts.google.com/gsi"]');
+      if (scriptEl) scriptEl.removeEventListener('load', init);
+    };
   }, [handleGoogleSignIn]);
 
   const validateField = useCallback(

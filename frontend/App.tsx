@@ -82,12 +82,36 @@ const nodeTypes = {
 };
 const edgeTypes = { button: ButtonEdge };
 const DEFAULT_EDGE_STYLE = { stroke: '#3b82f6', strokeWidth: 2, strokeDasharray: '6,4' };
- 
+
+/** Returns true if the stored JWT token is expired (or unreadable). */
+function isStoredTokenExpired(): boolean {
+  const token = localStorage.getItem('flowbot_token');
+  if (!token) return false;
+  try {
+    // JWT uses base64url — replace chars before decoding
+    const base64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+    const { exp } = JSON.parse(atob(base64));
+    return !!exp && exp * 1000 < Date.now();
+  } catch {
+    return false;
+  }
+}
+
 type ViewMode = 'home' | 'dashboard' | 'editor' | 'editing-process' | 'viewing-process' | 'simulator-only' | 'template-selection' | 'template-form' | 'admin-panel' | 'editing-template' | 'creating-template' | 'contacts' | 'sessions' | 'groups';
 
 const FlowBuilder: React.FC = () => {
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
+
+  // Detect expired token once on mount, before any render
+  const tokenExpiredOnLoad = (() => {
+    if (!isStoredTokenExpired()) return false;
+    localStorage.removeItem('flowbot_token');
+    localStorage.removeItem('flowbot_user');
+    return true;
+  })();
+
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
+    if (tokenExpiredOnLoad) return null;
     try {
       const saved = localStorage.getItem('flowbot_user');
       if (!saved || saved === "undefined") return null;
@@ -97,8 +121,8 @@ const FlowBuilder: React.FC = () => {
       return null;
     }
   });
-  const [token, setToken] = useState<string | null>(localStorage.getItem('flowbot_token'));
-  const [sessionExpired, setSessionExpired] = useState(false);
+  const [token, setToken] = useState<string | null>(tokenExpiredOnLoad ? null : localStorage.getItem('flowbot_token'));
+  const [sessionExpired, setSessionExpired] = useState(tokenExpiredOnLoad);
   
   const [bots, setBots] = useState<BotFlow[]>([]);
   const [selectedBot, setSelectedBot] = useState<BotFlow | null>(null);
@@ -395,6 +419,38 @@ const FlowBuilder: React.FC = () => {
     localStorage.removeItem('flowbot_user');
     setSessionExpired(true);
   }, []);
+
+  // Auto-expire: set a timer that fires exactly when the JWT expires.
+  // Also listen for visibilitychange so that returning to a background tab
+  // (where the browser may have throttled the timer) triggers the check immediately.
+  useEffect(() => {
+    if (!token) return;
+    let exp: number;
+    try {
+      const base64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+      ({ exp } = JSON.parse(atob(base64)));
+      if (!exp) return;
+    } catch { return; /* unreadable token — leave it to the API call to catch */ }
+
+    const msUntilExpiry = exp * 1000 - Date.now();
+    if (msUntilExpiry <= 0) { handleSessionExpired(); return; }
+
+    // Primary: precise timer for active tabs
+    const timer = setTimeout(handleSessionExpired, msUntilExpiry);
+
+    // Secondary: catch throttled timers when user returns to a background tab
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && exp * 1000 < Date.now()) {
+        handleSessionExpired();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, [token, handleSessionExpired]);
 
   const loadBots = useCallback(async (overrideToken?: string) => {
     const activeToken = overrideToken ?? token;

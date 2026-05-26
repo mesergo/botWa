@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
 
 const GOOGLE_CLIENT_ID = '266548688904-n1qrelk64op0usdbf52ae2gupcjld0vv.apps.googleusercontent.com';
@@ -18,23 +18,45 @@ interface AuthScreenProps {
 
 const AuthScreen: React.FC<AuthScreenProps> = ({ form, errors, onFormChange, onAuth, onGoogleLogin }) => {
   const [showPassword, setShowPassword] = useState(false);
+  const onGoogleLoginRef = useRef(onGoogleLogin);
+  useEffect(() => {
+    onGoogleLoginRef.current = onGoogleLogin;
+  }, [onGoogleLogin]);
 
   useEffect(() => {
-    if (!GOOGLE_CLIENT_ID || !window.google || !onGoogleLogin) return;
-    window.google.accounts.id.initialize({
-      client_id: GOOGLE_CLIENT_ID,
-      callback: (response: { credential: string }) => onGoogleLogin(response.credential),
-    });
-    const btn = document.getElementById('google-login-btn');
-    if (btn) {
-      window.google.accounts.id.renderButton(btn, {
-        theme: 'outline',
-        size: 'large',
-        width: 320,
-        locale: 'he',
+    if (!GOOGLE_CLIENT_ID || !onGoogleLoginRef.current) return;
+    let cancelled = false;
+
+    const init = () => {
+      if (cancelled || !window.google || !onGoogleLoginRef.current) return;
+      window.google.accounts.id.initialize({
+        client_id: GOOGLE_CLIENT_ID,
+        callback: (response: { credential: string }) => onGoogleLoginRef.current!(response.credential),
       });
+      const btn = document.getElementById('google-login-btn');
+      if (btn) {
+        window.google.accounts.id.renderButton(btn, {
+          theme: 'outline',
+          size: 'large',
+          width: 320,
+          locale: 'he',
+        });
+      }
+    };
+
+    if (window.google) {
+      init();
+    } else {
+      const scriptEl = document.querySelector<HTMLScriptElement>('script[src*="accounts.google.com/gsi"]');
+      if (scriptEl) scriptEl.addEventListener('load', init);
     }
-  }, [onGoogleLogin]);
+
+    return () => {
+      cancelled = true;
+      const scriptEl = document.querySelector<HTMLScriptElement>('script[src*="accounts.google.com/gsi"]');
+      if (scriptEl) scriptEl.removeEventListener('load', init);
+    };
+  }, []);
 
   return (
     <div className="h-screen w-screen bg-[#0f172a] flex items-center justify-center p-6 text-right">
