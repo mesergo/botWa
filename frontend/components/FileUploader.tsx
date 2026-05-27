@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { Upload, X } from 'lucide-react';
+import { Upload, X, Image as ImageIcon } from 'lucide-react';
 
 interface FileUploaderProps {
   value?: string; // Current file URL
@@ -9,6 +9,7 @@ interface FileUploaderProps {
   mediaType?: 'image' | 'video' | 'document';
   token: string; // Auth token for upload
   apiBase?: string;
+  sampleUrl?: string; // Optional sample/example file URL
 }
 
 const API_BASE = window.location.hostname === 'localhost'
@@ -22,11 +23,14 @@ export const FileUploader: React.FC<FileUploaderProps> = ({
   label = 'קובץ',
   mediaType = 'image',
   token,
-  apiBase = API_BASE
+  apiBase = API_BASE,
+  sampleUrl
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showUrlInput, setShowUrlInput] = useState(false);
+  const [urlInputValue, setUrlInputValue] = useState('');
 
   const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -125,28 +129,89 @@ export const FileUploader: React.FC<FileUploaderProps> = ({
           </div>
         </div>
       ) : (
-        <button
-          type="button"
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            fileInputRef.current?.click();
-          }}
-          disabled={uploading}
-          className="w-full h-32 border-2 border-dashed border-slate-300 rounded-xl flex flex-col items-center justify-center gap-3 text-slate-400 hover:border-sky-400 hover:text-sky-500 hover:bg-sky-50/30 transition-all outline-none disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {uploading ? (
-            <>
-              <div className="w-6 h-6 border-2 border-sky-600 border-t-transparent rounded-full animate-spin" />
-              <span className="text-xs font-semibold">מעלה...</span>
-            </>
-          ) : (
-            <>
-              <Upload size={28} strokeWidth={1.5} />
-              <span className="text-xs font-semibold uppercase tracking-wider">העלה {label}</span>
-            </>
+        <>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              fileInputRef.current?.click();
+            }}
+            disabled={uploading}
+            className="w-full h-32 border-2 border-dashed border-slate-300 rounded-xl flex flex-col items-center justify-center gap-3 text-slate-400 hover:border-sky-400 hover:text-sky-500 hover:bg-sky-50/30 transition-all outline-none disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {uploading ? (
+              <>
+                <div className="w-6 h-6 border-2 border-sky-600 border-t-transparent rounded-full animate-spin" />
+                <span className="text-xs font-semibold">מעלה...</span>
+              </>
+            ) : (
+              <>
+                <Upload size={28} strokeWidth={1.5} />
+                <span className="text-xs font-semibold uppercase tracking-wider">העלה {label}</span>
+              </>
+            )}
+          </button>
+
+          {/* Alternative options: use sample or enter URL */}
+          {!uploading && (
+            <div className="flex flex-wrap items-center gap-2">
+              {sampleUrl && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onChange(sampleUrl);
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-sky-50 text-sky-700 border border-sky-200 text-xs font-semibold hover:bg-sky-100 transition-colors"
+                >
+                  <ImageIcon size={14} />
+                  השתמש בקובץ לדוגמה
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setShowUrlInput(v => !v);
+                }}
+                className="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 border border-slate-200 text-xs font-semibold hover:bg-slate-200 transition-colors"
+              >
+                {showUrlInput ? 'בטל' : 'הזן קישור (URL)'}
+              </button>
+            </div>
           )}
-        </button>
+
+          {showUrlInput && !uploading && (
+            <div className="flex gap-2">
+              <input
+                type="url"
+                value={urlInputValue}
+                onChange={(e) => setUrlInputValue(e.target.value)}
+                placeholder="https://..."
+                className="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-sky-500/20 focus:border-sky-400 outline-none"
+              />
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (urlInputValue.trim()) {
+                    onChange(urlInputValue.trim());
+                    setShowUrlInput(false);
+                    setUrlInputValue('');
+                  }
+                }}
+                disabled={!urlInputValue.trim()}
+                className="px-4 py-2 rounded-lg bg-sky-500 text-white text-sm font-bold hover:bg-sky-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                השתמש
+              </button>
+            </div>
+          )}
+        </>
       )}
 
       {error && (

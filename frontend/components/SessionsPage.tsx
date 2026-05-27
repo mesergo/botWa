@@ -1283,6 +1283,13 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 // Header with media
                 if (comp.type === 'HEADER' && ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(comp.format)) {
                   const mediaType = comp.format.toLowerCase() as 'image' | 'video' | 'document';
+                  // Try to extract sample URL from the template's example field
+                  const sampleUrl: string | undefined =
+                    comp.example?.header_url?.[0] ||
+                    comp.example?.header_url ||
+                    (Array.isArray(comp.example?.header_handle) ? comp.example.header_handle[0] : undefined) ||
+                    comp.example?.header_handle ||
+                    undefined;
                   return (
                     <div key={idx} className="space-y-2">
                       <label className="block text-sm font-bold text-slate-700">
@@ -1303,6 +1310,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                         label={mediaType === 'image' ? 'תמונה' : mediaType === 'video' ? 'וידאו' : 'מסמך'}
                         mediaType={mediaType}
                         token={token || ''}
+                        sampleUrl={sampleUrl}
                       />
                     </div>
                   );
