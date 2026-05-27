@@ -5,7 +5,8 @@ import {
   FileText, Save, Plus, Eye, EyeOff, Bot, ChevronRight, LayoutDashboard,
   CreditCard, MoreVertical, X, Star, Globe, Lock, Copy, List, Phone, Clock,
   ChevronDown, ChevronUp, ToggleLeft, ToggleRight, XCircle, MessageSquare,
-  User as UserIcon, ExternalLink, Sliders, Image as ImageIcon, Layers
+  User as UserIcon, ExternalLink, Sliders, Image as ImageIcon, Layers,
+  UserCheck, Headphones
 } from 'lucide-react';
 
 interface User {
@@ -132,7 +133,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
   // Dialog360 Templates
   const [dialog360Templates, setDialog360Templates] = useState<any[]>([]);
   const [dialog360Loading, setDialog360Loading] = useState(false);
-  const [dialog360TemplateSettings, setDialog360TemplateSettings] = useState<Record<string, boolean>>({});
+  const [dialog360TemplateSettings, setDialog360TemplateSettings] = useState<Record<string, 'hidden' | 'manager' | 'agent'>>({});
   
   // Admin Sessions Message Input
   const [adminNewMessage, setAdminNewMessage] = useState('');
@@ -339,9 +340,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
       if (response.ok) {
         const data = await response.json();
         const settingsList = data.success && Array.isArray(data.settings) ? data.settings : [];
-        const settingsMap: Record<string, boolean> = {};
+        const settingsMap: Record<string, 'hidden' | 'manager' | 'agent'> = {};
         settingsList.forEach((s: any) => {
-          settingsMap[s.templateName] = s.showInChat ?? true;
+          settingsMap[s.templateName] = s.visibility || (s.showInChat === false ? 'hidden' : 'manager');
         });
         setDialog360TemplateSettings(settingsMap);
       }
@@ -350,10 +351,16 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
     }
   };
 
-  const toggleDialog360ShowInChat = async (template: any) => {
+  const cycleDialog360Visibility = async (template: any) => {
     const templateName = template.name || template.elementName || template.template_name || '';
-    const currentShowInChat = dialog360TemplateSettings[templateName] ?? true;
-    
+    const currentVis = dialog360TemplateSettings[templateName] ?? 'manager';
+    const nextMap: Record<'hidden' | 'manager' | 'agent', 'hidden' | 'manager' | 'agent'> = {
+      hidden: 'manager',
+      manager: 'agent',
+      agent: 'hidden',
+    };
+    const newVis = nextMap[currentVis];
+
     try {
       const response = await fetch(`${API_BASE}/dialog360-templates/toggle`, {
         method: 'POST',
@@ -367,20 +374,21 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
           language: template.language,
           category: template.category,
           status: template.status,
-          showInChat: !currentShowInChat
+          visibility: newVis,
+          showInChat: newVis !== 'hidden'
         })
       });
-      
+
       if (response.ok) {
         setDialog360TemplateSettings(prev => ({
           ...prev,
-          [templateName]: !currentShowInChat
+          [templateName]: newVis
         }));
       } else {
         alert('שגיאה בעדכון הגדרות התבנית');
       }
     } catch (err) {
-      console.error('Error toggling showInChat:', err);
+      console.error('Error updating template visibility:', err);
       alert('שגיאה בעדכון הגדרות התבנית');
     }
   };
@@ -1879,14 +1887,24 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                                 <h3 className="text-lg font-bold text-slate-800 group-hover:text-sky-700 transition-colors">
                                   {name}
                                 </h3>
-                                {/* Show in chat toggle button */}
-                                <button 
-                                  onClick={() => toggleDialog360ShowInChat(template)} 
-                                  className={`p-2 rounded-lg transition-colors border ${showInChat ? 'bg-green-50 text-green-600 border-green-200' : 'bg-slate-50 text-slate-400 border-slate-200'}`} 
-                                  title={showInChat ? 'מוצג בשיחות (/)' : 'מוסתר בשיחות (/)'}
-                                >
-                                  {showInChat ? <Eye size={16} /> : <EyeOff size={16} />}
-                                </button>
+                                {/* Visibility cycling toggle: hidden -> manager -> agent -> hidden */}
+                                {(() => {
+                                  const currentVis = dialog360TemplateSettings[name] ?? 'manager';
+                                  const cfg = {
+                                    hidden:  { icon: <EyeOff size={16} />,    title: 'מוסתר לכולם — לחץ כדי לשנות',              cls: 'bg-rose-500 text-white border-rose-500 hover:bg-rose-600' },
+                                    manager: { icon: <UserCheck size={16} />, title: 'מוצג למנהל משמרת  — לחץ כדי לשנות',     cls: 'bg-amber-500 text-white border-amber-500 hover:bg-amber-600' },
+                                    agent:   { icon: <Headphones size={16} />, title: 'מוצג גם לנציגים — לחץ כדי לשנות',          cls: 'bg-emerald-500 text-white border-emerald-500 hover:bg-emerald-600' },
+                                  }[currentVis];
+                                  return (
+                                    <button
+                                      onClick={() => cycleDialog360Visibility(template)}
+                                      className={`p-2 rounded-lg transition-colors border ${cfg.cls}`}
+                                      title={cfg.title}
+                                    >
+                                      {cfg.icon}
+                                    </button>
+                                  );
+                                })()}
                               </div>
                               <div className="flex items-center gap-2 flex-wrap">
                                 {language && (

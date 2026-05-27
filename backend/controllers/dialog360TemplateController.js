@@ -1,6 +1,20 @@
 import Dialog360TemplateSetting from '../models/Dialog360TemplateSetting.js';
 import { getEffectiveUserId } from '../middleware/auth.js';
 
+// Normalize a stored setting: ensure `visibility` is set even on legacy records
+// that only had the boolean `showInChat` field.
+const normalizeSetting = (s) => {
+  if (!s) return s;
+  const obj = typeof s.toObject === 'function' ? s.toObject() : { ...s };
+  if (!obj.visibility) {
+    obj.visibility = obj.showInChat === false ? 'hidden' : 'manager';
+  }
+  if (obj.showInChat === undefined || obj.showInChat === null) {
+    obj.showInChat = obj.visibility !== 'hidden';
+  }
+  return obj;
+};
+
 /**
  * Get all Dialog360 template settings for the authenticated user
  */
@@ -8,7 +22,11 @@ export const getTemplateSettings = async (req, res) => {
   try {
     const userId = getEffectiveUserId(req);
     const settings = await Dialog360TemplateSetting.find({ userId });
-    res.json({ success: true, settings });
+    res.json({
+      success: true,
+      role: req.user?.role || null,
+      settings: settings.map(normalizeSetting),
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -25,33 +43,45 @@ export const getTemplateSetting = async (req, res) => {
     const setting = await Dialog360TemplateSetting.findOne({ templateName, userId });
     if (!setting) {
       // Return default if not found
-      return res.json({ templateName, showInChat: true });
+      return res.json({ templateName, showInChat: true, visibility: 'manager' });
     }
-    res.json(setting);
+    res.json(normalizeSetting(setting));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 };
 
 /**
- * Update or create template setting (toggle showInChat)
+ * Update or create template setting (toggle showInChat / visibility)
  */
 export const toggleShowInChat = async (req, res) => {
   try {
-    const { templateName, templateId, language, category, status, showInChat } = req.body;
+    const { templateName, templateId, language, category, status, showInChat, visibility } = req.body;
     const userId = getEffectiveUserId(req);
     
     if (!templateName) {
       return res.status(400).json({ error: 'templateName is required' });
     }
 
+    // Resolve effective visibility from the request:
+    //   - explicit `visibility` field wins
+    //   - otherwise derive from `showInChat` (false => hidden, true => manager)
+    let effectiveVisibility = visibility;
+    if (!effectiveVisibility) {
+      effectiveVisibility = showInChat === false ? 'hidden' : 'manager';
+    }
+    if (!['hidden', 'manager', 'agent'].includes(effectiveVisibility)) {
+      return res.status(400).json({ error: 'visibility must be one of: hidden, manager, agent' });
+    }
+
     const update = {
-      showInChat,
+      visibility: effectiveVisibility,
+      showInChat: effectiveVisibility !== 'hidden',
       templateId,
       language,
       category,
       status,
-      userId
+      userId,
     };
 
     const setting = await Dialog360TemplateSetting.findOneAndUpdate(
@@ -60,7 +90,7 @@ export const toggleShowInChat = async (req, res) => {
       { upsert: true, new: true }
     );
 
-    res.json({ success: true, setting });
+    res.json({ success: true, setting: normalizeSetting(setting) });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

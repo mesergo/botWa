@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Bot, ArrowLeft, Trash2, Calendar, LogOut, Shield, UserCog, Users, List, Settings, Save, User as UserIcon, Phone, Mail, Star, Copy, Check, Wifi, Gauge, MessageSquare, Globe, Layers, CheckCircle, Eye, EyeOff, X, Image as ImageIcon } from 'lucide-react';
+import { Plus, Bot, ArrowLeft, Trash2, Calendar, LogOut, Shield, UserCog, Users, List, Settings, Save, User as UserIcon, Phone, Mail, Star, Copy, Check, Wifi, Gauge, MessageSquare, Globe, Layers, CheckCircle, Eye, EyeOff, X, Image as ImageIcon, UserCheck, Headphones } from 'lucide-react';
 import ImpersonationBanner from './ImpersonationBanner';
 import { BotFlow } from '../types';
 import SubUsersTab from './SubUsersTab';
@@ -92,7 +92,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
   // WA templates state (Settings tab)
   const [waTemplates, setWaTemplates] = useState<any[]>([]);
   const [waTemplatesLoading, setWaTemplatesLoading] = useState(false);
-  const [templateSettings, setTemplateSettings] = useState<Record<string, boolean>>({});
+  const [templateSettings, setTemplateSettings] = useState<Record<string, 'hidden' | 'manager' | 'agent'>>({});
   const [previewTemplate, setPreviewTemplate] = useState<any | null>(null);
 
   const loadProfile = async () => {
@@ -145,10 +145,11 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
       if (!res.ok) return;
       const data = await res.json();
       if (data.success && Array.isArray(data.settings)) {
-        const settingsMap: Record<string, boolean> = {};
+        const settingsMap: Record<string, 'hidden' | 'manager' | 'agent'> = {};
         data.settings.forEach((s: any) => {
           if (s.templateName) {
-            settingsMap[s.templateName] = s.showInChat ?? true;
+            const v = s.visibility || (s.showInChat === false ? 'hidden' : 'manager');
+            settingsMap[s.templateName] = v;
           }
         });
         setTemplateSettings(settingsMap);
@@ -158,40 +159,39 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
     }
   };
 
-  const toggleShowInChat = async (template: any) => {
+  const setTemplateVisibility = async (template: any, newVisibility: 'hidden' | 'manager' | 'agent') => {
     if (!token) return;
-    const currentValue = templateSettings[template.name] ?? true;
-    const newValue = !currentValue;
-    
+    const currentValue = templateSettings[template.name] ?? 'manager';
+    if (currentValue === newVisibility) return;
+
     // Optimistic update
-    setTemplateSettings(prev => ({ ...prev, [template.name]: newValue }));
-    
+    setTemplateSettings(prev => ({ ...prev, [template.name]: newVisibility }));
+
     try {
       const res = await fetch(`${API_BASE}/dialog360-templates/toggle`, {
         method: 'POST',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}` 
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
           templateName: template.name,
           templateId: template.id,
-          showInChat: newValue,
+          visibility: newVisibility,
+          showInChat: newVisibility !== 'hidden',
           language: template.language,
           category: template.category,
-          status: template.status
+          status: template.status,
         }),
       });
-      
+
       if (!res.ok) {
-        // Revert on error
         setTemplateSettings(prev => ({ ...prev, [template.name]: currentValue }));
-        console.error('Failed to toggle template setting');
+        console.error('Failed to update template visibility');
       }
     } catch (err) {
-      // Revert on error
       setTemplateSettings(prev => ({ ...prev, [template.name]: currentValue }));
-      console.error('Error toggling template setting:', err);
+      console.error('Error updating template visibility:', err);
     }
   };
 
@@ -591,20 +591,31 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-2 mb-2">
                                   <h3 className="text-sm font-black text-slate-800 truncate group-hover:text-sky-700 transition-colors flex-1">{name}</h3>
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      toggleShowInChat(tmpl);
-                                    }}
-                                    className={`shrink-0 p-1.5 rounded-lg transition-all ${
-                                      (templateSettings[name] ?? true)
-                                        ? 'bg-emerald-500 hover:bg-emerald-600 text-white'
-                                        : 'bg-slate-300 hover:bg-slate-400 text-slate-700'
-                                    }`}
-                                    title={(templateSettings[name] ?? true) ? 'מוצג בשיחות' : 'מוסתר בשיחות'}
-                                  >
-                                    {(templateSettings[name] ?? true) ? <Eye size={14} /> : <EyeOff size={14} />}
-                                  </button>
+                                  {(() => {
+                                    const currentVis = templateSettings[name] ?? 'manager';
+                                    const next: Record<'hidden' | 'manager' | 'agent', 'hidden' | 'manager' | 'agent'> = {
+                                      hidden: 'manager',
+                                      manager: 'agent',
+                                      agent: 'hidden',
+                                    };
+                                    const cfg = {
+                                      hidden:  { icon: <EyeOff size={14} />,    title: 'מוסתר לכולם — לחץ כדי לשנות',                cls: 'bg-rose-500 hover:bg-rose-600 text-white' },
+                                      manager: { icon: <UserCheck size={14} />, title: 'מוצג למנהל משמרת  — לחץ כדי לשנות',     cls: 'bg-amber-500 hover:bg-amber-600 text-white' },
+                                      agent:   { icon: <Headphones size={14} />, title: 'מוצג גם לנציגים — לחץ כדי לשנות',          cls: 'bg-emerald-500 hover:bg-emerald-600 text-white' },
+                                    }[currentVis];
+                                    return (
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setTemplateVisibility(tmpl, next[currentVis]);
+                                        }}
+                                        className={`shrink-0 p-1.5 rounded-lg transition-all ${cfg.cls}`}
+                                        title={cfg.title}
+                                      >
+                                        {cfg.icon}
+                                      </button>
+                                    );
+                                  })()}
                                 </div>
                                 <div className="flex flex-wrap items-center gap-1.5 mt-2">
                                   {language && (

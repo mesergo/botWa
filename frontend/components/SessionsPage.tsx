@@ -67,7 +67,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
   const [templates, setTemplates] = useState<any[]>([]);
   const [templatesLoading, setTemplatesLoading] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<any>(null);
-  const [templateSettings, setTemplateSettings] = useState<Record<string, boolean>>({});
+  const [templateSettings, setTemplateSettings] = useState<Record<string, 'hidden' | 'manager' | 'agent'>>({});
   
   // Template parameters modal
   const [showTemplateParamsModal, setShowTemplateParamsModal] = useState(false);
@@ -499,9 +499,9 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
       if (response.ok) {
         const data = await response.json();
         const settingsList = data.success && Array.isArray(data.settings) ? data.settings : [];
-        const settingsMap: Record<string, boolean> = {};
+        const settingsMap: Record<string, 'hidden' | 'manager' | 'agent'> = {};
         settingsList.forEach((s: any) => {
-          settingsMap[s.templateName] = s.showInChat ?? true;
+          settingsMap[s.templateName] = s.visibility || (s.showInChat === false ? 'hidden' : 'manager');
         });
         setTemplateSettings(settingsMap);
       }
@@ -1060,16 +1060,24 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                         ) : (
                           <div className="p-2">
                             {(() => {
+                              const role = currentUser?.role;
+                              const isAgent = role === 'rep' || role === 'rep_bot';
+                              // Visibility filter:
+                              //   - 'rep' / 'rep_bot' agents see only templates explicitly marked 'agent'.
+                              //   - All other roles (rep_manager, user, admin) see anything not 'hidden'.
+                              const isVisibleForUser = (name: string): boolean => {
+                                const vis = templateSettings[name] ?? 'manager';
+                                if (vis === 'hidden') return false;
+                                if (isAgent) return vis === 'agent';
+                                return true;
+                              };
                               const searchQuery = agentMessage.startsWith('/') ? agentMessage.slice(1).toLowerCase() : '';
-                              const filtered = searchQuery
-                                ? templates.filter(t => {
-                                    const name = t.name || t.elementName || t.template_name || '';
-                                    return name.toLowerCase().includes(searchQuery);
-                                  })
-                                : templates.filter(t => {
-                                    const name = t.name || t.elementName || t.template_name || '';
-                                    return templateSettings[name] ?? true;
-                                  });
+                              const filtered = templates.filter(t => {
+                                const name = t.name || t.elementName || t.template_name || '';
+                                if (!isVisibleForUser(name)) return false;
+                                if (searchQuery && !name.toLowerCase().includes(searchQuery)) return false;
+                                return true;
+                              });
 
                               return filtered.length > 0 ? (
                                 filtered.map((template: any, idx: number) => {
