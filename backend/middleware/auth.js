@@ -42,6 +42,18 @@ export const requireCompanyManager = (req, res, next) => {
   return res.status(403).json({ error: 'Access denied. Company manager role required.' });
 };
 
+// Middleware: company managers AND rep_managers may access this route.
+export const requireManagerOrRepManager = (req, res, next) => {
+  if (!req.user) {
+    return res.status(403).json({ error: 'Access denied.' });
+  }
+  const role = req.user.role;
+  if (role === 'user' || role === 'admin' || role === 'rep_manager' || req.user.isImpersonating) {
+    return next();
+  }
+  return res.status(403).json({ error: 'Access denied.' });
+};
+
 // Middleware to check if user is admin
 export const requireAdmin = async (req, res, next) => {
   try {

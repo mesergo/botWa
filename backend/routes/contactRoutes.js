@@ -12,6 +12,7 @@ import {
   deleteContact,
   upsertContactByPhone,
   importContacts,
+  assignRep,
 } from '../controllers/contactController.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -42,6 +43,7 @@ router.use(authenticateToken);
 // Specific routes before parametric /:id routes
 router.post('/upsert-by-phone', upsertContactByPhone);
 router.post('/import', upload.single('file'), importContacts);
+router.patch('/assign-rep', assignRep);
 
 router.get('/', getContacts);
 router.post('/', createContact);

@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import Contact from '../models/Contact.js';
 import { getEffectiveUserId } from '../middleware/auth.js';
 import XLSX from 'xlsx';
@@ -178,5 +179,39 @@ export const importContacts = async (req, res) => {
     res.status(400).json({ error: 'Failed to parse file: ' + err.message });
   } finally {
     fs.unlink(filePath, () => {});
+  }
+};
+
+// PATCH /api/contacts/assign-rep — assign or unassign a rep from a contact
+export const assignRep = async (req, res) => {
+  if (req.user?.role === 'rep') {
+    return res.status(403).json({ error: 'אין הרשאה' });
+  }
+  const userId = getEffectiveUserId(req);
+  const { phone, rep_id, action } = req.body;
+
+  if (!phone || !rep_id || !['assign', 'unassign'].includes(action)) {
+    return res.status(400).json({ error: 'שדות חסרים או לא תקינים' });
+  }
+  if (!mongoose.Types.ObjectId.isValid(rep_id)) {
+    return res.status(400).json({ error: 'rep_id לא תקין' });
+  }
+
+  try {
+    const update = action === 'assign'
+      ? { $addToSet: { assigned_to: new mongoose.Types.ObjectId(rep_id) } }
+      : { $pull: { assigned_to: new mongoose.Types.ObjectId(rep_id) } };
+
+    const options = { new: true };
+    if (action === 'assign') options.upsert = true;
+
+    const contact = await Contact.findOneAndUpdate(
+      { user_id: userId, phone },
+      update,
+      options
+    );
+    res.json({ success: true, assigned_to: (contact?.assigned_to || []).map(id => id.toString()) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 };

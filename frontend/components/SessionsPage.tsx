@@ -1,5 +1,5 @@
 ﻿import React, { useState, useEffect, useRef } from 'react';
-import { Clock, MessageSquare, Search, Bot, LogOut, User, Phone, List, Users, ExternalLink, X, Headphones, RefreshCw, Shield, Settings, UserCog, Layers, Plus } from 'lucide-react';
+import { Clock, MessageSquare, Search, Bot, LogOut, User, Phone, List, Users, ExternalLink, X, Headphones, RefreshCw, Shield, Settings, UserCog, Layers, Plus, UserPlus } from 'lucide-react';
 import ImpersonationBanner from './ImpersonationBanner';
 import { FileUploader } from './FileUploader';
 
@@ -22,6 +22,7 @@ interface Contact {
   sessionCount: number;
   lastSeen: string | null;
   bots: { id: string; name: string }[];
+  assigned_to?: string[];
 }
 
 interface SessionsPageProps {
@@ -78,6 +79,14 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
   const [newConvPhone, setNewConvPhone] = useState('');
   const [newConvLoading, setNewConvLoading] = useState(false);
   const [newConvError, setNewConvError] = useState<string | null>(null);
+
+  // Assign reps modal state
+  const [showAssignModal, setShowAssignModal] = useState(false);
+  const [assignModalPhone, setAssignModalPhone] = useState<string | null>(null);
+  const [assignCurrentReps, setAssignCurrentReps] = useState<string[]>([]);
+  const [assignNewRepId, setAssignNewRepId] = useState('');
+  const [assignLoading, setAssignLoading] = useState(false);
+  const [subUsers, setSubUsers] = useState<{ id: string; name: string }[]>([]);
 
   const chatScrollRef = useRef<HTMLDivElement>(null);
 
@@ -223,6 +232,52 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
       setNewConvError('שגיאת רשת');
     } finally {
       setNewConvLoading(false);
+    }
+  };
+
+  // ── Assign reps handlers ──────────────────────────────────────────────────
+
+  const openAssignModal = async (phone: string) => {
+    const contact = contacts.find(c => c.phone === phone);
+    setAssignModalPhone(phone);
+    setAssignCurrentReps(contact?.assigned_to || []);
+    setAssignNewRepId('');
+    try {
+      const r = await fetch(`${API_BASE}/sub-users`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (r.ok) {
+        const data: { id: string; name: string; role: string }[] = await r.json();
+        setSubUsers(data.filter(u => u.role === 'rep').map(u => ({ id: u.id, name: u.name })));
+      }
+    } catch (e) {
+      console.error('Failed to load sub-users', e);
+      setSubUsers([]);
+    }
+    setShowAssignModal(true);
+  };
+
+  const handleAssignRep = async (repId: string, action: 'assign' | 'unassign') => {
+    if (!assignModalPhone || assignLoading) return;
+    setAssignLoading(true);
+    try {
+      const r = await fetch(`${API_BASE}/contacts/assign-rep`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ phone: assignModalPhone, rep_id: repId, action })
+      });
+      if (r.ok) {
+        if (action === 'assign') {
+          setAssignCurrentReps(prev => [...prev, repId]);
+        } else {
+          setAssignCurrentReps(prev => prev.filter(id => id !== repId));
+        }
+        setAssignNewRepId('');
+      }
+    } catch (e) {
+      console.error('Failed to assign rep', e);
+    } finally {
+      setAssignLoading(false);
     }
   };
 
@@ -760,7 +815,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
         {/* ── Navigation tabs ── */}
         {currentUser?.role !== 'rep' && (
         <div className="flex items-center gap-1 bg-slate-100 rounded-2xl p-1" dir="rtl">
-          {onBack && (
+          {onBack && currentUser?.role !== 'rep_manager' && (
             <button
               onClick={onBack}
               className="flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm text-slate-500 hover:text-slate-700 transition-all"
@@ -797,7 +852,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
               <Settings size={16} /> הגדרות
             </button>
           )}
-          {onOpenSubUsers && currentUser?.role === 'user' && (
+          {onOpenSubUsers && (currentUser?.role === 'user' || currentUser?.role === 'rep_manager') && (
             <button
               onClick={onOpenSubUsers}
               className="flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm text-slate-500 hover:text-slate-700 transition-all"
@@ -849,6 +904,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                   <p className="text-xs text-slate-400 font-semibold">{contacts.length} קשרים</p>
                 </div>
               </div>
+              {currentUser?.role !== 'rep' && (
               <button
                 onClick={() => { setShowNewConvModal(true); setNewConvPhone(''); setNewConvError(null); }}
                 title="שיחה חדשה"
@@ -856,6 +912,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
               >
                 <Plus size={16} />
               </button>
+              )}
             </div>
             <div className="relative">
               <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-300" size={15} />
@@ -962,6 +1019,15 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                     className="flex items-center gap-2 px-4 py-2 rounded-2xl bg-emerald-500 text-white text-xs font-black hover:bg-emerald-600 transition-colors shadow-sm"
                   >
                     <RefreshCw size={14} /> החזרת השיחה לבוט
+                  </button>
+                )}
+                {currentUser?.role !== 'rep' && !isSimulator(selectedPhone) && (
+                  <button
+                    onClick={() => openAssignModal(selectedPhone)}
+                    title="שיוך נציגים"
+                    className="p-2 hover:bg-slate-100 rounded-xl transition-colors text-slate-400"
+                  >
+                    <UserPlus size={18} />
                   </button>
                 )}
                 <button
@@ -1496,6 +1562,72 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 className="px-5 py-2.5 rounded-2xl bg-sky-500 text-white text-sm font-bold hover:bg-sky-600 transition-colors"
               >
                 אישור
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Assign reps modal */}
+      {showAssignModal && assignModalPhone && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" dir="rtl">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-base font-black text-slate-900">שיוך נציגים</h3>
+              <button
+                onClick={() => { setShowAssignModal(false); fetchContacts(); }}
+                className="p-1.5 hover:bg-slate-100 rounded-xl text-slate-400 transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <p className="text-xs text-slate-500 mb-4">שיחה: <span className="font-bold text-slate-700">{assignModalPhone}</span></p>
+
+            {/* Currently assigned reps */}
+            <div className="mb-5">
+              <p className="text-xs font-black text-slate-700 mb-2">נציגים משויכים:</p>
+              {assignCurrentReps.length === 0 ? (
+                <p className="text-xs text-slate-400 italic">אין נציגים משויכים</p>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  {assignCurrentReps.map(repId => {
+                    const rep = subUsers.find(u => u.id === repId);
+                    return (
+                      <div key={repId} className="flex items-center justify-between px-3 py-2 bg-slate-50 rounded-xl border border-slate-100">
+                        <span className="text-sm font-semibold text-slate-800">{rep?.name || repId}</span>
+                        <button
+                          onClick={() => handleAssignRep(repId, 'unassign')}
+                          disabled={assignLoading}
+                          className="p-1 hover:bg-red-50 rounded-lg text-slate-400 hover:text-red-500 transition-colors disabled:opacity-50"
+                          title="הסר נציג"
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Add new rep */}
+            <div className="flex gap-2">
+              <select
+                value={assignNewRepId}
+                onChange={e => setAssignNewRepId(e.target.value)}
+                className="flex-1 px-3 py-2 border border-slate-200 rounded-xl text-sm bg-slate-50 outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-400 transition-all"
+              >
+                <option value="">בחר נציג להוספה...</option>
+                {subUsers.filter(u => !assignCurrentReps.includes(u.id)).map(u => (
+                  <option key={u.id} value={u.id}>{u.name}</option>
+                ))}
+              </select>
+              <button
+                onClick={() => assignNewRepId && handleAssignRep(assignNewRepId, 'assign')}
+                disabled={!assignNewRepId || assignLoading}
+                className="px-4 py-2 bg-sky-500 text-white rounded-xl text-sm font-black hover:bg-sky-600 transition-colors disabled:opacity-50 flex-shrink-0"
+              >
+                הוסף
               </button>
             </div>
           </div>
