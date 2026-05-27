@@ -20,8 +20,8 @@ interface SubUsersTabProps {
 }
 
 const ROLE_LABELS: Record<string, string> = {
-  rep_bot: 'נציג מורשה עריכה',
-  rep: 'נציג לא מורשה',
+  rep_bot: 'מנהל משמרת',
+  rep: 'נציג',
 };
 
 const emptyForm = { name: '', email: '', password: '', phone: '', role: 'rep' as 'rep' | 'rep_bot' };
@@ -225,8 +225,8 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token }) => {
                 onChange={e => setForm(f => ({ ...f, role: e.target.value as 'rep' | 'rep_bot' }))}
                 className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:border-blue-500 bg-white"
               >
-                <option value="rep_bot">נציג מורשה עריכה — גישה לבוטים + שיחות</option>
-                <option value="rep">נציג לא מורשה — גישה לשיחות בלבד</option>
+                <option value="rep_bot">מנהל משמרת — גישה לבוטים + שיחות</option>
+                <option value="rep">נציג — גישה לשיחות בלבד</option>
               </select>
             </div>
           </div>

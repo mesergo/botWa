@@ -338,7 +338,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                 activeTab === 'users' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
               }`}
             >
-              <UserCog size={16} /> נציגים
+              <UserCog size={16} /> משתמשים
             </button>
           )}
         </div>
