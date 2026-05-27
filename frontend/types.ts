@@ -116,7 +116,7 @@ export interface User {
   id: string;
   name: string;
   email: string;
-  role?: 'admin' | 'user' | 'rep_bot' | 'rep';
+  role?: 'admin' | 'user' | 'rep_manager' | 'rep';
   manager_id?: string | null;
   public_id: string;
   account_type: 'Trial' | 'Basic' | 'Premium';

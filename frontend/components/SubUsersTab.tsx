@@ -10,7 +10,7 @@ interface SubUser {
   name: string;
   email: string;
   phone: string;
-  role: 'rep' | 'rep_bot';
+  role: 'rep' | 'rep_manager';
   status: string;
   createdAt: string;
 }
@@ -20,11 +20,11 @@ interface SubUsersTabProps {
 }
 
 const ROLE_LABELS: Record<string, string> = {
-  rep_bot: 'מנהל משמרת',
+  rep_manager: 'מנהל משמרת',
   rep: 'נציג',
 };
 
-const emptyForm = { name: '', email: '', password: '', phone: '', role: 'rep' as 'rep' | 'rep_bot' };
+const emptyForm = { name: '', email: '', password: '', phone: '', role: 'rep' as 'rep' | 'rep_manager' };
 
 const SubUsersTab: React.FC<SubUsersTabProps> = ({ token }) => {
   const [users, setUsers] = useState<SubUser[]>([]);
@@ -72,7 +72,7 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token }) => {
 
   const openEdit = (u: SubUser) => {
     setEditingId(u.id);
-    setForm({ name: u.name, email: u.email, password: '', phone: u.phone, role: u.role });
+    setForm({ name: u.name, email: u.email, password: '', phone: u.phone, role: u.role as 'rep' | 'rep_manager' });
     setFormError(null);
     setShowPassword(false);
     setShowForm(true);
@@ -222,10 +222,10 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token }) => {
               <label className="block text-sm font-bold text-slate-600 mb-1">סוג נציג *</label>
               <select
                 value={form.role}
-                onChange={e => setForm(f => ({ ...f, role: e.target.value as 'rep' | 'rep_bot' }))}
+                onChange={e => setForm(f => ({ ...f, role: e.target.value as 'rep' | 'rep_manager' }))}
                 className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:border-blue-500 bg-white"
               >
-                <option value="rep_bot">מנהל משמרת — גישה לבוטים + שיחות</option>
+                <option value="rep_manager">מנהל משמרת — גישה לבוטים + שיחות</option>
                 <option value="rep">נציג — גישה לשיחות בלבד</option>
               </select>
             </div>
@@ -281,7 +281,7 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token }) => {
                   <td className="px-6 py-4 text-slate-600 font-bold" dir="ltr">{u.phone || '—'}</td>
                   <td className="px-6 py-4">
                     <span className={`px-3 py-1 rounded-full text-xs font-black ${
-                      u.role === 'rep_bot'
+                      u.role === 'rep_manager'
                         ? 'bg-blue-100 text-blue-700'
                         : 'bg-slate-100 text-slate-600'
                     }`}>

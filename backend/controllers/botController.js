@@ -14,7 +14,7 @@ const ACCOUNTS_CONFIG = {
 export const createBot = async (req, res) => {
   const { name } = req.body;
   const role = req.user?.role;
-  if (role === 'rep' || role === 'rep_bot') {
+  if (role === 'rep' || role === 'rep_manager') {
     return res.status(403).json({ error: 'Access denied. Representatives cannot create bots.' });
   }
   const userId = req.user.id;
@@ -80,7 +80,7 @@ export const getBots = async (req, res) => {
 export const deleteBot = async (req, res) => {
   const { id } = req.params;
   const role = req.user?.role;
-  if (role === 'rep' || role === 'rep_bot') {
+  if (role === 'rep' || role === 'rep_manager') {
     return res.status(403).json({ error: 'Access denied. Representatives cannot delete bots.' });
   }
   const userId = req.user.id;
@@ -111,7 +111,7 @@ export const deleteBot = async (req, res) => {
 export const setDefaultBot = async (req, res) => {
   const { id } = req.params;
   const role = req.user?.role;
-  if (role === 'rep' || role === 'rep_bot') {
+  if (role === 'rep' || role === 'rep_manager') {
     return res.status(403).json({ error: 'Access denied. Representatives cannot change default bot.' });
   }
   const userId = req.user.id;

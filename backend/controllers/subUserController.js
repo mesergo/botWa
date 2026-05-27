@@ -33,9 +33,9 @@ export const createSubUser = async (req, res) => {
       return res.status(400).json({ error: 'שם, אימייל וסיסמה הם שדות חובה' });
     }
 
-    const allowedRoles = ['rep', 'rep_bot'];
+    const allowedRoles = ['rep', 'rep_manager'];
     if (!allowedRoles.includes(role)) {
-      return res.status(400).json({ error: 'סוג משתמש לא תקין. בחר נציג מורשה עריכה (rep_bot) או נציג רגיל (rep).' });
+      return res.status(400).json({ error: 'סוג משתמש לא תקין. בחר נציג מורשה עריכה (rep_manager) או נציג רגיל (rep).' });
     }
 
     const normalizedEmail = email.toLowerCase().trim();
@@ -83,7 +83,7 @@ export const updateSubUser = async (req, res) => {
       return res.status(404).json({ error: 'נציג לא נמצא' });
     }
 
-    const allowedRoles = ['rep', 'rep_bot'];
+    const allowedRoles = ['rep', 'rep_manager'];
     if (role && !allowedRoles.includes(role)) {
       return res.status(400).json({ error: 'סוג משתמש לא תקין' });
     }

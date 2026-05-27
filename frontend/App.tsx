@@ -133,7 +133,7 @@ const FlowBuilder: React.FC = () => {
       const saved = localStorage.getItem('flowbot_user');
       if (saved && saved !== 'undefined') {
         const user = JSON.parse(saved);
-        if (user?.role === 'rep' || user?.role === 'rep_bot') return 'sessions';
+        if (user?.role === 'rep' || user?.role === 'rep_manager') return 'sessions';
       }
     } catch {}
     return 'dashboard';
@@ -888,7 +888,7 @@ const FlowBuilder: React.FC = () => {
         localStorage.setItem('flowbot_token', data.token);
         localStorage.setItem('flowbot_user', JSON.stringify(data.user));
         // Route reps directly to sessions view
-        if (data.user?.role === 'rep' || data.user?.role === 'rep_bot') {
+        if (data.user?.role === 'rep' || data.user?.role === 'rep_manager') {
           setSessionsOwnOnly(false);
           setViewMode('sessions');
         } else {
@@ -917,7 +917,7 @@ const FlowBuilder: React.FC = () => {
       localStorage.setItem('flowbot_token', data.token);
       localStorage.setItem('flowbot_user', JSON.stringify(data.user));
       // Route reps directly to sessions view
-      if (data.user?.role === 'rep' || data.user?.role === 'rep_bot') {
+      if (data.user?.role === 'rep' || data.user?.role === 'rep_manager') {
         setSessionsOwnOnly(false);
         setViewMode('sessions');
       } else {
@@ -934,7 +934,7 @@ const FlowBuilder: React.FC = () => {
     localStorage.setItem('flowbot_token', impersonationToken);
     localStorage.setItem('flowbot_user', JSON.stringify(userData));
     // Route based on role — same logic as normal login
-    if (userData.role === 'rep' || userData.role === 'rep_bot') {
+    if (userData.role === 'rep' || userData.role === 'rep_manager') {
       setSessionsOwnOnly(false);
       setViewMode('sessions');
     } else {
@@ -1728,12 +1728,12 @@ const FlowBuilder: React.FC = () => {
         currentUser={currentUser}
         onBack={currentUser?.role === 'rep' ? undefined : () => { setDashboardInitialTab('bots'); setViewMode('dashboard'); }}
         onLogout={() => { localStorage.clear(); window.location.reload(); }}
-        onOpenContacts={currentUser?.role !== 'rep' && currentUser?.role !== 'rep_bot' ? (phone?: string) => { setContactsInitialPhone(phone ?? null); setViewMode('contacts'); } : undefined}
-        onOpenGroups={currentUser?.role !== 'rep' && currentUser?.role !== 'rep_bot' ? () => setViewMode('groups') : undefined}
+        onOpenContacts={currentUser?.role !== 'rep' && currentUser?.role !== 'rep_manager' ? (phone?: string) => { setContactsInitialPhone(phone ?? null); setViewMode('contacts'); } : undefined}
+        onOpenGroups={currentUser?.role !== 'rep' && currentUser?.role !== 'rep_manager' ? () => setViewMode('groups') : undefined}
         onOpenAdminPanel={() => setViewMode('admin-panel')}
         ownOnly={sessionsOwnOnly}
         initialPhone={sessionsInitialPhone}
-        onOpenSettings={currentUser?.role !== 'rep' && currentUser?.role !== 'rep_bot' ? () => { setDashboardInitialTab('settings'); setViewMode('dashboard'); } : undefined}
+        onOpenSettings={currentUser?.role !== 'rep' && currentUser?.role !== 'rep_manager' ? () => { setDashboardInitialTab('settings'); setViewMode('dashboard'); } : undefined}
         onOpenSubUsers={currentUser?.role === 'user' ? () => { setDashboardInitialTab('users'); setViewMode('dashboard'); } : undefined}
         onStopImpersonation={handleStopImpersonation}
       />

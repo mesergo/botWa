@@ -18,11 +18,11 @@ export const authenticateToken = (req, res, next) => {
 };
 
 // Returns the effective owner user ID:
-// For rep roles (rep / rep_bot), returns their manager's ID so they see the manager's data.
+// For rep roles (rep / rep_manager), returns their manager's ID so they see the manager's data.
 // For all other roles, returns the authenticated user's own ID.
 export const getEffectiveUserId = (req) => {
   const role = req.user?.role;
-  if ((role === 'rep' || role === 'rep_bot') && req.user?.manager_id) {
+  if ((role === 'rep' || role === 'rep_manager') && req.user?.manager_id) {
     return req.user.manager_id;
   }
   return req.userId;

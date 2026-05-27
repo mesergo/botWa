@@ -1560,13 +1560,13 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                             <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${user.status === 'active' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-rose-50 text-rose-600 border border-rose-100'}`}>
                                 {user.status === 'active' ? 'פעיל' : 'חסום'}
                             </span>
-                            {user.role === 'rep_bot' && (
+                            {user.role === 'rep_manager' && (
                               <span className="px-2 py-0.5 rounded text-[10px] font-bold border bg-blue-50 text-blue-600 border-blue-100">נציג עריכה</span>
                             )}
                             {user.role === 'rep' && (
                               <span className="px-2 py-0.5 rounded text-[10px] font-bold border bg-slate-100 text-slate-500 border-slate-200">נציג</span>
                             )}
-                            {user.role !== 'rep' && user.role !== 'rep_bot' && (
+                            {user.role !== 'rep' && user.role !== 'rep_manager' && (
                               <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
                                 user.account_type === 'Premium' ? 'bg-amber-50 text-amber-600 border-amber-100'
                                 : user.account_type === 'Trial' ? 'bg-orange-50 text-orange-600 border-orange-100'
@@ -1577,7 +1577,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                           </div>
                           <ChevronRight size={14} className={`transition-transform duration-300 ${selectedUser?.id === user.id ? 'text-sky-500 translate-x-1' : 'text-slate-300 opacity-0 group-hover:opacity-100'}`} />
                         </div>
-                        {(user.role === 'rep' || user.role === 'rep_bot') && user.manager_id && (() => {
+                        {(user.role === 'rep' || user.role === 'rep_manager') && user.manager_id && (() => {
                           const parentUser = users.find(u => u.id === user.manager_id);
                           return parentUser ? (
                             <div className="mt-1.5 flex items-center gap-1 text-[10px] text-slate-400">
@@ -1747,7 +1747,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                                     <div>
                                         <label className="block text-xs font-bold text-slate-400 mb-2">סוג מנוי</label>
                                         {isEditing ? (
-                                            selectedUser.role === 'rep' || selectedUser.role === 'rep_bot' ? (
+                                            selectedUser.role === 'rep' || selectedUser.role === 'rep_manager' ? (
                                                 <div className="w-full bg-slate-50 px-4 py-3 rounded-xl border border-slate-100 text-slate-400 font-bold text-sm">— (נציג)</div>
                                             ) : (
                                                 <select className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none cursor-pointer" value={editForm.account_type || 'Basic'} onChange={e => setEditForm(prev => ({...prev, account_type: e.target.value}))}>
@@ -1758,8 +1758,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                                             )
                                         ) : (
                                             <div className="w-full bg-slate-50 px-4 py-3 rounded-xl border border-slate-100 text-slate-800 font-bold text-sm flex justify-between items-center">
-                                                {(selectedUser.role === 'rep' || selectedUser.role === 'rep_bot') ? '—' : (selectedUser.account_type || '—')}
-                                                {selectedUser.role !== 'rep' && selectedUser.role !== 'rep_bot' && <Star size={16} className="text-amber-400 fill-amber-400" />}
+                                                {(selectedUser.role === 'rep' || selectedUser.role === 'rep_manager') ? '—' : (selectedUser.account_type || '—')}
+                                                {selectedUser.role !== 'rep' && selectedUser.role !== 'rep_manager' && <Star size={16} className="text-amber-400 fill-amber-400" />}
                                             </div>
                                         )}
                                     </div>

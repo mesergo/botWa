@@ -206,7 +206,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
     }
   }, [activeTab]);
 
-  const isRep = currentUser?.role === 'rep' || currentUser?.role === 'rep_bot';
+  const isRep = currentUser?.role === 'rep' || currentUser?.role === 'rep_manager';
   const isCompanyManager = currentUser?.role === 'user';
 
   const handleSaveProfile = async () => {
