@@ -1582,6 +1582,7 @@ const FlowBuilder: React.FC = () => {
       [NodeType.ACTION_WEB_SERVICE]: 'קריאת API',
       [NodeType.ACTION_WAIT]: 'המתנה',
       [NodeType.ACTION_TIME_ROUTING]: 'ניתוב לפי שעה',
+      [NodeType.ACTION_ADD_TO_GROUP]: 'הוספה/הסרה מקבוצה',
       [NodeType.ACTION_REMOVE_FROM_GROUP]: 'הסר מקבוצה',
       [NodeType.FIXED_PROCESS]: 'תהליך',
     };

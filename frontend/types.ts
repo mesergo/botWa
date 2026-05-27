@@ -40,6 +40,8 @@ export interface NodeData {
   groupId?: string;
   removeFromGroupMode?: 'specific' | 'all';
   removeGroupId?: string;
+  /** Unified add/remove group component: which action to perform */
+  groupActionMode?: 'add' | 'remove';
   processId?: string;
   onChange?: (data: Partial<NodeData>) => void;
   onDelete?: () => void;

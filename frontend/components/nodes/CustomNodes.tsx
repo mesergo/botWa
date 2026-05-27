@@ -831,29 +831,105 @@ export const ActionTimeRoutingNode = (props: any) => {
 };
 
 export const ActionAddToGroupNode = (props: any) => {
-  const groups: Array<{ _id: string; name: string }> = props.data.groups || [];
+  const allGroups: Array<{ _id: string; name: string; is_blocklist?: boolean }> = props.data.groups || [];
+  const mode: 'add' | 'remove' = props.data.groupActionMode || 'add';
+
+  // For "add" mode show all groups; for remove hide the blocklist group (it's represented by the "הכל" option)
+  const groups = mode === 'remove'
+    ? allGroups.filter(g => !g.is_blocklist)
+    : allGroups;
+
+  const title = mode === 'remove' ? 'הסרה מקבוצה' : 'הוספה לקבוצה';
+  const icon = mode === 'remove' ? <UserMinus size={20} /> : <Users size={20} />;
+
+  // In remove mode the select value is either '__all__' (blocklist) or a specific group id.
+  const removeSelectValue = mode === 'remove'
+    ? ((props.data.removeFromGroupMode || 'specific') === 'all' ? '__all__' : (props.data.removeGroupId || ''))
+    : '';
+
+  const handleAddGroupChange = (value: string) => {
+    props.data.onChange({ groupId: value });
+  };
+
+  const handleRemoveSelectChange = (value: string) => {
+    if (value === '__all__') {
+      props.data.onChange({ removeFromGroupMode: 'all', removeGroupId: '' });
+    } else {
+      props.data.onChange({ removeFromGroupMode: 'specific', removeGroupId: value });
+    }
+  };
 
   return (
-    <BaseNode id={props.id} title="הוספה לקבוצה" icon={<Users size={20} />} type={NodeType.ACTION_ADD_TO_GROUP} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive}>
-      <InputFieldWrapper label="בחר קבוצה">
-        <div className="relative">
-          <select
-            className="nodrag w-full h-12 px-4 border border-slate-200 rounded-xl bg-white text-slate-900 text-right focus:outline-none focus:ring-2 focus:ring-orange-400 appearance-none"
-            value={props.data.groupId || ''}
-            onChange={(e) => props.data.onChange({ groupId: e.target.value })}
-            style={{ fontFamily: 'Heebo, sans-serif' }}
-          >
-            <option value="">-- בחר קבוצה --</option>
-            {groups.map(g => (
-              <option key={g._id} value={g._id}>{g.name}</option>
-            ))}
-          </select>
-          <ChevronDown size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+    <BaseNode id={props.id} title={title} icon={icon} type={NodeType.ACTION_ADD_TO_GROUP} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive}>
+      <InputFieldWrapper label="סוג פעולה">
+        <div className="flex flex-col gap-2 nodrag">
+          <label className="flex items-center gap-2 cursor-pointer text-slate-700 text-sm font-medium">
+            <input
+              type="radio"
+              className="nodrag accent-orange-500"
+              checked={mode === 'add'}
+              onChange={() => props.data.onChange({ groupActionMode: 'add', removeGroupId: '', removeFromGroupMode: 'specific' })}
+            />
+            הוספה לקבוצה
+          </label>
+          <label className="flex items-center gap-2 cursor-pointer text-slate-700 text-sm font-medium">
+            <input
+              type="radio"
+              className="nodrag accent-orange-500"
+              checked={mode === 'remove'}
+              onChange={() => props.data.onChange({ groupActionMode: 'remove', groupId: '' })}
+            />
+            הסרה מקבוצה
+          </label>
         </div>
-        {!props.data.groupId && (
-          <p className="mt-2 text-[12px] text-slate-400 text-right">בסימולטור הרכיב ידולג (אין waPhone)</p>
-        )}
       </InputFieldWrapper>
+
+      {mode === 'add' && (
+        <InputFieldWrapper label="בחר קבוצה">
+          <div className="relative">
+            <select
+              className="nodrag w-full h-12 px-4 border border-slate-200 rounded-xl bg-white text-slate-900 text-right focus:outline-none focus:ring-2 focus:ring-orange-400 appearance-none"
+              value={props.data.groupId || ''}
+              onChange={(e) => handleAddGroupChange(e.target.value)}
+              style={{ fontFamily: 'Heebo, sans-serif' }}
+            >
+              <option value="">-- בחר קבוצה --</option>
+              {groups.map(g => (
+                <option key={g._id} value={g._id}>{g.name}</option>
+              ))}
+            </select>
+            <ChevronDown size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+          </div>
+          {!props.data.groupId && (
+            <p className="mt-2 text-[12px] text-slate-400 text-right">בסימולטור הרכיב ידולג (אין waPhone)</p>
+          )}
+        </InputFieldWrapper>
+      )}
+
+      {mode === 'remove' && (
+        <InputFieldWrapper label="בחר קבוצה">
+          <div className="relative">
+            <select
+              className="nodrag w-full h-12 px-4 border border-slate-200 rounded-xl bg-white text-slate-900 text-right focus:outline-none focus:ring-2 focus:ring-orange-400 appearance-none"
+              value={removeSelectValue}
+              onChange={(e) => handleRemoveSelectChange(e.target.value)}
+              style={{ fontFamily: 'Heebo, sans-serif' }}
+            >
+              <option value="">-- בחר קבוצה --</option>
+              <option value="__all__">הכל (רשימת הסרה)</option>
+              {groups.map(g => (
+                <option key={g._id} value={g._id}>{g.name}</option>
+              ))}
+            </select>
+            <ChevronDown size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+          </div>
+          {removeSelectValue === '__all__' ? (
+            <p className="mt-2 text-[12px] text-slate-500 text-right">מספר הטלפון יתווסף לרשימת ההסרה</p>
+          ) : !removeSelectValue ? (
+            <p className="mt-2 text-[12px] text-slate-400 text-right">בסימולטור הרכיב ידולג (אין waPhone)</p>
+          ) : null}
+        </InputFieldWrapper>
+      )}
     </BaseNode>
   );
 };
