@@ -8,6 +8,7 @@ const contactSchema = new mongoose.Schema({
   email: { type: String, default: '' },
   // Flexible key-value store for future custom fields defined by the company manager
   custom_field_values: { type: mongoose.Schema.Types.Mixed, default: {} },
+  assigned_to: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
 }, {
   timestamps: true,
   collection: 'Contact'

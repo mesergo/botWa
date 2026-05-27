@@ -19,7 +19,8 @@ const userSchema = new mongoose.Schema({
     version_price: { type: Number, default: null },
     bot_price: { type: Number, default: null }
   },
-  trial_expires_at: { type: Date, default: null }
+  trial_expires_at: { type: Date, default: null },
+  rep_group_ids: [{ type: mongoose.Schema.Types.ObjectId, ref: 'RepGroup', default: [] }],
 }, { 
   timestamps: true,
   collection: 'User'

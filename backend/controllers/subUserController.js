@@ -1,13 +1,23 @@
+import mongoose from 'mongoose';
 import User from '../models/User.js';
 import jwt from 'jsonwebtoken';
 import { SECRET_KEY } from '../middleware/auth.js';
 
+// Returns the root company manager ID for the given userId.
+// If the user is a sub-user (rep/rep_manager with a manager_id), returns that manager_id.
+// Otherwise returns the user's own _id (they are the company owner).
+const getRootManagerId = async (userId) => {
+  const user = await User.findById(userId).select('manager_id').lean();
+  if (user && user.manager_id) return user.manager_id.toString();
+  return userId.toString();
+};
+
 // GET /api/sub-users — list all reps belonging to the authenticated company manager
 export const getSubUsers = async (req, res) => {
   try {
-    const managerId = req.userId;
+    const managerId = await getRootManagerId(req.userId);
     const reps = await User.find({ manager_id: managerId }).select(
-      'name email phone role status createdAt'
+      'name email phone role status createdAt rep_group_ids'
     ).sort({ createdAt: -1 });
     res.json(reps.map(r => ({
       id: r._id.toString(),
@@ -17,6 +27,7 @@ export const getSubUsers = async (req, res) => {
       role: r.role,
       status: r.status,
       createdAt: r.createdAt,
+      repGroupIds: (r.rep_group_ids || []).map(id => id.toString()),
     })));
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -26,8 +37,8 @@ export const getSubUsers = async (req, res) => {
 // POST /api/sub-users — create a new rep under the authenticated company manager
 export const createSubUser = async (req, res) => {
   try {
-    const managerId = req.userId;
-    const { name, email, password, phone, role } = req.body;
+    const managerId = await getRootManagerId(req.userId);
+    const { name, email, password, phone, role, rep_group_ids } = req.body;
 
     if (!name || !email || !password) {
       return res.status(400).json({ error: 'שם, אימייל וסיסמה הם שדות חובה' });
@@ -45,7 +56,7 @@ export const createSubUser = async (req, res) => {
     }
 
     const publicId = Math.random().toString(36).substring(2, 15);
-    const rep = await User.create({
+    const repData = {
       name: name.trim(),
       email: normalizedEmail,
       password,
@@ -55,7 +66,11 @@ export const createSubUser = async (req, res) => {
       public_id: publicId,
       account_type: '',
       status: 'active',
-    });
+    };
+    if (role === 'rep' && Array.isArray(rep_group_ids) && rep_group_ids.length > 0) {
+      repData.rep_group_ids = rep_group_ids.map(id => new mongoose.Types.ObjectId(id));
+    }
+    const rep = await User.create(repData);
 
     res.status(201).json({
       id: rep._id.toString(),
@@ -65,6 +80,7 @@ export const createSubUser = async (req, res) => {
       role: rep.role,
       status: rep.status,
       createdAt: rep.createdAt,
+      repGroupIds: (rep.rep_group_ids || []).map(id => id.toString()),
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -74,9 +90,9 @@ export const createSubUser = async (req, res) => {
 // PATCH /api/sub-users/:id — update a rep's details
 export const updateSubUser = async (req, res) => {
   try {
-    const managerId = req.userId;
+    const managerId = await getRootManagerId(req.userId);
     const { id } = req.params;
-    const { name, email, phone, role, password } = req.body;
+    const { name, email, phone, role, password, rep_group_ids } = req.body;
 
     const rep = await User.findOne({ _id: id, manager_id: managerId });
     if (!rep) {
@@ -98,6 +114,14 @@ export const updateSubUser = async (req, res) => {
     if (phone !== undefined) rep.phone = phone;
     if (role) rep.role = role;
     if (password && password.trim()) rep.password = password.trim();
+    // rep_group_ids: rep_managers always get []; reps get the provided array if sent
+    if (rep.role === 'rep_manager') {
+      rep.rep_group_ids = [];
+    } else if (rep.role === 'rep' && rep_group_ids !== undefined) {
+      rep.rep_group_ids = Array.isArray(rep_group_ids)
+        ? rep_group_ids.map(id => new mongoose.Types.ObjectId(id))
+        : [];
+    }
 
     await rep.save();
     res.json({
@@ -108,6 +132,7 @@ export const updateSubUser = async (req, res) => {
       role: rep.role,
       status: rep.status,
       createdAt: rep.createdAt,
+      repGroupIds: (rep.rep_group_ids || []).map(id => id.toString()),
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -117,7 +142,7 @@ export const updateSubUser = async (req, res) => {
 // DELETE /api/sub-users/:id — delete a rep
 export const deleteSubUser = async (req, res) => {
   try {
-    const managerId = req.userId;
+    const managerId = await getRootManagerId(req.userId);
     const { id } = req.params;
 
     const rep = await User.findOne({ _id: id, manager_id: managerId });

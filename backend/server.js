@@ -18,6 +18,7 @@ import dialog360TemplateRoutes from './routes/dialog360TemplateRoutes.js';
 import adminRoutes from './routes/adminRoutes.js';
 import uploadRoutes from './routes/uploadRoutes.js';
 import subUserRoutes from './routes/subUserRoutes.js';
+import repGroupRoutes from './routes/repGroupRoutes.js';
 import contactRoutes from './routes/contactRoutes.js';
 import groupRoutes from './routes/groupRoutes.js';
 import { seedTemplates } from './controllers/templateController.js';
@@ -73,6 +74,7 @@ async function startServer() {
     app.use('/api/dialog360-templates', dialog360TemplateRoutes);
     app.use('/api/admin', adminRoutes);
     app.use('/api/sub-users', subUserRoutes);
+    app.use('/api/rep-groups', repGroupRoutes);
     app.use('/api/contacts', contactRoutes);
     app.use('/api/groups', groupRoutes);
     app.use('/api', uploadRoutes);  // Upload route

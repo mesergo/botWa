@@ -287,7 +287,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
         </div>
         {/* ── Navigation tabs ── */}
         <div className="flex items-center gap-1 bg-slate-100 rounded-2xl p-1" dir="rtl">
-          {currentUser?.role !== 'rep' && (
+          {currentUser?.role !== 'rep' && currentUser?.role !== 'rep_manager' && (
           <button
             onClick={() => setActiveTab('bots')}
             className={`flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm transition-all ${
@@ -331,7 +331,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
               <Settings size={16} /> הגדרות
             </button>
           )}
-          {isCompanyManager && (
+          {(isCompanyManager || currentUser?.role === 'rep_manager') && (
             <button
               onClick={() => setActiveTab('users')}
               className={`flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm transition-all ${
@@ -769,7 +769,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
       )}
 
       {/* ── Users Tab ── */}
-      {activeTab === 'users' && isCompanyManager && (
+      {activeTab === 'users' && (isCompanyManager || currentUser?.role === 'rep_manager') && (
         <div className="flex-1 overflow-y-auto p-12">
           <div className="max-w-5xl mx-auto">
             <SubUsersTab token={token} />

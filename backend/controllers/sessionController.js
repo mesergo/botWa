@@ -4,6 +4,7 @@ import { mongoose } from '../config/db.js';
 import BotFlow from '../models/BotFlow.js';
 import Widget from '../models/Widget.js';
 import User from '../models/User.js';
+import Contact from '../models/Contact.js';
 import fetch from 'node-fetch';
 import { getEffectiveUserId } from '../middleware/auth.js';
 
@@ -195,7 +196,21 @@ export const getContacts = async (req, res) => {
       };
     });
 
-    res.json(result);
+    // Enrich with assigned_to from Contact collection
+    const phones = result.map(c => c.phone);
+    const contactDocs = await Contact.find({ user_id: userId, phone: { $in: phones } }).select('phone assigned_to').lean();
+    const assignedToMap = {};
+    contactDocs.forEach(c => { assignedToMap[c.phone] = (c.assigned_to || []).map(id => id.toString()); });
+
+    let finalResult = result.map(c => ({ ...c, assigned_to: assignedToMap[c.phone] || [] }));
+
+    // If rep, filter to only contacts where this rep is assigned
+    if (req.user?.role === 'rep') {
+      const repId = req.userId;
+      finalResult = finalResult.filter(c => c.assigned_to.includes(repId));
+    }
+
+    res.json(finalResult);
   } catch (err) {
     console.error('getContacts error:', err);
     res.status(500).json({ error: err.message });

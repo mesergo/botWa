@@ -1734,7 +1734,7 @@ const FlowBuilder: React.FC = () => {
         ownOnly={sessionsOwnOnly}
         initialPhone={sessionsInitialPhone}
         onOpenSettings={currentUser?.role !== 'rep' && currentUser?.role !== 'rep_manager' ? () => { setDashboardInitialTab('settings'); setViewMode('dashboard'); } : undefined}
-        onOpenSubUsers={currentUser?.role === 'user' ? () => { setDashboardInitialTab('users'); setViewMode('dashboard'); } : undefined}
+        onOpenSubUsers={currentUser?.role === 'user' || currentUser?.role === 'rep_manager' ? () => { setDashboardInitialTab('users'); setViewMode('dashboard'); } : undefined}
         onStopImpersonation={handleStopImpersonation}
       />
     );
