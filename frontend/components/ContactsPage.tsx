@@ -318,7 +318,7 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
           )}
           {onOpenSubUsers && currentUser?.role === 'user' && (
             <button onClick={onOpenSubUsers} className="flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm text-slate-500 hover:text-slate-700 transition-all">
-              <UserCog size={16} /> נציגים
+              <UserCog size={16} /> משתמשים
             </button>
           )}
         </div>
