@@ -1,5 +1,5 @@
 ﻿import React, { useState, useEffect, useRef } from 'react';
-import { Clock, MessageSquare, Search, Bot, LogOut, User, Phone, List, Users, ExternalLink, X, Headphones, RefreshCw, Shield, Settings, UserCog, Layers } from 'lucide-react';
+import { Clock, MessageSquare, Search, Bot, LogOut, User, Phone, List, Users, ExternalLink, X, Headphones, RefreshCw, Shield, Settings, UserCog, Layers, Plus } from 'lucide-react';
 import ImpersonationBanner from './ImpersonationBanner';
 import { FileUploader } from './FileUploader';
 
@@ -73,10 +73,16 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
   const [showTemplateParamsModal, setShowTemplateParamsModal] = useState(false);
   const [templateParams, setTemplateParams] = useState<Record<string, any>>({});
 
+  // New conversation modal state
+  const [showNewConvModal, setShowNewConvModal] = useState(false);
+  const [newConvPhone, setNewConvPhone] = useState('');
+  const [newConvLoading, setNewConvLoading] = useState(false);
+  const [newConvError, setNewConvError] = useState<string | null>(null);
+
   const chatScrollRef = useRef<HTMLDivElement>(null);
 
   // Fetch contacts (sorted most-recent-first by backend)
-  useEffect(() => {
+  const fetchContacts = React.useCallback(() => {
     if (!token) return;
     setContactsLoading(true);
     fetch(`${API_BASE}/sessions/contacts`, {
@@ -87,6 +93,10 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
       .catch(e => console.error('Failed to load contacts', e))
       .finally(() => setContactsLoading(false));
   }, [token]);
+
+  useEffect(() => {
+    fetchContacts();
+  }, [fetchContacts]);
 
   // Fetch all sessions for the selected phone (oldest → newest)
   useEffect(() => {
@@ -178,6 +188,43 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
 
   const isSimulator = (phone: string) =>
     phone === 'Simulated' || phone === 'simulator' || phone.toLowerCase() === 'simulated';
+
+  // ── New conversation handler ────────────────────────────────────────────────
+
+  const handleNewConvConfirm = async () => {
+    const sanitized = newConvPhone.replace(/[+\-\s()]/g, '');
+    const digits = sanitized.replace(/\D/g, '');
+    if (digits.length < 7) {
+      setNewConvError('מספר טלפון לא תקין');
+      return;
+    }
+    const exists = contacts.some(c => c.phone.replace(/[+\-\s()]/g, '') === sanitized);
+    if (exists) {
+      setNewConvError('איש קשר קיים במערכת');
+      return;
+    }
+    setNewConvLoading(true);
+    setNewConvError(null);
+    try {
+      const r = await fetch(`${API_BASE}/contacts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ phone: sanitized })
+      });
+      if (r.ok) {
+        setShowNewConvModal(false);
+        setSelectedPhone(sanitized);
+        fetchContacts();
+      } else {
+        const data = await r.json().catch(() => ({}));
+        setNewConvError(data.message || 'שגיאה ביצירת איש קשר');
+      }
+    } catch (e) {
+      setNewConvError('שגיאת רשת');
+    } finally {
+      setNewConvLoading(false);
+    }
+  };
 
   // ── Agent mode handlers ───────────────────────────────────────────────────
 
@@ -283,7 +330,66 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
 
   const sendAgentMsg = async () => {
     if (!agentMessage.trim() || agentSending) return;
-    
+
+    // לקוח חדש ללא שיחות — שלח תבנית ישירות לטלפון (ללא session)
+    if (phoneSessions.length === 0) {
+      if (!selectedTemplate) return;
+      const msgText = agentMessage.trim();
+      setAgentSending(true);
+      setAgentWaFailed(false);
+      try {
+        const r = await fetch(`${API_BASE}/sessions/send-template-to-phone`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({
+            phone: selectedPhone,
+            message: msgText,
+            templateData: {
+              id: selectedTemplate.id,
+              name: selectedTemplate.name || selectedTemplate.elementName || selectedTemplate.template_name,
+              language: selectedTemplate.language || 'he',
+              components: selectedTemplate.components || [],
+              params: templateParams
+            }
+          })
+        });
+        if (r.ok) {
+          const data = await r.json();
+          setAgentMessage('');
+          setSelectedTemplate(null);
+          setTemplateParams({});
+          if (data.waSent) {
+            // Build session object locally from response — avoids phone normalisation mismatch
+            const newSession = {
+              id: data.sessionId,
+              phone: data.phone || selectedPhone,
+              sender: data.phone || selectedPhone,
+              customer_phone: data.phone || selectedPhone,
+              widget_id: null,
+              bot_name: 'נציג',
+              created_at: data.created,
+              parameters: {},
+              process_history: [data.historyEntry],
+              is_agent: true,
+              agent_since: data.created
+            };
+            setPhoneSessions([newSession]);
+            setAgentSessionId(data.sessionId || null);
+            setIsAgentMode(true);
+            fetchContacts();
+          } else {
+            setAgentWaFailed(true);
+            setTimeout(() => setAgentWaFailed(false), 8000);
+          }
+        }
+      } catch (e) {
+        console.error('Failed to send template to new contact', e);
+      } finally {
+        setAgentSending(false);
+      }
+      return;
+    }
+
     // אם לא במצב נציג, הצג דיאלוג אישור
     if (!isAgentMode) {
       if (phoneSessions.length > 0) {
@@ -733,14 +839,23 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
         <div className="w-[30%] flex-shrink-0 bg-white border-l border-slate-100 flex flex-col overflow-hidden">
           {/* Header */}
           <div className="flex-shrink-0 px-5 py-4 border-b border-slate-100">
-            <div className="flex items-center gap-3 mb-3">
-              <div className="w-9 h-9 bg-sky-50 text-sky-600 rounded-xl flex items-center justify-center">
-                <Users size={18} />
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 bg-sky-50 text-sky-600 rounded-xl flex items-center justify-center">
+                  <Users size={18} />
+                </div>
+                <div>
+                  <h2 className="text-base font-black text-slate-900">אנשי קשר</h2>
+                  <p className="text-xs text-slate-400 font-semibold">{contacts.length} קשרים</p>
+                </div>
               </div>
-              <div>
-                <h2 className="text-base font-black text-slate-900">אנשי קשר</h2>
-                <p className="text-xs text-slate-400 font-semibold">{contacts.length} קשרים</p>
-              </div>
+              <button
+                onClick={() => { setShowNewConvModal(true); setNewConvPhone(''); setNewConvError(null); }}
+                title="שיחה חדשה"
+                className="w-8 h-8 rounded-xl bg-sky-500 text-white flex items-center justify-center hover:bg-sky-600 transition-colors flex-shrink-0"
+              >
+                <Plus size={16} />
+              </button>
             </div>
             <div className="relative">
               <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-300" size={15} />
@@ -928,6 +1043,12 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
               {/* Message input bar */}
               {!phoneSessionsLoading && (
                 <div className="flex-shrink-0 bg-white border-t border-slate-100 px-4 py-3" dir="rtl">
+                  {phoneSessions.length === 0 && (
+                    <div className="flex items-center gap-2 mb-2 px-1 py-2 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-700 font-semibold">
+                      <span className="text-base">⚠️</span>
+                      לקוח חדש — ניתן לשלוח הודעות תבנית בלבד. הקש <span className="font-black">/</span> לבחירת תבנית.
+                    </div>
+                  )}
                   <div className="flex items-center gap-3 relative">
                     {/* Template dropdown */}
                     {showTemplates && selectedPhone && (
@@ -997,9 +1118,9 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
 
                     <button
                       onClick={sendAgentMsg}
-                      disabled={!agentMessage.trim() || agentSending}
+                      disabled={!agentMessage.trim() || agentSending || (phoneSessions.length === 0 && !selectedTemplate)}
                       className={`w-10 h-10 flex-shrink-0 flex items-center justify-center rounded-2xl transition-colors
-                        ${agentMessage.trim() && !agentSending
+                        ${agentMessage.trim() && !agentSending && !(phoneSessions.length === 0 && !selectedTemplate)
                           ? 'bg-sky-500 text-white hover:bg-sky-600 cursor-pointer'
                           : 'bg-sky-500 text-white opacity-40 cursor-not-allowed'}`}
                     >
@@ -1021,9 +1142,19 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                         }
                       }}
                       onKeyDown={e => { if (e.key === 'Enter') sendAgentMsg(); }}
-                      placeholder='כתוב הודעה ללקוח... (/ לטמפלייטים)'
-                      className={`flex-1 bg-slate-50 border border-slate-200 rounded-2xl px-4 py-2.5 text-sm text-right font-medium outline-none transition-all
-                        text-slate-800 placeholder:text-slate-400 focus:ring-2 focus:ring-sky-500/20 focus:border-sky-400`}
+                      onFocus={() => {
+                        if (phoneSessions.length === 0 && !agentMessage) {
+                          setAgentMessage('/');
+                          setShowTemplates(true);
+                          fetchTemplates();
+                        }
+                      }}
+                      placeholder={phoneSessions.length === 0 ? 'הקש / לבחירת תבנית לשליחה...' : 'כתוב הודעה ללקוח... (/ לטמפלייטים)'}
+                      className={`flex-1 bg-slate-50 border rounded-2xl px-4 py-2.5 text-sm text-right font-medium outline-none transition-all
+                        text-slate-800 placeholder:text-slate-400 focus:ring-2 focus:ring-sky-500/20
+                        ${phoneSessions.length === 0 && !selectedTemplate
+                          ? 'border-amber-300 focus:border-amber-400 focus:ring-amber-500/20'
+                          : 'border-slate-200 focus:border-sky-400'}`}
                     />
                   </div>
                 </div>
@@ -1033,6 +1164,54 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
         </div>
 
       </div>
+
+      {/* New conversation modal */}
+      {showNewConvModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" dir="rtl">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-sm w-full mx-4 overflow-hidden">
+            <div className="px-6 pt-6 pb-4">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-10 h-10 rounded-2xl bg-sky-100 flex items-center justify-center">
+                  <Plus size={20} className="text-sky-600" />
+                </div>
+                <h3 className="text-lg font-black text-slate-900">שיחה חדשה</h3>
+              </div>
+              <p className="text-sm text-slate-500 mb-4">הזן מספר טלפון ליצירת שיחה חדשה</p>
+              <input
+                type="tel"
+                dir="ltr"
+                placeholder="הזן מספר טלפון..."
+                value={newConvPhone}
+                onChange={e => {
+                  setNewConvPhone(e.target.value);
+                  setNewConvError(null);
+                }}
+                onKeyDown={e => e.key === 'Enter' && !newConvLoading && handleNewConvConfirm()}
+                className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-400 transition-all"
+                autoFocus
+              />
+              {newConvError && (
+                <p className="text-xs text-red-500 font-semibold mt-2">{newConvError}</p>
+              )}
+            </div>
+            <div className="px-6 pb-6 flex gap-3 justify-end">
+              <button
+                onClick={() => setShowNewConvModal(false)}
+                className="px-5 py-2.5 rounded-2xl border border-slate-200 text-slate-700 text-sm font-bold hover:bg-slate-50 transition-colors"
+              >
+                ביטול
+              </button>
+              <button
+                onClick={handleNewConvConfirm}
+                disabled={newConvLoading || newConvError === 'איש קשר קיים במערכת'}
+                className="px-5 py-2.5 rounded-2xl bg-sky-500 text-white text-sm font-bold hover:bg-sky-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {newConvLoading ? '...' : 'אישור'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Agent confirmation dialog */}
       {showAgentConfirm && (

@@ -867,7 +867,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
           <nav className="space-y-1.5">
             {[
               { id: 'dashboard', label: 'סקירה כללית', icon: LayoutDashboard },
-              { id: 'users', label: 'ניהול משתמשים', icon: Users },
+              { id: 'users', label: 'ניהול לקוחות', icon: Users },
               { id: 'sessions', label: 'סשנים', icon: List },
               { id: 'dialog360', label: 'הודעות תבנית', icon: MessageSquare },
               { id: 'templates', label: 'מאגר תבניות', icon: FileText },
@@ -911,7 +911,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
           <div className="animate-slide-in">
             <h2 className="text-2xl font-black text-slate-800 tracking-tight">
               {activeTab === 'dashboard' && 'לוח בקרה'}
-              {activeTab === 'users' && 'ניהול משתמשים'}
+              {activeTab === 'users' && 'ניהול לקוחות'}
               {activeTab === 'sessions' && 'כל הסשנים'}
               {activeTab === 'dialog360' && 'הודעות תבנית Dialog360'}
               {activeTab === 'templates' && 'ניהול תבניות'}
@@ -1470,7 +1470,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                       onClick={() => setActiveTab('users')}
                       className="bg-slate-900 text-white px-5 py-2.5 rounded-lg text-sm font-bold hover:bg-slate-800 transition-all shadow-sm flex items-center gap-2 group whitespace-nowrap"
                     >
-                      ניהול משתמשים <ArrowLeft size={16} className="group-hover:-translate-x-1 transition-transform" />
+                      ניהול לקוחות <ArrowLeft size={16} className="group-hover:-translate-x-1 transition-transform" />
                     </button>
                     <button 
                       onClick={() => setActiveTab('templates')}

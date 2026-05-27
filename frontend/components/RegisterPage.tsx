@@ -90,6 +90,7 @@ const RegisterPage: React.FC = () => {
           size: 'large',
           width: 320,
           locale: 'he',
+          text: 'signup_with',
         });
       }
     };

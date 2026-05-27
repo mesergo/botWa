@@ -588,11 +588,19 @@ export const sendAgentMessage = async (req, res) => {
       waToken = process.env.WHATSAPP_API_TOKEN || crypto.createHash('sha1').update(endpoint + 'moomoo').digest('hex');
     }
 
-    // Normalize phone: strip non-digits, replace leading 0 with 972
+    // Normalize phone: strip non-digits, ensure 972 country code
     const rawPhone = session.sender || session.customer_phone || '';
     let normalizedPhone = rawPhone.replace(/[^0-9]/g, '');
-    normalizedPhone = normalizedPhone.replace(/^0/, '972');
     normalizedPhone = normalizedPhone.replace(/^972972/, '972');
+    if (!normalizedPhone.startsWith('972')) {
+      normalizedPhone = normalizedPhone.replace(/^0+/, '');
+      normalizedPhone = '972' + normalizedPhone;
+    }
+
+    if (!normalizedPhone || normalizedPhone === '972') {
+      console.error(`[sendAgentMessage] ❌ Empty phone on session ${id}, aborting`);
+      return res.status(400).json({ error: 'Session has no phone number' });
+    }
 
     // Build WhatsApp body - different structure for template vs text
     let waBody;
@@ -647,6 +655,18 @@ export const sendAgentMessage = async (req, res) => {
                 document: { link: headerComponent.example.header_handle[0] || '' }
               }];
             }
+          }
+        }
+      }
+      // Final fallback: params were provided but had no header URL — try template example
+      if (!waBody.header && templateData.components && Array.isArray(templateData.components)) {
+        const headerComp = templateData.components.find(c => c.type === 'HEADER');
+        if (headerComp && ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(headerComp.format)) {
+          const handles = headerComp.example?.header_handle;
+          if (handles && handles.length > 0) {
+            const mediaType = headerComp.format.toLowerCase();
+            waBody.header = [{ type: mediaType, [mediaType]: { link: handles[0] } }];
+            console.log(`[sendAgentMessage] ⚠️ No header URL in params — using template example: ${handles[0]}`);
           }
         }
       }
@@ -721,11 +741,18 @@ export const sendAgentMessage = async (req, res) => {
         }
       }
       
-      // Check if there's header media
+      // Check if there's header media — first from params, then from the fallback placed in waBody
       if (templateData.params && templateData.params.header && templateData.params.header.url) {
         const mediaType = templateData.params.header.type || 'image';
         historyEntry.type = mediaType === 'image' ? 'Image' : mediaType === 'video' ? 'Video' : 'Document';
         historyEntry.url = templateData.params.header.url;
+        historyEntry.text = displayText;
+      } else if (waBody.header && waBody.header[0]) {
+        // Fallback image was resolved from template example — save it in history too
+        const h = waBody.header[0];
+        const mediaType = h.type || 'image';
+        historyEntry.type = mediaType === 'image' ? 'Image' : mediaType === 'video' ? 'Video' : 'Document';
+        historyEntry.url = h[mediaType]?.link || '';
         historyEntry.text = displayText;
       } else {
         historyEntry.type = 'Text';
@@ -747,6 +774,160 @@ export const sendAgentMessage = async (req, res) => {
     res.json({ success: true, waSent, waError, created, historyEntry });
   } catch (err) {
     console.error('sendAgentMessage error:', err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// Send a template message directly to a phone number (no session required — for new contacts)
+export const sendTemplateToPhone = async (req, res) => {
+  try {
+    const { phone, message, templateData } = req.body;
+    if (!phone || !String(phone).trim()) {
+      return res.status(400).json({ error: 'phone is required' });
+    }
+    if (!templateData) {
+      return res.status(400).json({ error: 'templateData is required' });
+    }
+    if (!message || !String(message).trim()) {
+      return res.status(400).json({ error: 'message is required' });
+    }
+
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    let endpoint, waToken;
+    if (user.dialog360_bot_id) {
+      endpoint = `dialog360/${user.dialog360_bot_id}`;
+      waToken = crypto.createHash('sha1').update(user.dialog360_bot_id + 'moomoo').digest('hex');
+    } else {
+      endpoint = process.env.WHATSAPP_ENDPOINT || 'dialog360/65aec7ebf1a1d64f29645fd9';
+      waToken = process.env.WHATSAPP_API_TOKEN || crypto.createHash('sha1').update(endpoint + 'moomoo').digest('hex');
+    }
+
+    // Normalize phone: ensure 972 country code
+    let normalizedPhone = String(phone).replace(/[^0-9]/g, '');
+    normalizedPhone = normalizedPhone.replace(/^972972/, '972');
+    if (!normalizedPhone.startsWith('972')) {
+      normalizedPhone = normalizedPhone.replace(/^0+/, '');
+      normalizedPhone = '972' + normalizedPhone;
+    }
+
+    console.log(`[sendTemplateToPhone] 📤 phone=${phone} → normalized=${normalizedPhone} | template=${templateData.name} | lang=${templateData.language || 'he'}`);
+
+    const waBody = {
+      chat: normalizedPhone,
+      template: templateData.name,
+      language: templateData.language || 'he',
+      fromMe: 1
+    };
+
+    if (templateData.params) {
+      if (templateData.params.header && templateData.params.header.url) {
+        const mediaType = templateData.params.header.type || 'image';
+        waBody.header = [{ type: mediaType, [mediaType]: { link: templateData.params.header.url } }];
+      }
+      if (templateData.params.body && Array.isArray(templateData.params.body)) {
+        waBody.params = templateData.params.body.filter(p => p && String(p).trim());
+      }
+    }
+
+    // Fallback: if the template requires a media header but none was supplied,
+    // use the example URL embedded in the template's component definition.
+    if (!waBody.header && templateData.components && Array.isArray(templateData.components)) {
+      const headerComp = templateData.components.find(c => c.type === 'HEADER');
+      if (headerComp && ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(headerComp.format)) {
+        const handles = headerComp.example?.header_handle;
+        if (handles && handles.length > 0) {
+          const mediaType = headerComp.format.toLowerCase();
+          waBody.header = [{ type: mediaType, [mediaType]: { link: handles[0] } }];
+          console.log(`[sendTemplateToPhone] ⚠️ No header URL provided — using template example: ${handles[0]}`);
+        } else {
+          console.warn(`[sendTemplateToPhone] ⚠️ Template requires ${headerComp.format} header but no URL and no example available`);
+        }
+      }
+    }
+
+    let waSent = false;
+    let waError = null;
+    try {
+      const waRes = await fetch(`https://wa.message.co.il/api/${endpoint}/send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json; charset=utf-8', Accept: 'application/json', token: waToken },
+        body: JSON.stringify(waBody)
+      });
+      if (waRes.ok) {
+        waSent = true;
+        console.log(`[sendTemplateToPhone] ✅ WhatsApp OK | phone=${normalizedPhone} | status=${waRes.status}`);
+      } else {
+        waError = `HTTP ${waRes.status}: ${await waRes.text()}`;
+        console.error(`[sendTemplateToPhone] ❌ WhatsApp FAILED | phone=${normalizedPhone} | ${waError}`);
+      }
+    } catch (waErr) {
+      waError = waErr.message;
+      console.error(`[sendTemplateToPhone] ❌ WhatsApp exception:`, waErr.message);
+    }
+
+    // Build history entry for display (regardless of waSent, so the message is always visible)
+    const now = new Date();
+    const created = now.toISOString();
+    let displayText = '';
+    if (templateData.components && Array.isArray(templateData.components)) {
+      const bodyComp = templateData.components.find(c => c.type === 'BODY');
+      if (bodyComp && bodyComp.text) {
+        displayText = bodyComp.text;
+        if (templateData.params && templateData.params.body && Array.isArray(templateData.params.body)) {
+          templateData.params.body.forEach((val, idx) => {
+            displayText = displayText.replace(new RegExp(`\\{\\{${idx + 1}\\}\\}`, 'g'), val);
+          });
+        }
+      }
+      const footerComp = templateData.components.find(c => c.type === 'FOOTER');
+      if (footerComp && footerComp.text) {
+        displayText += (displayText ? '\n\n' : '') + `― ${footerComp.text}`;
+      }
+    }
+
+    const historyEntry = {
+      sender: 'agent',
+      name: 'נציג',
+      node_id: 'agent',
+      created,
+      wa_sent: waSent,
+      type: 'Text',
+      text: displayText || message
+    };
+
+    // Check if there's header media
+    if (templateData.params && templateData.params.header && templateData.params.header.url) {
+      const mediaType = templateData.params.header.type || 'image';
+      historyEntry.type = mediaType === 'image' ? 'Image' : mediaType === 'video' ? 'Video' : 'Document';
+      historyEntry.url = templateData.params.header.url;
+    } else if (waBody.header && waBody.header[0]) {
+      const h = waBody.header[0];
+      const mediaType = h.type || 'image';
+      historyEntry.type = mediaType === 'image' ? 'Image' : mediaType === 'video' ? 'Video' : 'Document';
+      historyEntry.url = h[mediaType]?.link || '';
+    }
+
+    // Create a BotSession so the contact appears in the sessions list and message is saved
+    const collection = mongoose.connection.collection('BotSession');
+    const sessionDoc = {
+      sender: normalizedPhone,
+      customer_phone: normalizedPhone,
+      user_id: req.user.id,
+      is_agent: true,
+      agent_since: now,
+      is_active: true,
+      created_at: now,
+      process_history: [historyEntry]
+    };
+    const insertResult = await collection.insertOne(sessionDoc);
+    const sessionId = insertResult.insertedId.toString();
+    console.log(`[sendTemplateToPhone] 💾 Created BotSession ${sessionId} for phone=${normalizedPhone}`);
+
+    res.json({ success: true, waSent, waError, sessionId, historyEntry, created, phone: normalizedPhone });
+  } catch (err) {
+    console.error('sendTemplateToPhone error:', err);
     res.status(500).json({ error: err.message });
   }
 };
@@ -796,11 +977,14 @@ export const sendAdminMessageToSession = async (req, res) => {
       waToken = process.env.WHATSAPP_API_TOKEN || crypto.createHash('sha1').update(endpoint + 'moomoo').digest('hex');
     }
 
-    // Normalize phone
+    // Normalize phone: ensure 972 country code
     const rawPhone = session.sender || session.customer_phone || '';
     let normalizedPhone = rawPhone.replace(/[^0-9]/g, '');
-    normalizedPhone = normalizedPhone.replace(/^0/, '972');
     normalizedPhone = normalizedPhone.replace(/^972972/, '972');
+    if (!normalizedPhone.startsWith('972')) {
+      normalizedPhone = normalizedPhone.replace(/^0+/, '');
+      normalizedPhone = '972' + normalizedPhone;
+    }
 
     // Build WhatsApp body - different structure for template vs text
     let waBody;
@@ -855,6 +1039,18 @@ export const sendAdminMessageToSession = async (req, res) => {
                 document: { link: headerComponent.example.header_handle[0] || '' }
               }];
             }
+          }
+        }
+      }
+      // Final fallback: params were provided but had no header URL — try template example
+      if (!waBody.header && templateData.components && Array.isArray(templateData.components)) {
+        const headerComp = templateData.components.find(c => c.type === 'HEADER');
+        if (headerComp && ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(headerComp.format)) {
+          const handles = headerComp.example?.header_handle;
+          if (handles && handles.length > 0) {
+            const mediaType = headerComp.format.toLowerCase();
+            waBody.header = [{ type: mediaType, [mediaType]: { link: handles[0] } }];
+            console.log(`[sendAdminMessageToSession] ⚠️ No header URL in params — using template example: ${handles[0]}`);
           }
         }
       }
@@ -932,11 +1128,18 @@ export const sendAdminMessageToSession = async (req, res) => {
         }
       }
       
-      // Check if there's header media
+      // Check if there's header media — first from params, then from the fallback placed in waBody
       if (templateData.params && templateData.params.header && templateData.params.header.url) {
         const mediaType = templateData.params.header.type || 'image';
         historyEntry.type = mediaType === 'image' ? 'Image' : mediaType === 'video' ? 'Video' : 'Document';
         historyEntry.url = templateData.params.header.url;
+        historyEntry.text = displayText;
+      } else if (waBody.header && waBody.header[0]) {
+        // Fallback image was resolved from template example — save it in history too
+        const h = waBody.header[0];
+        const mediaType = h.type || 'image';
+        historyEntry.type = mediaType === 'image' ? 'Image' : mediaType === 'video' ? 'Video' : 'Document';
+        historyEntry.url = h[mediaType]?.link || '';
         historyEntry.text = displayText;
       } else {
         historyEntry.type = 'Text';

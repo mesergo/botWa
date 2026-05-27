@@ -807,21 +807,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                       setFacebookSending(true);
                       try {
                         // ── פתיחת חלונית רישום/חיבור לפייסבוק (OAuth popup) ──
-                        const FB_APP_ID = '1804015866785615';
-                        const FB_CONFIG_ID = '2370568819800874';
-                        const redirectUri = encodeURIComponent(window.location.origin + '/');
-                        const state = encodeURIComponent(JSON.stringify({ botId: facebookConfirmBot.id }));
-                        const fbUrl =
-                          `https://www.facebook.com/v19.0/dialog/oauth` +
-                          `?app_id=${FB_APP_ID}` +
-                          `&client_id=${FB_APP_ID}` +
-                          `&config_id=${FB_CONFIG_ID}` +
-                          `&display=popup` +
-                          `&response_type=code` +
-                          `&override_default_response_type=true` +
-                          `&redirect_uri=${redirectUri}` +
-                          `&state=${state}` +
-                          `&locale=he_IL`;
+                        const fbUrl = 'https://business.facebook.com/messaging/whatsapp/onboard/?app_id=717787580246105&config_id=333254912651363&extras=%7B%22sessionInfoVersion%22%3A%223%22%2C%22version%22%3A%22v4%22%7D';
 
                         const width = 600;
                         const height = 700;
@@ -915,8 +901,8 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                 )}
               </div>
 
-              {/* Facebook connection — admin only */}
-              {onConnectFacebook && currentUser?.role === 'admin' && (
+              {/* Facebook connection — admin only or admin impersonating */}
+              {onConnectFacebook && (currentUser?.role === 'admin' || currentUser?.isImpersonating) && (
                 <div>
                   <h4 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
                     <FacebookIcon size={12} /> חיבור לפייסבוק
