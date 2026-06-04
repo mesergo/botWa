@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import Contact from '../models/Contact.js';
+import BotSession from '../models/BotSession.js';
 import { getEffectiveUserId } from '../middleware/auth.js';
 import XLSX from 'xlsx';
 import fs from 'fs';
@@ -210,6 +211,30 @@ export const assignRep = async (req, res) => {
       update,
       options
     );
+
+    // When assigning a rep, immediately flip the latest conversation of this
+    // contact from 'bot' to 'waiting' (ממתין למענה) so the rep doesn't see it
+    // as still being handled by the bot.
+    if (action === 'assign') {
+      try {
+        const latest = await BotSession.findOne({
+          $and: [
+            { $or: [{ sender: phone }, { customer_phone: phone }] },
+            { $or: [{ user_id: userId }, { user_id: String(userId) }] }
+          ]
+        }).sort({ createdAt: -1 });
+        if (latest && latest.status !== 'closed') {
+          latest.status = 'waiting';
+          latest.is_agent = true;
+          latest.agent_since = new Date();
+          latest.rep_user_id = String(rep_id);
+          await latest.save();
+        }
+      } catch (e) {
+        console.error('[assignRep] failed to update session status:', e.message);
+      }
+    }
+
     res.json({ success: true, assigned_to: (contact?.assigned_to || []).map(id => id.toString()) });
   } catch (err) {
     res.status(500).json({ error: err.message });

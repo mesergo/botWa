@@ -168,12 +168,19 @@ export const getContacts = async (req, res) => {
   _date: { $ifNull: ['$created_at', '$createdAt'] }
 }
       },
+      // Sort newest-first so $first inside $group returns the latest session's status
+      { $sort: { _date: -1 } },
       {
         $group: {
           _id: '$contactKey',
           sessionCount: { $sum: 1 },
           lastSeen: { $max: '$_date' },
-          widgetIds: { $addToSet: '$widget_id' }
+          widgetIds: { $addToSet: '$widget_id' },
+          repGroupIds: { $addToSet: '$rep_group_id' },
+          repUserIds: { $addToSet: '$rep_user_id' },
+          // Status of the most recent session for this contact
+          latestStatus: { $first: '$status' },
+          latestSessionDate: { $first: '$_date' }
         }
       }, 
       { $sort: { lastSeen: -1 } }
@@ -192,7 +199,10 @@ export const getContacts = async (req, res) => {
         phone: c._id,
         sessionCount: c.sessionCount,
         lastSeen: c.lastSeen,
-        bots: [...usedBotIds].map(id => ({ id, name: botNameMap[id] }))
+        bots: [...usedBotIds].map(id => ({ id, name: botNameMap[id] })),
+        repGroupIds: (c.repGroupIds || []).filter(Boolean).map(String),
+        repUserIds: (c.repUserIds || []).filter(Boolean).map(String),
+        status: c.latestStatus || 'bot'
       };
     });
 
@@ -204,10 +214,19 @@ export const getContacts = async (req, res) => {
 
     let finalResult = result.map(c => ({ ...c, assigned_to: assignedToMap[c.phone] || [] }));
 
-    // If rep, filter to only contacts where this rep is assigned
+    // If rep, filter to contacts where:
+    //  (a) the rep is explicitly assigned via Contact.assigned_to, OR
+    //  (b) one of the contact's sessions was transferred specifically to this rep (rep_user_id), OR
+    //  (c) one of the contact's sessions was transferred to a rep group that this rep belongs to.
     if (req.user?.role === 'rep') {
       const repId = req.userId;
-      finalResult = finalResult.filter(c => c.assigned_to.includes(repId));
+      const repUser = await User.findById(repId).select('rep_group_ids').lean();
+      const repGroupSet = new Set(((repUser?.rep_group_ids) || []).map(id => id.toString()));
+      finalResult = finalResult.filter(c =>
+        c.assigned_to.includes(repId) ||
+        (c.repUserIds || []).includes(repId) ||
+        (c.repGroupIds || []).some(gid => repGroupSet.has(gid))
+      );
     }
 
     res.json(finalResult);
@@ -434,7 +453,7 @@ export const getAllSessions = async (req, res) => {
 };
 
 export const getSessionsByPhone = async (req, res) => {
-  const userId = req.user.id;
+  const userId = getEffectiveUserId(req);
   const phone = req.query.phone || '';
   if (!phone) return res.status(400).json({ error: 'phone is required' });
 
@@ -488,7 +507,8 @@ export const getSessionsByPhone = async (req, res) => {
         parameters: s.parameters || {},
         process_history: s.process_history || [],
         is_agent: s.is_agent || false,
-        agent_since: s.agent_since || null
+        agent_since: s.agent_since || null,
+        status: s.status || 'bot'
       };
     });
 
@@ -521,38 +541,75 @@ export const deactivateSession = async (req, res) => {
 
 // ── Agent mode helpers ───────────────────────────────────────────────────────
 
-const getSessionWithOwnership = async (id, userId) => {
+// Resolves a session and verifies the requester can manage it.
+// For company managers / admins / rep_managers: matches by user_id or by a widget
+// belonging to one of the company's bots.
+// For reps (role === 'rep'): in addition to the company match, the rep must be
+// involved in the session — either explicitly assigned (rep_user_id === me),
+// or the session belongs to a rep group the rep is a member of.
+const getSessionWithOwnership = async (id, req) => {
   if (!mongoose.Types.ObjectId.isValid(id)) return { error: 'Invalid session ID', status: 400 };
   const collection = mongoose.connection.collection('BotSession');
   const session = await collection.findOne({ _id: new mongoose.Types.ObjectId(id) });
   if (!session) return { error: 'Session not found', status: 404 };
 
-  const userBots = await BotFlow.find({ user_id: userId }).lean();
+  // Effective owner = manager id for reps, own id for everyone else.
+  const ownerId = getEffectiveUserId(req);
+
+  const userBots = await BotFlow.find({ user_id: ownerId }).lean();
   const botIds = userBots.map(b => b._id.toString());
   const userWidgets = await Widget.find({ flow_id: { $in: botIds } }).select('id').lean();
   const widgetIds = userWidgets.map(w => w.id).filter(Boolean);
 
   const owned =
-    session.user_id === userId ||
-    session.user_id === String(userId) ||
+    session.user_id === ownerId ||
+    session.user_id === String(ownerId) ||
     widgetIds.includes(session.widget_id);
 
   if (!owned) return { error: 'Access denied', status: 403 };
+
+  // Additional rep involvement guard.
+  if (req.user?.role === 'rep') {
+    const repId = String(req.userId);
+    const me = await User.findById(repId).select('rep_group_ids').lean();
+    const myGroups = new Set(((me?.rep_group_ids) || []).map(g => g.toString()));
+    const involvedDirect = String(session.rep_user_id || '') === repId;
+    const involvedGroup =
+      session.rep_group_id && myGroups.has(String(session.rep_group_id));
+    // Also allow when the contact (phone) is assigned to this rep via Contact.assigned_to
+    let involvedByAssignment = false;
+    if (!involvedDirect && !involvedGroup) {
+      const phone = session.sender || session.customer_phone;
+      if (phone) {
+        const contactDoc = await Contact.findOne({ user_id: ownerId, phone })
+          .select('assigned_to').lean();
+        const assigned = (contactDoc?.assigned_to || []).map(x => x.toString());
+        involvedByAssignment = assigned.includes(repId);
+      }
+    }
+    if (!involvedDirect && !involvedGroup && !involvedByAssignment) {
+      return { error: 'אינך משויך לשיחה זו', status: 403 };
+    }
+  }
+
   return { session, collection };
 };
 
 export const setAgentMode = async (req, res) => {
   try {
     const { id } = req.params;
-    const { session, collection, error, status } = await getSessionWithOwnership(id, req.user.id);
+    const { session, collection, error, status } = await getSessionWithOwnership(id, req);
     if (error) return res.status(status).json({ error });
 
     const agent_since = new Date();
+    // Setting agent mode marks the conversation as waiting for a rep response
+    // (unless a rep already started handling it).
+    const newStatus = session.status === 'handling' ? 'handling' : 'waiting';
     await collection.updateOne(
       { _id: new mongoose.Types.ObjectId(id) },
-      { $set: { is_agent: true, agent_since } }
+      { $set: { is_agent: true, agent_since, status: newStatus } }
     );
-    res.json({ success: true, agent_since: agent_since.toISOString() });
+    res.json({ success: true, agent_since: agent_since.toISOString(), status: newStatus });
   } catch (err) {
     console.error('setAgentMode error:', err);
     res.status(500).json({ error: err.message });
@@ -562,16 +619,231 @@ export const setAgentMode = async (req, res) => {
 export const clearAgentMode = async (req, res) => {
   try {
     const { id } = req.params;
-    const { collection, error, status } = await getSessionWithOwnership(id, req.user.id);
+    const { collection, error, status } = await getSessionWithOwnership(id, req);
     if (error) return res.status(status).json({ error });
 
     await collection.updateOne(
       { _id: new mongoose.Types.ObjectId(id) },
-      { $set: { is_agent: false, agent_since: null } }
+      { $set: { is_agent: false, agent_since: null, status: 'bot' } }
     );
-    res.json({ success: true });
+    res.json({ success: true, status: 'bot' });
   } catch (err) {
     console.error('clearAgentMode error:', err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// Mark a conversation as closed by the representative (סיום שיחה).
+// Also clears agent mode so the bot can resume on the next customer message.
+export const closeConversation = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { collection, error, status } = await getSessionWithOwnership(id, req);
+    if (error) return res.status(status).json({ error });
+
+    const now = new Date();
+    const historyEntry = {
+      type: 'System',
+      text: 'השיחה הסתיימה',
+      sender: 'system',
+      name: 'מערכת',
+      node_id: 'system',
+      event: 'conversation_closed',
+      created: now.toISOString()
+    };
+
+    await collection.updateOne(
+      { _id: new mongoose.Types.ObjectId(id) },
+      {
+        $set: { is_agent: false, agent_since: null, status: 'closed', ended_at: now },
+        $push: { process_history: historyEntry }
+      }
+    );
+    res.json({ success: true, status: 'closed', historyEntry });
+  } catch (err) {
+    console.error('closeConversation error:', err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// ── Transfer conversation to another group / specific rep / shift manager ───
+// PATCH /api/sessions/:id/transfer
+// body: { targetType: 'group' | 'rep' | 'shift_manager', targetId: string, groupId?: string }
+//
+// When targetType='rep' and groupId is supplied (and the rep is a member of
+// that group), the session is pinned to that group as well. Used by admins
+// and shift managers to pick "group + specific rep" in one step.
+//
+// Accessible to: company manager, admin, rep_manager, and rep (a rep may
+// transfer one of their own conversations to another destination within the
+// same company).
+export const transferConversation = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { targetType, targetId, groupId } = req.body || {};
+
+    if (!['group', 'rep', 'shift_manager'].includes(targetType)) {
+      return res.status(400).json({ error: 'targetType חייב להיות group / rep / shift_manager' });
+    }
+    if (!targetId || !mongoose.Types.ObjectId.isValid(String(targetId))) {
+      return res.status(400).json({ error: 'targetId לא תקין' });
+    }
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ error: 'Invalid session ID' });
+    }
+
+    const collection = mongoose.connection.collection('BotSession');
+    const session = await collection.findOne({ _id: new mongoose.Types.ObjectId(id) });
+    if (!session) return res.status(404).json({ error: 'Session not found' });
+
+    // Ownership: resolve to the effective company-manager id and verify the
+    // session belongs to that company (either by user_id or via a widget that
+    // belongs to one of the company's bots).
+    const ownerId = getEffectiveUserId(req);
+    const userBots = await BotFlow.find({ user_id: ownerId }).select('_id').lean();
+    const botIds = userBots.map(b => b._id.toString());
+    const userWidgets = await Widget.find({ flow_id: { $in: botIds } }).select('id').lean();
+    const widgetIds = userWidgets.map(w => w.id).filter(Boolean);
+    const owned =
+      session.user_id === ownerId ||
+      session.user_id === String(ownerId) ||
+      widgetIds.includes(session.widget_id);
+    if (!owned) return res.status(403).json({ error: 'Access denied' });
+
+    // Additional guard for reps: a rep may only transfer conversations they
+    // are currently involved in (assigned via rep_user_id, or via one of
+    // their rep groups).
+    if (req.user?.role === 'rep') {
+      const me = await User.findById(req.userId).select('rep_group_ids').lean();
+      const myGroups = new Set(((me?.rep_group_ids) || []).map(x => x.toString()));
+      const involved =
+        String(session.rep_user_id || '') === String(req.userId) ||
+        (session.rep_group_id && myGroups.has(String(session.rep_group_id)));
+      if (!involved) return res.status(403).json({ error: 'אינך משויך לשיחה זו' });
+    }
+
+    // Validate target belongs to the same company.
+    let targetLabel = '';
+    const update = { is_agent: true, agent_since: new Date(), status: 'waiting' };
+
+    if (targetType === 'group') {
+      const RepGroup = (await import('../models/RepGroup.js')).default;
+      const group = await RepGroup.findOne({ _id: targetId, manager_id: ownerId }).lean();
+      if (!group) return res.status(404).json({ error: 'הקבוצה לא נמצאה' });
+      update.rep_group_id = String(targetId);
+      update.rep_user_id = null;
+      targetLabel = `קבוצה: ${group.name}`;
+    } else if (targetType === 'rep' || targetType === 'shift_manager') {
+      const requiredRole = targetType === 'rep' ? 'rep' : 'rep_manager';
+      const targetUser = await User.findOne({
+        _id: targetId,
+        manager_id: ownerId,
+        role: requiredRole
+      }).select('name email rep_group_ids').lean();
+      if (!targetUser) {
+        return res.status(404).json({
+          error: targetType === 'rep' ? 'הנציג לא נמצא' : 'מנהל המשמרת לא נמצא'
+        });
+      }
+      update.rep_user_id = String(targetId);
+      // For a specific rep, also align the group to one of the rep's groups.
+      // Priority: explicit groupId from caller (if rep is a member) → keep
+      // current group if the rep belongs to it → first of the rep's groups.
+      if (targetType === 'rep') {
+        const repGroups = (targetUser.rep_group_ids || []).map(g => g.toString());
+        const explicitGroup = groupId ? String(groupId) : null;
+        const currentGroup = session.rep_group_id ? String(session.rep_group_id) : null;
+        if (explicitGroup && repGroups.includes(explicitGroup)) {
+          update.rep_group_id = explicitGroup;
+        } else if (currentGroup && repGroups.includes(currentGroup)) {
+          update.rep_group_id = currentGroup;
+        } else {
+          update.rep_group_id = repGroups[0] || null;
+        }
+      } else {
+        // Shift manager — clear group assignment.
+        update.rep_group_id = null;
+      }
+      targetLabel = `${targetType === 'rep' ? 'נציג' : 'מנהל משמרת'}: ${targetUser.name || targetUser.email}`;
+    }
+
+    const now = new Date();
+    const fromName = req.user?.name || req.user?.email || 'נציג';
+    const historyEntry = {
+      type: 'System',
+      text: `השיחה הועברה ע"י ${fromName} ל${targetLabel}`,
+      sender: 'system',
+      name: 'מערכת',
+      node_id: 'system',
+      event: 'conversation_transferred',
+      target_type: targetType,
+      target_id: String(targetId),
+      from_user_id: String(req.userId || ''),
+      created: now.toISOString()
+    };
+
+    await collection.updateOne(
+      { _id: new mongoose.Types.ObjectId(id) },
+      { $set: update, $push: { process_history: historyEntry } }
+    );
+
+    res.json({
+      success: true,
+      status: 'waiting',
+      rep_group_id: update.rep_group_id,
+      rep_user_id: update.rep_user_id,
+      historyEntry
+    });
+  } catch (err) {
+    console.error('transferConversation error:', err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// GET /api/sessions/transfer-targets
+// Returns groups, reps, and shift managers (rep_managers) belonging to the
+// effective company. Accessible to all authenticated users in the company
+// (including role='rep').
+export const getTransferTargets = async (req, res) => {
+  try {
+    const ownerId = getEffectiveUserId(req);
+    const RepGroup = (await import('../models/RepGroup.js')).default;
+
+    const [groups, reps, shiftManagers] = await Promise.all([
+      RepGroup.find({ manager_id: ownerId }).sort({ name: 1 }).lean(),
+      User.find({ manager_id: ownerId, role: 'rep' })
+        .select('name email rep_group_ids')
+        .sort({ name: 1 })
+        .lean(),
+      User.find({ manager_id: ownerId, role: 'rep_manager' })
+        .select('name email')
+        .sort({ name: 1 })
+        .lean()
+    ]);
+
+    let myGroupIds = null;
+    if (req.user?.role === 'rep') {
+      const me = await User.findById(req.userId).select('rep_group_ids').lean();
+      myGroupIds = ((me?.rep_group_ids) || []).map(id => id.toString());
+    }
+
+    res.json({
+      groups: groups.map(g => ({ id: g._id.toString(), name: g.name })),
+      reps: reps.map(r => ({
+        id: r._id.toString(),
+        name: r.name,
+        email: r.email,
+        repGroupIds: (r.rep_group_ids || []).map(id => id.toString())
+      })),
+      shiftManagers: shiftManagers.map(m => ({
+        id: m._id.toString(),
+        name: m.name,
+        email: m.email
+      })),
+      myGroupIds
+    });
+  } catch (err) {
+    console.error('getTransferTargets error:', err);
     res.status(500).json({ error: err.message });
   }
 };
@@ -583,15 +855,15 @@ export const sendAgentMessage = async (req, res) => {
     if (!message || !String(message).trim()) {
       return res.status(400).json({ error: 'message is required' });
     }
-    const { session, collection, error, status } = await getSessionWithOwnership(id, req.user.id);
+    const { session, collection, error, status } = await getSessionWithOwnership(id, req);
     if (error) return res.status(status).json({ error });
 
     const msgText = String(message).trim();
     const now = new Date();
     const created = now.toISOString(); // for process_history
 
-    // Get user to access Dialog360 credentials
-    const user = await User.findById(req.user.id);
+    // Get user (effective company manager) to access Dialog360 credentials
+    const user = await User.findById(getEffectiveUserId(req));
     
     // Build WhatsApp API endpoint and token
     let endpoint, waToken;
@@ -780,13 +1052,23 @@ export const sendAgentMessage = async (req, res) => {
     }
     
     console.log(`[sendAgentMessage] 💾 Saving history entry:`, JSON.stringify(historyEntry, null, 2));
-    
+
+    // A free-text (non-template) reply from the agent moves the conversation
+    // into 'handling'. Template messages keep the existing status
+    // (e.g. 'waiting') since they're typically opening/notification messages.
+    const update = { $push: { process_history: historyEntry } };
+    let newStatus = session.status || 'bot';
+    if (!isTemplate && waSent) {
+      newStatus = 'handling';
+      update.$set = { status: 'handling', is_agent: true, agent_since: new Date() };
+    }
+
     await collection.updateOne(
       { _id: new mongoose.Types.ObjectId(id) },
-      { $push: { process_history: historyEntry } }
+      update
     );
 
-    res.json({ success: true, waSent, waError, created, historyEntry });
+    res.json({ success: true, waSent, waError, created, historyEntry, status: newStatus });
   } catch (err) {
     console.error('sendAgentMessage error:', err);
     res.status(500).json({ error: err.message });
@@ -807,7 +1089,7 @@ export const sendTemplateToPhone = async (req, res) => {
       return res.status(400).json({ error: 'message is required' });
     }
 
-    const user = await User.findById(req.user.id);
+    const user = await User.findById(getEffectiveUserId(req));
     if (!user) return res.status(404).json({ error: 'User not found' });
 
     let endpoint, waToken;
@@ -929,9 +1211,10 @@ export const sendTemplateToPhone = async (req, res) => {
     const sessionDoc = {
       sender: normalizedPhone,
       customer_phone: normalizedPhone,
-      user_id: req.user.id,
+      user_id: getEffectiveUserId(req),
       is_agent: true,
       agent_since: now,
+      status: 'waiting',
       is_active: true,
       created_at: now,
       process_history: [historyEntry]

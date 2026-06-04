@@ -4,7 +4,7 @@ import { Handle, Position, useReactFlow } from 'reactflow';
 import { 
   Type, Calendar, Upload, MessageSquare, 
   Image as ImageIcon, ExternalLink, List, Globe, Clock, PlayCircle, Plus, Layers, X, GitBranch, Trash2, ChevronDown, Zap,
-  Mail, Phone, CreditCard, Link, Users, UserMinus
+  Mail, Phone, CreditCard, Link, Users, UserMinus, UserCheck
 } from 'lucide-react';
 import BaseNode from './BaseNode';
 import { NodeType } from '../../types';
@@ -988,6 +988,117 @@ export const ActionRemoveFromGroupNode = (props: any) => {
       {mode === 'all' && (
         <p className="text-[12px] text-slate-500 text-right mt-1">מספר הטלפון יתווסף לרשימת ההסרה</p>
       )}
+    </BaseNode>
+  );
+};
+
+export const ActionTransferToAgentNode = (props: any) => {
+  const repGroups: Array<{ id: string; name: string }> = props.data.repGroups || [];
+  const repUsers: Array<{ id: string; name: string; email: string; repGroupIds: string[] }> = props.data.repUsers || [];
+  const value = props.data.repGroupId || '';
+  const mode: 'any' | 'specific' = props.data.repAssignmentMode === 'specific' ? 'specific' : 'any';
+  const selectedRepUserId = props.data.repUserId || '';
+
+  // Reps that belong to the currently selected group
+  const repsInGroup = value
+    ? repUsers.filter(r => (r.repGroupIds || []).includes(value))
+    : [];
+
+  const handleGroupChange = (newGroupId: string) => {
+    // Changing the group clears the specific rep selection if it no longer belongs to the new group
+    const stillValid = repUsers.some(r => r.id === selectedRepUserId && (r.repGroupIds || []).includes(newGroupId));
+    props.data.onChange({
+      repGroupId: newGroupId,
+      repUserId: stillValid ? selectedRepUserId : ''
+    });
+  };
+
+  return (
+    <BaseNode
+      id={props.id}
+      title="העברה לנציג"
+      icon={<UserCheck size={20} />}
+      type={NodeType.ACTION_TRANSFER_TO_AGENT}
+      selected={props.selected}
+      onDelete={props.data.onDelete}
+      serialId={props.data.serialId}
+      isSimulatorActive={props.data?.isSimulatorActive}
+    >
+      <InputFieldWrapper label="קבוצת נציגים לשיוך">
+        <div className="relative">
+          <select
+            className="nodrag w-full h-12 px-4 border border-slate-200 rounded-xl bg-white text-slate-900 text-right focus:outline-none focus:ring-2 focus:ring-orange-400 appearance-none"
+            value={value}
+            onChange={(e) => handleGroupChange(e.target.value)}
+            style={{ fontFamily: 'Heebo, sans-serif' }}
+          >
+            <option value="">-- בחר קבוצת נציגים --</option>
+            {repGroups.map(g => (
+              <option key={g.id} value={g.id}>{g.name}</option>
+            ))}
+          </select>
+          <ChevronDown size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+        </div>
+        {repGroups.length === 0 && (
+          <p className="mt-2 text-[12px] text-amber-600 text-right">
+            לא הוגדרו קבוצות נציגים. ניתן להוסיף קבוצות במסך משתמשי משנה.
+          </p>
+        )}
+      </InputFieldWrapper>
+
+      {value && (
+        <InputFieldWrapper label="אופן הקצאה">
+          <div className="flex flex-col gap-2 nodrag">
+            <label className="flex items-center gap-2 cursor-pointer text-slate-700 text-sm font-medium">
+              <input
+                type="radio"
+                className="nodrag accent-orange-500"
+                checked={mode === 'any'}
+                onChange={() => props.data.onChange({ repAssignmentMode: 'any', repUserId: '' })}
+              />
+              כל נציג זמין מהקבוצה
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer text-slate-700 text-sm font-medium">
+              <input
+                type="radio"
+                className="nodrag accent-orange-500"
+                checked={mode === 'specific'}
+                onChange={() => props.data.onChange({ repAssignmentMode: 'specific' })}
+              />
+              נציג ספציפי מהקבוצה
+            </label>
+          </div>
+        </InputFieldWrapper>
+      )}
+
+      {value && mode === 'specific' && (
+        <InputFieldWrapper label="בחר נציג">
+          <div className="relative">
+            <select
+              className="nodrag w-full h-12 px-4 border border-slate-200 rounded-xl bg-white text-slate-900 text-right focus:outline-none focus:ring-2 focus:ring-orange-400 appearance-none"
+              value={selectedRepUserId}
+              onChange={(e) => props.data.onChange({ repUserId: e.target.value })}
+              style={{ fontFamily: 'Heebo, sans-serif' }}
+            >
+              <option value="">-- בחר נציג --</option>
+              {repsInGroup.map(r => (
+                <option key={r.id} value={r.id}>{r.name}</option>
+              ))}
+            </select>
+            <ChevronDown size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+          </div>
+          {repsInGroup.length === 0 && (
+            <p className="mt-2 text-[12px] text-amber-600 text-right">
+              אין נציגים בקבוצה הזו. הוסף נציגים במסך משתמשי משנה.
+            </p>
+          )}
+        </InputFieldWrapper>
+      )}
+
+      <p className="mt-2 text-[12px] text-slate-500 text-right leading-relaxed">
+        הרכיב יעביר את השיחה לנציג מהקבוצה שנבחרה.<br />
+        הבוט יפסיק להגיב למשך 30 דקות (כמו בשיחה עם נציג).
+      </p>
     </BaseNode>
   );
 };

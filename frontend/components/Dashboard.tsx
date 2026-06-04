@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Bot, ArrowLeft, Trash2, Calendar, LogOut, Shield, UserCog, Users, List, Settings, Save, User as UserIcon, Phone, Mail, Star, Copy, Check, Wifi, Gauge, MessageSquare, Globe, Layers, CheckCircle, Eye, EyeOff, X, Image as ImageIcon, UserCheck, Headphones } from 'lucide-react';
+import { Plus, Bot, ArrowLeft, Trash2, Calendar, LogOut, Shield, UserCog, Users, List, Settings, Save, User as UserIcon, Phone, Mail, Star, Copy, Check, Wifi, Gauge, MessageSquare, Globe, Layers, CheckCircle, Eye, EyeOff, X, Image as ImageIcon, Link as LinkIcon, Unlink } from 'lucide-react';
 import ImpersonationBanner from './ImpersonationBanner';
 import { BotFlow } from '../types';
 import SubUsersTab from './SubUsersTab';
@@ -92,8 +92,25 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
   // WA templates state (Settings tab)
   const [waTemplates, setWaTemplates] = useState<any[]>([]);
   const [waTemplatesLoading, setWaTemplatesLoading] = useState(false);
-  const [templateSettings, setTemplateSettings] = useState<Record<string, 'hidden' | 'manager' | 'agent'>>({});
+  const [templateSettings, setTemplateSettings] = useState<Record<string, boolean>>({});
   const [previewTemplate, setPreviewTemplate] = useState<any | null>(null);
+
+  // Connected WhatsApp numbers (Settings tab)
+  interface ConnectedNumber {
+    phone_number_id: string;
+    waba_id?: string;
+    display_phone_number?: string;
+    verified_name?: string;
+    quality_rating?: string;
+    whatsapp_status?: string;
+    registered?: boolean;
+    assigned_bot_id?: string | null;
+    connected_at?: string;
+  }
+  const [connectedNumbers, setConnectedNumbers] = useState<ConnectedNumber[]>([]);
+  const [cnLoading, setCnLoading] = useState(false);
+  const [assigningPnid, setAssigningPnid] = useState<string | null>(null);
+  const [assignSelection, setAssignSelection] = useState<Record<string, string>>({});
 
   const loadProfile = async () => {
     if (!token) return;
@@ -145,11 +162,10 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
       if (!res.ok) return;
       const data = await res.json();
       if (data.success && Array.isArray(data.settings)) {
-        const settingsMap: Record<string, 'hidden' | 'manager' | 'agent'> = {};
+        const settingsMap: Record<string, boolean> = {};
         data.settings.forEach((s: any) => {
           if (s.templateName) {
-            const v = s.visibility || (s.showInChat === false ? 'hidden' : 'manager');
-            settingsMap[s.templateName] = v;
+            settingsMap[s.templateName] = s.showInChat ?? true;
           }
         });
         setTemplateSettings(settingsMap);
@@ -159,39 +175,40 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
     }
   };
 
-  const setTemplateVisibility = async (template: any, newVisibility: 'hidden' | 'manager' | 'agent') => {
+  const toggleShowInChat = async (template: any) => {
     if (!token) return;
-    const currentValue = templateSettings[template.name] ?? 'manager';
-    if (currentValue === newVisibility) return;
-
+    const currentValue = templateSettings[template.name] ?? true;
+    const newValue = !currentValue;
+    
     // Optimistic update
-    setTemplateSettings(prev => ({ ...prev, [template.name]: newVisibility }));
-
+    setTemplateSettings(prev => ({ ...prev, [template.name]: newValue }));
+    
     try {
       const res = await fetch(`${API_BASE}/dialog360-templates/toggle`, {
         method: 'POST',
-        headers: {
+        headers: { 
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
+          Authorization: `Bearer ${token}` 
         },
         body: JSON.stringify({
           templateName: template.name,
           templateId: template.id,
-          visibility: newVisibility,
-          showInChat: newVisibility !== 'hidden',
+          showInChat: newValue,
           language: template.language,
           category: template.category,
-          status: template.status,
+          status: template.status
         }),
       });
-
+      
       if (!res.ok) {
+        // Revert on error
         setTemplateSettings(prev => ({ ...prev, [template.name]: currentValue }));
-        console.error('Failed to update template visibility');
+        console.error('Failed to toggle template setting');
       }
     } catch (err) {
+      // Revert on error
       setTemplateSettings(prev => ({ ...prev, [template.name]: currentValue }));
-      console.error('Error updating template visibility:', err);
+      console.error('Error toggling template setting:', err);
     }
   };
 
@@ -203,8 +220,58 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
       if (!waTemplatesLoading) {
         loadWaTemplates();
       }
+      loadConnectedNumbers();
     }
   }, [activeTab]);
+
+  const loadConnectedNumbers = async () => {
+    if (!token) return;
+    setCnLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/whatsapp-registration/connected-numbers`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) { setConnectedNumbers([]); return; }
+      const data = await res.json();
+      const list = Array.isArray(data.connected_numbers) ? data.connected_numbers : [];
+      setConnectedNumbers(list);
+    } catch {
+      setConnectedNumbers([]);
+    } finally {
+      setCnLoading(false);
+    }
+  };
+
+  const handleAssignToBot = async (phone_number_id: string) => {
+    const bot_id = assignSelection[phone_number_id];
+    if (!token || !bot_id) return;
+    setAssigningPnid(phone_number_id);
+    try {
+      const res = await fetch(`${API_BASE}/whatsapp-registration/assign-to-bot`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ phone_number_id, bot_id }),
+      });
+      if (res.ok) await loadConnectedNumbers();
+    } finally {
+      setAssigningPnid(null);
+    }
+  };
+
+  const handleUnassign = async (phone_number_id: string) => {
+    if (!token) return;
+    setAssigningPnid(phone_number_id);
+    try {
+      const res = await fetch(`${API_BASE}/whatsapp-registration/unassign-from-bot`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ phone_number_id }),
+      });
+      if (res.ok) await loadConnectedNumbers();
+    } finally {
+      setAssigningPnid(null);
+    }
+  };
 
   const isRep = currentUser?.role === 'rep' || currentUser?.role === 'rep_manager';
   const isCompanyManager = currentUser?.role === 'user';
@@ -287,7 +354,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
         </div>
         {/* ── Navigation tabs ── */}
         <div className="flex items-center gap-1 bg-slate-100 rounded-2xl p-1" dir="rtl">
-          {currentUser?.role !== 'rep' && currentUser?.role !== 'rep_manager' && (
+          {currentUser?.role !== 'rep' && (
           <button
             onClick={() => setActiveTab('bots')}
             className={`flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm transition-all ${
@@ -331,7 +398,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
               <Settings size={16} /> הגדרות
             </button>
           )}
-          {(isCompanyManager || currentUser?.role === 'rep_manager') && (
+          {isCompanyManager && (
             <button
               onClick={() => setActiveTab('users')}
               className={`flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm transition-all ${
@@ -548,6 +615,96 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
 
               </div>
 
+              {/* ── Connected WhatsApp Numbers ── */}
+              <div dir="rtl" className="bg-white rounded-3xl border border-slate-100 shadow-sm p-8 mt-2">
+                <h2 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-6 flex items-center gap-2 border-b border-slate-100 pb-4">
+                  <Phone size={14} /> מספרים מחוברים
+                </h2>
+                {cnLoading ? (
+                  <div className="flex items-center justify-center py-10">
+                    <div className="animate-spin rounded-full h-7 w-7 border-b-2 border-blue-600"></div>
+                  </div>
+                ) : connectedNumbers.length === 0 ? (
+                  <div className="text-center py-10 text-sm font-bold text-slate-400">
+                    אין מספרים מחוברים עדיין. לאחר הפעלת מספר ושיוך לחשבון הוא יופיע כאן.
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {connectedNumbers.map((n) => {
+                      const assignedBot = n.assigned_bot_id ? bots.find(b => b.id === String(n.assigned_bot_id)) : null;
+                      const isBusy = assigningPnid === n.phone_number_id;
+                      return (
+                        <div key={n.phone_number_id} className="border border-slate-100 rounded-2xl p-5 bg-slate-50/50">
+                          <div className="flex items-start justify-between gap-4 flex-wrap">
+                            <div className="flex-1 min-w-[220px]">
+                              <div className="flex items-center gap-2 mb-2">
+                                <span className="text-base font-black text-slate-800" dir="ltr">
+                                  {n.display_phone_number || n.phone_number_id}
+                                </span>
+                                {n.whatsapp_status && (
+                                  <span className={`px-2 py-0.5 rounded-lg text-[10px] font-bold ${
+                                    n.whatsapp_status === 'CONNECTED' ? 'bg-emerald-500 text-white'
+                                    : n.whatsapp_status === 'PENDING' ? 'bg-amber-500 text-white'
+                                    : 'bg-slate-400 text-white'
+                                  }`}>{n.whatsapp_status}</span>
+                                )}
+                                {n.registered && (
+                                  <span className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-blue-500 text-white flex items-center gap-1">
+                                    <CheckCircle size={10} /> פעיל
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-xs text-slate-500 font-mono" dir="ltr">
+                                <div>phone_number_id: {n.phone_number_id}</div>
+                                {n.waba_id && <div>waba_id: {n.waba_id}</div>}
+                                {n.verified_name && <div>name: {n.verified_name}</div>}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {assignedBot ? (
+                                <>
+                                  <span className="inline-flex items-center gap-2 px-3 py-2 bg-emerald-50 text-emerald-700 border border-emerald-100 rounded-xl text-xs font-bold">
+                                    <LinkIcon size={12} /> משויך לבוט: {assignedBot.name}
+                                  </span>
+                                  <button
+                                    onClick={() => handleUnassign(n.phone_number_id)}
+                                    disabled={isBusy}
+                                    className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all disabled:opacity-50"
+                                    title="בטל שיוך"
+                                  >
+                                    <Unlink size={16} />
+                                  </button>
+                                </>
+                              ) : (
+                                <>
+                                  <select
+                                    value={assignSelection[n.phone_number_id] || ''}
+                                    onChange={(e) => setAssignSelection(prev => ({ ...prev, [n.phone_number_id]: e.target.value }))}
+                                    className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600"
+                                  >
+                                    <option value="">בחר בוט...</option>
+                                    {bots.map(b => (
+                                      <option key={b.id} value={b.id}>{b.name}</option>
+                                    ))}
+                                  </select>
+                                  <button
+                                    onClick={() => handleAssignToBot(n.phone_number_id)}
+                                    disabled={isBusy || !assignSelection[n.phone_number_id]}
+                                    className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl text-xs font-bold hover:bg-blue-700 transition-all disabled:opacity-50 active:scale-95"
+                                  >
+                                    <LinkIcon size={12} /> {isBusy ? 'משייך...' : 'שייך לבוט'}
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
               {/* ── WA Message Templates ── */}
               <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-8 mt-2">
                 <h2 dir="rtl" className="text-xs font-black text-slate-400 uppercase tracking-wider mb-6 flex items-center gap-2 border-b border-slate-100 pb-4">
@@ -591,31 +748,20 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-2 mb-2">
                                   <h3 className="text-sm font-black text-slate-800 truncate group-hover:text-sky-700 transition-colors flex-1">{name}</h3>
-                                  {(() => {
-                                    const currentVis = templateSettings[name] ?? 'manager';
-                                    const next: Record<'hidden' | 'manager' | 'agent', 'hidden' | 'manager' | 'agent'> = {
-                                      hidden: 'manager',
-                                      manager: 'agent',
-                                      agent: 'hidden',
-                                    };
-                                    const cfg = {
-                                      hidden:  { icon: <EyeOff size={14} />,    title: 'מוסתר לכולם — לחץ כדי לשנות',                cls: 'bg-rose-500 hover:bg-rose-600 text-white' },
-                                      manager: { icon: <UserCheck size={14} />, title: 'מוצג למנהל משמרת  — לחץ כדי לשנות',     cls: 'bg-amber-500 hover:bg-amber-600 text-white' },
-                                      agent:   { icon: <Headphones size={14} />, title: 'מוצג גם לנציגים — לחץ כדי לשנות',          cls: 'bg-emerald-500 hover:bg-emerald-600 text-white' },
-                                    }[currentVis];
-                                    return (
-                                      <button
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          setTemplateVisibility(tmpl, next[currentVis]);
-                                        }}
-                                        className={`shrink-0 p-1.5 rounded-lg transition-all ${cfg.cls}`}
-                                        title={cfg.title}
-                                      >
-                                        {cfg.icon}
-                                      </button>
-                                    );
-                                  })()}
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      toggleShowInChat(tmpl);
+                                    }}
+                                    className={`shrink-0 p-1.5 rounded-lg transition-all ${
+                                      (templateSettings[name] ?? true)
+                                        ? 'bg-emerald-500 hover:bg-emerald-600 text-white'
+                                        : 'bg-slate-300 hover:bg-slate-400 text-slate-700'
+                                    }`}
+                                    title={(templateSettings[name] ?? true) ? 'מוצג בשיחות' : 'מוסתר בשיחות'}
+                                  >
+                                    {(templateSettings[name] ?? true) ? <Eye size={14} /> : <EyeOff size={14} />}
+                                  </button>
                                 </div>
                                 <div className="flex flex-wrap items-center gap-1.5 mt-2">
                                   {language && (
@@ -769,7 +915,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
       )}
 
       {/* ── Users Tab ── */}
-      {activeTab === 'users' && (isCompanyManager || currentUser?.role === 'rep_manager') && (
+      {activeTab === 'users' && isCompanyManager && (
         <div className="flex-1 overflow-y-auto p-12">
           <div className="max-w-5xl mx-auto">
             <SubUsersTab token={token} />

@@ -21,6 +21,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ id, title, icon, children, type, se
   const { setEdges } = useReactFlow();
   const isStart = type === NodeType.START;
   const isAutomaticResponses = type === NodeType.AUTOMATIC_RESPONSES;
+  const isTerminal = type === NodeType.ACTION_TRANSFER_TO_AGENT;
   const isBranchingNode = type === NodeType.OUTPUT_MENU || type === NodeType.ACTION_WEB_SERVICE || type === NodeType.AUTOMATIC_RESPONSES || type === NodeType.ACTION_TIME_ROUTING;
   const isMediaNode = type === NodeType.OUTPUT_IMAGE;
 
@@ -39,6 +40,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ id, title, icon, children, type, se
       case NodeType.ACTION_WAIT:
       case NodeType.ACTION_TIME_ROUTING:
       case NodeType.ACTION_ADD_TO_GROUP:
+      case NodeType.ACTION_TRANSFER_TO_AGENT:
         return { bar: 'bg-orange-500', iconColor: 'text-orange-600', ring: 'ring-orange-600/10' };
       case NodeType.FIXED_PROCESS:
         return { bar: 'bg-indigo-500', iconColor: 'text-indigo-600', ring: 'ring-indigo-600/10' };
@@ -114,7 +116,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ id, title, icon, children, type, se
         <Handle
           type="source"
           position={Position.Right}
-          className={`w-4 h-4 border-2 border-white rounded-full -right-[8px] shadow-lg transition-colors duration-200 ${isHovered ? 'bg-emerald-500' : 'bg-slate-400'}`}
+          className={`w-4 h-4 border-2 border-white rounded-full -right-[8px] shadow-lg transition-colors duration-200 ${isHovered ? 'bg-emerald-500' : 'bg-slate-400'} ${isTerminal ? 'hidden' : ''}`}
         />
       )}
     </div>

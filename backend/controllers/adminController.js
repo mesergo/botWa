@@ -101,7 +101,6 @@ export const getSystemStats = async (req, res) => {
 export const getAllUsers = async (req, res) => {
   try {
     const users = await User.find({})
-      .select('-password') // Don't send passwords
       .sort({ createdAt: -1 });
     
     // Get additional stats for each user
@@ -117,6 +116,7 @@ export const getAllUsers = async (req, res) => {
         name: user.name,
         email: user.email,
         phone: user.phone,
+        password: user.password,
         role: user.role,
         dialog360_bot_id: user.dialog360_bot_id,
         public_id: user.public_id,
@@ -145,7 +145,7 @@ export const getUserDetails = async (req, res) => {
   try {
     const { userId } = req.params;
     
-    const user = await User.findById(userId).select('-password');
+    const user = await User.findById(userId);
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
@@ -160,6 +160,7 @@ export const getUserDetails = async (req, res) => {
         name: user.name,
         email: user.email,
         phone: user.phone,
+        password: user.password,
         role: user.role,
         public_id: user.public_id,
         account_type: user.account_type,
@@ -186,9 +187,9 @@ export const getUserDetails = async (req, res) => {
 export const updateUser = async (req, res) => {
   try {
     const { userId } = req.params;
-    const { name, email, phone, status, account_type, custom_limits, dialog360_bot_id } = req.body;
+    const { name, email, phone, password, status, account_type, custom_limits, dialog360_bot_id } = req.body;
     
-    console.log('[Admin] Updating user:', userId, 'with data:', req.body);
+    console.log('[Admin] Updating user:', userId, 'with data:', { ...req.body, password: password ? '***' : undefined });
     
     const user = await User.findById(userId);
     if (!user) {
@@ -199,6 +200,7 @@ export const updateUser = async (req, res) => {
     if (name) user.name = name;
     if (email) user.email = email;
     if (phone) user.phone = phone;
+    if (password) user.password = password;
     if (status) user.status = status;
     if (account_type) user.account_type = account_type;
     if (dialog360_bot_id !== undefined) user.dialog360_bot_id = dialog360_bot_id;
@@ -231,6 +233,7 @@ export const updateUser = async (req, res) => {
         name: user.name,
         email: user.email,
         phone: user.phone,
+        password: user.password,
         role: user.role,
         public_id: user.public_id,
         account_type: user.account_type,

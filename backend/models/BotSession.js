@@ -16,7 +16,15 @@ const botSessionSchema = new mongoose.Schema({
   process_history: [mongoose.Schema.Types.Mixed],
   execution_stack: [mongoose.Schema.Types.Mixed],
   is_agent: { type: Boolean, default: false },
-  agent_since: { type: Date, default: null }
+  agent_since: { type: Date, default: null },
+  rep_group_id: { type: String, default: null },
+  rep_user_id: { type: String, default: null },
+  // Conversation status:
+  //   'bot'      — default; bot handles the conversation
+  //   'waiting'  — transferred to a representative, waiting for response
+  //   'handling' — a representative has replied with a free-text message
+  //   'closed'   — representative marked the conversation as ended
+  status: { type: String, enum: ['bot', 'waiting', 'handling', 'closed'], default: 'bot' }
 }, {
   timestamps: true,
   collection: 'BotSession'

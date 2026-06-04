@@ -12,7 +12,8 @@ import {
   Clock, 
   PlayCircle,
   Users,
-  UserMinus
+  UserMinus,
+  UserCheck
 } from 'lucide-react';
 import { NodeType } from './types';
 
@@ -41,6 +42,7 @@ export const COMPONENT_GROUPS = [
       { type: NodeType.ACTION_WAIT, label: 'המתנה', icon: <Clock size={18} /> },
       { type: NodeType.ACTION_TIME_ROUTING, label: 'ניתוב לפי שעה/תאריך', icon: <Clock size={18} /> },
       { type: NodeType.ACTION_ADD_TO_GROUP, label: 'הוספה/הסרה מקבוצה', icon: <Users size={18} /> },
+      { type: NodeType.ACTION_TRANSFER_TO_AGENT, label: 'העברה לנציג', icon: <UserCheck size={18} /> },
     ]
   }
 ];

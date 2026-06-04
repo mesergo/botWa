@@ -14,6 +14,7 @@ export enum NodeType {
   ACTION_TIME_ROUTING = 'action_time_routing',
   ACTION_ADD_TO_GROUP = 'action_add_to_group',
   ACTION_REMOVE_FROM_GROUP = 'action_remove_from_group',
+  ACTION_TRANSFER_TO_AGENT = 'action_transfer_to_agent',
   // Special
   START = 'start',
   FIXED_PROCESS = 'fixed_process',
@@ -40,6 +41,12 @@ export interface NodeData {
   groupId?: string;
   removeFromGroupMode?: 'specific' | 'all';
   removeGroupId?: string;
+  /** For action_transfer_to_agent: which RepGroup the conversation is assigned to */
+  repGroupId?: string;
+  /** For action_transfer_to_agent: 'any' rep from the group, or a 'specific' rep */
+  repAssignmentMode?: 'any' | 'specific';
+  /** For action_transfer_to_agent: the specific rep user id (when mode='specific') */
+  repUserId?: string;
   /** Unified add/remove group component: which action to perform */
   groupActionMode?: 'add' | 'remove';
   processId?: string;

@@ -14,6 +14,7 @@ interface User {
   name: string;
   email: string;
   phone?: string;
+  password?: string;
   role: string;
   public_id: string;
   account_type: string;
@@ -1681,6 +1682,22 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                                         )}
                                     </div>
                                 ))}
+                                <div className="flex flex-col gap-2">
+                                    <label className="text-xs font-bold text-slate-400 flex items-center gap-2"><Lock size={12} /> סיסמה</label>
+                                    {isEditing ? (
+                                        <input
+                                            type="text"
+                                            className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-sky-500 outline-none transition-all font-mono"
+                                            value={editForm.password || ''}
+                                            onChange={e => setEditForm(prev => ({ ...prev, password: e.target.value }))}
+                                            placeholder="סיסמת המשתמש"
+                                        />
+                                    ) : (
+                                        <div className="text-slate-800 font-medium text-lg truncate select-all px-2 font-mono bg-slate-50 p-3 rounded-xl" title={selectedUser.password || ''}>
+                                            {selectedUser.password || '-'}
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                         </div>
 
@@ -1842,7 +1859,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                   <div className="text-slate-400 text-center">
                     <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-sky-600 mx-auto mb-4"></div>
                     <div className="text-sm">טוען הודעות תבנית...</div>
-                  </div>
+                  </div> 
                 </div>
               ) : dialog360Templates.length === 0 ? (
                 <div className="bg-slate-50 border-2 border-dashed border-slate-200 rounded-2xl p-12 text-center">

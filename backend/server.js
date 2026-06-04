@@ -21,6 +21,8 @@ import subUserRoutes from './routes/subUserRoutes.js';
 import repGroupRoutes from './routes/repGroupRoutes.js';
 import contactRoutes from './routes/contactRoutes.js';
 import groupRoutes from './routes/groupRoutes.js';
+import whatsappWebhookRoutes from './routes/whatsappWebhookRoutes.js';
+import whatsappRegistrationRoutes from './routes/whatsappRegistrationRoutes.js';
 import { seedTemplates } from './controllers/templateController.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -77,6 +79,8 @@ async function startServer() {
     app.use('/api/rep-groups', repGroupRoutes);
     app.use('/api/contacts', contactRoutes);
     app.use('/api/groups', groupRoutes);
+    app.use('/api/whatsapp', whatsappWebhookRoutes);  // Meta WhatsApp Business webhook (GET verify + POST events)
+    app.use('/api/whatsapp-registration', whatsappRegistrationRoutes);  // Stage 2/3 of FB onboarding + connected-numbers settings
     app.use('/api', uploadRoutes);  // Upload route
 
     // ── Global error handler ─────────────────────────────────────────────────

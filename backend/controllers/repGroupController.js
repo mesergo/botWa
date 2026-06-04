@@ -22,6 +22,27 @@ export const getRepGroups = async (req, res) => {
   }
 };
 
+// GET /api/rep-groups/reps — list all reps (role=rep) belonging to the company,
+// each with their rep_group_ids. Used by the bot editor "transfer to agent" node
+// to let the user pick a specific rep from the chosen rep group.
+export const getRepsForGroups = async (req, res) => {
+  try {
+    const rootId = await getRootManagerId(req.userId);
+    const reps = await User.find({ manager_id: rootId, role: 'rep' })
+      .select('name email rep_group_ids')
+      .sort({ name: 1 })
+      .lean();
+    res.json(reps.map(r => ({
+      id: r._id.toString(),
+      name: r.name,
+      email: r.email,
+      repGroupIds: (r.rep_group_ids || []).map(id => id.toString())
+    })));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
 // POST /api/rep-groups
 export const createRepGroup = async (req, res) => {
   try {

@@ -15,6 +15,7 @@ interface Session {
   process_history: any[];
   is_agent?: boolean;
   agent_since?: string | null;
+  status?: 'bot' | 'waiting' | 'handling' | 'closed';
 }
 
 interface Contact {
@@ -23,6 +24,7 @@ interface Contact {
   lastSeen: string | null;
   bots: { id: string; name: string }[];
   assigned_to?: string[];
+  status?: 'bot' | 'waiting' | 'handling' | 'closed';
 }
 
 interface SessionsPageProps {
@@ -87,6 +89,22 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
   const [assignNewRepId, setAssignNewRepId] = useState('');
   const [assignLoading, setAssignLoading] = useState(false);
   const [subUsers, setSubUsers] = useState<{ id: string; name: string }[]>([]);
+
+  // Transfer conversation modal state
+  const [showTransferModal, setShowTransferModal] = useState(false);
+  const [transferTargetType, setTransferTargetType] = useState<'group' | 'rep' | 'shift_manager'>('group');
+  const [transferTargetId, setTransferTargetId] = useState('');
+  // For admin/rep_manager: an optional specific rep within the chosen group
+  // ('' = "כל נציג זמין" / any available rep in the group).
+  const [transferGroupRepId, setTransferGroupRepId] = useState('');
+  const [transferLoading, setTransferLoading] = useState(false);
+  const [transferError, setTransferError] = useState<string | null>(null);
+  const [transferTargets, setTransferTargets] = useState<{
+    groups: { id: string; name: string }[];
+    reps: { id: string; name: string; email?: string; repGroupIds: string[] }[];
+    shiftManagers: { id: string; name: string; email?: string }[];
+    myGroupIds: string[] | null;
+  }>({ groups: [], reps: [], shiftManagers: [], myGroupIds: null });
 
   const chatScrollRef = useRef<HTMLDivElement>(null);
 
@@ -198,6 +216,161 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
   const isSimulator = (phone: string) =>
     phone === 'Simulated' || phone === 'simulator' || phone.toLowerCase() === 'simulated';
 
+  // ── Conversation status helpers ───────────────────────────────────────────
+  type ConvStatus = 'bot' | 'waiting' | 'handling' | 'closed';
+  const STATUS_LABELS: Record<ConvStatus, string> = {
+    bot: 'בוט',
+    waiting: 'ממתין למענה',
+    handling: 'בטיפול',
+    closed: 'סיום שיחה'
+  };
+  const STATUS_STYLES: Record<ConvStatus, string> = {
+    bot: 'bg-sky-100 text-sky-700 border-sky-200',
+    waiting: 'bg-amber-100 text-amber-700 border-amber-200',
+    handling: 'bg-purple-100 text-purple-700 border-purple-200',
+    closed: 'bg-slate-200 text-slate-600 border-slate-300'
+  };
+  const renderStatusBadge = (status?: ConvStatus | string | null) => {
+    const s = (status as ConvStatus) || 'bot';
+    const label = STATUS_LABELS[s] || STATUS_LABELS.bot;
+    const cls = STATUS_STYLES[s] || STATUS_STYLES.bot;
+    return (
+      <span className={`inline-flex items-center px-2 py-0.5 rounded-full border text-[10px] font-black ${cls}`}>
+        {label}
+      </span>
+    );
+  };
+
+  const currentStatus: ConvStatus = (phoneSessions.length > 0
+    ? ((phoneSessions[phoneSessions.length - 1].status as ConvStatus) || 'bot')
+    : 'bot');
+
+  const closeConversation = async () => {
+    const sid = agentSessionId || (phoneSessions.length > 0 ? phoneSessions[phoneSessions.length - 1].id : null);
+    if (!sid) return;
+    try {
+      const r = await fetch(`${API_BASE}/sessions/${sid}/close-conversation`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (r.ok) {
+        const data = await r.json().catch(() => ({}));
+        const sysEntry = data.historyEntry || {
+          type: 'System',
+          text: 'השיחה הסתיימה',
+          sender: 'system',
+          name: 'מערכת',
+          event: 'conversation_closed',
+          created: new Date().toISOString()
+        };
+        setIsAgentMode(false);
+        setAgentSessionId(null);
+        setPhoneSessions(prev => prev.map((s, i) =>
+          i === prev.length - 1
+            ? { ...s, is_agent: false, agent_since: null, status: 'closed', process_history: [...s.process_history, sysEntry] }
+            : s
+        ));
+        setContacts(prev => prev.map(c =>
+          c.phone === selectedPhone ? { ...c, status: 'closed' } : c
+        ));
+      }
+    } catch (e) {
+      console.error('Failed to close conversation', e);
+    }
+  };
+
+  // ── Transfer conversation handlers ────────────────────────────────────────
+
+  const openTransferModal = async () => {
+    setTransferError(null);
+    setTransferTargetId('');
+    setTransferGroupRepId('');
+    setTransferTargetType('group');
+    setShowTransferModal(true);
+    try {
+      const r = await fetch(`${API_BASE}/sessions/transfer-targets`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (r.ok) {
+        const data = await r.json();
+        setTransferTargets({
+          groups: data.groups || [],
+          reps: data.reps || [],
+          shiftManagers: data.shiftManagers || [],
+          myGroupIds: data.myGroupIds || null
+        });
+      } else {
+        setTransferError('שגיאה בטעינת יעדי העברה');
+      }
+    } catch (e) {
+      console.error('Failed to load transfer targets', e);
+      setTransferError('שגיאת רשת');
+    }
+  };
+
+  const submitTransfer = async () => {
+    const sid = phoneSessions.length > 0 ? phoneSessions[phoneSessions.length - 1].id : null;
+    if (!sid) { setTransferError('אין שיחה פעילה להעברה'); return; }
+    if (!transferTargetId) { setTransferError('יש לבחור יעד להעברה'); return; }
+
+    // For admin / rep_manager, the "קבוצה" tab may also include a specific
+    // rep selection within that group. When a specific rep is chosen we send
+    // targetType='rep' + groupId so the backend pins both fields.
+    const role = currentUser?.role;
+    const isManagerSide = role === 'user' || role === 'admin' || role === 'rep_manager';
+    const payload: { targetType: 'group' | 'rep' | 'shift_manager'; targetId: string; groupId?: string } = {
+      targetType: transferTargetType,
+      targetId: transferTargetId
+    };
+    if (isManagerSide && transferTargetType === 'group' && transferGroupRepId) {
+      payload.targetType = 'rep';
+      payload.targetId = transferGroupRepId;
+      payload.groupId = transferTargetId;
+    }
+
+    setTransferLoading(true);
+    setTransferError(null);
+    try {
+      const r = await fetch(`${API_BASE}/sessions/${sid}/transfer`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(payload)
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        setTransferError(data.error || 'שגיאה בהעברת השיחה');
+        return;
+      }
+      // Update local state to reflect new status
+      setPhoneSessions(prev => prev.map((s, i) =>
+        i === prev.length - 1
+          ? {
+              ...s,
+              status: 'waiting',
+              is_agent: true,
+              process_history: data.historyEntry
+                ? [...s.process_history, data.historyEntry]
+                : s.process_history
+            }
+          : s
+      ));
+      setContacts(prev => prev.map(c =>
+        c.phone === selectedPhone ? { ...c, status: 'waiting' } : c
+      ));
+      setIsAgentMode(false);
+      setShowTransferModal(false);
+      // For reps: the conversation may no longer be theirs — refresh contacts.
+      if (currentUser?.role === 'rep') {
+        fetchContacts();
+      }
+    } catch (e) {
+      console.error('Failed to transfer conversation', e);
+      setTransferError('שגיאת רשת');
+    } finally {
+      setTransferLoading(false);
+    }
+  };
+
   // ── New conversation handler ────────────────────────────────────────────────
 
   const handleNewConvConfirm = async () => {
@@ -306,8 +479,12 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
         setIsAgentMode(true);
         setAgentSessionId(sid);
         setShowAgentConfirm(false);
+        const newStatus: ConvStatus = data.status || 'waiting';
         setPhoneSessions(prev => prev.map((s, i) =>
-          i === prev.length - 1 ? { ...s, is_agent: true, agent_since: data.agent_since } : s
+          i === prev.length - 1 ? { ...s, is_agent: true, agent_since: data.agent_since, status: newStatus } : s
+        ));
+        setContacts(prev => prev.map(c =>
+          c.phone === selectedPhone ? { ...c, status: newStatus } : c
         ));
         
         // אם יש הודעה שנכתבה, שלח אותה מיד
@@ -342,10 +519,14 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
               setAgentMessage('');
               setSelectedTemplate(null);
               setTemplateParams({});
+              const replyStatus: ConvStatus = msgData.status || (isTemplate ? 'waiting' : 'handling');
               setPhoneSessions(prev => prev.map((s, i) =>
                 i === prev.length - 1
-                  ? { ...s, process_history: [...s.process_history, msgData.historyEntry || { type: 'Text', text: messageToSend, sender: 'agent', name: 'נציג', created, wa_sent: msgData.waSent }] }
+                  ? { ...s, status: replyStatus, process_history: [...s.process_history, msgData.historyEntry || { type: 'Text', text: messageToSend, sender: 'agent', name: 'נציג', created, wa_sent: msgData.waSent }] }
                   : s
+              ));
+              setContacts(prev => prev.map(c =>
+                c.phone === selectedPhone ? { ...c, status: replyStatus } : c
               ));
               if (!msgData.waSent) {
                 setAgentWaFailed(true);
@@ -375,7 +556,10 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
         setIsAgentMode(false);
         setAgentSessionId(null);
         setPhoneSessions(prev => prev.map((s, i) =>
-          i === prev.length - 1 ? { ...s, is_agent: false, agent_since: null } : s
+          i === prev.length - 1 ? { ...s, is_agent: false, agent_since: null, status: 'bot' } : s
+        ));
+        setContacts(prev => prev.map(c =>
+          c.phone === selectedPhone ? { ...c, status: 'bot' } : c
         ));
       }
     } catch (e) {
@@ -388,7 +572,9 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
 
     // לקוח חדש ללא שיחות — שלח תבנית ישירות לטלפון (ללא session)
     if (phoneSessions.length === 0) {
-      if (!selectedTemplate) return;
+      // ── הגבלת תבנית בלבד ללקוח חדש — מבוטל זמנית (ניתן להחזיר ע"י ביטול ההערה) ──
+      // if (!selectedTemplate) return;
+      if (!selectedTemplate) return; // משאיר כברירת מחדל כי backend תומך רק ב-template-to-phone לסשן חדש
       const msgText = agentMessage.trim();
       setAgentSending(true);
       setAgentWaFailed(false);
@@ -493,10 +679,14 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
         setAgentMessage('');
         setSelectedTemplate(null);
         setTemplateParams({});
+        const replyStatus: ConvStatus = data.status || (isTemplate ? (currentStatus === 'bot' ? 'waiting' : currentStatus) : 'handling');
         setPhoneSessions(prev => prev.map((s, i) =>
           i === prev.length - 1
-            ? { ...s, process_history: [...s.process_history, data.historyEntry || { type: 'Text', text: msgText, sender: 'agent', name: 'נציג', created, wa_sent: data.waSent }] }
+            ? { ...s, status: replyStatus, process_history: [...s.process_history, data.historyEntry || { type: 'Text', text: msgText, sender: 'agent', name: 'נציג', created, wa_sent: data.waSent }] }
             : s
+        ));
+        setContacts(prev => prev.map(c =>
+          c.phone === selectedPhone ? { ...c, status: replyStatus } : c
         ));
         if (!data.waSent) {
           setAgentWaFailed(true);
@@ -652,16 +842,35 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
     }
 
     return grouped.map((item: any, idx: number) => {
-      const senderType: 'bot' | 'user' | 'agent' =
-        item.sender === 'agent' ? 'agent'
+      const senderType: 'bot' | 'user' | 'agent' | 'system' =
+        item.sender === 'system' || item.type === 'System' ? 'system'
+        : item.sender === 'agent' ? 'agent'
         : item.sender === 'user' ? 'user'
         : item.type === 'UserInput' ? 'user'
         : item.sender === 'bot' ? 'bot'
         : 'bot';
       const isBot = senderType === 'bot';
       const isAgent = senderType === 'agent';
+      const isSystem = senderType === 'system';
       const text = item.text ?? item.content ?? '';
       const msgDate = item.created ? formatMessageDate(item.created) : '';
+
+      // System message — centered divider (e.g. "השיחה הסתיימה", "השיחה הועברה לנציג")
+      if (isSystem) {
+        const isClosed = item.event === 'conversation_closed' || /הסתיימה/.test(text);
+        return (
+          <div key={`${session.id}-${idx}`} className="flex w-full justify-center py-2">
+            <div className={`flex items-center gap-2 px-3 py-1 rounded-full border text-[11px] font-black
+              ${isClosed
+                ? 'bg-slate-100 border-slate-300 text-slate-600'
+                : 'bg-amber-50 border-amber-200 text-amber-700'}`}>
+              {isClosed && <X size={12} />}
+              <span>{text || 'הודעת מערכת'}</span>
+              {msgDate && <span className="text-slate-400 font-semibold">· {msgDate}</span>}
+            </div>
+          </div>
+        );
+      }
 
       // Agent message — purple bubble on left side
       if (isAgent) {
@@ -959,10 +1168,13 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                         <p className={`text-sm font-black truncate ${isSelected ? 'text-sky-700' : 'text-slate-800'}`}>
                           {sim ? 'סימולטור' : contact.phone}
                         </p>
-                        <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-full
-                          ${isSelected ? 'bg-sky-200 text-sky-700' : 'bg-slate-100 text-slate-500'}`}>
-                          {contact.sessionCount} שיחות
-                        </span>
+                        <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                          <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-full
+                            ${isSelected ? 'bg-sky-200 text-sky-700' : 'bg-slate-100 text-slate-500'}`}>
+                            {contact.sessionCount} שיחות
+                          </span>
+                          {!sim && renderStatusBadge(contact.status)}
+                        </div>
                       </div>
                       <span className="text-[11px] text-slate-400 font-semibold flex-shrink-0">
                         {formatContactTime(contact.lastSeen)}
@@ -1013,6 +1225,30 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                     )}
                   </p>
                 </div>
+                {/* Conversation status badge */}
+                {!isSimulator(selectedPhone) && phoneSessions.length > 0 && (
+                  <div className="flex-shrink-0">{renderStatusBadge(currentStatus)}</div>
+                )}
+                {/* End conversation button — for rep when conversation is active with agent */}
+                {!isSimulator(selectedPhone) && (currentStatus === 'waiting' || currentStatus === 'handling') && (
+                  <button
+                    onClick={closeConversation}
+                    className="flex items-center gap-2 px-4 py-2 rounded-2xl bg-slate-600 text-white text-xs font-black hover:bg-slate-700 transition-colors shadow-sm"
+                    title="סמן שיחה כסיומה"
+                  >
+                    <X size={14} /> סיום שיחה
+                  </button>
+                )}
+                {/* Transfer conversation button — available on any active (non-closed) conversation */}
+                {!isSimulator(selectedPhone) && phoneSessions.length > 0 && currentStatus !== 'closed' && (
+                  <button
+                    onClick={openTransferModal}
+                    className="flex items-center gap-2 px-4 py-2 rounded-2xl bg-indigo-500 text-white text-xs font-black hover:bg-indigo-600 transition-colors shadow-sm"
+                    title="העברת שיחה לקבוצה / מנהל משמרת / נציג אחר"
+                  >
+                    <Headphones size={14} /> העברת שיחה
+                  </button>
+                )}
                 {!isSimulator(selectedPhone) && isAgentMode && (
                   <button
                     onClick={deactivateAgent}
@@ -1109,12 +1345,12 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
               {/* Message input bar */}
               {!phoneSessionsLoading && (
                 <div className="flex-shrink-0 bg-white border-t border-slate-100 px-4 py-3" dir="rtl">
-                  {phoneSessions.length === 0 && (
+                  {/* {phoneSessions.length === 0 && (
                     <div className="flex items-center gap-2 mb-2 px-1 py-2 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-700 font-semibold">
                       <span className="text-base">⚠️</span>
                       לקוח חדש — ניתן לשלוח הודעות תבנית בלבד. הקש <span className="font-black">/</span> לבחירת תבנית.
                     </div>
-                  )}
+                  )} */}
                   <div className="flex items-center gap-3 relative">
                     {/* Template dropdown */}
                     {showTemplates && selectedPhone && (
@@ -1192,9 +1428,17 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
 
                     <button
                       onClick={sendAgentMsg}
-                      disabled={!agentMessage.trim() || agentSending || (phoneSessions.length === 0 && !selectedTemplate)}
+                      /* ── הגבלת "לקוח חדש = תבנית בלבד" מבוטלת זמנית ──
+                         גרסה מקורית:
+                         disabled={!agentMessage.trim() || agentSending || (phoneSessions.length === 0 && !selectedTemplate)}
+                         className={`w-10 h-10 flex-shrink-0 flex items-center justify-center rounded-2xl transition-colors
+                           ${agentMessage.trim() && !agentSending && !(phoneSessions.length === 0 && !selectedTemplate)
+                             ? 'bg-sky-500 text-white hover:bg-sky-600 cursor-pointer'
+                             : 'bg-sky-500 text-white opacity-40 cursor-not-allowed'}`}
+                      */
+                      disabled={!agentMessage.trim() || agentSending}
                       className={`w-10 h-10 flex-shrink-0 flex items-center justify-center rounded-2xl transition-colors
-                        ${agentMessage.trim() && !agentSending && !(phoneSessions.length === 0 && !selectedTemplate)
+                        ${agentMessage.trim() && !agentSending
                           ? 'bg-sky-500 text-white hover:bg-sky-600 cursor-pointer'
                           : 'bg-sky-500 text-white opacity-40 cursor-not-allowed'}`}
                     >
@@ -1216,19 +1460,24 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                         }
                       }}
                       onKeyDown={e => { if (e.key === 'Enter') sendAgentMsg(); }}
-                      onFocus={() => {
-                        if (phoneSessions.length === 0 && !agentMessage) {
-                          setAgentMessage('/');
-                          setShowTemplates(true);
-                          fetchTemplates();
-                        }
-                      }}
-                      placeholder={phoneSessions.length === 0 ? 'הקש / לבחירת תבנית לשליחה...' : 'כתוב הודעה ללקוח... (/ לטמפלייטים)'}
-                      className={`flex-1 bg-slate-50 border rounded-2xl px-4 py-2.5 text-sm text-right font-medium outline-none transition-all
-                        text-slate-800 placeholder:text-slate-400 focus:ring-2 focus:ring-sky-500/20
-                        ${phoneSessions.length === 0 && !selectedTemplate
-                          ? 'border-amber-300 focus:border-amber-400 focus:ring-amber-500/20'
-                          : 'border-slate-200 focus:border-sky-400'}`}
+                      /* ── התנהגות "לקוח חדש = פתיחת תבניות אוטומטית" מבוטלת זמנית ──
+                         גרסה מקורית:
+                         onFocus={() => {
+                           if (phoneSessions.length === 0 && !agentMessage) {
+                             setAgentMessage('/');
+                             setShowTemplates(true);
+                             fetchTemplates();
+                           }
+                         }}
+                         placeholder={phoneSessions.length === 0 ? 'הקש / לבחירת תבנית לשליחה...' : 'כתוב הודעה ללקוח... (/ לטמפלייטים)'}
+                         className={`flex-1 bg-slate-50 border rounded-2xl px-4 py-2.5 text-sm text-right font-medium outline-none transition-all
+                           text-slate-800 placeholder:text-slate-400 focus:ring-2 focus:ring-sky-500/20
+                           ${phoneSessions.length === 0 && !selectedTemplate
+                             ? 'border-amber-300 focus:border-amber-400 focus:ring-amber-500/20'
+                             : 'border-slate-200 focus:border-sky-400'}`}
+                      */
+                      placeholder='כתוב הודעה ללקוח... (/ לטמפלייטים)'
+                      className='flex-1 bg-slate-50 border border-slate-200 rounded-2xl px-4 py-2.5 text-sm text-right font-medium outline-none transition-all text-slate-800 placeholder:text-slate-400 focus:ring-2 focus:ring-sky-500/20 focus:border-sky-400'
                     />
                   </div>
                 </div>
@@ -1644,6 +1893,122 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 className="px-4 py-2 bg-sky-500 text-white rounded-xl text-sm font-black hover:bg-sky-600 transition-colors disabled:opacity-50 flex-shrink-0"
               >
                 הוסף
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Transfer conversation modal */}
+      {showTransferModal && selectedPhone && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" dir="rtl">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-base font-black text-slate-900">העברת שיחה</h3>
+              <button
+                onClick={() => setShowTransferModal(false)}
+                className="p-1.5 hover:bg-slate-100 rounded-xl text-slate-400 transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <p className="text-xs text-slate-500 mb-4">
+              שיחה: <span className="font-bold text-slate-700">{selectedPhone}</span>
+            </p>
+
+            {/* Target type tabs */}
+            <div className="flex gap-1 bg-slate-100 rounded-xl p-1 mb-4">
+              {([
+                { key: 'group', label: 'קבוצה' },
+                { key: 'rep', label: 'נציג' },
+                { key: 'shift_manager', label: 'מנהל משמרת' }
+              ] as const).map(t => (
+                <button
+                  key={t.key}
+                  onClick={() => { setTransferTargetType(t.key); setTransferTargetId(''); }}
+                  className={`flex-1 px-3 py-1.5 rounded-lg text-xs font-black transition-all ${
+                    transferTargetType === t.key
+                      ? 'bg-white text-slate-900 shadow-sm'
+                      : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Target selector */}
+            <div className="mb-4">
+              <label className="text-xs font-black text-slate-700 mb-1.5 block">
+                {transferTargetType === 'group' && 'בחר קבוצה:'}
+                {transferTargetType === 'rep' && 'בחר נציג מהקבוצה שלך:'}
+                {transferTargetType === 'shift_manager' && 'בחר מנהל משמרת:'}
+              </label>
+              <select
+                value={transferTargetId}
+                onChange={e => setTransferTargetId(e.target.value)}
+                className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm bg-slate-50 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all"
+              >
+                <option value="">בחר...</option>
+                {transferTargetType === 'group' && transferTargets.groups.map(g => (
+                  <option key={g.id} value={g.id}>{g.name}</option>
+                ))}
+                {transferTargetType === 'rep' && (() => {
+                  // For reps: filter to reps in the same groups (exclude self).
+                  const myGroups = transferTargets.myGroupIds;
+                  const filtered = transferTargets.reps.filter(r => {
+                    if (currentUser && (r.id === (currentUser as any).id)) return false;
+                    if (!myGroups || myGroups.length === 0) return true;
+                    return r.repGroupIds.some(gid => myGroups.includes(gid));
+                  });
+                  return filtered.length === 0
+                    ? <option value="" disabled>אין נציגים זמינים</option>
+                    : filtered.map(r => (
+                        <option key={r.id} value={r.id}>{r.name}{r.email ? ` (${r.email})` : ''}</option>
+                      ));
+                })()}
+                {transferTargetType === 'shift_manager' && (
+                  transferTargets.shiftManagers.length === 0
+                    ? <option value="" disabled>אין מנהלי משמרת זמינים</option>
+                    : transferTargets.shiftManagers.map(m => (
+                        <option key={m.id} value={m.id}>{m.name}{m.email ? ` (${m.email})` : ''}</option>
+                      ))
+                )}
+              </select>
+            </div>
+
+            {/* Optional note */}
+            <div className="mb-4">
+              <label className="text-xs font-black text-slate-700 mb-1.5 block">הערה (אופציונלי):</label>
+              <textarea
+                value={transferNote}
+                onChange={e => setTransferNote(e.target.value)}
+                rows={2}
+                placeholder="סיבת ההעברה..."
+                className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm bg-slate-50 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all resize-none"
+              />
+            </div>
+
+            {transferError && (
+              <div className="mb-3 px-3 py-2 bg-red-50 border border-red-200 rounded-xl text-xs font-bold text-red-700">
+                {transferError}
+              </div>
+            )}
+
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setShowTransferModal(false)}
+                disabled={transferLoading}
+                className="px-4 py-2 bg-slate-100 text-slate-700 rounded-xl text-sm font-black hover:bg-slate-200 transition-colors disabled:opacity-50"
+              >
+                ביטול
+              </button>
+              <button
+                onClick={submitTransfer}
+                disabled={!transferTargetId || transferLoading}
+                className="px-4 py-2 bg-indigo-500 text-white rounded-xl text-sm font-black hover:bg-indigo-600 transition-colors disabled:opacity-50"
+              >
+                {transferLoading ? 'מעביר...' : 'העבר שיחה'}
               </button>
             </div>
           </div>

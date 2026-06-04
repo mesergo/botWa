@@ -11,7 +11,7 @@ import TemplateForm from './components/TemplateForm';
 import ContactsPage from './components/ContactsPage';
 import SessionsPage from './components/SessionsPage';
 import GroupsPage from './components/GroupsPage';
-import { StartNode, InputTextNode, InputDateNode, InputFileNode, OutputTextNode, OutputImageNode, OutputLinkNode, OutputMenuNode, ActionWebServiceNode, ActionWaitNode, ActionTimeRoutingNode, ActionAddToGroupNode, ActionRemoveFromGroupNode, FixedProcessNode, AutomaticResponsesNode } from './components/nodes/CustomNodes';
+import { StartNode, InputTextNode, InputDateNode, InputFileNode, OutputTextNode, OutputImageNode, OutputLinkNode, OutputMenuNode, ActionWebServiceNode, ActionWaitNode, ActionTimeRoutingNode, ActionAddToGroupNode, ActionRemoveFromGroupNode, ActionTransferToAgentNode, FixedProcessNode, AutomaticResponsesNode } from './components/nodes/CustomNodes';
 import ButtonEdge from './components/edges/ButtonEdge';
 import { CloudUpload, RotateCcw, Plus, AlertTriangle, Copy, X, Lock, Wallet, Sliders, Save } from 'lucide-react';
 import Simulator from './components/Simulator';
@@ -77,6 +77,7 @@ const nodeTypes = {
   [NodeType.ACTION_TIME_ROUTING]: ActionTimeRoutingNode,
   [NodeType.ACTION_ADD_TO_GROUP]: ActionAddToGroupNode,
   [NodeType.ACTION_REMOVE_FROM_GROUP]: ActionRemoveFromGroupNode,
+  [NodeType.ACTION_TRANSFER_TO_AGENT]: ActionTransferToAgentNode,
   [NodeType.FIXED_PROCESS]: FixedProcessNode,
   [NodeType.AUTOMATIC_RESPONSES]: AutomaticResponsesNode,
 };
@@ -143,6 +144,8 @@ const FlowBuilder: React.FC = () => {
   const [edges, setEdges] = useState<Edge[]>([]);
   const [fixedProcesses, setFixedProcesses] = useState<FixedProcess[]>([]);
   const [groups, setGroups] = useState<Array<{ _id: string; name: string }>>([]);
+  const [repGroups, setRepGroups] = useState<Array<{ id: string; name: string }>>([]);
+  const [repUsers, setRepUsers] = useState<Array<{ id: string; name: string; email: string; repGroupIds: string[] }>>([]);
   const [versions, setVersions] = useState<Version[]>([]);
   const [restorableVersions, setRestorableVersions] = useState<RestorableVersionsData | null>(null);
   const [activeProcessId, setActiveProcessId] = useState<string | null>(null);
@@ -489,6 +492,26 @@ const FlowBuilder: React.FC = () => {
     } catch (e) { console.error(e); }
   }, [token]);
 
+  const loadRepGroups = useCallback(async () => {
+    if (!token) return;
+    try {
+      const res = await fetch(`${API_BASE}/rep-groups`, { headers: { 'Authorization': `Bearer ${token}` } });
+      if (!res.ok) return;
+      const data = await res.json();
+      setRepGroups(Array.isArray(data) ? data : []);
+    } catch (e) { console.error(e); }
+  }, [token]);
+
+  const loadRepUsers = useCallback(async () => {
+    if (!token) return;
+    try {
+      const res = await fetch(`${API_BASE}/rep-groups/reps`, { headers: { 'Authorization': `Bearer ${token}` } });
+      if (!res.ok) return;
+      const data = await res.json();
+      setRepUsers(Array.isArray(data) ? data : []);
+    } catch (e) { console.error(e); }
+  }, [token]);
+
   const loadFlow = useCallback(async (botId: string | null, processId: string | null = null) => {
     const params = new URLSearchParams(window.location.search);
     const publicIdFromUrl = params.get('public_id');
@@ -583,7 +606,7 @@ const FlowBuilder: React.FC = () => {
     // Ensure we don't treat the public_id as the botId
     const botId = selectedBot?.id || flowIdFromUrl || null;
 
-    if (token) { loadProcesses(); loadGroups(); }
+    if (token) { loadProcesses(); loadGroups(); loadRepGroups(); loadRepUsers(); }
     if (botId || activeProcessId) {
       loadFlow(botId, activeProcessId);
       if (token && botId) {
@@ -1584,6 +1607,7 @@ const FlowBuilder: React.FC = () => {
       [NodeType.ACTION_TIME_ROUTING]: 'ניתוב לפי שעה',
       [NodeType.ACTION_ADD_TO_GROUP]: 'הוספה/הסרה מקבוצה',
       [NodeType.ACTION_REMOVE_FROM_GROUP]: 'הסר מקבוצה',
+      [NodeType.ACTION_TRANSFER_TO_AGENT]: 'העברה לנציג',
       [NodeType.FIXED_PROCESS]: 'תהליך',
     };
     const newNode = bindNodeCallbacks({
@@ -1613,8 +1637,8 @@ const FlowBuilder: React.FC = () => {
   }, [simulatorFixedProcessNodeId, simulatorActiveNodeId, reactFlowInstance, nodes]);
 
   const nodesWithSearch = useMemo(() => nodes.map(n => ({
-    ...n, data: { ...n.data, groups, searchQuery, isCurrentMatch: searchResults[currentSearchIndex] === n.id, isSimulatorActive: n.id === simulatorActiveNodeId || n.id === simulatorFixedProcessNodeId }
-  })), [nodes, groups, searchQuery, searchResults, currentSearchIndex, simulatorActiveNodeId, simulatorFixedProcessNodeId]);
+    ...n, data: { ...n.data, groups, repGroups, repUsers, searchQuery, isCurrentMatch: searchResults[currentSearchIndex] === n.id, isSimulatorActive: n.id === simulatorActiveNodeId || n.id === simulatorFixedProcessNodeId }
+  })), [nodes, groups, repGroups, repUsers, searchQuery, searchResults, currentSearchIndex, simulatorActiveNodeId, simulatorFixedProcessNodeId]);
 
   const openPublishModal = useCallback(() => {
     const now = new Date();

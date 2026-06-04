@@ -84,4 +84,37 @@ export const optionalAuthToken = (req, res, next) => {
   });
 };
 
+// Accepts either a JWT (signed by SECRET_KEY) OR a raw User.token (api_token).
+// Used by external-integration endpoints that may be called from the dashboard
+// (JWT) or from third-party systems holding the user's permanent api_token.
+export const authenticateJwtOrApiToken = async (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+  if (!token) return res.status(401).json({ error: 'missing_token' });
+
+  // Try JWT first (cheap, no DB)
+  try {
+    const decoded = jwt.verify(token, SECRET_KEY);
+    req.user = decoded;
+    req.userId = decoded.id;
+    return next();
+  } catch (_) { /* fall through to api_token lookup */ }
+
+  try {
+    const user = await User.findOne({ token });
+    if (!user) return res.status(403).json({ error: 'invalid_token' });
+    req.user = {
+      id: user._id.toString(),
+      email: user.email,
+      role: user.role || 'user',
+      manager_id: user.manager_id || null,
+      authMethod: 'api_token'
+    };
+    req.userId = req.user.id;
+    return next();
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+};
+
 export { SECRET_KEY };

@@ -581,6 +581,47 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
         break;
       }
 
+      case 'action_transfer_to_agent': {
+        // Hand the conversation off to a human agent.
+        // - Mark the session as is_agent=true with a fresh agent_since (bot pauses for 30 min)
+        // - Store the selected RepGroup so a rep from that group can pick up the conversation
+        // - Optionally store a specific rep_user_id if the editor configured "specific rep"
+        // - Stop the flow execution (terminal node)
+        const repGroupId = nodeData.repGroupId || null;
+        const repAssignmentMode = nodeData.repAssignmentMode === 'specific' ? 'specific' : 'any';
+        const repUserId = repAssignmentMode === 'specific' ? (nodeData.repUserId || null) : null;
+        session.is_agent = true;
+        session.agent_since = new Date();
+        session.status = 'waiting';
+        // If a specific rep was chosen, only that rep should see the conversation —
+        // store rep_user_id and null out rep_group_id. Otherwise keep rep_group_id so
+        // all reps in the selected group can pick it up.
+        if (repAssignmentMode === 'specific' && repUserId) {
+          session.rep_group_id = null;
+          session.rep_user_id = repUserId;
+        } else {
+          session.rep_group_id = repGroupId;
+          session.rep_user_id = null;
+        }
+        session.current_node_id = currentNodeId;
+        session.waiting_text_input = false;
+
+        addToHistory(
+          session,
+          {
+            type: 'System',
+            text: 'השיחה הועברה לנציג',
+            sender: 'system',
+            name: 'מערכת',
+            created: new Date().toISOString()
+          },
+          currentNodeId
+        );
+
+        console.log(`[BOT] ✅ action_transfer_to_agent | session=${session._id} | rep_group_id=${repGroupId} | rep_user_id=${repUserId} | bot paused for 30 minutes`);
+        return messages;
+      }
+
       case 'action_time_routing': {
         // Get current date/time in Israel timezone (handles DST automatically)
         const now = new Date();
@@ -924,6 +965,9 @@ export const respondToMessage = async (req, res) => {
         // Agent mode expired — clear it so the bot resumes normally
         agentCheckSession.is_agent = false;
         agentCheckSession.agent_since = null;
+        if (agentCheckSession.status === 'waiting' || agentCheckSession.status === 'handling') {
+          agentCheckSession.status = 'bot';
+        }
         await agentCheckSession.save();
         console.log('[BOT] Agent mode expired, resuming bot for', phone);
       }
