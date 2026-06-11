@@ -11,6 +11,8 @@ const userSchema = new mongoose.Schema({
   public_id: String,
   account_type: { type: String, default: 'Basic' },
   status: { type: String, default: 'active' },
+  // Availability status for reps/rep_managers: available | unavailable | on_break
+  availability_status: { type: String, enum: ['available', 'unavailable', 'on_break'], default: 'unavailable' },
   manager_id: { type: String, default: null },
   dialog360_bot_id: { type: String, default: '' },
   // WhatsApp numbers connected to this account but not yet (or already) assigned to a bot.
@@ -39,6 +41,14 @@ const userSchema = new mongoose.Schema({
   },
   trial_expires_at: { type: Date, default: null },
   rep_group_ids: [{ type: mongoose.Schema.Types.ObjectId, ref: 'RepGroup', default: [] }],
+  // Per-user override for the auto-removal-from-group feature.
+  // When `customized=true`, these values override the global SystemSetting('removal_config').
+  removal_config: {
+    customized: { type: Boolean, default: false },
+    enabled: { type: Boolean, default: true },
+    keywords: { type: [String], default: [] },
+    message: { type: String, default: '' }
+  },
 }, { 
   timestamps: true,
   collection: 'User'

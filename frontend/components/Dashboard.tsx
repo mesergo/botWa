@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Plus, Bot, ArrowLeft, Trash2, Calendar, LogOut, Shield, UserCog, Users, List, Settings, Save, User as UserIcon, Phone, Mail, Star, Copy, Check, Wifi, Gauge, MessageSquare, Globe, Layers, CheckCircle, Eye, EyeOff, X, Image as ImageIcon, Link as LinkIcon, Unlink } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Plus, Bot, ArrowLeft, Trash2, Calendar, LogOut, Shield, UserCog, Users, List, Settings, Save, User as UserIcon, Phone, Mail, Star, Copy, Check, Wifi, Gauge, MessageSquare, Globe, Layers, CheckCircle, Eye, EyeOff, X, Image as ImageIcon, Link as LinkIcon, Unlink, UserMinus, AlertTriangle, RefreshCcw, ToggleLeft, ToggleRight } from 'lucide-react';
 import ImpersonationBanner from './ImpersonationBanner';
 import { BotFlow } from '../types';
 import SubUsersTab from './SubUsersTab';
@@ -15,7 +15,7 @@ interface DashboardProps {
   onDeleteBot: (id: string) => void;
   onSetDefaultBot: (id: string) => void;
   onLogout: () => void;
-  currentUser?: { name?: string; email?: string; role?: string; isImpersonating?: boolean } | null;
+  currentUser?: { name?: string; email?: string; role?: string; isImpersonating?: boolean; availability_status?: 'available' | 'unavailable' | 'on_break' } | null;
   onOpenAdminPanel?: () => void;
   onStopImpersonation?: () => void;
   onOpenContacts?: () => void;
@@ -23,6 +23,7 @@ interface DashboardProps {
   onOpenGroups?: () => void;
   onConnectFacebook?: (bot: BotFlow) => Promise<void>;
   onUpdateBotPublicId?: (id: string, publicId: string) => Promise<void>;
+  onUpdateAvailability?: (status: 'available' | 'unavailable' | 'on_break') => Promise<void>;
   token?: string | null;
   initialTab?: 'bots' | 'settings' | 'users';
 }
@@ -62,7 +63,84 @@ const FacebookIcon: React.FC<{ size?: number; className?: string }> = ({ size = 
   </svg>
 );
 
-const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, onDeleteBot, onSetDefaultBot, onLogout, currentUser, onOpenAdminPanel, onStopImpersonation, onOpenContacts, onOpenSessions, onOpenGroups, onConnectFacebook, onUpdateBotPublicId, token, initialTab }) => {
+// ── Rep availability status indicator (topbar) ───────────────────────────────
+type AvailabilityStatus = 'available' | 'unavailable' | 'on_break';
+
+const AVAILABILITY_OPTIONS: { value: AvailabilityStatus; label: string; dot: string; text: string; bg: string }[] = [
+  { value: 'available',   label: 'זמין',    dot: 'bg-emerald-500', text: 'text-emerald-700', bg: 'bg-emerald-50' },
+  { value: 'on_break',    label: 'בהפסקה',  dot: 'bg-amber-500',   text: 'text-amber-700',   bg: 'bg-amber-50' },
+  { value: 'unavailable', label: 'לא זמין', dot: 'bg-slate-400',   text: 'text-slate-600',   bg: 'bg-slate-100' },
+];
+
+const AvailabilityBadge: React.FC<{
+  status: AvailabilityStatus;
+  onChange: (s: AvailabilityStatus) => void | Promise<void>;
+}> = ({ status, onChange }) => {
+  const [open, setOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const current = AVAILABILITY_OPTIONS.find(o => o.value === status) || AVAILABILITY_OPTIONS[0];
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  const handleSelect = async (s: AvailabilityStatus) => {
+    if (s === status) { setOpen(false); return; }
+    setSaving(true);
+    try {
+      await onChange(s);
+    } finally {
+      setSaving(false);
+      setOpen(false);
+    }
+  };
+
+  return (
+    <div ref={wrapperRef} className="relative" dir="rtl">
+      <button
+        type="button"
+        onClick={() => setOpen(v => !v)}
+        disabled={saving}
+        title="שינוי סטטוס זמינות"
+        className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-black border border-slate-200 ${current.bg} ${current.text} hover:shadow-sm transition-all disabled:opacity-60`}
+      >
+        <span className={`relative flex h-2.5 w-2.5`}>
+          {status === 'available' && (
+            <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-60 ${current.dot}`}></span>
+          )}
+          <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${current.dot}`}></span>
+        </span>
+        <span>{current.label}</span>
+      </button>
+      {open && (
+        <div className="absolute mt-2 right-0 w-44 bg-white rounded-2xl shadow-xl border border-slate-100 py-2 z-50">
+          {AVAILABILITY_OPTIONS.map(opt => {
+            const isActive = opt.value === status;
+            return (
+              <button
+                key={opt.value}
+                onClick={() => handleSelect(opt.value)}
+                className={`w-full flex items-center gap-2 px-4 py-2 text-sm font-bold text-right hover:bg-slate-50 transition-colors ${isActive ? 'bg-slate-50' : ''}`}
+              >
+                <span className={`inline-block h-2.5 w-2.5 rounded-full ${opt.dot}`}></span>
+                <span className="flex-1 text-slate-700">{opt.label}</span>
+                {isActive && <Check size={14} className="text-blue-600" />}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, onDeleteBot, onSetDefaultBot, onLogout, currentUser, onOpenAdminPanel, onStopImpersonation, onOpenContacts, onOpenSessions, onOpenGroups, onConnectFacebook, onUpdateBotPublicId, onUpdateAvailability, token, initialTab }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newBotName, setNewBotName] = useState('');
   const [facebookConfirmBot, setFacebookConfirmBot] = useState<BotFlow | null>(null);
@@ -111,6 +189,19 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
   const [cnLoading, setCnLoading] = useState(false);
   const [assigningPnid, setAssigningPnid] = useState<string | null>(null);
   const [assignSelection, setAssignSelection] = useState<Record<string, string>>({});
+
+  // Auto-removal-from-group config (per-user override of admin default)
+  interface RemovalCfg { enabled: boolean; keywords: string[]; message: string; }
+  const [removalEffective, setRemovalEffective] = useState<RemovalCfg | null>(null);
+  const [removalGlobal, setRemovalGlobal] = useState<RemovalCfg | null>(null);
+  const [removalDefaults, setRemovalDefaults] = useState<RemovalCfg | null>(null);
+  const [removalCustomized, setRemovalCustomized] = useState(false);
+  const [removalDraft, setRemovalDraft] = useState<RemovalCfg | null>(null);
+  const [removalKwInput, setRemovalKwInput] = useState('');
+  const [removalLoading, setRemovalLoading] = useState(false);
+  const [removalSaving, setRemovalSaving] = useState(false);
+  const [removalSaved, setRemovalSaved] = useState(false);
+  const [removalConfirmOpen, setRemovalConfirmOpen] = useState<null | 'save' | 'revert'>(null);
 
   const loadProfile = async () => {
     if (!token) return;
@@ -221,6 +312,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
         loadWaTemplates();
       }
       loadConnectedNumbers();
+      loadRemovalConfig();
     }
   }, [activeTab]);
 
@@ -271,6 +363,107 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
     } finally {
       setAssigningPnid(null);
     }
+  };
+
+  // ── Auto-removal-from-group (per-user) ────────────────────────────────
+  const normalizeCfg = (c: any): RemovalCfg => ({
+    enabled: c?.enabled !== false,
+    keywords: Array.isArray(c?.keywords) ? c.keywords : [],
+    message: typeof c?.message === 'string' ? c.message : ''
+  });
+
+  const loadRemovalConfig = async () => {
+    if (!token) return;
+    setRemovalLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/auth/removal-config`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      const effective = normalizeCfg(data.config);
+      const global = normalizeCfg(data.global);
+      const defaults = normalizeCfg(data.defaults);
+      setRemovalEffective(effective);
+      setRemovalGlobal(global);
+      setRemovalDefaults(defaults);
+      setRemovalCustomized(!!data.customized);
+      setRemovalDraft(effective);
+    } finally {
+      setRemovalLoading(false);
+    }
+  };
+
+  const saveRemovalConfig = async () => {
+    if (!token || !removalDraft) return;
+    setRemovalSaving(true);
+    setRemovalSaved(false);
+    try {
+      const res = await fetch(`${API_BASE}/auth/removal-config`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          customized: true,
+          enabled: removalDraft.enabled,
+          keywords: removalDraft.keywords,
+          message: removalDraft.message
+        }),
+      });
+      if (!res.ok) throw new Error('Failed');
+      const data = await res.json();
+      const effective = normalizeCfg(data.config);
+      setRemovalEffective(effective);
+      setRemovalCustomized(!!data.customized);
+      setRemovalDraft(effective);
+      setRemovalSaved(true);
+      setTimeout(() => setRemovalSaved(false), 2500);
+    } catch {
+      alert('שגיאה בשמירת הגדרות ההסרה');
+    } finally {
+      setRemovalSaving(false);
+      setRemovalConfirmOpen(null);
+    }
+  };
+
+  const revertRemovalToGlobal = async () => {
+    if (!token) return;
+    setRemovalSaving(true);
+    try {
+      const res = await fetch(`${API_BASE}/auth/removal-config`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ customized: false }),
+      });
+      if (!res.ok) throw new Error('Failed');
+      const data = await res.json();
+      const effective = normalizeCfg(data.config);
+      setRemovalEffective(effective);
+      setRemovalCustomized(!!data.customized);
+      setRemovalDraft(effective);
+      setRemovalSaved(true);
+      setTimeout(() => setRemovalSaved(false), 2500);
+    } catch {
+      alert('שגיאה באיפוס ההגדרה');
+    } finally {
+      setRemovalSaving(false);
+      setRemovalConfirmOpen(null);
+    }
+  };
+
+  const addRemovalDraftKeyword = () => {
+    const k = removalKwInput.trim();
+    if (!k || !removalDraft) return;
+    if (removalDraft.keywords.some(x => x.trim().toLowerCase() === k.toLowerCase())) {
+      setRemovalKwInput('');
+      return;
+    }
+    setRemovalDraft({ ...removalDraft, keywords: [...removalDraft.keywords, k] });
+    setRemovalKwInput('');
+  };
+
+  const removeRemovalDraftKeyword = (idx: number) => {
+    if (!removalDraft) return;
+    setRemovalDraft({ ...removalDraft, keywords: removalDraft.keywords.filter((_, i) => i !== idx) });
   };
 
   const isRep = currentUser?.role === 'rep' || currentUser?.role === 'rep_manager';
@@ -413,6 +606,12 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
           {currentUser && (
             <span className="text-sm font-bold text-slate-600">שלום, {currentUser.name || currentUser.email}</span>
           )}
+          {(currentUser?.role === 'rep' || currentUser?.role === 'rep_manager') && onUpdateAvailability && (
+            <AvailabilityBadge
+              status={(currentUser?.availability_status as AvailabilityStatus) || 'available'}
+              onChange={onUpdateAvailability}
+            />
+          )}
           {currentUser?.role === 'admin' && !currentUser?.isImpersonating && onOpenAdminPanel && (
             <button
               onClick={onOpenAdminPanel}
@@ -422,11 +621,23 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
               פאנל ניהול
             </button>
           )}
-          <div
-            title={currentUser?.name || currentUser?.email || ''}
-            className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-sm shadow-md select-none"
-          >
-            {(currentUser?.name?.charAt(0) || currentUser?.email?.charAt(0) || '?').toUpperCase()}
+          <div className="relative">
+            <div
+              title={currentUser?.name || currentUser?.email || ''}
+              className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-sm shadow-md select-none"
+            >
+              {(currentUser?.name?.charAt(0) || currentUser?.email?.charAt(0) || '?').toUpperCase()}
+            </div>
+            {(currentUser?.role === 'rep' || currentUser?.role === 'rep_manager') && (() => {
+              const s = (currentUser?.availability_status as AvailabilityStatus) || 'available';
+              const opt = AVAILABILITY_OPTIONS.find(o => o.value === s)!;
+              return (
+                <span
+                  title={opt.label}
+                  className={`absolute -bottom-0.5 -left-0.5 h-3 w-3 rounded-full ring-2 ring-white ${opt.dot}`}
+                />
+              );
+            })()}
           </div>
           <button onClick={onLogout} className="p-2.5 text-slate-300 hover:text-red-500 transition-colors rounded-xl hover:bg-red-50"><LogOut size={22} /></button>
         </div>
@@ -802,6 +1013,149 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                         </div>
                       );
                     })}
+                  </div>
+                )}
+              </div>
+
+              {/* ── Auto-removal-from-group config (per-user override) ── */}
+              <div dir="rtl" className="bg-white rounded-3xl border border-slate-100 shadow-sm p-8 mt-2">
+                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-slate-100 pb-5 mb-6">
+                  <div>
+                    <h2 className="text-base font-black text-slate-800 flex items-center gap-2">
+                      <UserMinus size={18} className="text-rose-500" />
+                      ניהול הסרה מקבוצה
+                    </h2>
+                    <p className="text-xs text-slate-500 font-medium mt-1">
+                      כאשר נמען שולח אחת ממילות המפתח, המספר שלו מתווסף אוטומטית לרשימת ההסרה ונשלחת לו הודעת אישור.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className={`px-3 py-1.5 rounded-xl text-[11px] font-bold border ${
+                      removalCustomized
+                        ? 'bg-sky-50 text-sky-700 border-sky-200'
+                        : 'bg-slate-100 text-slate-500 border-slate-200'
+                    }`}>
+                      {removalCustomized ? 'הגדרה אישית פעילה' : 'משתמש בברירת המחדל המערכתית'}
+                    </span>
+                    {removalCustomized && (
+                      <button
+                        onClick={() => setRemovalConfirmOpen('revert')}
+                        disabled={removalSaving}
+                        className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-600 rounded-xl font-bold text-xs hover:bg-slate-200 transition-all disabled:opacity-50"
+                        title="חזרה לברירת המחדל של המערכת"
+                      >
+                        <RefreshCcw size={12} /> חזרה לברירת מחדל
+                      </button>
+                    )}
+                    <button
+                      onClick={() => setRemovalConfirmOpen('save')}
+                      disabled={removalSaving || !removalDraft}
+                      className="flex items-center gap-2 px-5 py-2 bg-rose-600 text-white rounded-xl font-bold text-xs hover:bg-rose-700 transition-all shadow-lg shadow-rose-200 disabled:opacity-60 active:scale-95"
+                    >
+                      <Save size={12} />
+                      {removalSaving ? 'שומר…' : 'שמור הגדרה אישית'}
+                    </button>
+                  </div>
+                </div>
+
+                {removalLoading || !removalDraft ? (
+                  <div className="text-center text-slate-400 py-10 font-bold">טוען הגדרות הסרה…</div>
+                ) : (
+                  <div className="space-y-6">
+                    <div className="bg-amber-50 border border-amber-200 rounded-2xl px-5 py-4 flex items-start gap-3">
+                      <AlertTriangle size={18} className="text-amber-600 mt-0.5 flex-shrink-0" />
+                      <div className="text-amber-800 text-xs font-bold leading-relaxed">
+                        שינוי ההגדרה דורס את ברירת המחדל הכללית. מילים שגויות עלולות למנוע הסרה אוטומטית של נמענים שביקשו זאת — באחריותך לוודא שהמילים מתאימות לכל הבוטים שלך.
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4">
+                      <div>
+                        <div className="text-sm font-black text-slate-800">הסרה אוטומטית פעילה</div>
+                        <div className="text-[11px] text-slate-500 font-medium">בעת ביטול — לא תתבצע הסרה אוטומטית בבוטים שלך, גם אם המילה הוגדרה.</div>
+                      </div>
+                      <button
+                        onClick={() => setRemovalDraft({ ...removalDraft, enabled: !removalDraft.enabled })}
+                        className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-xs transition-all border ${
+                          removalDraft.enabled
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                            : 'bg-slate-100 text-slate-500 border-slate-200'
+                        }`}
+                      >
+                        {removalDraft.enabled ? <ToggleRight size={18} /> : <ToggleLeft size={18} />}
+                        {removalDraft.enabled ? 'פעיל' : 'מושבת'}
+                      </button>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-black text-slate-400 uppercase tracking-wider mb-3">מילות מפתח להסרה</label>
+                      <div className="flex gap-2 mb-4">
+                        <input
+                          type="text"
+                          value={removalKwInput}
+                          onChange={e => setRemovalKwInput(e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addRemovalDraftKeyword(); } }}
+                          placeholder="הוסף מילת מפתח (למשל: הסר, remove)"
+                          className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold outline-none focus:ring-2 focus:ring-rose-600/20 focus:border-rose-500 transition-all"
+                        />
+                        <button
+                          onClick={addRemovalDraftKeyword}
+                          className="flex items-center gap-2 px-5 py-3 bg-slate-800 text-white rounded-2xl font-bold text-sm hover:bg-slate-900 transition-all"
+                        >
+                          <Plus size={14} /> הוסף
+                        </button>
+                      </div>
+                      {removalDraft.keywords.length === 0 ? (
+                        <div className="text-center text-slate-400 text-sm py-8 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                          אין מילות מפתח. ללא מילות מפתח לא תתבצע הסרה אוטומטית.
+                        </div>
+                      ) : (
+                        <div className="flex flex-wrap gap-2">
+                          {removalDraft.keywords.map((kw, idx) => (
+                            <span
+                              key={`${kw}-${idx}`}
+                              className="inline-flex items-center gap-2 bg-rose-50 text-rose-700 border border-rose-200 px-3 py-1.5 rounded-xl text-sm font-bold"
+                            >
+                              <span dir="auto">{kw}</span>
+                              <button
+                                onClick={() => removeRemovalDraftKeyword(idx)}
+                                className="text-rose-400 hover:text-rose-700 transition-colors"
+                                title="הסר מילה"
+                              >
+                                <X size={14} />
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      {removalGlobal && (
+                        <p className="text-[11px] text-slate-400 font-medium mt-3">
+                          ברירת המחדל הכללית של המערכת מוגדרת כעת עם {removalGlobal.keywords.length} מילים בעברית ובאנגלית{removalCustomized ? '' : ' — והיא ההגדרה הפעילה אצלך כרגע'}.
+                        </p>
+                      )}
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-black text-slate-400 uppercase tracking-wider mb-3">הודעת אישור לאחר ההסרה</label>
+                      <textarea
+                        value={removalDraft.message}
+                        onChange={e => setRemovalDraft({ ...removalDraft, message: e.target.value })}
+                        rows={3}
+                        placeholder="הודעה שתישלח לנמען אחרי שהוסר אוטומטית"
+                        className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold outline-none focus:ring-2 focus:ring-rose-600/20 focus:border-rose-500 transition-all resize-none"
+                      />
+                      {removalGlobal && removalGlobal.message && (
+                        <p className="text-[11px] text-slate-400 font-medium mt-2">
+                          ברירת מחדל מערכתית: <span className="text-slate-500">"{removalGlobal.message}"</span>
+                        </p>
+                      )}
+                    </div>
+
+                    {removalSaved && (
+                      <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 text-emerald-700 text-sm font-bold flex items-center gap-2">
+                        <CheckCircle size={16} /> ההגדרה האישית נשמרה
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -1226,6 +1580,45 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
           </div>
         );
       })()}
+
+      {/* ── Confirm removal-config change ── */}
+      {removalConfirmOpen && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[200] flex items-center justify-center p-6" dir="rtl">
+          <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl border border-slate-100 p-8">
+            <div className="flex items-start gap-4 mb-6">
+              <div className="w-12 h-12 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center flex-shrink-0">
+                <AlertTriangle size={22} />
+              </div>
+              <div className="text-right">
+                <h4 className="text-lg font-black text-slate-900 mb-1">
+                  {removalConfirmOpen === 'save' ? 'לאשר שמירת הגדרת הסרה אישית?' : 'לחזור לברירת המחדל של המערכת?'}
+                </h4>
+                <p className="text-sm text-slate-500 font-medium leading-relaxed">
+                  {removalConfirmOpen === 'save'
+                    ? 'ההגדרה תדרוס את ברירת המחדל הכללית עבור כל הבוטים שלך. מילים חסרות עלולות למנוע הסרה אוטומטית של נמענים שביקשו זאת — באחריותך.'
+                    : 'ההגדרה האישית שלך תוסר, וכל הבוטים שלך יחזרו להשתמש במילות המפתח ובהודעה שמוגדרות במערכת.'}
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setRemovalConfirmOpen(null)}
+                className="flex-1 py-3 border border-slate-200 text-slate-500 rounded-2xl font-bold text-xs uppercase hover:bg-slate-50"
+                disabled={removalSaving}
+              >
+                ביטול
+              </button>
+              <button
+                onClick={() => { if (removalConfirmOpen === 'save') saveRemovalConfig(); else revertRemovalToGlobal(); }}
+                disabled={removalSaving}
+                className="flex-1 py-3 bg-rose-600 text-white rounded-2xl font-bold text-xs uppercase hover:bg-rose-700 disabled:opacity-60"
+              >
+                {removalSaving ? 'שומר…' : 'אני מבין/ה, אישור'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

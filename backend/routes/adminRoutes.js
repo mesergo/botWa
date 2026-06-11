@@ -10,7 +10,9 @@ import {
   stopImpersonation,
   updateUserRole,
   getSystemSettings,
-  updateSystemSettings
+  updateSystemSettings,
+  getRemovalConfig,
+  updateRemovalConfig
 } from '../controllers/adminController.js';
 
 const router = express.Router();
@@ -21,6 +23,10 @@ router.use(authenticateToken);
 // System Settings (Global Limits)
 router.get('/settings/limits', requireAdmin, getSystemSettings);
 router.put('/settings/limits', requireAdmin, updateSystemSettings);
+
+// Global default config for the auto-removal-from-group feature
+router.get('/settings/removal', requireAdmin, getRemovalConfig);
+router.put('/settings/removal', requireAdmin, updateRemovalConfig);
 
 // Dashboard stats
 router.get('/stats', requireAdmin, getSystemStats);

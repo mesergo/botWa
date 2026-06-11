@@ -1,5 +1,5 @@
 ﻿import React, { useState, useEffect, useRef } from 'react';
-import { Clock, MessageSquare, Search, Bot, LogOut, User, Phone, List, Users, ExternalLink, X, Headphones, RefreshCw, Shield, Settings, UserCog, Layers, Plus, UserPlus } from 'lucide-react';
+import { Clock, MessageSquare, Search, Bot, LogOut, User, Phone, List, Users, ExternalLink, X, Headphones, RefreshCw, Shield, Settings, UserCog, Layers, Plus, UserPlus, Check } from 'lucide-react';
 import ImpersonationBanner from './ImpersonationBanner';
 import { FileUploader } from './FileUploader';
 
@@ -29,7 +29,7 @@ interface Contact {
 
 interface SessionsPageProps {
   token: string | null;
-  currentUser?: { name?: string; email?: string; role?: string; isImpersonating?: boolean } | null;
+  currentUser?: { name?: string; email?: string; role?: string; isImpersonating?: boolean; availability_status?: 'available' | 'unavailable' | 'on_break' } | null;
   onBack: () => void;
   onLogout: () => void;
   onOpenContacts?: (phone?: string) => void;
@@ -38,6 +38,7 @@ interface SessionsPageProps {
   onOpenSettings?: () => void;
   onOpenSubUsers?: () => void;
   onStopImpersonation?: () => void;
+  onUpdateAvailability?: (status: 'available' | 'unavailable' | 'on_break') => Promise<void>;
   ownOnly?: boolean;
   initialPhone?: string | null;
 }
@@ -46,7 +47,7 @@ const API_BASE = window.location.hostname === 'localhost'
   ? 'http://localhost:3001/api'
   : `${window.location.origin}/api`;
 
-const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack, onLogout, onOpenContacts, onOpenGroups, onOpenAdminPanel, onOpenSettings, onOpenSubUsers, onStopImpersonation, initialPhone }) => {
+const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack, onLogout, onOpenContacts, onOpenGroups, onOpenAdminPanel, onOpenSettings, onOpenSubUsers, onStopImpersonation, onUpdateAvailability, initialPhone }) => {
   // Contacts panel state
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [contactsLoading, setContactsLoading] = useState(true);
@@ -814,6 +815,39 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
 
   const firstName = currentUser?.name?.charAt(0)?.toUpperCase() || currentUser?.email?.charAt(0)?.toUpperCase() || '?';
 
+  // ── Availability badge (reps / rep_managers) ────────────────────────────
+  const AVAILABILITY_OPTIONS: { value: 'available' | 'unavailable' | 'on_break'; label: string; dot: string; text: string; bg: string }[] = [
+    { value: 'available',   label: 'זמין',    dot: 'bg-emerald-500', text: 'text-emerald-700', bg: 'bg-emerald-50' },
+    { value: 'on_break',    label: 'בהפסקה',  dot: 'bg-amber-500',   text: 'text-amber-700',   bg: 'bg-amber-50' },
+    { value: 'unavailable', label: 'לא זמין', dot: 'bg-slate-400',   text: 'text-slate-600',   bg: 'bg-slate-100' },
+  ];
+  const [availabilityOpen, setAvailabilityOpen] = useState(false);
+  const [availabilitySaving, setAvailabilitySaving] = useState(false);
+  const availabilityWrapperRef = useRef<HTMLDivElement>(null);
+  const currentAvailability = AVAILABILITY_OPTIONS.find(o => o.value === (currentUser?.availability_status || 'available')) || AVAILABILITY_OPTIONS[0];
+  const showAvailability = (currentUser?.role === 'rep' || currentUser?.role === 'rep_manager') && !!onUpdateAvailability;
+
+  useEffect(() => {
+    if (!availabilityOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (availabilityWrapperRef.current && !availabilityWrapperRef.current.contains(e.target as Node)) setAvailabilityOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [availabilityOpen]);
+
+  const handleAvailabilitySelect = async (s: 'available' | 'unavailable' | 'on_break') => {
+    if (!onUpdateAvailability) return;
+    if (s === (currentUser?.availability_status || 'available')) { setAvailabilityOpen(false); return; }
+    setAvailabilitySaving(true);
+    try {
+      await onUpdateAvailability(s);
+    } finally {
+      setAvailabilitySaving(false);
+      setAvailabilityOpen(false);
+    }
+  };
+
   const filteredContacts = contacts.filter(c =>
     c.phone.toLowerCase().includes(contactSearch.toLowerCase())
   );
@@ -1075,6 +1109,43 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
           {currentUser && (
             <span className="text-sm font-bold text-slate-600">שלום, {currentUser.name || currentUser.email}</span>
           )}
+          {showAvailability && (
+            <div ref={availabilityWrapperRef} className="relative" dir="rtl">
+              <button
+                type="button"
+                onClick={() => setAvailabilityOpen(v => !v)}
+                disabled={availabilitySaving}
+                title="שינוי סטטוס זמינות"
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-black border border-slate-200 ${currentAvailability.bg} ${currentAvailability.text} hover:shadow-sm transition-all disabled:opacity-60`}
+              >
+                <span className="relative flex h-2.5 w-2.5">
+                  {currentAvailability.value === 'available' && (
+                    <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-60 ${currentAvailability.dot}`}></span>
+                  )}
+                  <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${currentAvailability.dot}`}></span>
+                </span>
+                <span>{currentAvailability.label}</span>
+              </button>
+              {availabilityOpen && (
+                <div className="absolute mt-2 left-0 w-44 bg-white rounded-2xl shadow-xl border border-slate-100 py-2 z-50">
+                  {AVAILABILITY_OPTIONS.map(opt => {
+                    const isActive = opt.value === (currentUser?.availability_status || 'available');
+                    return (
+                      <button
+                        key={opt.value}
+                        onClick={() => handleAvailabilitySelect(opt.value)}
+                        className={`w-full flex items-center gap-2 px-4 py-2 text-sm font-bold text-right hover:bg-slate-50 transition-colors ${isActive ? 'bg-slate-50' : ''}`}
+                      >
+                        <span className={`inline-block h-2.5 w-2.5 rounded-full ${opt.dot}`}></span>
+                        <span className="flex-1 text-slate-700">{opt.label}</span>
+                        {isActive && <Check size={14} className="text-blue-600" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
           {currentUser?.role === 'admin' && onOpenAdminPanel && (
             <button
               onClick={onOpenAdminPanel}
@@ -1084,11 +1155,19 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
               פאנל ניהול
             </button>
           )}
-          <div
-            title={currentUser?.name || currentUser?.email || ''}
-            className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-sm shadow-md select-none"
-          >
-            {firstName}
+          <div className="relative">
+            <div
+              title={currentUser?.name || currentUser?.email || ''}
+              className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-sm shadow-md select-none"
+            >
+              {firstName}
+            </div>
+            {showAvailability && (
+              <span
+                title={currentAvailability.label}
+                className={`absolute -bottom-0.5 -left-0.5 h-3 w-3 rounded-full ring-2 ring-white ${currentAvailability.dot}`}
+              />
+            )}
           </div>
           <button onClick={onLogout} className="p-2.5 text-slate-300 hover:text-red-500 transition-colors rounded-xl hover:bg-red-50">
             <LogOut size={22} />
@@ -1975,18 +2054,6 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                       ))
                 )}
               </select>
-            </div>
-
-            {/* Optional note */}
-            <div className="mb-4">
-              <label className="text-xs font-black text-slate-700 mb-1.5 block">הערה (אופציונלי):</label>
-              <textarea
-                value={transferNote}
-                onChange={e => setTransferNote(e.target.value)}
-                rows={2}
-                placeholder="סיבת ההעברה..."
-                className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm bg-slate-50 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all resize-none"
-              />
             </div>
 
             {transferError && (

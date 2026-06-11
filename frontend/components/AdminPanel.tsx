@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
-  Users, UserCog, LogOut, ArrowLeft, AlertCircle, Shield, Activity, 
+  Users, UserCog, LogOut, ArrowLeft, AlertCircle, AlertTriangle, Shield, Activity, 
   Search, Trash2, Edit2, Ban, CheckCircle, BarChart2, Settings, 
   FileText, Save, Plus, Eye, EyeOff, Bot, ChevronRight, LayoutDashboard,
   CreditCard, MoreVertical, X, Star, Globe, Lock, Copy, List, Phone, Clock,
   ChevronDown, ChevronUp, ToggleLeft, ToggleRight, XCircle, MessageSquare,
   User as UserIcon, ExternalLink, Sliders, Image as ImageIcon, Layers,
-  UserCheck, Headphones
+  UserCheck, Headphones, UserMinus, RefreshCcw
 } from 'lucide-react';
 
 interface User {
@@ -90,6 +90,15 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
   const [templates, setTemplates] = useState<Template[]>([]);
   const [systemConfig, setSystemConfig] = useState<any>(null);
   const [loadingConfig, setLoadingConfig] = useState(false);
+
+  // Global default config for the auto-removal-from-group feature
+  interface RemovalConfigShape { enabled: boolean; keywords: string[]; message: string; }
+  const [removalConfig, setRemovalConfig] = useState<RemovalConfigShape | null>(null);
+  const [removalDefaults, setRemovalDefaults] = useState<RemovalConfigShape | null>(null);
+  const [removalNewKeyword, setRemovalNewKeyword] = useState('');
+  const [removalSaving, setRemovalSaving] = useState(false);
+  const [removalSaved, setRemovalSaved] = useState(false);
+  const [removalConfirmOpen, setRemovalConfirmOpen] = useState(false);
   
   // Forms state
   const [newTemplateData, setNewTemplateData] = useState({ name: '', description: '', botId: '' });
@@ -146,7 +155,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
     fetchStats();
     if (activeTab === 'users') fetchAllUsers();
     if (activeTab === 'templates') fetchTemplates();
-    if (activeTab === 'settings') fetchSystemConfig();
+    if (activeTab === 'settings') { fetchSystemConfig(); fetchRemovalConfig(); }
     if (activeTab === 'sessions') fetchAllSessions(1, sessionsSearch);
     if (activeTab === 'dialog360') fetchDialog360Templates();
   }, [activeTab]);
@@ -622,6 +631,84 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
     } catch (err) {
       alert('שגיאה בעדכון הגדרות');
     }
+  };
+
+  // ── Removal-from-group config (global default) ───────────────────────────
+  const fetchRemovalConfig = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/admin/settings/removal`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error('Failed to load removal config');
+      const data = await res.json();
+      setRemovalConfig({
+        enabled: data.config?.enabled !== false,
+        keywords: Array.isArray(data.config?.keywords) ? data.config.keywords : [],
+        message: typeof data.config?.message === 'string' ? data.config.message : ''
+      });
+      setRemovalDefaults({
+        enabled: data.defaults?.enabled !== false,
+        keywords: Array.isArray(data.defaults?.keywords) ? data.defaults.keywords : [],
+        message: typeof data.defaults?.message === 'string' ? data.defaults.message : ''
+      });
+    } catch (err) {
+      console.error('[admin removal config]', err);
+    }
+  };
+
+  const persistRemovalConfig = async () => {
+    if (!removalConfig) return;
+    setRemovalSaving(true);
+    setRemovalSaved(false);
+    try {
+      const res = await fetch(`${API_BASE}/admin/settings/removal`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ config: removalConfig })
+      });
+      if (!res.ok) throw new Error('Failed to save removal config');
+      const data = await res.json();
+      if (data.config) {
+        setRemovalConfig({
+          enabled: data.config.enabled !== false,
+          keywords: Array.isArray(data.config.keywords) ? data.config.keywords : [],
+          message: typeof data.config.message === 'string' ? data.config.message : ''
+        });
+      }
+      setRemovalSaved(true);
+      setTimeout(() => setRemovalSaved(false), 2500);
+    } catch (err) {
+      alert('שגיאה בשמירת הגדרות ההסרה');
+    } finally {
+      setRemovalSaving(false);
+      setRemovalConfirmOpen(false);
+    }
+  };
+
+  const addRemovalKeyword = () => {
+    const k = removalNewKeyword.trim();
+    if (!k || !removalConfig) return;
+    if (removalConfig.keywords.some(x => x.trim().toLowerCase() === k.toLowerCase())) {
+      setRemovalNewKeyword('');
+      return;
+    }
+    setRemovalConfig({ ...removalConfig, keywords: [...removalConfig.keywords, k] });
+    setRemovalNewKeyword('');
+  };
+
+  const removeRemovalKeyword = (idx: number) => {
+    if (!removalConfig) return;
+    setRemovalConfig({ ...removalConfig, keywords: removalConfig.keywords.filter((_, i) => i !== idx) });
+  };
+
+  const resetRemovalConfigToDefaults = () => {
+    if (!removalDefaults) return;
+    if (!window.confirm('לאפס את כל מילות המפתח וההודעה לערכי ברירת המחדל של המערכת?')) return;
+    setRemovalConfig({
+      enabled: removalDefaults.enabled,
+      keywords: [...removalDefaults.keywords],
+      message: removalDefaults.message
+    });
   };
 
   const createTemplateFromBot = async () => {
@@ -2319,6 +2406,172 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                    </div>
                  ))}
                </div>
+
+               {/* ── Global default config for the auto-removal-from-group feature ── */}
+               {removalConfig && (
+                 <div dir="rtl" className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
+                   <div className="px-8 py-6 border-b border-slate-100 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                     <div className="text-right">
+                       <h3 className="text-xl font-black text-slate-800 flex items-center gap-2 justify-end">
+                         <UserMinus size={20} className="text-rose-500" />
+                         ניהול הסרה מקבוצה — ברירת מחדל כללית
+                       </h3>
+                       <p className="text-sm text-slate-500 font-medium mt-1">
+                         מילות מפתח והודעת אישור המשמשות כברירת מחדל עבור כל בוט. כל משתמש יכול לדרוס את הערכים האלה בהגדרות שלו.
+                       </p>
+                     </div>
+                     <div className="flex items-center gap-3">
+                       <button
+                         onClick={resetRemovalConfigToDefaults}
+                         className="flex items-center gap-2 px-4 py-2.5 bg-slate-100 text-slate-600 rounded-xl font-bold text-sm hover:bg-slate-200 transition-all"
+                         title="שחזור לערכי ברירת המחדל של המערכת"
+                       >
+                         <RefreshCcw size={14} /> ערכי ברירת מחדל
+                       </button>
+                       <button
+                         onClick={() => setRemovalConfirmOpen(true)}
+                         disabled={removalSaving}
+                         className="flex items-center gap-2 px-5 py-2.5 bg-rose-600 text-white rounded-xl font-bold text-sm hover:bg-rose-700 transition-all shadow-lg shadow-rose-200 disabled:opacity-60 active:scale-95"
+                       >
+                         <Save size={14} />
+                         {removalSaving ? 'שומר…' : 'שמור שינויים'}
+                       </button>
+                     </div>
+                   </div>
+
+                   <div className="p-8 space-y-8">
+                     <div className="bg-amber-50 border border-amber-200 rounded-2xl px-5 py-4 flex items-start gap-3">
+                       <AlertTriangle size={18} className="text-amber-600 mt-0.5 flex-shrink-0" />
+                       <div className="text-amber-800 text-sm font-bold leading-relaxed">
+                         שינוי הגדרות אלו ישפיע על <span className="underline">כל המשתמשים</span> שלא דרסו את ההגדרה. הסרה לא תקינה של מילים עלולה למנוע הסרה אוטומטית של נמענים שביקשו זאת — באחריותך.
+                       </div>
+                     </div>
+
+                     <div className="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4">
+                       <div className="text-right">
+                         <div className="text-sm font-black text-slate-800">הסרה אוטומטית פעילה</div>
+                         <div className="text-xs text-slate-500 font-medium">כאשר נמען שולח אחת ממילות המפתח — המספר שלו יתווסף אוטומטית לרשימת ההסרה.</div>
+                       </div>
+                       <button
+                         onClick={() => setRemovalConfig({ ...removalConfig, enabled: !removalConfig.enabled })}
+                         className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-xs transition-all border ${
+                           removalConfig.enabled
+                             ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                             : 'bg-slate-100 text-slate-500 border-slate-200'
+                         }`}
+                       >
+                         {removalConfig.enabled ? <ToggleRight size={18} /> : <ToggleLeft size={18} />}
+                         {removalConfig.enabled ? 'פעיל' : 'מושבת'}
+                       </button>
+                     </div>
+
+                     <div>
+                       <label className="block text-xs font-black text-slate-400 uppercase tracking-wider mb-3">מילות מפתח להסרה</label>
+                       <div className="flex gap-2 mb-4">
+                         <input
+                           type="text"
+                           value={removalNewKeyword}
+                           onChange={e => setRemovalNewKeyword(e.target.value)}
+                           onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addRemovalKeyword(); } }}
+                           placeholder="הוסף מילת מפתח (למשל: הסר, remove)"
+                           className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold outline-none focus:ring-2 focus:ring-rose-600/20 focus:border-rose-500 transition-all"
+                         />
+                         <button
+                           onClick={addRemovalKeyword}
+                           className="flex items-center gap-2 px-5 py-3 bg-slate-800 text-white rounded-2xl font-bold text-sm hover:bg-slate-900 transition-all"
+                         >
+                           <Plus size={14} /> הוסף
+                         </button>
+                       </div>
+                       {removalConfig.keywords.length === 0 ? (
+                         <div className="text-center text-slate-400 text-sm py-8 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                           אין מילות מפתח. ללא מילות מפתח לא תתבצע הסרה אוטומטית.
+                         </div>
+                       ) : (
+                         <div className="flex flex-wrap gap-2">
+                           {removalConfig.keywords.map((kw, idx) => (
+                             <span
+                               key={`${kw}-${idx}`}
+                               className="inline-flex items-center gap-2 bg-rose-50 text-rose-700 border border-rose-200 px-3 py-1.5 rounded-xl text-sm font-bold"
+                             >
+                               <span dir="auto">{kw}</span>
+                               <button
+                                 onClick={() => removeRemovalKeyword(idx)}
+                                 className="text-rose-400 hover:text-rose-700 transition-colors"
+                                 title="הסר מילה"
+                               >
+                                 <X size={14} />
+                               </button>
+                             </span>
+                           ))}
+                         </div>
+                       )}
+                       {removalDefaults && (
+                         <p className="text-[11px] text-slate-400 font-medium mt-3 text-right">
+                           ברירת המחדל המקורית של המערכת כוללת {removalDefaults.keywords.length} מילים בעברית ובאנגלית.
+                         </p>
+                       )}
+                     </div>
+
+                     <div>
+                       <label className="block text-xs font-black text-slate-400 uppercase tracking-wider mb-3">הודעת אישור לאחר ההסרה</label>
+                       <textarea
+                         value={removalConfig.message}
+                         onChange={e => setRemovalConfig({ ...removalConfig, message: e.target.value })}
+                         rows={3}
+                         placeholder="הודעה שתישלח לנמען אחרי שהוסר אוטומטית"
+                         className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold outline-none focus:ring-2 focus:ring-rose-600/20 focus:border-rose-500 transition-all resize-none text-right"
+                       />
+                       {removalDefaults && removalDefaults.message && (
+                         <p className="text-[11px] text-slate-400 font-medium mt-2 text-right">
+                           ברירת מחדל: <span className="text-slate-500">"{removalDefaults.message}"</span>
+                         </p>
+                       )}
+                     </div>
+
+                     {removalSaved && (
+                       <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 text-emerald-700 text-sm font-bold flex items-center gap-2">
+                         <CheckCircle size={16} /> ההגדרה הגלובלית נשמרה
+                       </div>
+                     )}
+                   </div>
+                 </div>
+               )}
+            </div>
+          )}
+
+          {/* Modal: confirm global removal-config save */}
+          {removalConfirmOpen && removalConfig && (
+            <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[100] flex items-center justify-center p-6" dir="rtl">
+              <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl border border-slate-100 p-8">
+                <div className="flex items-start gap-4 mb-6">
+                  <div className="w-12 h-12 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center flex-shrink-0">
+                    <AlertTriangle size={22} />
+                  </div>
+                  <div className="text-right">
+                    <h4 className="text-lg font-black text-slate-900 mb-1">לאשר שינוי הגדרת הסרה גלובלית?</h4>
+                    <p className="text-sm text-slate-500 font-medium leading-relaxed">
+                      ההגדרות החדשות יחולו על כל המשתמשים שלא דרסו את ברירת המחדל. שינוי שגוי עלול למנוע הסרה אוטומטית של נמענים שביקשו להסירם — באחריותך.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setRemovalConfirmOpen(false)}
+                    className="flex-1 py-3 border border-slate-200 text-slate-500 rounded-2xl font-bold text-xs uppercase hover:bg-slate-50"
+                    disabled={removalSaving}
+                  >
+                    ביטול
+                  </button>
+                  <button
+                    onClick={persistRemovalConfig}
+                    disabled={removalSaving}
+                    className="flex-1 py-3 bg-rose-600 text-white rounded-2xl font-bold text-xs uppercase hover:bg-rose-700 disabled:opacity-60"
+                  >
+                    {removalSaving ? 'שומר…' : 'אני מבין/ה, שמור'}
+                  </button>
+                </div>
+              </div>
             </div>
           )}
 

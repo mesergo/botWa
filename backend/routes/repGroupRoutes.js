@@ -1,6 +1,6 @@
 import express from 'express';
 import { authenticateToken } from '../middleware/auth.js';
-import { getRepGroups, createRepGroup, deleteRepGroup, getRepsForGroups } from '../controllers/repGroupController.js';
+import { getRepGroups, getRepGroup, createRepGroup, updateRepGroup, deleteRepGroup, getRepsForGroups } from '../controllers/repGroupController.js';
 
 const router = express.Router();
 
@@ -15,7 +15,9 @@ router.use(authenticateToken, (req, res, next) => {
 
 router.get('/', getRepGroups);
 router.get('/reps', getRepsForGroups);
+router.get('/:id', getRepGroup);
 router.post('/', createRepGroup);
+router.patch('/:id', updateRepGroup);
 router.delete('/:id', deleteRepGroup);
 
 export default router;

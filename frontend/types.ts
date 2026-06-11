@@ -41,6 +41,8 @@ export interface NodeData {
   groupId?: string;
   removeFromGroupMode?: 'specific' | 'all';
   removeGroupId?: string;
+  /** Reason text recorded in the group-removal log when the bot removes a contact from a group */
+  removalReason?: string;
   /** For action_transfer_to_agent: which RepGroup the conversation is assigned to */
   repGroupId?: string;
   /** For action_transfer_to_agent: 'any' rep from the group, or a 'specific' rep */
@@ -128,6 +130,7 @@ export interface User {
   public_id: string;
   account_type: 'Trial' | 'Basic' | 'Premium';
   status: 'active' | 'inActive' | 'pause';
+  availability_status?: 'available' | 'unavailable' | 'on_break';
   password?: string;
   trial_expires_at?: string | null;
   isImpersonating?: boolean;

@@ -895,6 +895,43 @@ const FlowBuilder: React.FC = () => {
     const data = await res.json();
     setBots(prev => prev.map(b => b.id === id ? { ...b, public_id: data.public_id } : b));
   };
+
+  // Update current user's availability status (rep / rep_manager)
+  const handleUpdateAvailability = useCallback(async (status: 'available' | 'unavailable' | 'on_break') => {
+    if (!token) return;
+    const res = await fetch(`${API_BASE}/auth/availability`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ availability_status: status }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || 'שגיאה בעדכון סטטוס זמינות');
+    }
+    setCurrentUser(prev => {
+      if (!prev) return prev;
+      const updated = { ...prev, availability_status: status } as User;
+      try { localStorage.setItem('flowbot_user', JSON.stringify(updated)); } catch {}
+      return updated;
+    });
+  }, [token]);
+
+  // Logout: notify server (so reps are marked as 'unavailable'), then clear local state and reload.
+  const handleLogout = useCallback(() => {
+    const t = token;
+    // Fire-and-forget; don't wait for the response — keep logout instant.
+    if (t) {
+      try {
+        fetch(`${API_BASE}/auth/logout`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${t}` },
+          keepalive: true,
+        }).catch(() => {});
+      } catch { /* ignore */ }
+    }
+    localStorage.clear();
+    window.location.reload();
+  }, [token]);
  
   const handleGoogleLogin = async (credential: string) => {
     setAuthErrors({});
@@ -1691,7 +1728,7 @@ const FlowBuilder: React.FC = () => {
     return (
       <TrialExpiredScreen
         userName={currentUser.name}
-        onLogout={() => { localStorage.clear(); window.location.reload(); }}
+        onLogout={handleLogout}
       />
     );
   }
@@ -1705,7 +1742,7 @@ const FlowBuilder: React.FC = () => {
         onGoToContacts={() => setViewMode('contacts')}
         onGoToSettings={() => { setDashboardInitialTab('settings'); setViewMode('dashboard'); }}
         onOpenAdminPanel={currentUser?.role === 'admin' ? () => setViewMode('admin-panel') : undefined}
-        onLogout={() => { localStorage.clear(); window.location.reload(); }}
+        onLogout={handleLogout}
       />
     );
   }
@@ -1716,7 +1753,7 @@ const FlowBuilder: React.FC = () => {
         token={token}
         currentUser={currentUser}
         onBack={() => { setDashboardInitialTab('bots'); setViewMode('dashboard'); }}
-        onLogout={() => { localStorage.clear(); window.location.reload(); }}
+        onLogout={handleLogout}
         onOpenSessions={(phone?: string) => { setSessionsInitialPhone(phone ?? null); setSessionsOwnOnly(true); setViewMode('sessions'); }}
         onOpenGroups={() => setViewMode('groups')}
         onOpenAdminPanel={() => setViewMode('admin-panel')}
@@ -1734,7 +1771,7 @@ const FlowBuilder: React.FC = () => {
         token={token}
         currentUser={currentUser}
         onBack={() => { setDashboardInitialTab('bots'); setViewMode('dashboard'); }}
-        onLogout={() => { localStorage.clear(); window.location.reload(); }}
+        onLogout={handleLogout}
         onOpenContacts={(phone?: string) => { setContactsInitialPhone(phone ?? null); setViewMode('contacts'); }}
         onOpenSessions={(phone?: string) => { setSessionsInitialPhone(phone ?? null); setSessionsOwnOnly(true); setViewMode('sessions'); }}
         onOpenAdminPanel={() => setViewMode('admin-panel')}
@@ -1751,7 +1788,7 @@ const FlowBuilder: React.FC = () => {
         token={token}
         currentUser={currentUser}
         onBack={currentUser?.role === 'rep' ? undefined : () => { setDashboardInitialTab('bots'); setViewMode('dashboard'); }}
-        onLogout={() => { localStorage.clear(); window.location.reload(); }}
+        onLogout={handleLogout}
         onOpenContacts={currentUser?.role !== 'rep' && currentUser?.role !== 'rep_manager' ? (phone?: string) => { setContactsInitialPhone(phone ?? null); setViewMode('contacts'); } : undefined}
         onOpenGroups={currentUser?.role !== 'rep' && currentUser?.role !== 'rep_manager' ? () => setViewMode('groups') : undefined}
         onOpenAdminPanel={() => setViewMode('admin-panel')}
@@ -1760,6 +1797,7 @@ const FlowBuilder: React.FC = () => {
         onOpenSettings={currentUser?.role !== 'rep' && currentUser?.role !== 'rep_manager' ? () => { setDashboardInitialTab('settings'); setViewMode('dashboard'); } : undefined}
         onOpenSubUsers={currentUser?.role === 'user' || currentUser?.role === 'rep_manager' ? () => { setDashboardInitialTab('users'); setViewMode('dashboard'); } : undefined}
         onStopImpersonation={handleStopImpersonation}
+        onUpdateAvailability={handleUpdateAvailability}
       />
     );
   }
@@ -1773,7 +1811,7 @@ const FlowBuilder: React.FC = () => {
           onCreateBot={handleCreateBot} 
           onDeleteBot={handleDeleteBot} 
           onSetDefaultBot={handleSetDefaultBot} 
-          onLogout={() => { localStorage.clear(); window.location.reload(); }} 
+          onLogout={handleLogout} 
           currentUser={currentUser}
           onOpenAdminPanel={() => setViewMode('admin-panel')}
           onOpenContacts={() => setViewMode('contacts')}
@@ -1782,6 +1820,7 @@ const FlowBuilder: React.FC = () => {
           onStopImpersonation={handleStopImpersonation}
           onConnectFacebook={handleConnectFacebook}
           onUpdateBotPublicId={handleUpdateBotPublicId}
+          onUpdateAvailability={handleUpdateAvailability}
           token={token}
           initialTab={dashboardInitialTab}
         />

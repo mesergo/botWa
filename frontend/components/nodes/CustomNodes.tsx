@@ -930,6 +930,21 @@ export const ActionAddToGroupNode = (props: any) => {
           ) : null}
         </InputFieldWrapper>
       )}
+
+      {mode === 'remove' && removeSelectValue === '__all__' && (
+        <InputFieldWrapper label={<span>סיבת ההסרה (תירשם בלוג ההסרות) <span className="text-red-500">*</span></span> as any}>
+          <textarea
+            className={`nodrag w-full min-h-[64px] px-3 py-2 border rounded-xl bg-white text-slate-900 text-right focus:outline-none focus:ring-2 focus:ring-orange-400 resize-y ${!String(props.data.removalReason || '').trim() ? 'border-red-400' : 'border-slate-200'}`}
+            value={props.data.removalReason || ''}
+            onChange={(e) => props.data.onChange({ removalReason: e.target.value })}
+            placeholder="למשל: הלקוח ביקש להסיר מהרשימה"
+            style={{ fontFamily: 'Heebo, sans-serif' }}
+          />
+          {!String(props.data.removalReason || '').trim() && (
+            <p className="mt-2 text-[12px] font-bold text-red-500 text-right">יש להזין סיבת הסרה</p>
+          )}
+        </InputFieldWrapper>
+      )}
     </BaseNode>
   );
 };
@@ -987,6 +1002,21 @@ export const ActionRemoveFromGroupNode = (props: any) => {
 
       {mode === 'all' && (
         <p className="text-[12px] text-slate-500 text-right mt-1">מספר הטלפון יתווסף לרשימת ההסרה</p>
+      )}
+
+      {mode === 'all' && (
+        <InputFieldWrapper label={<span>סיבת ההסרה (תירשם בלוג ההסרות) <span className="text-red-500">*</span></span> as any}>
+          <textarea
+            className={`nodrag w-full min-h-[64px] px-3 py-2 border rounded-xl bg-white text-slate-900 text-right focus:outline-none focus:ring-2 focus:ring-orange-400 resize-y ${!String(props.data.removalReason || '').trim() ? 'border-red-400' : 'border-slate-200'}`}
+            value={props.data.removalReason || ''}
+            onChange={(e) => props.data.onChange({ removalReason: e.target.value })}
+            placeholder="למשל: הלקוח ביקש להסיר מהרשימה"
+            style={{ fontFamily: 'Heebo, sans-serif' }}
+          />
+          {!String(props.data.removalReason || '').trim() && (
+            <p className="mt-2 text-[12px] font-bold text-red-500 text-right">יש להזין סיבת הסרה</p>
+          )}
+        </InputFieldWrapper>
       )}
     </BaseNode>
   );

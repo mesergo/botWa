@@ -3,6 +3,7 @@ import BotSession from '../models/BotSession.js';
 import BotFlow from '../models/BotFlow.js';
 import AuditLog from '../models/AuditLog.js';
 import SystemSetting from '../models/SystemSetting.js';
+import { DEFAULT_REMOVAL_CONFIG, getGlobalRemovalConfig } from '../utils/removalConfig.js';
 
 // Default configuration if DB is empty (used for fallback)
 const DEFAULT_ACCOUNTS_CONFIG = {
@@ -41,6 +42,44 @@ export const updateSystemSettings = async (req, res) => {
     res.json({ message: 'System settings updated successfully', config });
   } catch (error) {
     res.status(500).json({ message: 'Error updating system settings', error: error.message });
+  }
+};
+
+// ── Removal-from-group default config (admin-managed) ────────────────────────
+export const getRemovalConfig = async (req, res) => {
+  try {
+    const config = await getGlobalRemovalConfig();
+    res.json({ config, defaults: DEFAULT_REMOVAL_CONFIG });
+  } catch (error) {
+    res.status(500).json({ message: 'Error fetching removal config', error: error.message });
+  }
+};
+
+export const updateRemovalConfig = async (req, res) => {
+  try {
+    const { config } = req.body || {};
+    if (!config || typeof config !== 'object') {
+      return res.status(400).json({ message: 'Missing config' });
+    }
+    const cleaned = {
+      enabled: typeof config.enabled === 'boolean' ? config.enabled : true,
+      keywords: Array.isArray(config.keywords)
+        ? config.keywords.map(k => String(k || '').trim()).filter(Boolean)
+        : [],
+      message: typeof config.message === 'string' ? config.message : ''
+    };
+    if (cleaned.keywords.length === 0) cleaned.keywords = DEFAULT_REMOVAL_CONFIG.keywords;
+    if (!cleaned.message.trim()) cleaned.message = DEFAULT_REMOVAL_CONFIG.message;
+
+    await SystemSetting.findOneAndUpdate(
+      { key: 'removal_config' },
+      { value: cleaned, description: 'Global default config for the auto-removal-from-group feature' },
+      { upsert: true, new: true }
+    );
+
+    res.json({ message: 'Removal config updated', config: cleaned });
+  } catch (error) {
+    res.status(500).json({ message: 'Error updating removal config', error: error.message });
   }
 };
 import jwt from 'jsonwebtoken';

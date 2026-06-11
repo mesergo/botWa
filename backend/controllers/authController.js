@@ -6,6 +6,11 @@ import jwt from 'jsonwebtoken';
 import { getUserLimits } from '../utils/limits.js';
 import { SECRET_KEY } from '../middleware/auth.js';
 import { OAuth2Client } from 'google-auth-library';
+import {
+  DEFAULT_REMOVAL_CONFIG,
+  getGlobalRemovalConfig,
+  getEffectiveRemovalConfig
+} from '../utils/removalConfig.js';
 
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
@@ -79,6 +84,13 @@ export const login = async (req, res) => {
     const userId = user._id.toString();
     const userRole = user.role || 'user';
     const managerId = user.manager_id || null;
+
+    // For reps, reset availability to 'available' on every login
+    if (userRole === 'rep' || userRole === 'rep_manager') {
+      user.availability_status = 'available';
+      await user.save();
+    }
+
     const jwtToken = jwt.sign({ id: userId, email: user.email, role: userRole, manager_id: managerId }, SECRET_KEY, { expiresIn: '24h' });
     
     res.json({ 
@@ -92,6 +104,7 @@ export const login = async (req, res) => {
         public_id: user.public_id,
         account_type: user.account_type || 'Basic',
         status: user.status || 'active',
+        availability_status: user.availability_status || 'unavailable',
         trial_expires_at: user.trial_expires_at || null,
         api_token: user.token // API token for WhatsApp integration
       } 
@@ -146,6 +159,12 @@ export const googleAuth = async (req, res) => {
 
     const googleRole = user.role || 'user';
     const googleManagerId = user.manager_id || null;
+
+    if (googleRole === 'rep' || googleRole === 'rep_manager') {
+      user.availability_status = 'available';
+      await user.save();
+    }
+
     const jwtToken = jwt.sign({ id: user._id.toString(), email: user.email, role: googleRole, manager_id: googleManagerId }, SECRET_KEY, { expiresIn: '24h' });
     res.json({
       token: jwtToken,
@@ -158,6 +177,7 @@ export const googleAuth = async (req, res) => {
         public_id: user.public_id,
         account_type: user.account_type || 'Trial',
         status: user.status || 'active',
+        availability_status: user.availability_status || 'unavailable',
         trial_expires_at: user.trial_expires_at || null,
         api_token: user.token,
       },
@@ -280,6 +300,7 @@ export const getProfile = async (req, res) => {
       public_id: user.public_id,
       account_type: user.account_type,
       status: user.status,
+      availability_status: user.availability_status || 'unavailable',
       dialog360_bot_id: user.dialog360_bot_id || '',
       createdAt: user.createdAt,
       trial_expires_at: user.trial_expires_at || null,
@@ -344,6 +365,41 @@ export const updateProfile = async (req, res) => {
   }
 };
 
+// Update current user's availability status (rep / rep_manager)
+export const updateAvailability = async (req, res) => {
+  try {
+    const userId = req.userId;
+    const { availability_status } = req.body;
+    const allowed = ['available', 'unavailable', 'on_break'];
+    if (!allowed.includes(availability_status)) {
+      return res.status(400).json({ error: 'Invalid availability status' });
+    }
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    user.availability_status = availability_status;
+    await user.save();
+    res.json({ availability_status: user.availability_status });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// Logout: mark user as unavailable (rep / rep_manager).
+// Token invalidation is handled client-side; this only updates presence.
+export const logout = async (req, res) => {
+  try {
+    const userId = req.userId;
+    const user = await User.findById(userId);
+    if (user && (user.role === 'rep' || user.role === 'rep_manager')) {
+      user.availability_status = 'unavailable';
+      await user.save();
+    }
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
 // Update Dialog360 Bot ID for authenticated user
 export const updateDialog360Credentials = async (req, res) => {
   try {
@@ -367,6 +423,78 @@ export const updateDialog360Credentials = async (req, res) => {
       dialog360_bot_id: user.dialog360_bot_id
     });
     
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// ── Auto-removal-from-group config (per-user override) ──────────────────────
+// GET /api/auth/removal-config
+// Returns: { config, global, defaults, customized }
+//   config     → effective config currently in force for this user
+//   global     → admin's global default (used when customized=false)
+//   defaults   → factory defaults (used by the "reset to defaults" button)
+//   customized → whether the user has overridden the global config
+export const getUserRemovalConfig = async (req, res) => {
+  try {
+    const user = await User.findById(req.userId);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const global = await getGlobalRemovalConfig();
+    const effective = await getEffectiveRemovalConfig(user);
+
+    res.json({
+      config: effective,
+      global,
+      defaults: DEFAULT_REMOVAL_CONFIG,
+      customized: !!user.removal_config?.customized,
+      override: user.removal_config || null
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// PUT /api/auth/removal-config
+// Body: { customized: boolean, enabled?: boolean, keywords?: string[], message?: string }
+// When customized=false, the user reverts to the global default (override cleared).
+export const updateUserRemovalConfig = async (req, res) => {
+  try {
+    const user = await User.findById(req.userId);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const body = req.body || {};
+    if (body.customized === false) {
+      user.removal_config = {
+        customized: false,
+        enabled: true,
+        keywords: [],
+        message: ''
+      };
+    } else {
+      const keywords = Array.isArray(body.keywords)
+        ? body.keywords.map(k => String(k || '').trim()).filter(Boolean)
+        : [];
+      user.removal_config = {
+        customized: true,
+        enabled: typeof body.enabled === 'boolean' ? body.enabled : true,
+        keywords,
+        message: typeof body.message === 'string' ? body.message : ''
+      };
+    }
+    user.markModified('removal_config');
+    await user.save();
+
+    const global = await getGlobalRemovalConfig();
+    const effective = await getEffectiveRemovalConfig(user);
+    res.json({
+      message: 'Removal config saved',
+      config: effective,
+      global,
+      defaults: DEFAULT_REMOVAL_CONFIG,
+      customized: !!user.removal_config?.customized,
+      override: user.removal_config || null
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

@@ -680,7 +680,7 @@ export const closeConversation = async (req, res) => {
 export const transferConversation = async (req, res) => {
   try {
     const { id } = req.params;
-    const { targetType, targetId, groupId } = req.body || {};
+    const { targetType, targetId, groupId, note } = req.body || {};
 
     if (!['group', 'rep', 'shift_manager'].includes(targetType)) {
       return res.status(400).json({ error: 'targetType חייב להיות group / rep / shift_manager' });
@@ -769,9 +769,10 @@ export const transferConversation = async (req, res) => {
 
     const now = new Date();
     const fromName = req.user?.name || req.user?.email || 'נציג';
+    const noteText = typeof note === 'string' && note.trim() ? ` — ${note.trim()}` : '';
     const historyEntry = {
       type: 'System',
-      text: `השיחה הועברה ע"י ${fromName} ל${targetLabel}`,
+      text: `השיחה הועברה ע"י ${fromName} ל${targetLabel}${noteText}`,
       sender: 'system',
       name: 'מערכת',
       node_id: 'system',

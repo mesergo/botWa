@@ -11,12 +11,87 @@ const getRootManagerId = async (userId) => {
   return userId.toString();
 };
 
+const defaultWorkingHoursDays = () =>
+  Array.from({ length: 7 }, () => ({ enabled: false, from: '09:00', to: '17:00' }));
+
+const normalizeWorkingHours = (wh) => {
+  const enabled = !!(wh && wh.enabled);
+  const rawDays = Array.isArray(wh && wh.days) ? wh.days : [];
+  const days = defaultWorkingHoursDays().map((def, i) => {
+    const d = rawDays[i] || {};
+    return {
+      enabled: typeof d.enabled === 'boolean' ? d.enabled : def.enabled,
+      from: typeof d.from === 'string' && /^\d{2}:\d{2}$/.test(d.from) ? d.from : def.from,
+      to:   typeof d.to   === 'string' && /^\d{2}:\d{2}$/.test(d.to)   ? d.to   : def.to,
+    };
+  });
+  return { enabled, days };
+};
+
+const serializeGroup = (g) => ({
+  id: g._id.toString(),
+  name: g.name,
+  openingMessage: g.openingMessage || '',
+  closingMessage: g.closingMessage || '',
+  unavailableMessage: g.unavailableMessage || '',
+  workingHours: normalizeWorkingHours(g.workingHours),
+});
+
 // GET /api/rep-groups
 export const getRepGroups = async (req, res) => {
   try {
     const rootId = await getRootManagerId(req.userId);
-    const groups = await RepGroup.find({ manager_id: rootId }).sort({ createdAt: -1 });
-    res.json(groups.map(g => ({ id: g._id.toString(), name: g.name })));
+    const groups = await RepGroup.find({ manager_id: rootId }).sort({ createdAt: -1 }).lean();
+    res.json(groups.map(serializeGroup));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// GET /api/rep-groups/:id
+export const getRepGroup = async (req, res) => {
+  try {
+    const rootId = await getRootManagerId(req.userId);
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ error: 'מזהה לא תקין' });
+    }
+    const group = await RepGroup.findOne({ _id: id, manager_id: rootId }).lean();
+    if (!group) return res.status(404).json({ error: 'קבוצה לא נמצאה' });
+    res.json(serializeGroup(group));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// PATCH /api/rep-groups/:id — update settings
+export const updateRepGroup = async (req, res) => {
+  try {
+    const rootId = await getRootManagerId(req.userId);
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ error: 'מזהה לא תקין' });
+    }
+    const group = await RepGroup.findOne({ _id: id, manager_id: rootId });
+    if (!group) return res.status(404).json({ error: 'קבוצה לא נמצאה' });
+
+    const { name, openingMessage, closingMessage, unavailableMessage, workingHours } = req.body || {};
+
+    if (name !== undefined) {
+      const trimmed = String(name).trim();
+      if (!trimmed) return res.status(400).json({ error: 'שם הקבוצה לא יכול להיות ריק' });
+      group.name = trimmed;
+    }
+    if (openingMessage !== undefined)     group.openingMessage     = String(openingMessage || '');
+    if (closingMessage !== undefined)     group.closingMessage     = String(closingMessage || '');
+    if (unavailableMessage !== undefined) group.unavailableMessage = String(unavailableMessage || '');
+    if (workingHours !== undefined) {
+      group.workingHours = normalizeWorkingHours(workingHours);
+      group.markModified('workingHours');
+    }
+
+    await group.save();
+    res.json(serializeGroup(group.toObject()));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -52,7 +127,7 @@ export const createRepGroup = async (req, res) => {
     }
     const rootId = await getRootManagerId(req.userId);
     const group = await RepGroup.create({ name: name.trim(), manager_id: rootId });
-    res.status(201).json({ id: group._id.toString(), name: group.name });
+    res.status(201).json(serializeGroup(group.toObject()));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

@@ -1,14 +1,45 @@
 import React, { useState, useEffect } from 'react';
-import { UserCog, Users, Plus, Trash2, Edit2, Check, X, Eye, EyeOff } from 'lucide-react';
+import { UserCog, Users, Plus, Trash2, Edit2, Check, X, Eye, EyeOff, Settings, Clock, MessageSquare } from 'lucide-react';
 
 const API_BASE = window.location.hostname === 'localhost'
   ? 'http://localhost:3001/api'
   : `${window.location.origin}/api`;
 
+interface WorkingHoursDay {
+  enabled: boolean;
+  from: string; // "HH:mm"
+  to: string;   // "HH:mm"
+}
+
+interface WorkingHours {
+  enabled: boolean;
+  days: WorkingHoursDay[]; // 7 entries, index 0=Sunday .. 6=Saturday
+}
+
 interface RepGroup {
   id: string;
   name: string;
+  openingMessage?: string;
+  closingMessage?: string;
+  unavailableMessage?: string;
+  workingHours?: WorkingHours;
 }
+
+const DAY_LABELS = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
+
+const emptyWorkingHours = (): WorkingHours => ({
+  enabled: false,
+  days: Array.from({ length: 7 }, () => ({ enabled: false, from: '09:00', to: '17:00' })),
+});
+
+const emptyGroupSettings = (id = '', name = ''): RepGroup => ({
+  id,
+  name,
+  openingMessage: '',
+  closingMessage: '',
+  unavailableMessage: '',
+  workingHours: emptyWorkingHours(),
+});
 
 interface SubUser {
   id: string;
@@ -17,6 +48,7 @@ interface SubUser {
   phone: string;
   role: 'rep' | 'rep_manager';
   status: string;
+  availability_status?: 'available' | 'unavailable' | 'on_break';
   createdAt: string;
   repGroupIds: string[];
 }
@@ -30,15 +62,21 @@ const ROLE_LABELS: Record<string, string> = {
   rep: 'נציג',
 };
 
+const AVAILABILITY_LABELS: Record<string, { label: string; dot: string; text: string; bg: string }> = {
+  available:   { label: 'זמין',    dot: 'bg-emerald-500', text: 'text-emerald-700', bg: 'bg-emerald-50' },
+  on_break:    { label: 'בהפסקה',  dot: 'bg-amber-500',   text: 'text-amber-700',   bg: 'bg-amber-50' },
+  unavailable: { label: 'לא זמין', dot: 'bg-slate-400',   text: 'text-slate-600',   bg: 'bg-slate-100' },
+};
+
 const emptyForm = { name: '', email: '', password: '', phone: '', role: 'rep' as 'rep' | 'rep_manager', repGroupIds: [] as string[] };
 
 const SubUsersTab: React.FC<SubUsersTabProps> = ({ token }) => {
-  // Reps state
+  // Reps state 
   const [users, setUsers] = useState<SubUser[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Groups state
+  // Groups state 
   const [groups, setGroups] = useState<RepGroup[]>([]);
   const [groupsLoading, setGroupsLoading] = useState(false);
 
@@ -66,6 +104,11 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token }) => {
   // Group delete state
   const [deletingGroupId, setDeletingGroupId] = useState<string | null>(null);
   const [deleteGroupLoading, setDeleteGroupLoading] = useState(false);
+
+  // Group settings modal state
+  const [settingsGroup, setSettingsGroup] = useState<RepGroup | null>(null);
+  const [settingsSaving, setSettingsSaving] = useState(false);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
 
   const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
 
@@ -98,10 +141,37 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token }) => {
     }
   };
 
+  // Silent refresh — used for periodic polling so the spinner doesn't flicker.
+  const refreshUsersSilently = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/sub-users`, { headers });
+      if (!res.ok) return;
+      const data = await res.json();
+      setUsers(data);
+    } catch {
+      // ignore — next poll will retry
+    }
+  };
+
   useEffect(() => {
     loadUsers();
     loadGroups();
   }, []);
+
+  // Live-update reps availability while the "reps" tab is visible.
+  // Polls every 8s and immediately on window focus / tab visibility.
+  useEffect(() => {
+    if (activeTab !== 'reps') return;
+    const interval = setInterval(refreshUsersSilently, 8000);
+    const onVisible = () => { if (document.visibilityState === 'visible') refreshUsersSilently(); };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', refreshUsersSilently);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', refreshUsersSilently);
+    };
+  }, [activeTab, token]);
 
   const openCreate = () => {
     setEditingId(null);
@@ -228,6 +298,71 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token }) => {
     }
   };
 
+  const openGroupSettings = (g: RepGroup) => {
+    setSettingsError(null);
+    setSettingsGroup({
+      id: g.id,
+      name: g.name,
+      openingMessage: g.openingMessage || '',
+      closingMessage: g.closingMessage || '',
+      unavailableMessage: g.unavailableMessage || '',
+      workingHours: g.workingHours && Array.isArray(g.workingHours.days) && g.workingHours.days.length === 7
+        ? {
+            enabled: !!g.workingHours.enabled,
+            days: g.workingHours.days.map(d => ({
+              enabled: !!d.enabled,
+              from: d.from || '09:00',
+              to: d.to || '17:00',
+            })),
+          }
+        : emptyWorkingHours(),
+    });
+  };
+
+  const updateSettings = (patch: Partial<RepGroup>) => {
+    setSettingsGroup(prev => (prev ? { ...prev, ...patch } : prev));
+  };
+
+  const updateWorkingDay = (index: number, patch: Partial<WorkingHoursDay>) => {
+    setSettingsGroup(prev => {
+      if (!prev) return prev;
+      const wh = prev.workingHours || emptyWorkingHours();
+      const days = wh.days.map((d, i) => (i === index ? { ...d, ...patch } : d));
+      return { ...prev, workingHours: { ...wh, days } };
+    });
+  };
+
+  const handleSaveSettings = async () => {
+    if (!settingsGroup) return;
+    if (!settingsGroup.name.trim()) {
+      setSettingsError('שם הקבוצה הוא שדה חובה');
+      return;
+    }
+    setSettingsSaving(true);
+    setSettingsError(null);
+    try {
+      const res = await fetch(`${API_BASE}/rep-groups/${settingsGroup.id}`, {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify({
+          name: settingsGroup.name.trim(),
+          openingMessage: settingsGroup.openingMessage || '',
+          closingMessage: settingsGroup.closingMessage || '',
+          unavailableMessage: settingsGroup.unavailableMessage || '',
+          workingHours: settingsGroup.workingHours || emptyWorkingHours(),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'שגיאה בשמירת ההגדרות');
+      setSettingsGroup(null);
+      await loadGroups();
+    } catch (e: any) {
+      setSettingsError(e.message || 'שגיאה לא צפויה');
+    } finally {
+      setSettingsSaving(false);
+    }
+  };
+
   return (
     <div dir="rtl">
       {/* Title — fixed position, not affected by which tab is active */}
@@ -298,6 +433,7 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token }) => {
                     <th className="px-6 py-4 text-right">אימייל</th>
                     <th className="px-6 py-4 text-right">טלפון</th>
                     <th className="px-6 py-4 text-right">סוג</th>
+                    <th className="px-6 py-4 text-right">זמינות</th>
                     <th className="px-6 py-4 text-right">פעולות</th>
                   </tr>
                 </thead>
@@ -315,6 +451,17 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token }) => {
                         }`}>
                           {ROLE_LABELS[u.role] || u.role}
                         </span>
+                      </td>
+                      <td className="px-6 py-4">
+                        {(() => {
+                          const meta = AVAILABILITY_LABELS[u.availability_status || 'available'];
+                          return (
+                            <span className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-black ${meta.bg} ${meta.text}`}>
+                              <span className={`inline-block h-2 w-2 rounded-full ${meta.dot}`}></span>
+                              {meta.label}
+                            </span>
+                          );
+                        })()}
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-2">
@@ -364,13 +511,22 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token }) => {
                   } hover:bg-slate-50 transition-colors`}
                 >
                   <span className="font-bold text-slate-900">{g.name}</span>
-                  <button
-                    onClick={() => setDeletingGroupId(g.id)}
-                    className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
-                    title="מחיקת קבוצה"
-                  >
-                    <Trash2 size={16} />
-                  </button>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => openGroupSettings(g)}
+                      className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all"
+                      title="הגדרות כלליות"
+                    >
+                      <Settings size={16} />
+                    </button>
+                    <button
+                      onClick={() => setDeletingGroupId(g.id)}
+                      className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
+                      title="מחיקת קבוצה"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -599,6 +755,172 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token }) => {
                 className="flex-1 py-3 bg-slate-100 text-slate-700 rounded-xl font-bold hover:bg-slate-200 transition-all"
               >
                 ביטול
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── GROUP SETTINGS MODAL ───────────────────────────────────────── */}
+      {settingsGroup && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[100] p-6">
+          <div className="bg-white w-full max-w-2xl rounded-[2rem] shadow-2xl border border-slate-100 max-h-[90vh] overflow-y-auto" dir="rtl">
+            <div className="flex items-center justify-between p-8 pb-4 sticky top-0 bg-white border-b border-slate-100 rounded-t-[2rem]">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-blue-100 text-blue-600 rounded-2xl flex items-center justify-center">
+                  <Settings size={20} />
+                </div>
+                <div>
+                  <h2 className="text-xl font-black text-slate-900">הגדרות כלליות</h2>
+                  <p className="text-xs font-bold text-slate-500 mt-0.5">{settingsGroup.name}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setSettingsGroup(null)}
+                className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-all"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="p-8 space-y-6">
+              {/* Group name */}
+              <div>
+                <label className="block text-sm font-bold text-slate-600 mb-1">שם הקבוצה *</label>
+                <input
+                  type="text"
+                  value={settingsGroup.name}
+                  onChange={e => updateSettings({ name: e.target.value })}
+                  className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:border-blue-500"
+                />
+              </div>
+
+              {/* Opening message */}
+              <div>
+                <label className="flex items-center gap-2 text-sm font-bold text-slate-600 mb-1">
+                  <MessageSquare size={14} /> הודעת פתיחה
+                </label>
+                <p className="text-xs text-slate-400 mb-2">תישלח ללקוח כשהשיחה מועברת לנציג מהקבוצה.</p>
+                <textarea
+                  value={settingsGroup.openingMessage || ''}
+                  onChange={e => updateSettings({ openingMessage: e.target.value })}
+                  rows={3}
+                  className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:border-blue-500 resize-none"
+                  placeholder="לדוגמה: שלום, פנייתך התקבלה — נציג יחזור אליך בקרוב."
+                />
+              </div>
+
+              {/* Closing message */}
+              <div>
+                <label className="flex items-center gap-2 text-sm font-bold text-slate-600 mb-1">
+                  <MessageSquare size={14} /> הודעת סיום
+                </label>
+                <p className="text-xs text-slate-400 mb-2">תישלח ללקוח כשהנציג מסיים את השיחה.</p>
+                <textarea
+                  value={settingsGroup.closingMessage || ''}
+                  onChange={e => updateSettings({ closingMessage: e.target.value })}
+                  rows={3}
+                  className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:border-blue-500 resize-none"
+                  placeholder="לדוגמה: תודה שפנית אלינו. נשמח לעמוד לרשותך גם בעתיד."
+                />
+              </div>
+
+              {/* Unavailable message */}
+              <div>
+                <label className="flex items-center gap-2 text-sm font-bold text-slate-600 mb-1">
+                  <MessageSquare size={14} /> הודעה כשאף נציג לא זמין
+                </label>
+                <p className="text-xs text-slate-400 mb-2">תישלח ללקוח אם השיחה הגיעה מחוץ לשעות העבודה, או כשאין נציג זמין מהקבוצה.</p>
+                <textarea
+                  value={settingsGroup.unavailableMessage || ''}
+                  onChange={e => updateSettings({ unavailableMessage: e.target.value })}
+                  rows={3}
+                  className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:border-blue-500 resize-none"
+                  placeholder="לדוגמה: כרגע אין נציג זמין. נחזור אליך בשעות הפעילות."
+                />
+              </div>
+
+              {/* Working hours */}
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <label className="flex items-center gap-2 text-sm font-bold text-slate-600">
+                    <Clock size={14} /> שעות עבודה
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer select-none">
+                    <span className="text-xs font-bold text-slate-500">
+                      {settingsGroup.workingHours?.enabled ? 'פעיל' : 'כבוי'}
+                    </span>
+                    <input
+                      type="checkbox"
+                      className="sr-only peer"
+                      checked={!!settingsGroup.workingHours?.enabled}
+                      onChange={e => updateSettings({
+                        workingHours: {
+                          ...(settingsGroup.workingHours || emptyWorkingHours()),
+                          enabled: e.target.checked,
+                        },
+                      })}
+                    />
+                    <span className="w-10 h-6 bg-slate-200 rounded-full relative transition-colors peer-checked:bg-blue-600 after:content-[''] after:absolute after:top-0.5 after:right-0.5 after:w-5 after:h-5 after:bg-white after:rounded-full after:transition-all peer-checked:after:right-[1.125rem]"></span>
+                  </label>
+                </div>
+                <p className="text-xs text-slate-400 mb-3">כאשר השעות פעילות — שיחות שמגיעות מחוץ לשעות יזכו בהודעת "כשאין נציג זמין".</p>
+
+                <div className={`border border-slate-200 rounded-2xl divide-y divide-slate-100 ${settingsGroup.workingHours?.enabled ? '' : 'opacity-50 pointer-events-none'}`}>
+                  {(settingsGroup.workingHours?.days || emptyWorkingHours().days).map((d, i) => (
+                    <div key={i} className="flex items-center gap-3 px-4 py-3">
+                      <label className="flex items-center gap-2 cursor-pointer select-none w-24">
+                        <input
+                          type="checkbox"
+                          checked={d.enabled}
+                          onChange={e => updateWorkingDay(i, { enabled: e.target.checked })}
+                          className="w-4 h-4 accent-blue-600"
+                        />
+                        <span className="text-sm font-bold text-slate-700">{DAY_LABELS[i]}</span>
+                      </label>
+                      <div className={`flex items-center gap-2 flex-1 ${d.enabled ? '' : 'opacity-40'}`}>
+                        <span className="text-xs font-bold text-slate-400">מ-</span>
+                        <input
+                          type="time"
+                          value={d.from}
+                          disabled={!d.enabled}
+                          onChange={e => updateWorkingDay(i, { from: e.target.value })}
+                          className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm font-bold outline-none focus:border-blue-500"
+                          dir="ltr"
+                        />
+                        <span className="text-xs font-bold text-slate-400">עד</span>
+                        <input
+                          type="time"
+                          value={d.to}
+                          disabled={!d.enabled}
+                          onChange={e => updateWorkingDay(i, { to: e.target.value })}
+                          className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm font-bold outline-none focus:border-blue-500"
+                          dir="ltr"
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {settingsError && (
+                <div className="p-3 bg-red-50 text-red-700 rounded-xl text-sm font-bold">{settingsError}</div>
+              )}
+            </div>
+
+            <div className="flex items-center gap-3 p-8 pt-0 flex-row-reverse">
+              <button
+                onClick={handleSaveSettings}
+                disabled={settingsSaving}
+                className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-all disabled:opacity-60"
+              >
+                <Check size={16} /> {settingsSaving ? 'שומר...' : 'שמור הגדרות'}
+              </button>
+              <button
+                onClick={() => setSettingsGroup(null)}
+                className="flex items-center gap-2 px-6 py-3 bg-slate-100 text-slate-700 rounded-xl font-bold hover:bg-slate-200 transition-all"
+              >
+                <X size={16} /> ביטול
               </button>
             </div>
           </div>

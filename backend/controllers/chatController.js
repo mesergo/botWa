@@ -6,12 +6,14 @@ import Option from '../models/Option.js';
 import BotSession from '../models/BotSession.js';
 import Contact from '../models/Contact.js';
 import Group from '../models/Group.js';
+import GroupRemovalLog from '../models/GroupRemovalLog.js';
 import fetch from 'node-fetch';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import crypto from 'crypto';
 import { handleWebService, findMatchingOption } from '../utils/webserviceHandler.js';
+import { getEffectiveRemovalConfig, matchRemovalKeyword, DEFAULT_REMOVAL_CONFIG } from '../utils/removalConfig.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -434,13 +436,15 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
           const waPhone = session.parameters?.waPhone;
           const isSimulated = !waPhone || waPhone === 'Simulated' || waPhone.toLowerCase() === 'simulator';
           console.log(`[BOT] action_add_to_group(remove) | waPhone=${waPhone} | isSimulated=${isSimulated} | mode=${nodeData.removeFromGroupMode} | removeGroupId=${nodeData.removeGroupId}`);
-          if (!isSimulated) {
-            const userId = String(session.user_id);
-            const removeMode = nodeData.removeFromGroupMode || 'specific';
-            try {
-              if (removeMode === 'specific' && nodeData.removeGroupId) {
-                const group = await Group.findOne({ _id: nodeData.removeGroupId, user_id: userId });
-                if (group) {
+          const userId = String(session.user_id);
+          const removeMode = nodeData.removeFromGroupMode || 'specific';
+          let removedGroupName = null;
+          try {
+            if (removeMode === 'specific' && nodeData.removeGroupId) {
+              const group = await Group.findOne({ _id: nodeData.removeGroupId, user_id: userId });
+              if (group) {
+                removedGroupName = group.name;
+                if (!isSimulated) {
                   const contact = await Contact.findOne({ user_id: userId, phone: waPhone });
                   if (contact) {
                     const beforeCount = group.contact_ids.length;
@@ -448,16 +452,36 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
                     if (group.contact_ids.length < beforeCount) {
                       await group.save();
                       console.log(`[BOT] ✅ Removed ${waPhone} from group "${group.name}"`);
+                      try {
+                        await GroupRemovalLog.create({
+                          user_id: userId,
+                          group_id: group._id,
+                          group_name: group.name,
+                          is_blocklist: !!group.is_blocklist,
+                          contact_id: contact._id,
+                          phone: contact.phone || waPhone,
+                          full_name: contact.full_name || '',
+                          whatsapp_name: contact.whatsapp_name || '',
+                          email: contact.email || '',
+                          reason: String(nodeData.removalReason || '').trim(),
+                          removed_by: 'בוט (תרשים זרימה)',
+                        });
+                      } catch (logErr) {
+                        console.error('[BOT] action_add_to_group(remove) failed to write removal log:', logErr.message);
+                      }
                     } else {
                       console.log(`[BOT] action_add_to_group(remove): ${waPhone} not found in group "${group.name}", skipping`);
                     }
                   } else {
                     console.log(`[BOT] action_add_to_group(remove): contact ${waPhone} not found, skipping`);
                   }
-                } else {
-                  console.warn(`[BOT] action_add_to_group(remove): group ${nodeData.removeGroupId} not found`);
                 }
-              } else if (removeMode === 'all') {
+              } else {
+                console.warn(`[BOT] action_add_to_group(remove): group ${nodeData.removeGroupId} not found`);
+              }
+            } else if (removeMode === 'all') {
+              removedGroupName = 'רשימת הסרה';
+              if (!isSimulated) {
                 let blocklist = await Group.findOne({ user_id: userId, is_blocklist: true });
                 if (!blocklist) {
                   blocklist = await Group.create({ user_id: userId, name: 'רשימת הסרה', is_blocklist: true, contact_ids: [], phones: [] });
@@ -476,11 +500,13 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
                   console.log(`[BOT] action_add_to_group(remove): ${waPhone} already in blocklist`);
                 }
               }
-            } catch (err) {
-              console.error('[BOT] action_add_to_group(remove) error:', err.message);
             }
-          } else {
-            console.log(`[BOT] action_add_to_group(remove): skipping (simulator or no waPhone)`);
+          } catch (err) {
+            console.error('[BOT] action_add_to_group(remove) error:', err.message);
+          }
+          if (removedGroupName) {
+            session.parameters = { ...(session.parameters || {}), removeGroup: removedGroupName };
+            session.markModified('parameters');
           }
           currentNodeId = findNextNode(currentNodeId, edges);
           break;
@@ -489,20 +515,24 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
         const waPhone = session.parameters?.waPhone;
         // In simulator mode waPhone is absent or 'Simulated' — skip silently
         const isSimulated = !waPhone || waPhone === 'Simulated' || waPhone.toLowerCase() === 'simulator';
-        if (!isSimulated && nodeData.groupId) {
+        let addedGroupName = null;
+        if (nodeData.groupId) {
           try {
             const userId = String(session.user_id);
             const group = await Group.findOne({ _id: nodeData.groupId, user_id: userId });
             if (group) {
-              let contact = await Contact.findOne({ user_id: userId, phone: waPhone });
-              if (!contact) {
-                contact = await Contact.create({ user_id: userId, phone: waPhone });
+              addedGroupName = group.name;
+              if (!isSimulated) {
+                let contact = await Contact.findOne({ user_id: userId, phone: waPhone });
+                if (!contact) {
+                  contact = await Contact.create({ user_id: userId, phone: waPhone });
+                }
+                const existing = new Set((group.contact_ids || []).map(String));
+                existing.add(String(contact._id));
+                group.contact_ids = Array.from(existing).map(id => new mongoose.Types.ObjectId(id));
+                await group.save();
+                console.log(`[BOT] ✅ Added ${waPhone} to group "${group.name}"`);
               }
-              const existing = new Set((group.contact_ids || []).map(String));
-              existing.add(String(contact._id));
-              group.contact_ids = Array.from(existing).map(id => new mongoose.Types.ObjectId(id));
-              await group.save();
-              console.log(`[BOT] ✅ Added ${waPhone} to group "${group.name}"`);
             } else {
               console.warn(`[BOT] action_add_to_group: group ${nodeData.groupId} not found`);
             }
@@ -510,7 +540,11 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
             console.error('[BOT] action_add_to_group error:', err.message);
           }
         } else {
-          console.log(`[BOT] action_add_to_group: skipping (simulator or no groupId)`);
+          console.log(`[BOT] action_add_to_group: skipping (no groupId)`);
+        }
+        if (addedGroupName) {
+          session.parameters = { ...(session.parameters || {}), addGroup: addedGroupName };
+          session.markModified('parameters');
         }
         currentNodeId = findNextNode(currentNodeId, edges);
         break;
@@ -520,14 +554,15 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
         const waPhone = session.parameters?.waPhone;
         const isSimulated = !waPhone || waPhone === 'Simulated' || waPhone.toLowerCase() === 'simulator';
         console.log(`[BOT] action_remove_from_group | waPhone=${waPhone} | isSimulated=${isSimulated} | mode=${nodeData.removeFromGroupMode} | removeGroupId=${nodeData.removeGroupId}`);
-        if (!isSimulated) {
-          const userId = String(session.user_id);
-          const removeMode = nodeData.removeFromGroupMode || 'specific';
-          try {
-            if (removeMode === 'specific' && nodeData.removeGroupId) {
-              // Remove contact from the specified group if present
-              const group = await Group.findOne({ _id: nodeData.removeGroupId, user_id: userId });
-              if (group) {
+        const userId = String(session.user_id);
+        const removeMode = nodeData.removeFromGroupMode || 'specific';
+        let removedGroupName = null;
+        try {
+          if (removeMode === 'specific' && nodeData.removeGroupId) {
+            const group = await Group.findOne({ _id: nodeData.removeGroupId, user_id: userId });
+            if (group) {
+              removedGroupName = group.name;
+              if (!isSimulated) {
                 const contact = await Contact.findOne({ user_id: userId, phone: waPhone });
                 if (contact) {
                   const beforeCount = group.contact_ids.length;
@@ -535,27 +570,44 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
                   if (group.contact_ids.length < beforeCount) {
                     await group.save();
                     console.log(`[BOT] ✅ Removed ${waPhone} from group "${group.name}"`);
+                    try {
+                      await GroupRemovalLog.create({
+                        user_id: userId,
+                        group_id: group._id,
+                        group_name: group.name,
+                        is_blocklist: !!group.is_blocklist,
+                        contact_id: contact._id,
+                        phone: contact.phone || waPhone,
+                        full_name: contact.full_name || '',
+                        whatsapp_name: contact.whatsapp_name || '',
+                        email: contact.email || '',
+                        reason: String(nodeData.removalReason || '').trim(),
+                        removed_by: 'בוט (תרשים זרימה)',
+                      });
+                    } catch (logErr) {
+                      console.error('[BOT] action_remove_from_group failed to write removal log:', logErr.message);
+                    }
                   } else {
                     console.log(`[BOT] action_remove_from_group: ${waPhone} not found in group "${group.name}", skipping`);
                   }
                 } else {
                   console.log(`[BOT] action_remove_from_group: contact ${waPhone} not found, skipping`);
                 }
-              } else {
-                console.warn(`[BOT] action_remove_from_group: group ${nodeData.removeGroupId} not found`);
               }
-            } else if (removeMode === 'all') {
-              // Add waPhone to the blocklist (רשימת הסרה)
+            } else {
+              console.warn(`[BOT] action_remove_from_group: group ${nodeData.removeGroupId} not found`);
+            }
+          } else if (removeMode === 'all') {
+            removedGroupName = 'רשימת הסרה';
+            if (!isSimulated) {
               let blocklist = await Group.findOne({ user_id: userId, is_blocklist: true });
               if (!blocklist) {
                 blocklist = await Group.create({ user_id: userId, name: 'רשימת הסרה', is_blocklist: true, contact_ids: [], phones: [] });
               }
-              // Find or create a Contact record so it shows up in the UI
               let contact = await Contact.findOne({ user_id: userId, phone: waPhone });
               if (!contact) {
                 contact = await Contact.create({ user_id: userId, phone: waPhone });
               }
-              // Add to both contact_ids and phones
               const result = await Group.updateOne(
                 { _id: blocklist._id },
                 {
@@ -571,11 +623,13 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
                 console.log(`[BOT] action_remove_from_group: ${waPhone} already in blocklist`);
               }
             }
-          } catch (err) {
-            console.error('[BOT] action_remove_from_group error:', err.message);
           }
-        } else {
-          console.log(`[BOT] action_remove_from_group: skipping (simulator or no waPhone)`);
+        } catch (err) {
+          console.error('[BOT] action_remove_from_group error:', err.message);
+        }
+        if (removedGroupName) {
+          session.parameters = { ...(session.parameters || {}), removeGroup: removedGroupName };
+          session.markModified('parameters');
         }
         currentNodeId = findNextNode(currentNodeId, edges);
         break;
@@ -899,6 +953,78 @@ const pushMessagesToWhatsApp = async (phone, messages) => {
   return anySuccess;
 };
 // ─────────────────────────────────────────────────────────────────────────────
+
+// Helper: attempt auto-removal-from-group based on opt-out keywords.
+// Returns { matched, outMessages } when the sender was added to the blocklist,
+// or null when no keyword matched / feature is disabled / simulator request.
+// Caller is responsible for short-circuiting the response when this returns truthy.
+const performAutoRemoval = async (user, sender, phone, text, name = '') => {
+  try {
+    const inboundText = String(text || '').trim();
+    if (!inboundText) return null;
+    const isSimulatedSender = !sender || sender === 'Simulated' || String(sender).toLowerCase() === 'simulator';
+    if (isSimulatedSender) return null;
+
+    const removalCfg = await getEffectiveRemovalConfig(user);
+    if (!removalCfg || removalCfg.enabled === false) return null;
+
+    const matched = matchRemovalKeyword(inboundText, removalCfg.keywords || []);
+    if (!matched) return null;
+
+    console.log(`[BOT] 🛑 removal keyword matched: "${matched}" | phone=${sender}`);
+    const userId = String(user._id);
+    let blocklist = await Group.findOne({ user_id: userId, is_blocklist: true });
+    if (!blocklist) {
+      blocklist = await Group.create({ user_id: userId, name: 'רשימת הסרה', is_blocklist: true, contact_ids: [], phones: [] });
+    }
+    let contact = await Contact.findOne({ user_id: userId, phone: sender });
+    if (!contact) {
+      contact = await Contact.create({ user_id: userId, phone: sender });
+    }
+    const updateRes = await Group.updateOne(
+      { _id: blocklist._id },
+      { $addToSet: { phones: sender, contact_ids: contact._id } }
+    );
+    if (updateRes.modifiedCount > 0) {
+      try {
+        await GroupRemovalLog.create({
+          user_id: userId,
+          group_id: blocklist._id,
+          group_name: blocklist.name,
+          is_blocklist: true,
+          contact_id: contact?._id || null,
+          phone: sender,
+          full_name: contact?.full_name || '',
+          whatsapp_name: contact?.whatsapp_name || name || '',
+          email: contact?.email || '',
+          reason: `מילת מפתח: ${matched}`,
+          removed_by: 'auto-keyword'
+        });
+      } catch (logErr) {
+        console.error('[BOT] removal-keyword log write failed:', logErr.message);
+      }
+    }
+
+    try {
+      await BotSession.updateMany(
+        { $or: [{ sender }, { customer_phone: phone }], is_active: true },
+        { $set: { is_active: false } }
+      );
+    } catch (sessErr) {
+      console.error('[BOT] failed to close sessions after removal:', sessErr.message);
+    }
+
+    const confirmText = String(removalCfg.message || '').trim()
+      || String(DEFAULT_REMOVAL_CONFIG.message || '').trim()
+      || 'הוסרת בהצלחה מרשימת התפוצה. לא נשלח אליך יותר הודעות. תודה!';
+    console.log(`[BOT] 📤 sending removal confirmation to ${sender}: "${confirmText.substring(0, 80)}"`);
+    const outMessages = [{ type: 'Text', text: confirmText, created: new Date().toISOString() }];
+    return { matched, outMessages };
+  } catch (err) {
+    console.error('[BOT] performAutoRemoval failed:', err.message);
+    return null;
+  }
+};
 
 // Main API endpoint
 export const respondToMessage = async (req, res) => {
@@ -1264,6 +1390,36 @@ export const respondToMessage = async (req, res) => {
     }
     // ─────────────────────────────────────────────────────────────────────────
 
+    // Global auto-removal check for users "stuck" mid-flow (input_text / output_menu / action_web_service).
+    // In automatic_responses we let opener options win first, so the check is run inside that branch instead.
+    if (currentNode && currentNode.type !== 'automatic_responses') {
+      const removalResult = await performAutoRemoval(user, sender, phone, text, name);
+      if (removalResult) {
+        try {
+          session.is_active = false;
+          session.current_node_id = null;
+          session.waiting_text_input = false;
+          session.waiting_webservice = false;
+          await session.save();
+        } catch (sessSaveErr) {
+          console.error('[BOT] failed to close current session after removal:', sessSaveErr.message);
+        }
+        const waPushed = removalResult.outMessages.length > 0
+          ? await pushMessagesToWhatsApp(sender, removalResult.outMessages)
+          : false;
+        return res.json({
+          StatusId: 1,
+          StatusDescription: 'Removed by keyword',
+          sender,
+          messages: waPushed ? [] : removalResult.outMessages,
+          control: null,
+          removed: true,
+          matchedKeyword: removalResult.matched,
+          ...(waPushed && { wa_pushed: true })
+        });
+      }
+    }
+
     // Handle based on current node type
     if (isNewSession && currentNode.type === 'automatic_responses') {
       // Match user message to options
@@ -1281,7 +1437,37 @@ export const respondToMessage = async (req, res) => {
           break;
         }
       }
-      
+
+      // If no opener option matched, try removal keywords before falling back
+      // to the free-text default (option-0).
+      if (matchedIdx === -1) {
+        const removalResult = await performAutoRemoval(user, sender, phone, text, name);
+        if (removalResult) {
+          try {
+            session.is_active = false;
+            session.current_node_id = null;
+            session.waiting_text_input = false;
+            session.waiting_webservice = false;
+            await session.save();
+          } catch (sessSaveErr) {
+            console.error('[BOT] failed to close current session after removal:', sessSaveErr.message);
+          }
+          const waPushed = removalResult.outMessages.length > 0
+            ? await pushMessagesToWhatsApp(sender, removalResult.outMessages)
+            : false;
+          return res.json({
+            StatusId: 1,
+            StatusDescription: 'Removed by keyword',
+            sender,
+            messages: waPushed ? [] : removalResult.outMessages,
+            control: null,
+            removed: true,
+            matchedKeyword: removalResult.matched,
+            ...(waPushed && { wa_pushed: true })
+          });
+        }
+      }
+
       // Default to first option (כניסה) if no match
       const finalIdx = matchedIdx !== -1 ? matchedIdx : 0;
       params['open'] = text.trim();
@@ -1427,7 +1613,37 @@ export const respondToMessage = async (req, res) => {
           break;
         }
       }
-      
+
+      // If no opener option matched, try removal keywords before falling back
+      // to the free-text default (option-0).
+      if (matchedIdx === -1) {
+        const removalResult = await performAutoRemoval(user, sender, phone, text, name);
+        if (removalResult) {
+          try {
+            session.is_active = false;
+            session.current_node_id = null;
+            session.waiting_text_input = false;
+            session.waiting_webservice = false;
+            await session.save();
+          } catch (sessSaveErr) {
+            console.error('[BOT] failed to close current session after removal:', sessSaveErr.message);
+          }
+          const waPushed = removalResult.outMessages.length > 0
+            ? await pushMessagesToWhatsApp(sender, removalResult.outMessages)
+            : false;
+          return res.json({
+            StatusId: 1,
+            StatusDescription: 'Removed by keyword',
+            sender,
+            messages: waPushed ? [] : removalResult.outMessages,
+            control: null,
+            removed: true,
+            matchedKeyword: removalResult.matched,
+            ...(waPushed && { wa_pushed: true })
+          });
+        }
+      }
+
       params['open'] = text.trim();
       session.parameters = params;
       session.markModified('parameters');

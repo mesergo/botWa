@@ -17,7 +17,7 @@ export const getSubUsers = async (req, res) => {
   try {
     const managerId = await getRootManagerId(req.userId);
     const reps = await User.find({ manager_id: managerId }).select(
-      'name email phone role status createdAt rep_group_ids'
+      'name email phone role status availability_status createdAt rep_group_ids'
     ).sort({ createdAt: -1 });
     res.json(reps.map(r => ({
       id: r._id.toString(),
@@ -26,6 +26,7 @@ export const getSubUsers = async (req, res) => {
       phone: r.phone || '',
       role: r.role,
       status: r.status,
+      availability_status: r.availability_status || 'unavailable',
       createdAt: r.createdAt,
       repGroupIds: (r.rep_group_ids || []).map(id => id.toString()),
     })));
