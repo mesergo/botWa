@@ -13,13 +13,25 @@ export const startSession = async (req, res) => {
   const userId = (req.user && req.user.id) ? req.user.id : null;
   const { customer_phone, widget_id, simulator_id } = req.body;
 
+  console.log(`\n${'─'.repeat(80)}`);
+  console.log(`[startSession] 🆕 New session request @ ${new Date().toISOString()}`);
+  console.log(`[startSession]    customer_phone = ${customer_phone || '(none)'}`);
+  console.log(`[startSession]    widget_id      = ${widget_id || '(none)'}`);
+  console.log(`[startSession]    simulator_id   = ${simulator_id || '(none)'}`);
+  console.log(`[startSession]    user_id        = ${userId || '(guest)'}`);
+  console.log(`[startSession]    ip             = ${req.ip || req.headers['x-forwarded-for'] || 'unknown'}`);
+
   if (!widget_id) {
+    console.log(`[startSession] ❌ Missing widget_id — rejected`);
+    console.log(`${'─'.repeat(80)}\n`);
     return res.status(400).json({ error: 'Missing widget_id' });
   }
 
   try {
     // Ensure mongoose is connected
     if (!mongoose.connection || mongoose.connection.readyState !== 1) {
+      console.log(`[startSession] ❌ DB not ready (state=${mongoose.connection?.readyState})`);
+      console.log(`${'─'.repeat(80)}\n`);
       return res.status(503).json({ error: 'Database connection not ready' });
     }
     
@@ -40,9 +52,13 @@ export const startSession = async (req, res) => {
     }
     
     const result = await collection.insertOne(sessionData);
-    res.json({ sessionId: result.insertedId.toString() });
+    const sessionId = result.insertedId.toString();
+    console.log(`[startSession] ✅ Session created | sessionId=${sessionId} | phone=${sessionData.customer_phone} | widget=${widget_id}`);
+    console.log(`${'─'.repeat(80)}\n`);
+    res.json({ sessionId });
   } catch (err) {
-    console.error("Start Session Error:", err);
+    console.error(`[startSession] ❌ Error creating session for phone=${customer_phone || '(none)'} widget=${widget_id}:`, err);
+    console.log(`${'─'.repeat(80)}\n`);
     res.status(500).json({ error: err.message });
   }
 };
@@ -1501,22 +1517,39 @@ export const toggleSessionActive = async (req, res) => {
 export const sendExternalMessage = async (req, res) => {
   const { sessionId, message, simulator_id } = req.body;
 
-  console.log('[sendExternalMessage] Request:', { sessionId, message, simulator_id });
+  console.log(`\n${'─'.repeat(80)}`);
+  console.log(`[sendExternalMessage] 📨 External message @ ${new Date().toISOString()}`);
+  console.log(`[sendExternalMessage]    sessionId    = ${sessionId || '(missing)'}`);
+  console.log(`[sendExternalMessage]    type         = ${message?.type || 'Text'}`);
+  console.log(`[sendExternalMessage]    sender       = ${message?.sender || 'bot'}`);
+  console.log(`[sendExternalMessage]    content      = "${String(message?.content || '').substring(0, 200)}"`);
+  console.log(`[sendExternalMessage]    url          = ${message?.url || '(none)'}`);
+  console.log(`[sendExternalMessage]    options      = ${message?.options ? JSON.stringify(message.options) : '(none)'}`);
+  console.log(`[sendExternalMessage]    simulator_id = ${simulator_id || '(broadcast to all)'}`);
+  console.log(`[sendExternalMessage]    ip           = ${req.ip || req.headers['x-forwarded-for'] || 'unknown'}`);
 
   if (!sessionId) {
+    console.log(`[sendExternalMessage] ❌ Missing sessionId`);
+    console.log(`${'─'.repeat(80)}\n`);
     return res.status(400).json({ error: 'Missing sessionId' });
   }
 
   if (!message || !message.content) {
+    console.log(`[sendExternalMessage] ❌ Missing message content`);
+    console.log(`${'─'.repeat(80)}\n`);
     return res.status(400).json({ error: 'Missing message content' });
   }
 
   if (!mongoose.Types.ObjectId.isValid(sessionId)) {
+    console.log(`[sendExternalMessage] ❌ Invalid sessionId format: ${sessionId}`);
+    console.log(`${'─'.repeat(80)}\n`);
     return res.status(400).json({ error: 'Invalid sessionId format' });
   }
 
   try {
     if (!mongoose.connection || mongoose.connection.readyState !== 1) {
+      console.log(`[sendExternalMessage] ❌ DB not ready (state=${mongoose.connection?.readyState})`);
+      console.log(`${'─'.repeat(80)}\n`);
       return res.status(503).json({ error: 'Database connection not ready' });
     }
 
@@ -1528,8 +1561,12 @@ export const sendExternalMessage = async (req, res) => {
     });
 
     if (!session) {
+      console.log(`[sendExternalMessage] ❌ Session not found: ${sessionId}`);
+      console.log(`${'─'.repeat(80)}\n`);
       return res.status(404).json({ error: 'Session not found' });
     }
+
+    console.log(`[sendExternalMessage] 🔎 Session found | phone=${session.customer_phone || '(n/a)'} | sender=${session.sender || '(n/a)'} | widget=${session.widget_id || '(n/a)'}`);
 
     // Prepare message entry
     const entry = {
@@ -1545,7 +1582,7 @@ export const sendExternalMessage = async (req, res) => {
     };
 
     // Add message to process_history
-    await collection.updateOne(
+    const updateRes = await collection.updateOne(
       { _id: new mongoose.Types.ObjectId(sessionId) },
       { 
         $push: { process_history: entry },
@@ -1553,10 +1590,12 @@ export const sendExternalMessage = async (req, res) => {
       }
     );
 
-    console.log('[sendExternalMessage] Message added successfully to session:', sessionId);
+    console.log(`[sendExternalMessage] ✅ Message stored | sessionId=${sessionId} | phone=${session.customer_phone || '(n/a)'} | matched=${updateRes.matchedCount} | modified=${updateRes.modifiedCount}`);
+    console.log(`${'─'.repeat(80)}\n`);
     res.json({ success: true, message: 'Message added to session' });
   } catch (err) {
-    console.error('sendExternalMessage Error:', err);
+    console.error(`[sendExternalMessage] ❌ Error for sessionId=${sessionId}:`, err);
+    console.log(`${'─'.repeat(80)}\n`);
     res.status(500).json({ error: err.message });
   }
 };

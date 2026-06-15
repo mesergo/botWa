@@ -7,7 +7,7 @@ interface Session {
   id: string;
   phone: string;
   sender?: string;
-  widget_id: string;
+  widget_id: string | null;
   bot_name: string;
   user_name?: string;
   created_at: string | null;
@@ -142,12 +142,60 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
       .finally(() => setPhoneSessionsLoading(false));
   }, [selectedPhone, token]);
 
-  // Scroll to bottom after sessions load
+  // Real-time polling: every 4s re-fetch sessions for the selected phone so that
+  // incoming WhatsApp messages (saved server-side to process_history) show up
+  // for the agent without needing a manual refresh. Skip the update when the
+  // total message count hasn't changed to avoid unnecessary re-renders.
   useEffect(() => {
-    if (chatScrollRef.current) {
-      chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
+    if (!selectedPhone || !token) return;
+    const interval = setInterval(() => {
+      fetch(`${API_BASE}/sessions/by-phone?phone=${encodeURIComponent(selectedPhone)}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+        .then(r => r.ok ? r.json() : Promise.reject(r))
+        .then((data: Session[]) => {
+          setPhoneSessions(prev => {
+            const prevMsgs = prev.reduce((acc, s) => acc + (s.process_history?.length || 0), 0);
+            const newMsgs = data.reduce((acc, s) => acc + (s.process_history?.length || 0), 0);
+            if (prev.length === data.length && prevMsgs === newMsgs) return prev;
+            return data;
+          });
+        })
+        .catch(() => { /* swallow polling errors */ });
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [selectedPhone, token]);
+
+  // Real-time polling: refresh contacts list every 15s so sidebar timestamps,
+  // statuses and unread indicators stay up-to-date.
+  useEffect(() => {
+    if (!token) return;
+    const interval = setInterval(() => { fetchContacts(); }, 15000);
+    return () => clearInterval(interval);
+  }, [token, fetchContacts]);
+
+  // Auto-scroll to bottom only when new messages arrive AND the user is already
+  // near the bottom (so we don't yank them away while they scroll up to read).
+  const lastMsgCountRef = useRef(0);
+  useEffect(() => {
+    const el = chatScrollRef.current;
+    if (!el) return;
+    const totalMsgs = phoneSessions.reduce((acc, s) => acc + (s.process_history?.length || 0), 0);
+    const grew = totalMsgs > lastMsgCountRef.current;
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+    if (grew && nearBottom) {
+      el.scrollTop = el.scrollHeight;
+    } else if (lastMsgCountRef.current === 0) {
+      // First load — always go to the bottom
+      el.scrollTop = el.scrollHeight;
     }
+    lastMsgCountRef.current = totalMsgs;
   }, [phoneSessions]);
+
+  // Reset scroll tracker when switching contacts
+  useEffect(() => {
+    lastMsgCountRef.current = 0;
+  }, [selectedPhone]);
 
   // Clear message input when switching contacts
   useEffect(() => {

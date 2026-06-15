@@ -3,6 +3,7 @@ import { Plus, Bot, ArrowLeft, Trash2, Calendar, LogOut, Shield, UserCog, Users,
 import ImpersonationBanner from './ImpersonationBanner';
 import { BotFlow } from '../types';
 import SubUsersTab from './SubUsersTab';
+import BotSettingsModal from './BotSettingsModal';
 
 const API_BASE = window.location.hostname === 'localhost'
   ? 'http://localhost:3001/api'
@@ -161,11 +162,6 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
 
   // Bot settings panel state
   const [settingsBot, setSettingsBot] = useState<BotFlow | null>(null);
-  const [editBotPublicId, setEditBotPublicId] = useState('');
-  const [savingBotPublicId, setSavingBotPublicId] = useState(false);
-  const [copiedBotPublicId, setCopiedBotPublicId] = useState(false);
-  const [botPublicIdError, setBotPublicIdError] = useState<string | null>(null);
-  const [botPublicIdSuccess, setBotPublicIdSuccess] = useState(false);
 
   // WA templates state (Settings tab)
   const [waTemplates, setWaTemplates] = useState<any[]>([]);
@@ -504,23 +500,6 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
       setCopiedId(true);
       setTimeout(() => setCopiedId(false), 2000);
     });
-  };
-
-  const handleSaveBotPublicId = async () => {
-    if (!settingsBot || !onUpdateBotPublicId) return;
-    setSavingBotPublicId(true);
-    setBotPublicIdError(null);
-    setBotPublicIdSuccess(false);
-    try {
-      await onUpdateBotPublicId(settingsBot.id, editBotPublicId);
-      setSettingsBot(prev => prev ? { ...prev, public_id: editBotPublicId } : null);
-      setBotPublicIdSuccess(true);
-      setTimeout(() => setBotPublicIdSuccess(false), 3000);
-    } catch (err: any) {
-      setBotPublicIdError(err.message || 'שגיאה בשמירה');
-    } finally {
-      setSavingBotPublicId(false);
-    }
   };
 
   const handleCreate = () => {
@@ -1207,7 +1186,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                       )}
                       {onConnectFacebook && (
                         <button
-                          onClick={(e) => { e.stopPropagation(); setSettingsBot(bot); setEditBotPublicId(bot.public_id); setBotPublicIdError(null); setBotPublicIdSuccess(false); }}
+                          onClick={(e) => { e.stopPropagation(); setSettingsBot(bot); }}
                           className="p-2 text-slate-300 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-all"
                           title="הגדרות בוט"
                         >
@@ -1216,7 +1195,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                       )}
                       {!isRep && !onConnectFacebook && (
                         <button
-                          onClick={(e) => { e.stopPropagation(); setSettingsBot(bot); setEditBotPublicId(bot.public_id); setBotPublicIdError(null); setBotPublicIdSuccess(false); }}
+                          onClick={(e) => { e.stopPropagation(); setSettingsBot(bot); }}
                           className="p-2 text-slate-300 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-all"
                           title="הגדרות בוט"
                         >
@@ -1354,87 +1333,20 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
 
       {/* ── Bot Settings Panel ── */}
       {settingsBot && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[100] p-6" dir="rtl">
-          <div className="bg-white w-full max-w-md rounded-[2.5rem] shadow-2xl border border-slate-100">
-            {/* Header */}
-            <div className="px-8 py-6 border-b border-slate-100 flex items-center justify-between">
-              <button onClick={() => setSettingsBot(null)} className="p-2 hover:bg-slate-100 rounded-xl transition-colors">
-                <X size={20} className="text-slate-400" />
-              </button>
-              <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
-                <Settings size={18} className="text-slate-400" />
-                הגדרות בוט — {settingsBot.name}
-              </h3>
-            </div>
-
-            <div className="p-8 space-y-8">
-              {/* Public ID */}
-              <div>
-                <h4 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
-                  <Copy size={12} /> מזהה ציבורי (API Token)
-                </h4>
-                <div className="flex gap-2">
-                  <button
-                    onClick={handleSaveBotPublicId}
-                    disabled={savingBotPublicId || !editBotPublicId.trim() || editBotPublicId.trim() === settingsBot.public_id}
-                    className="px-5 py-3 bg-blue-600 text-white rounded-2xl font-bold text-sm hover:bg-blue-700 transition-all disabled:opacity-50 shrink-0"
-                  >
-                    {savingBotPublicId ? 'שומר...' : 'שמור'}
-                  </button>
-                  <button
-                    onClick={() => {
-                      navigator.clipboard.writeText(editBotPublicId).then(() => {
-                        setCopiedBotPublicId(true);
-                        setTimeout(() => setCopiedBotPublicId(false), 2000);
-                      });
-                    }}
-                    className="p-3 text-slate-400 hover:text-blue-600 hover:bg-blue-50 border border-slate-200 rounded-2xl transition-colors shrink-0"
-                    title="העתק"
-                  >
-                    {copiedBotPublicId ? <Check size={16} className="text-emerald-500" /> : <Copy size={16} />}
-                  </button>
-                  <input
-                    className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600 transition-all"
-                    value={editBotPublicId}
-                    onChange={e => setEditBotPublicId(e.target.value)}
-                    dir="ltr"
-                  />
-                </div>
-                {botPublicIdError && (
-                  <div className="mt-3 bg-red-50 border border-red-200 rounded-xl px-4 py-2 text-red-600 text-sm font-bold">
-                    {botPublicIdError}
-                  </div>
-                )}
-                {botPublicIdSuccess && (
-                  <div className="mt-3 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-2 text-emerald-600 text-sm font-bold flex items-center gap-2">
-                    <Check size={14} /> המזהה עודכן בהצלחה
-                  </div>
-                )}
-              </div>
-
-              {/* Facebook connection — admin only or admin impersonating */}
-              {onConnectFacebook && (currentUser?.role === 'admin' || currentUser?.isImpersonating) && (
-                <div>
-                  <h4 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
-                    <FacebookIcon size={12} /> חיבור לפייסבוק
-                  </h4>
-                  <button
-                    onClick={() => {
-                      const bot = settingsBot;
-                      setSettingsBot(null);
-                      setFacebookConfirmBot(bot);
-                      setFacebookDone(false);
-                    }}
-                    className="flex items-center gap-3 px-6 py-3 bg-[#1877F2] text-white rounded-2xl font-bold text-sm hover:bg-[#166FE5] transition-all"
-                  >
-                    <FacebookIcon size={18} />
-                    חבר לפייסבוק
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
+        <BotSettingsModal
+          bot={settingsBot}
+          currentUser={currentUser}
+          onClose={() => setSettingsBot(null)}
+          onUpdateBotPublicId={onUpdateBotPublicId ? async (id, publicId) => {
+            await onUpdateBotPublicId(id, publicId);
+            setSettingsBot(prev => prev ? { ...prev, public_id: publicId } : null);
+          } : undefined}
+          onConnectFacebook={onConnectFacebook ? (bot) => {
+            setSettingsBot(null);
+            setFacebookConfirmBot(bot);
+            setFacebookDone(false);
+          } : undefined}
+        />
       )}
 
       {isModalOpen && (

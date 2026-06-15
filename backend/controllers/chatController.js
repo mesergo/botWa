@@ -841,18 +841,27 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
 // Returns true if pushed successfully, false if WHATSAPP_ENDPOINT is not configured.
 const _sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
-const pushMessagesToWhatsApp = async (phone, messages) => {
-  
-  const endpoint = process.env.WHATSAPP_ENDPOINT || 'dialog360/65aec7ebf1a1d64f29645fd9';
-  if (!endpoint || !messages.length) return false;
+const pushMessagesToWhatsApp = async (phone, messages, user = null) => {
+  if (!messages.length) return false;
+
+  // Prefer the bot owner's dialog360 credentials (matches sendAgentMessage logic).
+  // Fall back to env vars / hard-coded endpoint only if the user has none.
+  let endpoint;
+  let waToken;
+  if (user && user.dialog360_bot_id) {
+    endpoint = `dialog360/${user.dialog360_bot_id}`;
+    waToken = crypto.createHash('sha1').update(user.dialog360_bot_id + 'moomoo').digest('hex');
+  } else {
+    endpoint = process.env.WHATSAPP_ENDPOINT || 'dialog360/65aec7ebf1a1d64f29645fd9';
+    waToken = process.env.WHATSAPP_API_TOKEN ||
+      crypto.createHash('sha1').update(endpoint + 'moomoo').digest('hex');
+  }
+  if (!endpoint) return false;
 
   // Normalize phone: strip non-digits, replace leading 0 with 972
   const normalizedPhone = String(phone).replace(/[^0-9]/g, '').replace(/^0/, '972').replace(/^972972/, '972');
 
-  const waToken = process.env.WHATSAPP_API_TOKEN ||
-    crypto.createHash('sha1').update(endpoint + 'moomoo').digest('hex');
-
-  console.log(`[WA-PUSH] 📞 Sending to phone=${normalizedPhone} via endpoint=${endpoint}`);
+  console.log(`[WA-PUSH] 📞 Sending to phone=${normalizedPhone} via endpoint=${endpoint}${user && user.dialog360_bot_id ? ' (user dialog360_bot_id)' : ' (fallback)'}`);
 
   // Returns true on success, false on failure
   const sendOne = async (body) => {
@@ -1028,6 +1037,7 @@ const performAutoRemoval = async (user, sender, phone, text, name = '') => {
 
 // Main API endpoint
 export const respondToMessage = async (req, res) => {
+  const reqStartedAt = Date.now();
   try {
     // Support both GET (query params) and POST (body) requests
     const isGetRequest = req.method === 'GET';
@@ -1036,11 +1046,22 @@ export const respondToMessage = async (req, res) => {
     const { phone, text = '', sender = 'unknown', token: tokenParam, bot_id, name = '' } = source;
     const token = req.headers.authorization?.replace('Bearer ', '') || tokenParam;
 
-    console.log(`[BOT] ← ${req.method} | phone=${phone} sender=${sender} text="${String(text).substring(0, 40)}"`)
-    console.log(`[BOT] 🔍 DEBUG - phone: "${phone}", sender: "${sender}"`);
-    console.log(`[BOT] 🔍 Searching for session with sender: "${sender}"`);
+    console.log(`\n${'═'.repeat(80)}`);
+    console.log(`[BOT] 📩 INCOMING MESSAGE @ ${new Date().toISOString()}`);
+    console.log(`[BOT]    method   = ${req.method}`);
+    // dialog360 webhook convention:
+    //   sender = the CUSTOMER who sent the message (used as conversation key)
+    //   phone  = the BUSINESS WhatsApp number that received the message
+    console.log(`[BOT]    👤 CUSTOMER (sender) = "${sender}"`);
+    console.log(`[BOT]    🏢 BUSINESS (phone)  = "${phone}"`);
+    console.log(`[BOT]    name     = "${name}"`);
+    console.log(`[BOT]    text     = "${String(text).substring(0, 200)}"${String(text).length > 200 ? '…' : ''}`);
+    console.log(`[BOT]    token    = ${token ? token.substring(0, 8) + '…' : '(missing)'}`);
+    console.log(`[BOT]    ip       = ${req.ip || req.headers['x-forwarded-for'] || 'unknown'}`);
 
     if (!phone || !token) {
+      console.log(`[BOT] ❌ Rejected — missing phone or token`);
+      console.log(`${'═'.repeat(80)}\n`);
       return res.status(400).json({ 
         StatusId: 0, 
         StatusDescription: 'Missing phone or token' 
@@ -1050,6 +1071,8 @@ export const respondToMessage = async (req, res) => {
     // Find bot directly by its public_id (used as the API token)
     const tokenBot = await BotFlow.findOne({ public_id: token });
     if (!tokenBot) {
+      console.log(`[BOT] ❌ Bot not found for token=${token.substring(0, 8)}…`);
+      console.log(`${'═'.repeat(80)}\n`);
       return res.status(404).json({ 
         StatusId: 0, 
         StatusDescription: 'Bot not found' 
@@ -1057,17 +1080,27 @@ export const respondToMessage = async (req, res) => {
     }
     const user = await User.findById(tokenBot.user_id);
     if (!user) {
+      console.log(`[BOT] ❌ User not found for bot=${tokenBot._id} (user_id=${tokenBot.user_id})`);
+      console.log(`${'═'.repeat(80)}\n`);
       return res.status(404).json({ 
         StatusId: 0, 
         StatusDescription: 'User not found' 
       });
     }
+    console.log(`[BOT] 🤖 Bot identified | _id=${tokenBot._id} | name="${tokenBot.name || '(unnamed)'}" | owner=${user.email || user._id}`);
+
+    // Scope all session lookups to this specific bot so that the same customer
+    // talking to multiple bots doesn't share state across them.
+    const botFlowId = tokenBot._id.toString();
 
     // ── Agent mode bypass ────────────────────────────────────────────────────
-    // If a human agent has taken over this conversation (is_agent=true, activated
-    // within the last 30 minutes), save the incoming message but suppress the bot.
+    // If a human agent has taken over THIS bot's conversation with this customer
+    // (is_agent=true, activated within the last 30 minutes), save the incoming
+    // message but suppress the bot. Scoped by sender + flow_id so the same customer
+    // can be in agent-mode on one bot and bot-mode on another.
     const agentCheckSession = await BotSession.findOne({
-      $or: [{ sender }, { customer_phone: phone }],
+      sender,
+      flow_id: botFlowId,
       is_agent: true
     }).sort({ updatedAt: -1 });
 
@@ -1086,42 +1119,57 @@ export const respondToMessage = async (req, res) => {
         });
         agentCheckSession.markModified('process_history');
         await agentCheckSession.save();
+        console.log(`[BOT] 🙋 AGENT MODE active for sessionId=${agentCheckSession._id} phone=${phone} — bot suppressed, message recorded`);
+        console.log(`${'═'.repeat(80)}\n`);
         return res.json({ StatusId: 1, StatusDescription: 'Agent mode active', sender, messages: [], agentMode: true });
       } else {
-        // Agent mode expired — clear it so the bot resumes normally
+        // Agent mode expired — close this session entirely so the next request
+        // is treated as a brand-new conversation (matches openers → falls back to
+        // free-text default option-0). This avoids resuming the bot mid-menu in
+        // a stale state after the human conversation ended.
         agentCheckSession.is_agent = false;
         agentCheckSession.agent_since = null;
+        agentCheckSession.is_active = false;
+        agentCheckSession.current_node_id = null;
+        agentCheckSession.waiting_text_input = false;
+        agentCheckSession.waiting_webservice = false;
         if (agentCheckSession.status === 'waiting' || agentCheckSession.status === 'handling') {
           agentCheckSession.status = 'bot';
         }
         await agentCheckSession.save();
-        console.log('[BOT] Agent mode expired, resuming bot for', phone);
+        console.log(`[BOT] 🔓 Agent mode expired — closed session ${agentCheckSession._id}, will create fresh session for ${sender}`);
       }
     }
     // ─────────────────────────────────────────────────────────────────────────
 
-    // Find or create session
+    // Find or create session — scoped by (sender + flow_id) so that the same
+    // customer talking to different bots doesn't end up sharing one session,
+    // and so we never overwrite customer_phone with another conversation's value.
     let session = await BotSession.findOne({
       sender,
+      flow_id: botFlowId,
       is_active: true
     }).sort({ updatedAt: -1 });
     
-    console.log(`[BOT] 🔎 Session search result: ${session ? 'FOUND' : 'NOT FOUND'}`);
+    console.log(`[BOT] 🔎 Session search (sender="${sender}" + flow_id=${botFlowId}) → ${session ? 'FOUND' : 'NOT FOUND'}`);
     if (session) {
       console.log(`[BOT]    Session ID: ${session._id}`);
-      console.log(`[BOT]    Session sender: "${session.sender}"`);
-      console.log(`[BOT]    Session phone: "${session.customer_phone}"`);
+      console.log(`[BOT]    Session sender (customer): "${session.sender}"`);
+      console.log(`[BOT]    Session phone (business):  "${session.customer_phone}"`);
     }
 
     let isNewSession = false;
     let messages = [];
     let control = null;
 
-    // Check if session exists and is within 15 minutes
+    // Check if session exists and is within the inactivity window (20 min).
+    // After 20 minutes with no reply, treat the next message as a brand-new
+    // conversation (re-match openers / fall back to free-text default).
+    const SESSION_IDLE_MINUTES = 20;
     if (session) {
       const diffMinutes = (new Date() - new Date(session.updatedAt)) / (1000 * 60);
-      if (diffMinutes > 15) {
-        console.log(`[BOT] session expired (${diffMinutes.toFixed(1)} min) - resetting`);
+      if (diffMinutes > SESSION_IDLE_MINUTES) {
+        console.log(`[BOT] session expired (${diffMinutes.toFixed(1)} min > ${SESSION_IDLE_MINUTES}) - resetting`);
         session.is_active = false;
         await session.save();
         session = null;
@@ -1342,7 +1390,7 @@ export const respondToMessage = async (req, res) => {
             addToHistory(session, { type: 'UserInput', text }, 'user');
             messages = await walkChain(interruptNextId, flowData.nodes, flowData.edges, session, session.flow_id, req);
             await session.save();
-            const waPushedInterrupt1 = await pushMessagesToWhatsApp(sender, messages);
+            const waPushedInterrupt1 = await pushMessagesToWhatsApp(sender, messages, user);
             return res.json({ StatusId: 1, StatusDescription: 'Success', sender, messages: waPushedInterrupt1 ? [] : messages, control: null, ...(waPushedInterrupt1 && { wa_pushed: true }) });
           }
         }
@@ -1381,7 +1429,7 @@ export const respondToMessage = async (req, res) => {
               addToHistory(session, { type: 'UserInput', text }, 'user');
               messages = await walkChain(interruptNextId, flowData.nodes, flowData.edges, session, session.flow_id, req);
               await session.save();
-              const waPushedInterrupt2 = await pushMessagesToWhatsApp(sender, messages);
+              const waPushedInterrupt2 = await pushMessagesToWhatsApp(sender, messages, user);
               return res.json({ StatusId: 1, StatusDescription: 'Success', sender, messages: waPushedInterrupt2 ? [] : messages, control: null, ...(waPushedInterrupt2 && { wa_pushed: true }) });
             }
           }
@@ -1405,7 +1453,7 @@ export const respondToMessage = async (req, res) => {
           console.error('[BOT] failed to close current session after removal:', sessSaveErr.message);
         }
         const waPushed = removalResult.outMessages.length > 0
-          ? await pushMessagesToWhatsApp(sender, removalResult.outMessages)
+          ? await pushMessagesToWhatsApp(sender, removalResult.outMessages, user)
           : false;
         return res.json({
           StatusId: 1,
@@ -1453,7 +1501,7 @@ export const respondToMessage = async (req, res) => {
             console.error('[BOT] failed to close current session after removal:', sessSaveErr.message);
           }
           const waPushed = removalResult.outMessages.length > 0
-            ? await pushMessagesToWhatsApp(sender, removalResult.outMessages)
+            ? await pushMessagesToWhatsApp(sender, removalResult.outMessages, user)
             : false;
           return res.json({
             StatusId: 1,
@@ -1565,26 +1613,29 @@ export const respondToMessage = async (req, res) => {
       }
       }
     } else if (currentNode.type === 'output_menu') {
-      // Handle menu selection
+      // Handle menu selection — we are mid-session inside an active menu.
+      // Behaviour:
+      //   1. Exact match on an option → follow that option's edge
+      //   2. No match but `option-default` edge exists → follow default
+      //   3. Otherwise → short error message (DO NOT restart the flow,
+      //      the user is intentionally inside this menu)
       const selectedValue = text.trim();
       const options = currentNode.data.options || [];
       const selectedIdx = options.findIndex(opt => opt.trim() === selectedValue);
-      
+
       if (selectedIdx !== -1) {
-        // Save selection to parameters
         if (currentNode.data.variableName) {
           params[currentNode.data.variableName] = selectedValue;
         }
         params['open'] = selectedValue;
         session.parameters = params;
         session.markModified('parameters');
-        
+
         const nextNodeId = findNextNode(currentNode.id, flowData.edges, `option-${selectedIdx}`);
         if (nextNodeId) {
           messages = await walkChain(nextNodeId, flowData.nodes, flowData.edges, session, session.flow_id, req);
         }
       } else {
-        // No matching option — try the default handle
         const defaultNextId = findNextNode(currentNode.id, flowData.edges, 'option-default');
         if (defaultNextId) {
           console.log(`[BOT] 🔀 output_menu: no match for "${selectedValue}", routing to option-default`);
@@ -1593,8 +1644,8 @@ export const respondToMessage = async (req, res) => {
           session.markModified('parameters');
           messages = await walkChain(defaultNextId, flowData.nodes, flowData.edges, session, session.flow_id, req);
         } else {
-          messages.push({ 
-            type: 'Text', 
+          messages.push({
+            type: 'Text',
             text: '⚠️ לא נמצאה אפשרות תואמת לתשובה שלך.',
             created: new Date().toISOString()
           });
@@ -1629,7 +1680,7 @@ export const respondToMessage = async (req, res) => {
             console.error('[BOT] failed to close current session after removal:', sessSaveErr.message);
           }
           const waPushed = removalResult.outMessages.length > 0
-            ? await pushMessagesToWhatsApp(sender, removalResult.outMessages)
+            ? await pushMessagesToWhatsApp(sender, removalResult.outMessages, user)
             : false;
           return res.json({
             StatusId: 1,
@@ -1674,10 +1725,14 @@ export const respondToMessage = async (req, res) => {
     console.log(`[BOT] 🌐 WHATSAPP_ENDPOINT=${process.env.WHATSAPP_ENDPOINT || '(not set)'}`);
 
     // Proactively push messages to WhatsApp via dialog360 /send endpoint.
-    // When WHATSAPP_ENDPOINT is set and messages exist, push them directly and
-    // return an empty messages array so dialog360 does NOT double-send.
-    const waPushed = await pushMessagesToWhatsApp(sender, messages);
+    // Uses the bot owner's dialog360_bot_id when available (matches sendAgentMessage).
+    // When push succeeds, return an empty messages array so dialog360 does NOT double-send.
+    const waPushed = await pushMessagesToWhatsApp(sender, messages, user);
     console.log(`[BOT] 🚀 pushMessagesToWhatsApp → waPushed=${waPushed}`);
+
+    const elapsedMs = Date.now() - reqStartedAt;
+    console.log(`[BOT] ✅ DONE | phone=${phone} | sender=${sender} | sessionId=${session._id} | msgs=${messages.length} | waPushed=${waPushed} | elapsed=${elapsedMs}ms`);
+    console.log(`${'═'.repeat(80)}\n`);
 
     return res.json({
       StatusId: 1,
@@ -1689,7 +1744,9 @@ export const respondToMessage = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('[BOT] Error:', error);
+    const elapsedMs = Date.now() - reqStartedAt;
+    console.error(`[BOT] ❌ ERROR after ${elapsedMs}ms:`, error);
+    console.log(`${'═'.repeat(80)}\n`);
     return res.status(500).json({
       StatusId: 0,
       StatusDescription: error.message
