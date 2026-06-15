@@ -3,6 +3,7 @@ import BotSession from '../models/BotSession.js';
 import BotFlow from '../models/BotFlow.js';
 import AuditLog from '../models/AuditLog.js';
 import SystemSetting from '../models/SystemSetting.js';
+import UserType from '../models/UserType.js';
 
 // Default configuration if DB is empty (used for fallback)
 const DEFAULT_ACCOUNTS_CONFIG = {
@@ -44,7 +45,7 @@ export const updateSystemSettings = async (req, res) => {
   }
 };
 import jwt from 'jsonwebtoken';
-import { SECRET_KEY } from '../middleware/auth.js';
+import { SECRET_KEY, resolvePermissions } from '../middleware/auth.js';
 import { getUserLimits } from '../utils/limits.js'; // Added limit checker
 
 // Helper to log admin actions
@@ -101,7 +102,8 @@ export const getSystemStats = async (req, res) => {
 export const getAllUsers = async (req, res) => {
   try {
     const users = await User.find({})
-      .select('-password') // Don't send passwords
+      .select('-password')
+      .populate('user_type_id', 'name system_role')
       .sort({ createdAt: -1 });
     
     // Get additional stats for each user
@@ -123,6 +125,7 @@ export const getAllUsers = async (req, res) => {
         account_type: user.account_type,
         status: user.status,
         manager_id: user.manager_id || null,
+        user_type_id: user.user_type_id || null,
         createdAt: user.createdAt,
         updatedAt: user.updatedAt,
         custom_limits: user.custom_limits,
@@ -295,12 +298,15 @@ export const impersonateUser = async (req, res) => {
         email: user.email,
         role: user.role,
         manager_id: user.manager_id || null,
+        user_type_id: user.user_type_id || null,
         impersonatedBy: req.userId, // Track who is impersonating
         isImpersonating: true
       }, 
       SECRET_KEY,
       { expiresIn: '2h' } // Impersonation tokens expire after 2 hours
     );
+
+    const permissions = await resolvePermissions(user);
     
     await logAdminAction(req.userId, req.user.email, 'IMPERSONATE', userId, 'User', { 
       targetEmail: user.email 
@@ -313,10 +319,12 @@ export const impersonateUser = async (req, res) => {
         name: user.name,
         email: user.email,
         role: user.role,
+        user_type_id: user.user_type_id || null,
         public_id: user.public_id,
         account_type: user.account_type,
         status: user.status,
         api_token: user.token,
+        permissions,
         isImpersonating: true,
         impersonatedBy: req.userId
       }
@@ -342,9 +350,17 @@ export const stopImpersonation = async (req, res) => {
     
     // Generate a fresh admin token
     const adminToken = jwt.sign(
-      { id: adminUserId, email: adminUser.email },
+      {
+        id: adminUserId,
+        email: adminUser.email,
+        role: adminUser.role,
+        manager_id: adminUser.manager_id || null,
+        user_type_id: adminUser.user_type_id || null
+      },
       SECRET_KEY
     );
+
+    const adminPermissions = await resolvePermissions(adminUser);
     
     res.json({
       token: adminToken,
@@ -353,10 +369,12 @@ export const stopImpersonation = async (req, res) => {
         name: adminUser.name,
         email: adminUser.email,
         role: adminUser.role,
+        user_type_id: adminUser.user_type_id || null,
         public_id: adminUser.public_id,
         account_type: adminUser.account_type,
         status: adminUser.status,
-        api_token: adminUser.token
+        api_token: adminUser.token,
+        permissions: adminPermissions
       }
     });
   } catch (err) {
@@ -391,6 +409,71 @@ export const updateUserRole = async (req, res) => {
         name: user.name,
         email: user.email,
         role: user.role
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// Create a new user directly from the admin panel
+export const createUser = async (req, res) => {
+  try {
+    const { name, email, phone, password, account_type, user_type_id } = req.body;
+
+    if (!name || !email) {
+      return res.status(400).json({ error: 'שם ואימייל נדרשים' });
+    }
+
+    const existing = await User.findOne({ email: email.toLowerCase().trim() });
+    if (existing) {
+      return res.status(400).json({ error: 'כתובת האימייל כבר קיימת במערכת' });
+    }
+
+    // Determine role from user_type if provided
+    let role = 'user';
+    let resolvedUserTypeId = null;
+    if (user_type_id) {
+      const userType = await UserType.findById(user_type_id);
+      if (!userType) return res.status(400).json({ error: 'סוג משתמש לא קיים' });
+      role = userType.system_role || 'user';
+      resolvedUserTypeId = userType._id;
+    }
+
+    const publicId = Math.random().toString(36).substring(2, 15);
+    const trialExpiresAt = new Date();
+    trialExpiresAt.setMonth(trialExpiresAt.getMonth() + 1);
+
+    const user = await User.create({
+      name,
+      email: email.toLowerCase().trim(),
+      phone: phone || '',
+      password: password || null,
+      role,
+      public_id: publicId,
+      account_type: account_type || 'Trial',
+      status: 'active',
+      trial_expires_at: trialExpiresAt,
+      user_type_id: resolvedUserTypeId
+    });
+
+    await logAdminAction(req.userId, req.user.email, 'CREATE_USER', user._id.toString(), 'User', {
+      createdEmail: email, role, user_type_id: resolvedUserTypeId
+    });
+
+    res.status(201).json({
+      message: 'משתמש נוצר בהצלחה',
+      user: {
+        id: user._id.toString(),
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+        role: user.role,
+        public_id: user.public_id,
+        account_type: user.account_type,
+        status: user.status,
+        user_type_id: resolvedUserTypeId,
+        createdAt: user.createdAt
       }
     });
   } catch (err) {

@@ -6,7 +6,7 @@ import Widget from '../models/Widget.js';
 import User from '../models/User.js';
 import Contact from '../models/Contact.js';
 import fetch from 'node-fetch';
-import { getEffectiveUserId } from '../middleware/auth.js';
+import { getEffectiveUserId, resolvePermissions, hasPermission } from '../middleware/auth.js';
 
 export const startSession = async (req, res) => {
   // Safe extraction: explicitly check for req.user to avoid 'undefined' values in DB insert
@@ -204,8 +204,11 @@ export const getContacts = async (req, res) => {
 
     let finalResult = result.map(c => ({ ...c, assigned_to: assignedToMap[c.phone] || [] }));
 
-    // If rep, filter to only contacts where this rep is assigned
-    if (req.user?.role === 'rep') {
+    // If user has view_assigned_only permission (but NOT view_all), filter to assigned contacts only
+    const userDoc = await User.findById(req.userId).lean();
+    const perms = await resolvePermissions(userDoc || { role: req.user?.role });
+    const viewOnlyAssigned = hasPermission(perms, 'sessions.view_assigned_only') && !hasPermission(perms, 'sessions.view_all');
+    if (viewOnlyAssigned) {
       const repId = req.userId;
       finalResult = finalResult.filter(c => c.assigned_to.includes(repId));
     }

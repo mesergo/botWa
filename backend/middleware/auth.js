@@ -1,5 +1,6 @@
 import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
+import UserType from '../models/UserType.js';
 
 const SECRET_KEY = 'dfghjukiolp;[p0o9i8uytgbhnjmk,l.;p9876543t4rre2asd';
 
@@ -85,3 +86,70 @@ export const optionalAuthToken = (req, res, next) => {
 };
 
 export { SECRET_KEY };
+
+/**
+ * Resolves the effective permissions object for a user.
+ * Loads the UserType document if user_type_id is set, otherwise falls back
+ * to the built-in role defaults (backward compatibility with existing users).
+ */
+export const resolvePermissions = async (user) => {
+  if (user.user_type_id) {
+    const userType = await UserType.findById(user.user_type_id).lean();
+    if (userType) return userType.permissions || {};
+  }
+  // Fallback: derive permissions from legacy role string
+  return getDefaultPermissionsForRole(user.role);
+};
+
+/**
+ * Returns a permission sub-object for a dot-separated key, e.g. 'sessions.view_all'.
+ * Usage in a controller: const perms = await resolvePermissions(user); hasPermission(perms, 'sessions.view_all')
+ */
+export const hasPermission = (permissions, key) => {
+  if (!permissions || !key) return false;
+  const [section, action] = key.split('.');
+  return !!permissions?.[section]?.[action];
+};
+
+/** Fallback permissions based on legacy role string */
+function getDefaultPermissionsForRole(role) {
+  const all = {
+    bots:     { view_tab: true, create: true, edit: true, delete: true, settings: true, publish: true },
+    sessions: { view: true, add: true, view_all: true, view_assigned_only: true, templates_as_rep: true, templates_as_manager: true },
+    contacts: { view: true, add: true, edit: true, delete: true, import_excel: true },
+    groups:   { view: true, create: true, add_contact: true, send_message: true, remove_contact: true },
+    settings: { view: true, edit_profile: true },
+    users:    { view: true, add: true, edit: true, delete: true },
+    rep_groups: { view: true, add: true, delete: true }
+  };
+  const none = {
+    bots:     { view_tab: false, create: false, edit: false, delete: false, settings: false, publish: false },
+    sessions: { view: false, add: false, view_all: false, view_assigned_only: false, templates_as_rep: false, templates_as_manager: false },
+    contacts: { view: false, add: false, edit: false, delete: false, import_excel: false },
+    groups:   { view: false, create: false, add_contact: false, send_message: false, remove_contact: false },
+    settings: { view: false, edit_profile: false },
+    users:    { view: false, add: false, edit: false, delete: false },
+    rep_groups: { view: false, add: false, delete: false }
+  };
+  if (role === 'admin') return all;
+  if (role === 'user') return all;
+  if (role === 'rep_manager') return {
+    bots:     { ...none.bots },
+    sessions: { view: true, add: true, view_all: true, view_assigned_only: false, templates_as_rep: false, templates_as_manager: true },
+    contacts: { view: true, add: true, edit: true, delete: false, import_excel: false },
+    groups:   { view: true, create: false, add_contact: false, send_message: true, remove_contact: false },
+    settings: { view: true, edit_profile: true },
+    users:    { ...none.users },
+    rep_groups: { ...none.rep_groups }
+  };
+  // rep (default)
+  return {
+    bots:     { ...none.bots },
+    sessions: { view: true, add: false, view_all: false, view_assigned_only: true, templates_as_rep: true, templates_as_manager: false },
+    contacts: { view: true, add: false, edit: false, delete: false, import_excel: false },
+    groups:   { view: true, create: false, add_contact: false, send_message: false, remove_contact: false },
+    settings: { view: true, edit_profile: true },
+    users:    { ...none.users },
+    rep_groups: { ...none.rep_groups }
+  };
+}

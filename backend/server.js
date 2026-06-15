@@ -22,6 +22,7 @@ import repGroupRoutes from './routes/repGroupRoutes.js';
 import contactRoutes from './routes/contactRoutes.js';
 import groupRoutes from './routes/groupRoutes.js';
 import { seedTemplates } from './controllers/templateController.js';
+import { seedUserTypes } from './scripts/seed-user-types.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -55,8 +56,9 @@ async function startServer() {
     await connectDB();
     console.log('✅ Database connected, registering routes...');
     
-    // Seed templates AFTER database connection
+    // Seed templates and user types AFTER database connection
     await seedTemplates();
+    await seedUserTypes();
     
     // Serve static files from uploads directory
     app.use('/uploads', express.static(path.join(__dirname, 'uploads')));

@@ -1,6 +1,7 @@
 import React from 'react';
 import { Bot, MessageSquare, Users, Settings, LogOut, Shield, ArrowLeft } from 'lucide-react';
 import { User } from '../types';
+import { usePermission } from '../hooks/usePermission';
 
 interface HomePageProps {
   currentUser: User | null;
@@ -68,6 +69,16 @@ const HomePage: React.FC<HomePageProps> = ({
   onOpenAdminPanel,
   onLogout,
 }) => {
+  const can = usePermission(currentUser);
+
+  const visibleTiles = tiles.filter(({ id }) => {
+    if (id === 'bots')     return can('bots.view_tab');
+    if (id === 'chats')    return can('sessions.view');
+    if (id === 'contacts') return can('contacts.view');
+    if (id === 'settings') return can('settings.view');
+    return true;
+  });
+
   const handleTile = (id: typeof tiles[number]['id']) => {
     if (id === 'bots') onGoToBots();
     else if (id === 'chats') onGoToChats();
@@ -138,7 +149,7 @@ const HomePage: React.FC<HomePageProps> = ({
 
         {/* Tiles */}
         <div className="w-full max-w-4xl grid grid-cols-1 sm:grid-cols-2 gap-6">
-          {tiles.map(({ id, label, description, icon: Icon, iconBg, iconColor, accent, arrowColor }) => (
+          {visibleTiles.map(({ id, label, description, icon: Icon, iconBg, iconColor, accent, arrowColor }) => (
             <button
               key={id}
               onClick={() => handleTile(id)}

@@ -21,6 +21,7 @@ const userSchema = new mongoose.Schema({
   },
   trial_expires_at: { type: Date, default: null },
   rep_group_ids: [{ type: mongoose.Schema.Types.ObjectId, ref: 'RepGroup', default: [] }],
+  user_type_id: { type: mongoose.Schema.Types.ObjectId, ref: 'UserType', default: null },
 }, { 
   timestamps: true,
   collection: 'User'
