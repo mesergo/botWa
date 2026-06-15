@@ -121,6 +121,27 @@ export interface PredefinedTemplate {
   fields: TemplateField[];
 }
 
+export interface UserTypePermissions {
+  bots:     { view_tab: boolean; create: boolean; edit: boolean; delete: boolean; settings: boolean; publish: boolean };
+  sessions: { view: boolean; add: boolean; view_all: boolean; view_assigned_only: boolean; templates_as_rep: boolean; templates_as_manager: boolean };
+  contacts: { view: boolean; add: boolean; edit: boolean; delete: boolean; import_excel: boolean };
+  groups:   { view: boolean; create: boolean; add_contact: boolean; send_message: boolean; remove_contact: boolean };
+  settings: { view: boolean; edit_profile: boolean };
+  users:    { view: boolean; add: boolean; edit: boolean; delete: boolean };
+  rep_groups: { view: boolean; add: boolean; delete: boolean };
+}
+
+export interface UserType {
+  _id: string;
+  name: string;
+  system_role: string | null;
+  is_seeded: boolean;
+  can_add_users: boolean;
+  show_in_users_tab?: boolean;
+  allowed_user_type_ids?: Array<{ _id: string; name: string; system_role: string | null }>;
+  permissions: UserTypePermissions;
+}
+
 export interface User {
   id: string;
   name: string;
@@ -135,6 +156,8 @@ export interface User {
   trial_expires_at?: string | null;
   isImpersonating?: boolean;
   impersonatedBy?: string;
+  user_type_id?: string | null;
+  permissions?: UserTypePermissions;
 }
 
 export interface CarouselItem {

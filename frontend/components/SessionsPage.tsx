@@ -2,6 +2,7 @@
 import { Clock, MessageSquare, Search, Bot, LogOut, User, Phone, List, Users, ExternalLink, X, Headphones, RefreshCw, Shield, Settings, UserCog, Layers, Plus, UserPlus, Check } from 'lucide-react';
 import ImpersonationBanner from './ImpersonationBanner';
 import { FileUploader } from './FileUploader';
+import { usePermission } from '../hooks/usePermission';
 
 interface Session {
   id: string;
@@ -30,7 +31,7 @@ interface Contact {
 interface SessionsPageProps {
   token: string | null;
   currentUser?: { name?: string; email?: string; role?: string; isImpersonating?: boolean; availability_status?: 'available' | 'unavailable' | 'on_break' } | null;
-  onBack: () => void;
+  onBack?: () => void;
   onLogout: () => void;
   onOpenContacts?: (phone?: string) => void;
   onOpenGroups?: () => void;
@@ -861,6 +862,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
 
   // ─────────────────────────────────────────────────────────────────────────
 
+  const can = usePermission(currentUser as any);
   const firstName = currentUser?.name?.charAt(0)?.toUpperCase() || currentUser?.email?.charAt(0)?.toUpperCase() || '?';
 
   // ── Availability badge (reps / rep_managers) ────────────────────────────
@@ -1106,7 +1108,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
         {/* ── Navigation tabs ── */}
         {currentUser?.role !== 'rep' && (
         <div className="flex items-center gap-1 bg-slate-100 rounded-2xl p-1" dir="rtl">
-          {onBack && currentUser?.role !== 'rep_manager' && (
+          {onBack && can('bots.view_tab') && (
             <button
               onClick={onBack}
               className="flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm text-slate-500 hover:text-slate-700 transition-all"
@@ -1240,7 +1242,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                   <p className="text-xs text-slate-400 font-semibold">{contacts.length} קשרים</p>
                 </div>
               </div>
-              {currentUser?.role !== 'rep' && (
+              {can('sessions.add') && (
               <button
                 onClick={() => { setShowNewConvModal(true); setNewConvPhone(''); setNewConvError(null); }}
                 title="שיחה חדשה"

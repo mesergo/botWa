@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Plus, Bot, ArrowLeft, Trash2, Calendar, LogOut, Shield, UserCog, Users, List, Settings, Save, User as UserIcon, Phone, Mail, Star, Copy, Check, Wifi, Gauge, MessageSquare, Globe, Layers, CheckCircle, Eye, EyeOff, X, Image as ImageIcon, Link as LinkIcon, Unlink, UserMinus, AlertTriangle, RefreshCcw, ToggleLeft, ToggleRight } from 'lucide-react';
 import ImpersonationBanner from './ImpersonationBanner';
-import { BotFlow } from '../types';
+import { BotFlow, User } from '../types';
 import SubUsersTab from './SubUsersTab';
 import BotSettingsModal from './BotSettingsModal';
+import { usePermission } from '../hooks/usePermission';
 
 const API_BASE = window.location.hostname === 'localhost'
   ? 'http://localhost:3001/api'
@@ -142,12 +143,19 @@ const AvailabilityBadge: React.FC<{
 };
 
 const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, onDeleteBot, onSetDefaultBot, onLogout, currentUser, onOpenAdminPanel, onStopImpersonation, onOpenContacts, onOpenSessions, onOpenGroups, onConnectFacebook, onUpdateBotPublicId, onUpdateAvailability, token, initialTab }) => {
+  const can = usePermission(currentUser as User | null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newBotName, setNewBotName] = useState('');
   const [facebookConfirmBot, setFacebookConfirmBot] = useState<BotFlow | null>(null);
   const [facebookSending, setFacebookSending] = useState(false);
   const [facebookDone, setFacebookDone] = useState(false);
-  const [activeTab, setActiveTab] = useState<'bots' | 'settings' | 'users'>(initialTab ?? 'bots');
+  const [activeTab, setActiveTab] = useState<'bots' | 'settings' | 'users'>(() => {
+    const requested = initialTab ?? 'bots';
+    if (requested === 'bots' && !can('bots.view_tab')) {
+      return can('settings.view') ? 'settings' : 'users';
+    }
+    return requested;
+  });
 
   // Settings tab state
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -464,6 +472,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
 
   const isRep = currentUser?.role === 'rep' || currentUser?.role === 'rep_manager';
   const isCompanyManager = currentUser?.role === 'user';
+  // can() already defined at the top of the component
 
   const handleSaveProfile = async () => {
     if (!token) return;
@@ -526,7 +535,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
         </div>
         {/* ── Navigation tabs ── */}
         <div className="flex items-center gap-1 bg-slate-100 rounded-2xl p-1" dir="rtl">
-          {currentUser?.role !== 'rep' && (
+          {can('bots.view_tab') && (
           <button
             onClick={() => setActiveTab('bots')}
             className={`flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm transition-all ${
@@ -536,7 +545,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
             <Bot size={16} /> הבוטים שלי
           </button>
           )}
-          {onOpenSessions && (
+          {onOpenSessions && can('sessions.view') && (
             <button
               onClick={onOpenSessions}
               className="flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm text-slate-500 hover:text-slate-700 transition-all"
@@ -544,7 +553,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
               <List size={16} /> שיחות
             </button>
           )}
-          {onOpenContacts && !isRep && (
+          {onOpenContacts && can('contacts.view') && (
             <button
               onClick={onOpenContacts}
               className="flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm text-slate-500 hover:text-slate-700 transition-all"
@@ -552,7 +561,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
               <Users size={16} /> אנשי קשר
             </button>
           )}
-          {onOpenGroups && !isRep && (
+          {onOpenGroups && can('groups.view') && (
             <button
               onClick={onOpenGroups}
               className="flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm text-slate-500 hover:text-slate-700 transition-all"
@@ -560,7 +569,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
               <Layers size={16} /> קבוצות
             </button>
           )}
-          {!isRep && (
+          {can('settings.view') && (
             <button
               onClick={() => setActiveTab('settings')}
               className={`flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm transition-all ${
@@ -570,7 +579,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
               <Settings size={16} /> הגדרות
             </button>
           )}
-          {isCompanyManager && (
+          {can('users.view') && (
             <button
               onClick={() => setActiveTab('users')}
               className={`flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm transition-all ${
@@ -643,29 +652,32 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                     <div>
                       <label className="block text-xs font-bold text-slate-400 mb-2">שם מלא</label>
                       <input
-                        className="w-full px-5 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600 transition-all text-right"
+                        className="w-full px-5 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600 transition-all text-right disabled:opacity-60 disabled:cursor-not-allowed"
                         value={editName}
                         onChange={e => setEditName(e.target.value)}
+                        disabled={!can('settings.edit_profile')}
                       />
                     </div>
                     <div>
                       <label className="block text-xs font-bold text-slate-400 mb-2">אימייל</label>
                       <input
                         type="email"
-                        className="w-full px-5 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600 transition-all text-right"
+                        className="w-full px-5 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600 transition-all text-right disabled:opacity-60 disabled:cursor-not-allowed"
                         value={editEmail}
                         onChange={e => setEditEmail(e.target.value)}
                         dir="ltr"
+                        disabled={!can('settings.edit_profile')}
                       />
                     </div>
                     <div>
                       <label className="block text-xs font-bold text-slate-400 mb-2">טלפון</label>
                       <input
                         type="tel"
-                        className="w-full px-5 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600 transition-all text-right"
+                        className="w-full px-5 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600 transition-all text-right disabled:opacity-60 disabled:cursor-not-allowed"
                         value={editPhone}
                         onChange={e => setEditPhone(e.target.value)}
                         placeholder="05X-XXXXXXX"
+                        disabled={!can('settings.edit_profile')}
                       />
                     </div>
                   </div>
@@ -681,6 +693,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                     </div>
                   )}
 
+                  {can('settings.edit_profile') && (
                   <button
                     onClick={handleSaveProfile}
                     disabled={profileSaving}
@@ -689,6 +702,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                     <Save size={18} />
                     {profileSaving ? 'שומר...' : 'שמור שינויים'}
                   </button>
+                  )}
                 </div>
 
                 {/* Read-only account details */}
@@ -1148,12 +1162,12 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
       )}
 
       {/* ── Bots Tab ── */}
-      {activeTab === 'bots' && currentUser?.role !== 'rep' && (
+      {activeTab === 'bots' && can('bots.view_tab') && (
       <div className="flex-1 overflow-y-auto p-12">
         <div className="max-w-6xl mx-auto">
           <div className="flex items-center justify-between mb-10 flex-row-reverse">
             <h1 className="text-3xl font-black text-slate-900">הבוטים שלי</h1>
-            {!isRep && (
+            {can('bots.create') && (
               <button 
                 onClick={() => setIsModalOpen(true)}
                 className="flex items-center gap-3 px-8 py-4 bg-blue-600 text-white rounded-2xl font-bold shadow-lg shadow-blue-600/20 hover:bg-blue-700 transition-all scale-100 active:scale-95"
@@ -1167,8 +1181,8 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
             {bots.map((bot) => (
               <div 
                 key={bot.id}
-                className="bg-white border border-slate-100 rounded-[2.5rem] p-8 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all cursor-pointer group flex flex-col justify-between h-[280px]"
-                onClick={() => onEnterBot(bot)}
+                className={`bg-white border border-slate-100 rounded-[2.5rem] p-8 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all group flex flex-col justify-between h-[280px] ${can('bots.edit') ? 'cursor-pointer' : 'cursor-default'}`}
+                onClick={() => can('bots.edit') && onEnterBot(bot)}
               >
                 <div>
                   <div className="flex items-center justify-between mb-6 flex-row-reverse">
@@ -1176,7 +1190,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                       <Bot size={28} />
                     </div>
                     <div className="flex items-center gap-2">
-                      {!isRep && (
+                      {can('bots.delete') && (
                         <button 
                           onClick={(e) => { e.stopPropagation(); onDeleteBot(bot.id); }}
                           className="p-2 text-slate-200 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
@@ -1184,16 +1198,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                           <Trash2 size={18} />
                         </button>
                       )}
-                      {onConnectFacebook && (
-                        <button
-                          onClick={(e) => { e.stopPropagation(); setSettingsBot(bot); }}
-                          className="p-2 text-slate-300 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-all"
-                          title="הגדרות בוט"
-                        >
-                          <Settings size={18} />
-                        </button>
-                      )}
-                      {!isRep && !onConnectFacebook && (
+                      {can('bots.settings') && (
                         <button
                           onClick={(e) => { e.stopPropagation(); setSettingsBot(bot); }}
                           className="p-2 text-slate-300 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-all"
@@ -1228,10 +1233,12 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                       </button>
                     )}
                   </div>
+                  {can('bots.edit') && (
                   <div className="flex items-center gap-2 text-blue-600 font-black text-sm group-hover:gap-4 transition-all">
                     <span>כניסה לעריכה</span>
                     <ArrowLeft size={18} />
                   </div>
+                  )}
                 </div>
               </div>
             ))}
@@ -1248,10 +1255,10 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
       )}
 
       {/* ── Users Tab ── */}
-      {activeTab === 'users' && isCompanyManager && (
+      {activeTab === 'users' && can('users.view') && (
         <div className="flex-1 overflow-y-auto p-12">
           <div className="max-w-5xl mx-auto">
-            <SubUsersTab token={token} />
+            <SubUsersTab token={token} currentUser={currentUser as User | null} />
           </div>
         </div>
       )}

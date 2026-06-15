@@ -4,7 +4,7 @@ import BotFlow from '../models/BotFlow.js';
 import Version from '../models/Version.js';
 import jwt from 'jsonwebtoken';
 import { getUserLimits } from '../utils/limits.js';
-import { SECRET_KEY } from '../middleware/auth.js';
+import { SECRET_KEY, resolvePermissions } from '../middleware/auth.js';
 import { OAuth2Client } from 'google-auth-library';
 import {
   DEFAULT_REMOVAL_CONFIG,
@@ -91,8 +91,16 @@ export const login = async (req, res) => {
       await user.save();
     }
 
-    const jwtToken = jwt.sign({ id: userId, email: user.email, role: userRole, manager_id: managerId }, SECRET_KEY, { expiresIn: '24h' });
+    const jwtToken = jwt.sign({
+      id: userId,
+      email: user.email,
+      role: userRole,
+      manager_id: managerId,
+      user_type_id: user.user_type_id || null
+    }, SECRET_KEY, { expiresIn: '24h' });
     
+    const permissions = await resolvePermissions(user);
+
     res.json({ 
       token: jwtToken, 
       user: { 
@@ -106,7 +114,9 @@ export const login = async (req, res) => {
         status: user.status || 'active',
         availability_status: user.availability_status || 'unavailable',
         trial_expires_at: user.trial_expires_at || null,
-        api_token: user.token // API token for WhatsApp integration
+        api_token: user.token,
+        user_type_id: user.user_type_id || null,
+        permissions
       } 
     });
   } catch (err) {
@@ -165,7 +175,14 @@ export const googleAuth = async (req, res) => {
       await user.save();
     }
 
-    const jwtToken = jwt.sign({ id: user._id.toString(), email: user.email, role: googleRole, manager_id: googleManagerId }, SECRET_KEY, { expiresIn: '24h' });
+    const jwtToken = jwt.sign({
+      id: user._id.toString(),
+      email: user.email,
+      role: googleRole,
+      manager_id: googleManagerId,
+      user_type_id: user.user_type_id || null
+    }, SECRET_KEY, { expiresIn: '24h' });
+    const googlePermissions = await resolvePermissions(user);
     res.json({
       token: jwtToken,
       user: {
@@ -180,6 +197,8 @@ export const googleAuth = async (req, res) => {
         availability_status: user.availability_status || 'unavailable',
         trial_expires_at: user.trial_expires_at || null,
         api_token: user.token,
+        user_type_id: user.user_type_id || null,
+        permissions: googlePermissions
       },
     });
   } catch (err) {

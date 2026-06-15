@@ -5,6 +5,7 @@ import {
   Upload, Download, Eye, ChevronRight, ChevronLeft, Layers
 } from 'lucide-react';
 import ImpersonationBanner from './ImpersonationBanner';
+import { usePermission } from '../hooks/usePermission';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -278,6 +279,7 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
     return d.toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' });
   };
 
+  const can = usePermission(currentUser as any);
   const firstName = currentUser?.name?.charAt(0)?.toUpperCase() ?? currentUser?.email?.charAt(0)?.toUpperCase() ?? '?';
   const isSimulator = (phone: string) => phone === 'Simulated' || phone.toLowerCase() === 'simulator' || phone.toLowerCase() === 'simulated';
 
@@ -295,9 +297,11 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
 
         {/* Navigation tabs */}
         <div className="flex items-center gap-1 bg-slate-100 rounded-2xl p-1" dir="rtl">
+          {onBack && can('bots.view_tab') && (
           <button onClick={onBack} className="flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm text-slate-500 hover:text-slate-700 transition-all">
             <Bot size={16} /> הבוטים שלי
           </button>
+          )}
           {onOpenSessions && (
             <button onClick={() => onOpenSessions()} className="flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm text-slate-500 hover:text-slate-700 transition-all">
               <List size={16} /> שיחות
@@ -373,6 +377,7 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
               </div>
 
               {/* Import from Excel */}
+              {can('contacts.import_excel') && (
               <button
                 onClick={() => setImportModalOpen(true)}
                 disabled={importing}
@@ -382,6 +387,7 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
                 <Upload size={15} />
                 {importing ? 'מייבא...' : 'ייבוא מאקסל'}
               </button>
+              )}
 
               {/* Hidden file input */}
               <input
@@ -393,12 +399,14 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
               />
 
               {/* Add contact button */}
+              {can('contacts.add') && (
               <button
                 onClick={openAdd}
                 className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-bold text-sm transition-colors shadow-sm"
               >
                 <Plus size={16} /> הוסף איש קשר
               </button>
+              )}
             </div>
           </div>
 
@@ -413,7 +421,7 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
               <p className="text-xl font-bold">
                 {total === 0 ? 'עדיין אין אנשי קשר' : 'לא נמצאו תוצאות'}
               </p>
-              {total === 0 && (
+              {total === 0 && can('contacts.add') && (
                 <button
                   onClick={openAdd}
                   className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-bold text-sm transition-colors mt-2"
@@ -501,6 +509,7 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
                           <ExternalLink size={14} />
                         </button>
                       )}
+                      {can('contacts.edit') && (
                       <button
                         onClick={() => openEdit(contact)}
                         title="ערוך"
@@ -508,7 +517,8 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
                       >
                         <Edit2 size={14} />
                       </button>
-                      {contact._id && (
+                      )}
+                      {can('contacts.delete') && contact._id && (
                         deletingId === contact._id ? (
                           <div className="flex items-center gap-1">
                             <button
@@ -810,6 +820,7 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
                     שיחות
                   </button>
                 )}
+                {can('contacts.edit') && (
                 <button
                   onClick={() => { setDetailContact(null); openEdit(detailContact); }}
                   className="flex items-center gap-2 px-4 py-2 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-xl font-bold text-sm transition-colors border border-blue-200"
@@ -818,6 +829,7 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
                   <Edit2 size={15} />
                   ערוך
                 </button>
+                )}
                 <button
                   onClick={() => setDetailContact(null)}
                   className="p-2 text-slate-300 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"

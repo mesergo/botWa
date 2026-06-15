@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { UserCog, Users, Plus, Trash2, Edit2, Check, X, Eye, EyeOff, Settings, Clock, MessageSquare } from 'lucide-react';
+import { usePermission } from '../hooks/usePermission';
+import { User } from '../types';
 
 const API_BASE = window.location.hostname === 'localhost'
   ? 'http://localhost:3001/api'
@@ -47,19 +49,28 @@ interface SubUser {
   email: string;
   phone: string;
   role: 'rep' | 'rep_manager';
+  user_type_id?: string | null;
   status: string;
   availability_status?: 'available' | 'unavailable' | 'on_break';
   createdAt: string;
   repGroupIds: string[];
 }
 
+interface AvailableUserType {
+  _id: string;
+  name: string;
+  system_role: string | null;
+}
+
 interface SubUsersTabProps {
   token?: string | null;
+  currentUser?: User | null;
 }
 
 const ROLE_LABELS: Record<string, string> = {
   rep_manager: 'מנהל משמרת',
   rep: 'נציג',
+  user: 'משתמש'
 };
 
 const AVAILABILITY_LABELS: Record<string, { label: string; dot: string; text: string; bg: string }> = {
@@ -68,10 +79,12 @@ const AVAILABILITY_LABELS: Record<string, { label: string; dot: string; text: st
   unavailable: { label: 'לא זמין', dot: 'bg-slate-400',   text: 'text-slate-600',   bg: 'bg-slate-100' },
 };
 
-const emptyForm = { name: '', email: '', password: '', phone: '', role: 'rep' as 'rep' | 'rep_manager', repGroupIds: [] as string[] };
-
-const SubUsersTab: React.FC<SubUsersTabProps> = ({ token }) => {
   // Reps state 
+const emptyForm = { name: '', email: '', password: '', phone: '', role: 'rep' as 'rep' | 'rep_manager' | 'user', user_type_id: '', repGroupIds: [] as string[] };
+
+const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
+  const can = usePermission(currentUser ?? null);
+  // Reps state
   const [users, setUsers] = useState<SubUser[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -79,6 +92,7 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token }) => {
   // Groups state 
   const [groups, setGroups] = useState<RepGroup[]>([]);
   const [groupsLoading, setGroupsLoading] = useState(false);
+  const [availableUserTypes, setAvailableUserTypes] = useState<AvailableUserType[]>([]);
 
   // Sub-tab navigation
   const [activeTab, setActiveTab] = useState<'reps' | 'groups'>('reps');
@@ -119,7 +133,9 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token }) => {
       const res = await fetch(`${API_BASE}/sub-users`, { headers });
       if (!res.ok) throw new Error('שגיאה בטעינת הנציגים');
       const data = await res.json();
-      setUsers(data);
+      const list = Array.isArray(data) ? data : (data.users || []);
+      setUsers(list);
+      setAvailableUserTypes(data.availableUserTypes || []);
     } catch (e: any) {
       setError(e.message || 'שגיאה לא צפויה');
     } finally {
@@ -147,7 +163,8 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token }) => {
       const res = await fetch(`${API_BASE}/sub-users`, { headers });
       if (!res.ok) return;
       const data = await res.json();
-      setUsers(data);
+      const list = Array.isArray(data) ? data : (data.users || []);
+      setUsers(list);
     } catch {
       // ignore — next poll will retry
     }
@@ -175,7 +192,9 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token }) => {
 
   const openCreate = () => {
     setEditingId(null);
-    setForm(emptyForm);
+    const firstType = availableUserTypes[0]?._id || '';
+    const firstSystemRole = availableUserTypes[0]?.system_role || 'rep';
+    setForm({ ...emptyForm, user_type_id: firstType, role: (firstSystemRole as any) || 'rep' });
     setFormError(null);
     setShowPassword(false);
     setShowRepModal(true);
@@ -188,7 +207,8 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token }) => {
       email: u.email,
       password: '',
       phone: u.phone,
-      role: u.role as 'rep' | 'rep_manager',
+      role: u.role as 'rep' | 'rep_manager' | 'user',
+      user_type_id: u.user_type_id || '',
       repGroupIds: u.role === 'rep' ? (u.repGroupIds || []) : [],
     });
     setFormError(null);
@@ -220,6 +240,7 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token }) => {
         email: form.email.trim(),
         phone: form.phone.trim(),
         role: form.role,
+        user_type_id: form.user_type_id || null,
       };
       if (form.password.trim()) body.password = form.password.trim();
       if (form.role === 'rep') body.rep_group_ids = form.repGroupIds;
@@ -381,6 +402,7 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token }) => {
           >
             נציגים
           </button>
+          {can('rep_groups.view') && (
           <button
             onClick={() => setActiveTab('groups')}
             className={`px-6 py-3 text-sm font-bold transition-all border-b-2 -mb-px ${
@@ -391,21 +413,27 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token }) => {
           >
             קבוצות נציגים
           </button>
+          )}
         </div>
         {activeTab === 'reps' ? (
+          can('users.add') && (
           <button
             onClick={openCreate}
+            disabled={availableUserTypes.length === 0}
             className="flex items-center gap-2 px-5 py-2 mb-3 bg-blue-600 text-white rounded-xl font-bold shadow-sm shadow-blue-600/20 hover:bg-blue-700 transition-all"
           >
             <Plus size={16} /> הוסף נציג
           </button>
+          )
         ) : (
+          can('rep_groups.add') && (
           <button
             onClick={() => { setGroupFormError(null); setNewGroupName(''); setShowGroupModal(true); }}
             className="flex items-center gap-2 px-5 py-2 mb-3 bg-blue-600 text-white rounded-xl font-bold shadow-sm shadow-blue-600/20 hover:bg-blue-700 transition-all"
           >
             <Plus size={16} /> הוסף קבוצה
           </button>
+          )
         )}
       </div>
 
@@ -465,6 +493,7 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token }) => {
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-2">
+                          {can('users.edit') && (
                           <button
                             onClick={() => openEdit(u)}
                             className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all"
@@ -472,6 +501,8 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token }) => {
                           >
                             <Edit2 size={16} />
                           </button>
+                          )}
+                          {can('users.delete') && (
                           <button
                             onClick={() => setDeletingId(u.id)}
                             className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
@@ -479,6 +510,7 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token }) => {
                           >
                             <Trash2 size={16} />
                           </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -519,14 +551,16 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token }) => {
                     >
                       <Settings size={16} />
                     </button>
-                    <button
-                      onClick={() => setDeletingGroupId(g.id)}
-                      className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
-                      title="מחיקת קבוצה"
-                    >
-                      <Trash2 size={16} />
-                    </button>
                   </div>
+                  {can('rep_groups.delete') && (
+                  <button
+                    onClick={() => setDeletingGroupId(g.id)}
+                    className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
+                    title="מחיקת קבוצה"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                  )}
                 </div>
               ))}
             </div>
@@ -610,21 +644,25 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token }) => {
               </div>
               {/* Role */}
               <div className="md:col-span-2">
-                <label className="block text-sm font-bold text-slate-600 mb-1">סוג נציג *</label>
+                <label className="block text-sm font-bold text-slate-600 mb-1">סוג משתמש *</label>
                 <select
-                  value={form.role}
+                  value={form.user_type_id}
                   onChange={e => {
-                    const newRole = e.target.value as 'rep' | 'rep_manager';
+                    const selectedId = e.target.value;
+                    const selectedType = availableUserTypes.find(t => t._id === selectedId);
+                    const newRole = (selectedType?.system_role || 'rep') as 'rep' | 'rep_manager' | 'user';
                     setForm(f => ({
                       ...f,
+                      user_type_id: selectedId,
                       role: newRole,
-                      repGroupIds: newRole === 'rep_manager' ? [] : f.repGroupIds,
+                      repGroupIds: newRole === 'rep' ? f.repGroupIds : [],
                     }));
                   }}
                   className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:border-blue-500 bg-white"
                 >
-                  <option value="rep_manager">מנהל משמרת — גישה לבוטים + שיחות</option>
-                  <option value="rep">נציג — גישה לשיחות בלבד</option>
+                  {availableUserTypes.map(t => (
+                    <option key={t._id} value={t._id}>{t.name}</option>
+                  ))}
                 </select>
               </div>
               {/* Group assignment chips (rep only) */}

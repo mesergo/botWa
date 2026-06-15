@@ -8,6 +8,7 @@ import {
   User as UserIcon, ExternalLink, Sliders, Image as ImageIcon, Layers,
   UserCheck, Headphones, UserMinus, RefreshCcw
 } from 'lucide-react';
+import UserTypesManager from './UserTypesManager';
 
 interface User {
   id: string;
@@ -21,6 +22,7 @@ interface User {
   status: string;
   dialog360_bot_id?: string;
   manager_id?: string | null;
+  user_type_id?: { _id: string; name: string; system_role: string } | null;
   createdAt: string;
   updatedAt: string;
   stats?: {
@@ -79,7 +81,7 @@ const API_BASE = window.location.hostname === 'localhost'
   : `${window.location.origin}/api`;
 
 const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onImpersonate, onEditTemplate, onCreateTemplate }) => {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'users' | 'templates' | 'settings' | 'sessions' | 'dialog360'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'users' | 'user-types' | 'templates' | 'settings' | 'sessions' | 'dialog360'>('dashboard');
   const [users, setUsers] = useState<User[]>([]);
   const [stats, setStats] = useState<SystemStats | null>(null);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
@@ -151,6 +153,13 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
   const [adminTemplates, setAdminTemplates] = useState<any[]>([]);
   const [adminTemplatesLoading, setAdminTemplatesLoading] = useState(false);
 
+  // Create User modal
+  const [showCreateUserModal, setShowCreateUserModal] = useState(false);
+  const [createUserForm, setCreateUserForm] = useState({ name: '', email: '', phone: '', password: '', account_type: 'Trial', user_type_id: '' });
+  const [createUserTypes, setCreateUserTypes] = useState<any[]>([]);
+  const [creatingUser, setCreatingUser] = useState(false);
+  const [createUserError, setCreateUserError] = useState<string | null>(null);
+
   useEffect(() => {
     fetchStats();
     if (activeTab === 'users') fetchAllUsers();
@@ -158,6 +167,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
     if (activeTab === 'settings') { fetchSystemConfig(); fetchRemovalConfig(); }
     if (activeTab === 'sessions') fetchAllSessions(1, sessionsSearch);
     if (activeTab === 'dialog360') fetchDialog360Templates();
+    if (activeTab === 'users' || activeTab === 'user-types') fetchUserTypesForModal();
   }, [activeTab]);
 
   // Refetch when page changes
@@ -201,6 +211,45 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
       }
     } catch (err) {
       console.error('Failed to fetch stats', err);
+    }
+  };
+
+  const fetchUserTypesForModal = async () => {
+    try {
+      const r = await fetch(`${API_BASE}/admin/user-types`, { headers: { Authorization: `Bearer ${token}` } });
+      if (r.ok) { const d = await r.json(); setCreateUserTypes(d.userTypes || []); }
+    } catch {}
+  };
+
+  const handleCreateUser = async () => {
+    setCreateUserError(null);
+    if (!createUserForm.name.trim() || !createUserForm.email.trim()) {
+      setCreateUserError('שם ואימייל נדרשים');
+      return;
+    }
+    setCreatingUser(true);
+    try {
+      const r = await fetch(`${API_BASE}/admin/users`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          name: createUserForm.name.trim(),
+          email: createUserForm.email.trim(),
+          phone: createUserForm.phone.trim(),
+          password: createUserForm.password || null,
+          account_type: createUserForm.account_type,
+          user_type_id: createUserForm.user_type_id || null
+        })
+      });
+      const d = await r.json();
+      if (!r.ok) { setCreateUserError(d.error); return; }
+      setShowCreateUserModal(false);
+      setCreateUserForm({ name: '', email: '', phone: '', password: '', account_type: 'Trial', user_type_id: '' });
+      fetchAllUsers();
+    } catch (e: any) {
+      setCreateUserError(e.message);
+    } finally {
+      setCreatingUser(false);
     }
   };
 
@@ -964,6 +1013,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
             {[
               { id: 'dashboard', label: 'סקירה כללית', icon: LayoutDashboard },
               { id: 'users', label: 'ניהול לקוחות', icon: Users },
+              { id: 'user-types', label: 'סוגי משתמשים', icon: Shield },
               { id: 'sessions', label: 'סשנים', icon: List },
               { id: 'dialog360', label: 'הודעות תבנית', icon: MessageSquare },
               { id: 'templates', label: 'מאגר תבניות', icon: FileText },
@@ -1008,6 +1058,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
             <h2 className="text-2xl font-black text-slate-800 tracking-tight">
               {activeTab === 'dashboard' && 'לוח בקרה'}
               {activeTab === 'users' && 'ניהול לקוחות'}
+              {activeTab === 'user-types' && 'סוגי משתמשים'}
               {activeTab === 'sessions' && 'כל הסשנים'}
               {activeTab === 'dialog360' && 'הודעות תבנית Dialog360'}
               {activeTab === 'templates' && 'ניהול תבניות'}
@@ -1016,6 +1067,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
             <p className="text-sm font-medium text-slate-400 mt-1">
               {activeTab === 'dashboard' && 'סקירה מקיפה על נתוני וביצועי המערכת'}
               {activeTab === 'users' && 'צפייה, עריכה וניהול הרשאות משתמשים מתקדם'}
+              {activeTab === 'user-types' && 'הגדרת הרשאות לכל סוג משתמש במערכת'}
               {activeTab === 'sessions' && 'צפייה בכל הסשנים של כל המשתמשים במערכת'}
               {activeTab === 'dialog360' && 'צפייה בהודעות תבנית מ-Dialog360'}
               {activeTab === 'templates' && 'ניהול ותחזוקת מאגר התבניות הגלובלי'}
@@ -1586,15 +1638,24 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
               {/* Users List */}
               <div className="col-span-12 lg:col-span-4 bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden">
                 <div className="p-4 border-b border-slate-100 space-y-4 bg-white z-10">
-                  <div className="relative group">
-                    <Search className="absolute right-3.5 top-3 text-slate-400 w-4 h-4 group-focus-within:text-sky-500 transition-colors" />
-                    <input 
-                      type="text" 
-                      placeholder="חיפוש משתמשים..."
-                      className="w-full pr-10 pl-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl group-focus-within:bg-white focus:ring-2 focus:ring-sky-100 focus:border-sky-500 outline-none transition-all font-medium text-slate-700 text-sm"
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                    />
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="relative group flex-1">
+                      <Search className="absolute right-3.5 top-3 text-slate-400 w-4 h-4 group-focus-within:text-sky-500 transition-colors" />
+                      <input 
+                        type="text" 
+                        placeholder="חיפוש משתמשים..."
+                        className="w-full pr-10 pl-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl group-focus-within:bg-white focus:ring-2 focus:ring-sky-100 focus:border-sky-500 outline-none transition-all font-medium text-slate-700 text-sm"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                      />
+                    </div>
+                    <button
+                      onClick={() => { setCreateUserError(null); setShowCreateUserModal(true); fetchUserTypesForModal(); }}
+                      className="flex items-center gap-1.5 bg-blue-600 text-white px-3 py-2.5 rounded-xl text-xs font-bold hover:bg-blue-700 transition-colors whitespace-nowrap shadow-sm flex-shrink-0"
+                    >
+                      <Plus size={14} />
+                      הוסף לקוח
+                    </button>
                   </div>
                   <div className="flex gap-2 bg-slate-50 p-1 rounded-lg overflow-x-auto no-scrollbar scroll-smooth">
                     {[
@@ -1656,18 +1717,17 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                             <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${user.status === 'active' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-rose-50 text-rose-600 border border-rose-100'}`}>
                                 {user.status === 'active' ? 'פעיל' : 'חסום'}
                             </span>
-                            {user.role === 'rep_manager' && (
-                              <span className="px-2 py-0.5 rounded text-[10px] font-bold border bg-blue-50 text-blue-600 border-blue-100">נציג עריכה</span>
-                            )}
-                            {user.role === 'rep' && (
-                              <span className="px-2 py-0.5 rounded text-[10px] font-bold border bg-slate-100 text-slate-500 border-slate-200">נציג</span>
-                            )}
                             {user.role !== 'rep' && user.role !== 'rep_manager' && (
                               <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
                                 user.account_type === 'Premium' ? 'bg-amber-50 text-amber-600 border-amber-100'
                                 : user.account_type === 'Trial' ? 'bg-orange-50 text-orange-600 border-orange-100'
                                 : 'bg-slate-50 text-slate-500 border-slate-100'}`}>
                                   {user.account_type === 'Trial' ? 'ניסיוני' : user.account_type}
+                              </span>
+                            )}
+                            {user.user_type_id?.name && (
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold border bg-purple-50 text-purple-600 border-purple-100 flex items-center gap-1">
+                                <UserCheck size={9} />{user.user_type_id.name}
                               </span>
                             )}
                           </div>
@@ -2284,6 +2344,13 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
             </div>
           )}
 
+          {/* USER TYPES TAB */}
+          {activeTab === 'user-types' && (
+            <div className="max-w-3xl mx-auto animate-fade-in-up">
+              <UserTypesManager token={token} apiBase={API_BASE} />
+            </div>
+          )}
+
           {/* SETTINGS TAB */}
           {activeTab === 'settings' && systemConfig && (
             <div className="space-y-6 animate-fade-in-up max-w-6xl mx-auto">
@@ -2780,6 +2847,107 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
 
         </div>
       </main>
+
+      {/* Create User Modal */}
+      {showCreateUserModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" dir="rtl">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+            <div className="flex items-center justify-between mb-5">
+              <h3 className="text-lg font-black text-slate-800">הוספת לקוח חדש</h3>
+              <button onClick={() => setShowCreateUserModal(false)} className="p-2 rounded-lg hover:bg-slate-100 text-slate-400"><X size={18} /></button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-600 mb-1">שם מלא *</label>
+                <input
+                  type="text"
+                  value={createUserForm.name}
+                  onChange={e => setCreateUserForm(f => ({ ...f, name: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                  placeholder="ישראל ישראלי"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-600 mb-1">אימייל *</label>
+                <input
+                  type="email"
+                  value={createUserForm.email}
+                  onChange={e => setCreateUserForm(f => ({ ...f, email: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                  placeholder="example@email.com"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-600 mb-1">טלפון</label>
+                <input
+                  type="tel"
+                  value={createUserForm.phone}
+                  onChange={e => setCreateUserForm(f => ({ ...f, phone: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                  placeholder="050-0000000"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-600 mb-1">סיסמא (אופציונלי)</label>
+                <input
+                  type="password"
+                  value={createUserForm.password}
+                  onChange={e => setCreateUserForm(f => ({ ...f, password: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-600 mb-1">סוג חשבון</label>
+                <select
+                  value={createUserForm.account_type}
+                  onChange={e => setCreateUserForm(f => ({ ...f, account_type: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                >
+                  <option value="Trial">ניסיון</option>
+                  <option value="Basic">בסיסי</option>
+                  <option value="Premium">פרימיום</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-600 mb-1">סוג משתמש</label>
+                <select
+                  value={createUserForm.user_type_id}
+                  onChange={e => setCreateUserForm(f => ({ ...f, user_type_id: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                >
+                  <option value="">בחר סוג משתמש...</option>
+                  {createUserTypes.map((ut: any) => (
+                    <option key={ut._id} value={ut._id}>{ut.name}</option>
+                  ))}
+                </select>
+              </div>
+              {createUserError && (
+                <div className="flex items-center gap-2 text-red-600 text-sm bg-red-50 p-3 rounded-xl">
+                  <AlertCircle size={14} />
+                  {createUserError}
+                </div>
+              )}
+            </div>
+            <div className="flex gap-3 mt-5">
+              <button
+                onClick={handleCreateUser}
+                disabled={creatingUser}
+                className="flex-1 flex items-center justify-center gap-2 bg-blue-600 text-white py-3 rounded-xl font-bold text-sm hover:bg-blue-700 disabled:opacity-50 transition-colors"
+              >
+                {creatingUser ? <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Plus size={16} />}
+                צור משתמש
+              </button>
+              <button
+                onClick={() => setShowCreateUserModal(false)}
+                className="px-5 py-3 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-100 transition-colors"
+              >
+                ביטול
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };

@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import ImpersonationBanner from './ImpersonationBanner';
 import { FileUploader } from './FileUploader';
+import { usePermission } from '../hooks/usePermission';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -520,6 +521,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
   };
 
   // ── Render helpers ──────────────────────────────────────────────────────
+  const can = usePermission(currentUser as any);
   const firstName = currentUser?.name?.charAt(0)?.toUpperCase() ?? currentUser?.email?.charAt(0)?.toUpperCase() ?? '?';
   const blocklist = groups.find(g => g.is_blocklist);
   const regularGroups = groups.filter(g => !g.is_blocklist);
@@ -537,9 +539,11 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
         </div>
 
         <div className="flex items-center gap-1 bg-slate-100 rounded-2xl p-1" dir="rtl">
+          {onBack && can('bots.view_tab') && (
           <button onClick={onBack} className="flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm text-slate-500 hover:text-slate-700 transition-all">
             <Bot size={16} /> הבוטים שלי
           </button>
+          )}
           {onOpenSessions && (
             <button onClick={() => onOpenSessions()} className="flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm text-slate-500 hover:text-slate-700 transition-all">
               <List size={16} /> שיחות
@@ -599,6 +603,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
             </div>
 
             {/* Create new */}
+            {can('groups.create') && (
             <div className="flex items-center gap-2">
               <input
                 value={newGroupName}
@@ -616,6 +621,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                 <Plus size={18} />
               </button>
             </div>
+            )}
           </div>
 
           <div className="flex-1 overflow-y-auto p-3">
@@ -744,13 +750,15 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                 </div>
 
                 <div className="flex items-center gap-2">
+                  {can('groups.add_contact') && (
                   <button
                     onClick={openAddMembers}
                     className="flex items-center gap-2 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-2xl font-bold text-sm transition-colors"
                   >
                     <UserPlus size={16} /> הוסף אנשי קשר
                   </button>
-                  {!selectedGroup.is_blocklist && (
+                  )}
+                  {!selectedGroup.is_blocklist && can('groups.send_message') && (
                     <button
                       onClick={openSendModal}
                       disabled={selectedGroup.contacts.length === 0}
@@ -801,12 +809,14 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                 <div className="py-24 bg-white border-2 border-dashed border-slate-200 rounded-[2.5rem] flex flex-col items-center justify-center gap-4 text-slate-300">
                   <Users size={64} strokeWidth={1} />
                   <p className="text-xl font-bold">אין אנשי קשר בקבוצה זו</p>
+                  {can('groups.add_contact') && (
                   <button
                     onClick={openAddMembers}
                     className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-bold text-sm transition-colors mt-2"
                   >
                     <UserPlus size={16} /> הוסף אנשי קשר ראשונים
                   </button>
+                  )}
                 </div>
               ) : (
                 <div className="bg-white border border-slate-100 rounded-2xl overflow-hidden shadow-sm">
@@ -835,6 +845,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                         {c.email || <span className="text-slate-300">—</span>}
                       </div>
                       <div className="flex items-center justify-end">
+                        {can('groups.remove_contact') && (
                         <button
                           onClick={() => openRemoveMember(c)}
                           title="הסר מהקבוצה"
@@ -842,6 +853,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                         >
                           <UserMinus size={16} />
                         </button>
+                        )}
                       </div>
                     </div>
                   ))}

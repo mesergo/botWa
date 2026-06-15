@@ -2,6 +2,7 @@
 import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { ReactFlowProvider, addEdge, Node, Edge, applyNodeChanges, applyEdgeChanges, OnNodesChange, OnEdgesChange, OnConnect, ReactFlowInstance, MarkerType } from 'reactflow';
 import { NodeType, NodeData, User, FixedProcess, Version, BotFlow, PredefinedTemplate, RestorableVersionsData } from './types';
+import { usePermission } from './hooks/usePermission';
 import Dashboard from './components/Dashboard';
 import AuthScreen from './components/AuthScreen';
 import RegisterPage from './components/RegisterPage';
@@ -122,6 +123,7 @@ const FlowBuilder: React.FC = () => {
       return null;
     }
   });
+  const can = usePermission(currentUser);
   const [token, setToken] = useState<string | null>(tokenExpiredOnLoad ? null : localStorage.getItem('flowbot_token'));
   const [sessionExpired, setSessionExpired] = useState(tokenExpiredOnLoad);
   
@@ -1753,12 +1755,12 @@ const FlowBuilder: React.FC = () => {
         token={token}
         currentUser={currentUser}
         onBack={() => { setDashboardInitialTab('bots'); setViewMode('dashboard'); }}
-        onLogout={handleLogout}
-        onOpenSessions={(phone?: string) => { setSessionsInitialPhone(phone ?? null); setSessionsOwnOnly(true); setViewMode('sessions'); }}
-        onOpenGroups={() => setViewMode('groups')}
+        onLogout={() => { localStorage.clear(); window.location.reload(); }}
+        onOpenSessions={can('sessions.view') ? (phone?: string) => { setSessionsInitialPhone(phone ?? null); setSessionsOwnOnly(true); setViewMode('sessions'); } : undefined}
+        onOpenGroups={can('groups.view') ? () => setViewMode('groups') : undefined}
         onOpenAdminPanel={() => setViewMode('admin-panel')}
-        onOpenSettings={() => { setDashboardInitialTab('settings'); setViewMode('dashboard'); }}
-        onOpenSubUsers={currentUser?.role === 'user' ? () => { setDashboardInitialTab('users'); setViewMode('dashboard'); } : undefined}
+        onOpenSettings={can('settings.view') ? () => { setDashboardInitialTab('settings'); setViewMode('dashboard'); } : undefined}
+        onOpenSubUsers={can('users.view') ? () => { setDashboardInitialTab('users'); setViewMode('dashboard'); } : undefined}
         onStopImpersonation={handleStopImpersonation}
         initialPhone={contactsInitialPhone}
       />
@@ -1771,12 +1773,12 @@ const FlowBuilder: React.FC = () => {
         token={token}
         currentUser={currentUser}
         onBack={() => { setDashboardInitialTab('bots'); setViewMode('dashboard'); }}
-        onLogout={handleLogout}
-        onOpenContacts={(phone?: string) => { setContactsInitialPhone(phone ?? null); setViewMode('contacts'); }}
-        onOpenSessions={(phone?: string) => { setSessionsInitialPhone(phone ?? null); setSessionsOwnOnly(true); setViewMode('sessions'); }}
+        onLogout={() => { localStorage.clear(); window.location.reload(); }}
+        onOpenContacts={can('contacts.view') ? (phone?: string) => { setContactsInitialPhone(phone ?? null); setViewMode('contacts'); } : undefined}
+        onOpenSessions={can('sessions.view') ? (phone?: string) => { setSessionsInitialPhone(phone ?? null); setSessionsOwnOnly(true); setViewMode('sessions'); } : undefined}
         onOpenAdminPanel={() => setViewMode('admin-panel')}
-        onOpenSettings={() => { setDashboardInitialTab('settings'); setViewMode('dashboard'); }}
-        onOpenSubUsers={currentUser?.role === 'user' ? () => { setDashboardInitialTab('users'); setViewMode('dashboard'); } : undefined}
+        onOpenSettings={can('settings.view') ? () => { setDashboardInitialTab('settings'); setViewMode('dashboard'); } : undefined}
+        onOpenSubUsers={can('users.view') ? () => { setDashboardInitialTab('users'); setViewMode('dashboard'); } : undefined}
         onStopImpersonation={handleStopImpersonation}
       />
     );
@@ -1788,14 +1790,14 @@ const FlowBuilder: React.FC = () => {
         token={token}
         currentUser={currentUser}
         onBack={currentUser?.role === 'rep' ? undefined : () => { setDashboardInitialTab('bots'); setViewMode('dashboard'); }}
-        onLogout={handleLogout}
-        onOpenContacts={currentUser?.role !== 'rep' && currentUser?.role !== 'rep_manager' ? (phone?: string) => { setContactsInitialPhone(phone ?? null); setViewMode('contacts'); } : undefined}
-        onOpenGroups={currentUser?.role !== 'rep' && currentUser?.role !== 'rep_manager' ? () => setViewMode('groups') : undefined}
+        onLogout={() => { localStorage.clear(); window.location.reload(); }}
+        onOpenContacts={can('contacts.view') ? (phone?: string) => { setContactsInitialPhone(phone ?? null); setViewMode('contacts'); } : undefined}
+        onOpenGroups={can('groups.view') ? () => setViewMode('groups') : undefined}
         onOpenAdminPanel={() => setViewMode('admin-panel')}
         ownOnly={sessionsOwnOnly}
         initialPhone={sessionsInitialPhone}
-        onOpenSettings={currentUser?.role !== 'rep' && currentUser?.role !== 'rep_manager' ? () => { setDashboardInitialTab('settings'); setViewMode('dashboard'); } : undefined}
-        onOpenSubUsers={currentUser?.role === 'user' || currentUser?.role === 'rep_manager' ? () => { setDashboardInitialTab('users'); setViewMode('dashboard'); } : undefined}
+        onOpenSettings={can('settings.view') ? () => { setDashboardInitialTab('settings'); setViewMode('dashboard'); } : undefined}
+        onOpenSubUsers={can('users.view') ? () => { setDashboardInitialTab('users'); setViewMode('dashboard'); } : undefined}
         onStopImpersonation={handleStopImpersonation}
         onUpdateAvailability={handleUpdateAvailability}
       />
@@ -1922,7 +1924,6 @@ const FlowBuilder: React.FC = () => {
           onChangeTemplate={() => {}}
           onOpenContacts={() => setViewMode('contacts')}
           onOpenSessions={() => { setSessionsOwnOnly(true); setViewMode('sessions'); }}
-          onOpenGroups={() => setViewMode('groups')}
           sidebarProps={{
             fixedProcesses,
             versions: [],
@@ -2103,7 +2104,6 @@ const FlowBuilder: React.FC = () => {
         onChangeTemplate={() => setIsChangeTemplateModalOpen(true)}
         onOpenContacts={() => setViewMode('contacts')}
         onOpenSessions={() => { setSessionsOwnOnly(true); setViewMode('sessions'); }}
-        onOpenGroups={() => setViewMode('groups')}
         initialParams={selectedBot?.botParams}
         onNodeFocus={setSimulatorActiveNodeId}
         onFixedProcessActive={setSimulatorFixedProcessNodeId}

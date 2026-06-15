@@ -12,8 +12,15 @@ import {
   getSystemSettings,
   updateSystemSettings,
   getRemovalConfig,
-  updateRemovalConfig
+  updateRemovalConfig,
+  createUser
 } from '../controllers/adminController.js';
+import {
+  listUserTypes,
+  createUserType,
+  updateUserType,
+  deleteUserType
+} from '../controllers/userTypeController.js';
 
 const router = express.Router();
 
@@ -31,13 +38,22 @@ router.put('/settings/removal', requireAdmin, updateRemovalConfig);
 // Dashboard stats
 router.get('/stats', requireAdmin, getSystemStats);
 
+// User Types (dynamic role templates)
+router.get('/user-types', requireAdmin, listUserTypes);
+router.post('/user-types', requireAdmin, createUserType);
+router.put('/user-types/:id', requireAdmin, updateUserType);
+router.delete('/user-types/:id', requireAdmin, deleteUserType);
+
 // Get all users
 router.get('/users', requireAdmin, getAllUsers);
 
+// Create user directly from admin panel
+router.post('/users', requireAdmin, createUser);
+
 // User operations
 router.get('/users/:userId', requireAdmin, getUserDetails);
-router.patch('/users/:userId', requireAdmin, updateUser); // New: Update user details & limits
-router.delete('/users/:userId', requireAdmin, deleteUser); // New: Delete user
+router.patch('/users/:userId', requireAdmin, updateUser);
+router.delete('/users/:userId', requireAdmin, deleteUser);
 
 // Role management
 router.patch('/users/:userId/role', requireAdmin, updateUserRole);

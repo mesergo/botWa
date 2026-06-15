@@ -49,6 +49,7 @@ const userSchema = new mongoose.Schema({
     keywords: { type: [String], default: [] },
     message: { type: String, default: '' }
   },
+  user_type_id: { type: mongoose.Schema.Types.ObjectId, ref: 'UserType', default: null },
 }, { 
   timestamps: true,
   collection: 'User'
