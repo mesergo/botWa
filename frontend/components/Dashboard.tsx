@@ -1209,6 +1209,12 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                     <span>{formatDate(bot.created_at)}</span>
                     <Calendar size={14} />
                   </p>
+                  {bot.display_phone_number && (
+                    <p className="text-slate-500 text-sm font-bold flex items-center justify-end gap-2 mt-1">
+                      <span dir="ltr">{bot.display_phone_number}</span>
+                      <span>בוט משויך למספר</span>
+                    </p>
+                  )}
                 </div>
                 
                 <div className="flex items-center justify-between mt-6">

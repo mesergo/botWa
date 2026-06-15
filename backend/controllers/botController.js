@@ -64,15 +64,27 @@ export const createBot = async (req, res) => {
 export const getBots = async (req, res) => {
   const userId = getEffectiveUserId(req);
   try {
-    const bots = await BotFlow.find({ user_id: userId }).sort({ created_at: -1 });
-    res.json(bots.map(b => ({
-      id: b._id.toString(),
-      name: b.name,
-      public_id: b.public_id,
-      created_at: b.created_at,
-      is_default: b.is_default || false,
-      botParams: b.botParams ? Object.fromEntries(b.botParams) : {}
-    })));
+    const [bots, user] = await Promise.all([
+      BotFlow.find({ user_id: userId }).sort({ created_at: -1 }),
+      User.findById(userId).select('connected_numbers')
+    ]);
+    const connected = (user && user.connected_numbers) || [];
+    res.json(bots.map(b => {
+      let phone = b.display_phone_number || '';
+      if (!phone) {
+        const match = connected.find(c => c.assigned_bot_id && String(c.assigned_bot_id) === String(b._id));
+        if (match) phone = match.display_phone_number || '';
+      }
+      return {
+        id: b._id.toString(),
+        name: b.name,
+        public_id: b.public_id,
+        created_at: b.created_at,
+        is_default: b.is_default || false,
+        display_phone_number: phone,
+        botParams: b.botParams ? Object.fromEntries(b.botParams) : {}
+      };
+    }));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
