@@ -66,6 +66,7 @@ export interface BotFlow {
   public_id: string;
   created_at: string;
   is_default?: boolean;
+  display_phone_number?: string;
   /** Parameter values filled by the user when this bot was created from a template */
   botParams?: Record<string, string>;
 }
