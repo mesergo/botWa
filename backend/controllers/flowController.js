@@ -2,8 +2,94 @@
 import Version from '../models/Version.js';
 import Widget from '../models/Widget.js';
 import Option from '../models/Option.js';
+import AuditLog from '../models/AuditLog.js';
 import { mongoose } from '../config/db.js';
 import { getEffectiveUserId } from '../middleware/auth.js';
+
+// Records a rejected/forced sync attempt so we always have a paper trail when
+// a bot was almost wiped (or was wiped via an explicit override).
+const logSyncEvent = async (action, req, userId, flow_id, standard_process_id, details) => {
+  try {
+    await AuditLog.create({
+      action,
+      actor_id: req.user?.id || userId,
+      actor_email: req.user?.email,
+      target_id: flow_id || standard_process_id || null,
+      target_type: standard_process_id ? 'StandardProcess' : 'BotFlow',
+      details: {
+        flow_id: flow_id || null,
+        standard_process_id: standard_process_id || null,
+        ip: req.ip,
+        ua: req.headers['user-agent']?.substring(0, 200),
+        ...details
+      },
+      ip_address: req.ip
+    });
+  } catch (e) {
+    console.error('Failed to write AuditLog for sync event', e);
+  }
+};
+
+// Build the same query syncFlow uses for cleanup, so the snapshot/count match the
+// scope of widgets that would be deleted.
+const buildScopeQuery = (userId, flow_id, standard_process_id) => {
+  if (standard_process_id) {
+    return {
+      user_id: userId,
+      $or: [
+        { standard_process_id: standard_process_id, isStandardProcess: 0 },
+        { parent_process_id: standard_process_id },
+        { standard_process_id: standard_process_id, isStandardProcess: 1, flow_id: null, parent_process_id: null }
+      ]
+    };
+  }
+  return {
+    user_id: userId,
+    flow_id: flow_id,
+    $or: [{ standard_process_id: null }, { isStandardProcess: 1 }]
+  };
+};
+
+// Snapshot the existing widgets+options into a Version document tagged
+// __autobackup__ BEFORE we run deleteMany. If anything goes wrong (bad client
+// payload, server crash mid-write, etc.) we can always restore from this row.
+// Keeps the most recent N backups per (user, flow, process) and prunes the rest.
+const AUTOBACKUP_RETAIN = 5;
+const snapshotBeforeWrite = async (userId, flow_id, standard_process_id) => {
+  try {
+    const scopeQuery = buildScopeQuery(userId, flow_id, standard_process_id);
+    const widgets = await Widget.find(scopeQuery).lean();
+    if (!widgets.length) return null; // nothing to back up
+
+    const options = await Option.find({ widget_id: { $in: widgets.map(w => w.id) } }).lean();
+
+    const backup = await Version.create({
+      name: `__autobackup__ ${new Date().toISOString()}`,
+      user_id: userId,
+      flow_id: flow_id || null,
+      standard_process_id: standard_process_id || null,
+      isLocked: false,
+      data: { widgets, options },
+      created_at: new Date()
+    });
+
+    // Prune older autobackups so the collection doesn't grow forever
+    const oldBackups = await Version.find({
+      user_id: userId,
+      flow_id: flow_id || null,
+      standard_process_id: standard_process_id || null,
+      name: { $regex: '^__autobackup__ ' }
+    }).sort({ created_at: -1 }).skip(AUTOBACKUP_RETAIN);
+    if (oldBackups.length) {
+      await Version.deleteMany({ _id: { $in: oldBackups.map(b => b._id) } });
+    }
+
+    return backup._id;
+  } catch (e) {
+    console.error('snapshotBeforeWrite failed (continuing without backup)', e);
+    return null;
+  }
+};
 
 const fetchFlowData = async (userId, flow_id, standard_process_id = null, versionId = null) => {
   if (versionId) {
@@ -185,31 +271,128 @@ export const syncFlow = async (req, res) => {
     return res.status(403).json({ error: 'Access denied. Representatives without bot access cannot edit flows.' });
   }
   const userId = getEffectiveUserId(req);
-  const { nodes, edges, flow_id, standard_process_id = null } = req.body;
+  const {
+    nodes,
+    edges,
+    flow_id,
+    standard_process_id = null,
+    // Optional safety controls from the client:
+    // - force: explicit override to bypass shrink/empty guards (used by intentional
+    //   "change template" / "clear flow" actions). Never set by the auto-save loop.
+    // - expected_widget_count: how many widgets the client believes exist on the
+    //   server (snapshot taken at load). If it doesn't match, we're racing another
+    //   tab and we refuse to overwrite (optimistic concurrency).
+    force = false,
+    expected_widget_count
+  } = req.body;
 
   console.log('🔵 syncFlow - התחלה:', {
     userId,
     flow_id,
     standard_process_id,
     nodesCount: nodes?.length,
-    edgesCount: edges?.length
+    edgesCount: edges?.length,
+    force: !!force,
+    expected_widget_count
   });
 
   if (!flow_id && !standard_process_id) {
       return res.status(400).json({ error: 'Missing flow_id' });
   }
 
+  if (!Array.isArray(nodes)) {
+    return res.status(400).json({ error: 'nodes must be an array' });
+  }
+
+  // Pull the current widget count up-front; we use it for every guard below.
+  const scopeQuery = buildScopeQuery(userId, flow_id, standard_process_id);
+  const existingCount = await Widget.countDocuments(scopeQuery);
+
+  // ── Guard 1: empty payload ────────────────────────────────────────────────
+  // Refuse to wipe a flow when the client sent an empty nodes array — root cause
+  // of the 15/06/2026 incident where bots were silently emptied.
+  if (nodes.length === 0 && !force) {
+    console.warn('🛑 syncFlow rejected — empty nodes', { userId, flow_id, standard_process_id, existingCount });
+    await logSyncEvent('SYNC_REJECTED_EMPTY', req, userId, flow_id, standard_process_id, { existingCount });
+    return res.status(409).json({
+      error: 'EMPTY_PAYLOAD',
+      message: 'בקשה ריקה — לא ניתן לשמור תרשים ללא רכיבים. רענני את הדף ונסי שוב.',
+      existingCount
+    });
+  }
+
+  // ── Guard 2: optimistic concurrency (two tabs) ────────────────────────────
+  // If the client told us how many widgets it thought existed when it loaded,
+  // and that no longer matches reality, another save happened in between —
+  // refuse and tell the client to reload.
+  if (
+    !force &&
+    typeof expected_widget_count === 'number' &&
+    existingCount > 0 &&
+    existingCount !== expected_widget_count
+  ) {
+    console.warn('🛑 syncFlow rejected — stale state', {
+      userId, flow_id, standard_process_id, existingCount, expected_widget_count
+    });
+    await logSyncEvent('SYNC_REJECTED_STALE', req, userId, flow_id, standard_process_id, {
+      existingCount, expected_widget_count
+    });
+    return res.status(409).json({
+      error: 'STALE_STATE',
+      message: 'הבוט עודכן ע"י לשונית/משתמש אחר. רענני את הדף כדי לראות את הגרסה המעודכנת.',
+      existingCount,
+      expected_widget_count
+    });
+  }
+
+  // ── Guard 3: massive shrink ───────────────────────────────────────────────
+  // If the existing flow is non-trivial and the incoming payload is dramatically
+  // smaller, refuse. Catches "loaded empty due to UI bug, then saved" cases that
+  // slip past Guard 1 because the UI auto-injected a single bootstrap node.
+  const SHRINK_FLOOR = 5;        // only protect once a flow has at least this many nodes
+  const SHRINK_RATIO = 0.5;      // incoming must be < 50% of existing to trip
+  if (
+    !force &&
+    existingCount >= SHRINK_FLOOR &&
+    nodes.length < Math.ceil(existingCount * SHRINK_RATIO)
+  ) {
+    // Special-case: client sent only a single auto-bootstrap node (start /
+    // automatic_responses with no real children). This is the signature of the
+    // "loaded blank, then saved" bug — always reject.
+    const onlyBootstrap = nodes.length <= 1 &&
+      nodes.every(n => n.type === 'start' || n.type === 'automatic_responses');
+
+    console.warn('🛑 syncFlow rejected — suspicious shrink', {
+      userId, flow_id, standard_process_id, existingCount, incoming: nodes.length, onlyBootstrap
+    });
+    await logSyncEvent('SYNC_REJECTED_SHRINK', req, userId, flow_id, standard_process_id, {
+      existingCount, incoming: nodes.length, onlyBootstrap
+    });
+    return res.status(409).json({
+      error: 'SUSPICIOUS_SHRINK',
+      message: `שמירה נחסמה: הקנבס מכיל ${nodes.length} רכיבים אך בשרת קיימים ${existingCount}. רענני את הדף לפני שמירה. אם זו פעולה מכוונת, אשרי מחדש.`,
+      existingCount,
+      incoming: nodes.length
+    });
+  }
+
+  // If we got here with force=true and the action is destructive, log it loudly.
+  if (force && (nodes.length === 0 || nodes.length < existingCount)) {
+    await logSyncEvent('SYNC_FORCED_DESTRUCTIVE', req, userId, flow_id, standard_process_id, {
+      existingCount, incoming: nodes.length
+    });
+  }
+
   const lockKey = `${userId}:${flow_id || standard_process_id}`;
 
   withFlowLock(lockKey, async () => {
-    const cleanupQuery = standard_process_id 
-        ? { user_id: userId, $or: [
-            { standard_process_id: standard_process_id, isStandardProcess: 0 },
-            { parent_process_id: standard_process_id },
-            { standard_process_id: standard_process_id, isStandardProcess: 1, flow_id: null, parent_process_id: null }
-          ]}
-        : { user_id: userId, flow_id: flow_id, $or: [{ standard_process_id: null }, { isStandardProcess: 1 }] };
- 
+    // Take a snapshot of what's about to be deleted. If anything goes wrong
+    // we can recover from the __autobackup__ Version row.
+    const backupId = await snapshotBeforeWrite(userId, flow_id, standard_process_id);
+    if (backupId) console.log(`🛟 autobackup created: ${backupId}`);
+
+    const cleanupQuery = scopeQuery;
+
     console.log('🗑️ מוחק widgets קיימים:', cleanupQuery);
     const deleteResult = await Widget.deleteMany(cleanupQuery);
     console.log(`✅ נמחקו ${deleteResult.deletedCount} widgets`);
@@ -391,7 +574,7 @@ export const syncFlow = async (req, res) => {
     }
     
     console.log(`✅ syncFlow הושלם בהצלחה - נשמרו ${deduplicatedNodes.length} widgets`);
-    res.json({ success: true });
+    res.json({ success: true, widget_count: deduplicatedNodes.length });
   }).catch(err => {
     console.error('❌ שגיאה ב-syncFlow:', err);
     res.status(500).json({ error: err.message });
@@ -403,7 +586,15 @@ export const getFlow = async (req, res) => {
   const { flow_id, standard_process_id = null, version_id = null } = req.query;
   try {
     const data = await fetchFlowData(userId, flow_id, standard_process_id, version_id);
-    res.json(data);
+    // Return the authoritative widget count for optimistic-concurrency / shrink
+    // protection on the client. When loading a version snapshot, the count is
+    // simply the number of nodes in that snapshot.
+    let widgetCount = data.nodes.length;
+    if (!version_id) {
+      const scopeQuery = buildScopeQuery(userId, flow_id, standard_process_id);
+      widgetCount = await Widget.countDocuments(scopeQuery);
+    }
+    res.json({ ...data, widget_count: widgetCount });
   } catch (err) { res.status(500).json({ error: err.message }); }
 };
 

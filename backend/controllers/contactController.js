@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import Contact from '../models/Contact.js';
 import BotSession from '../models/BotSession.js';
 import { getEffectiveUserId } from '../middleware/auth.js';
+import { normalizePhone } from '../utils/phone.js';
 import XLSX from 'xlsx';
 import fs from 'fs';
 
@@ -56,9 +57,11 @@ export const createContact = async (req, res) => {
     return res.status(400).json({ error: 'Phone is required' });
   }
 
+  const normalizedPhone = normalizePhone(phone.trim());
+
   try {
     const contact = await Contact.findOneAndUpdate(
-      { user_id: userId, phone: phone.trim() },
+      { user_id: userId, phone: normalizedPhone },
       { $set: { full_name: full_name || '', whatsapp_name: whatsapp_name || '', email: email || '', custom_field_values: custom_field_values || {} } },
       { upsert: true, new: true, runValidators: true }
     );
@@ -78,7 +81,7 @@ export const updateContact = async (req, res) => {
 
   try {
     const update = { full_name: full_name || '', whatsapp_name: whatsapp_name || '', email: email || '' };
-    if (phone && phone.trim()) update.phone = phone.trim();
+    if (phone && phone.trim()) update.phone = normalizePhone(phone.trim());
     if (custom_field_values !== undefined) update.custom_field_values = custom_field_values;
 
     const contact = await Contact.findOneAndUpdate(
@@ -115,6 +118,8 @@ export const upsertContactByPhone = async (req, res) => {
     return res.status(400).json({ error: 'Phone is required' });
   }
 
+  const normalizedPhone = normalizePhone(phone.trim());
+
   try {
     const setFields = {};
     if (full_name !== undefined) setFields.full_name = full_name;
@@ -127,7 +132,7 @@ export const upsertContactByPhone = async (req, res) => {
     }
 
     const contact = await Contact.findOneAndUpdate(
-      { user_id: userId, phone: phone.trim() },
+      { user_id: userId, phone: normalizedPhone },
       { $set: setFields },
       { upsert: true, new: true }
     );
@@ -153,9 +158,10 @@ export const importContacts = async (req, res) => {
 
     for (const row of rows) {
       // Accept Hebrew or English column headers
-      const phone = String(
+      const rawPhone = String(
         row['טלפון'] ?? row['phone'] ?? row['Phone'] ?? ''
       ).trim();
+      const phone = normalizePhone(rawPhone);
 
       const full_name = String(row['שם מלא'] ?? row['full_name'] ?? row['Full Name'] ?? '').trim();
 
@@ -189,14 +195,16 @@ export const assignRep = async (req, res) => {
     return res.status(403).json({ error: 'אין הרשאה' });
   }
   const userId = getEffectiveUserId(req);
-  const { phone, rep_id, action } = req.body;
+  const { phone: rawPhone, rep_id, action } = req.body;
 
-  if (!phone || !rep_id || !['assign', 'unassign'].includes(action)) {
+  if (!rawPhone || !rep_id || !['assign', 'unassign'].includes(action)) {
     return res.status(400).json({ error: 'שדות חסרים או לא תקינים' });
   }
   if (!mongoose.Types.ObjectId.isValid(rep_id)) {
     return res.status(400).json({ error: 'rep_id לא תקין' });
   }
+
+  const phone = normalizePhone(rawPhone);
 
   try {
     const update = action === 'assign'

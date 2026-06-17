@@ -520,7 +520,14 @@ const FlowBuilder: React.FC = () => {
     const versionIdFromUrl = params.get('version_id');
 
     if (!token && !publicIdFromUrl) return;
-    
+
+    // Until the load completes successfully, no auto-save may run for this key.
+    // This is the core guard that turns "loaded blank due to error" into a no-op
+    // instead of a destructive save.
+    flowReadyKeyRef.current = null;
+    loadedWidgetCountRef.current = null;
+    syncBlockedRef.current = false;
+
     let url = '';
     const headers: Record<string, string> = {};
     
@@ -539,6 +546,8 @@ const FlowBuilder: React.FC = () => {
       const res = await fetch(url, { headers });
       if (!res.ok) {
         console.error("Failed to load flow:", res.status, res.statusText);
+        // Leave flowReadyKeyRef as null → auto-save stays disabled, so the
+        // user's empty canvas can't accidentally overwrite the real flow.
         return;
       }
       const data = await res.json();
@@ -568,6 +577,11 @@ const FlowBuilder: React.FC = () => {
         setNodes([start]);
         setEdges([]);
       }
+      // Mark this key as ready and remember the server-authoritative count.
+      flowReadyKeyRef.current = buildFlowKey(botId, processId, null);
+      loadedWidgetCountRef.current = typeof data.widget_count === 'number'
+        ? data.widget_count
+        : (data.nodes?.length || 0);
     } catch (e) { console.error(e); }
   }, [token, bindNodeCallbacks]);
 
@@ -624,11 +638,94 @@ const FlowBuilder: React.FC = () => {
   // preventing a slower old request from overwriting a more recent save.
   const syncAbortControllerRef = useRef<AbortController | null>(null);
 
-  const syncFlow = async (customNodes?: Node[], customEdges?: Edge[], customProcessId?: string) => {
+  // ─── Save-safety guards ────────────────────────────────────────────────────
+  // Identifies which (bot, process) the current nodes/edges state actually
+  // represents. Auto-save is BLOCKED until a successful loadFlow sets this to
+  // the current key. Prevents the "loaded blank due to network error → user
+  // hits save → bot wiped" scenario.
+  const flowReadyKeyRef = useRef<string | null>(null);
+  // Server-authoritative widget count from the most recent load/save. Sent on
+  // every sync as `expected_widget_count` so the server can detect stale state
+  // (two-tab editing, programmatic out-of-band saves).
+  const loadedWidgetCountRef = useRef<number | null>(null);
+  // Latch that disables auto-save after a server-side conflict, until the user
+  // reloads. Prevents the same broken state from being retried repeatedly.
+  const syncBlockedRef = useRef<boolean>(false);
+  // Cross-tab coordination: when this tab saves, broadcast to siblings so they
+  // can refresh their loadedWidgetCountRef instead of overwriting our save.
+  const flowChannelRef = useRef<BroadcastChannel | null>(null);
+  if (typeof window !== 'undefined' && !flowChannelRef.current && 'BroadcastChannel' in window) {
+    flowChannelRef.current = new BroadcastChannel('flowbot-sync');
+  }
+
+  const buildFlowKey = (botId: string | null, processId: string | null, templateId: string | null) => {
+    if (templateId) return `tpl:${templateId}`;
+    return `bot:${botId || ''}:proc:${processId || ''}`;
+  };
+
+  useEffect(() => {
+    const ch = flowChannelRef.current;
+    if (!ch) return;
+    const onMsg = (ev: MessageEvent) => {
+      const msg = ev.data;
+      if (!msg || msg.type !== 'flow-saved') return;
+      const myKey = buildFlowKey(selectedBot?.id || null, activeProcessId, editingTemplateId);
+      if (msg.key !== myKey) return;
+      // Another tab just saved this same flow. Our snapshot is now stale —
+      // disable auto-save and tell the user to refresh, rather than letting
+      // our timer overwrite their work.
+      syncBlockedRef.current = true;
+      console.warn('🛑 Another tab saved this flow. Auto-save disabled until reload.');
+      // Update expected count so a manual save attempt would also fail-fast
+      // server-side instead of clobbering.
+      if (typeof msg.widgetCount === 'number') {
+        loadedWidgetCountRef.current = msg.widgetCount;
+      }
+    };
+    ch.addEventListener('message', onMsg);
+    return () => ch.removeEventListener('message', onMsg);
+  }, [selectedBot?.id, activeProcessId, editingTemplateId]);
+
+  const syncFlow = async (
+    customNodes?: Node[],
+    customEdges?: Edge[],
+    customProcessId?: string,
+    opts: { force?: boolean } = {}
+  ) => {
     if (!token || (!selectedBot && !activeProcessId && !editingTemplateId && !creatingTemplate)) return;
     const n = customNodes || nodes;
     const e = customEdges || edges;
     const pId = customProcessId !== undefined ? customProcessId : activeProcessId;
+    const force = !!opts.force;
+
+    // Hard block: a previous save was rejected for being stale/destructive.
+    // Only an explicit force (e.g. confirmed template change) can override.
+    if (syncBlockedRef.current && !force) {
+      console.warn('syncFlow skipped — sync is blocked until reload');
+      return;
+    }
+
+    // Only the bot-flow path uses the new guards (template editor uses a
+    // different endpoint and is out of scope here).
+    const isFlowSync = !editingTemplateId && !creatingTemplate;
+
+    if (isFlowSync) {
+      // Don't auto-save before the flow has actually loaded for the current
+      // bot/process. This is the front-line defense against "UI loaded blank,
+      // user clicked save, bot got wiped".
+      const currentKey = buildFlowKey(selectedBot?.id || null, pId, null);
+      if (!force && flowReadyKeyRef.current !== currentKey) {
+        console.warn('syncFlow skipped — flow not ready for', currentKey, 'ready=', flowReadyKeyRef.current);
+        return;
+      }
+      // Defense-in-depth: never POST an empty flow unless explicitly forced.
+      // The server will reject it too, but skipping avoids the network round-trip
+      // and prevents log spam from the auto-save timer.
+      if (!force && n.length === 0) {
+        console.warn('syncFlow skipped — empty nodes (no force)');
+        return;
+      }
+    }
 
     // Cancel any previous in-flight sync so it cannot overwrite this newer one
     if (syncAbortControllerRef.current) {
@@ -664,11 +761,13 @@ const FlowBuilder: React.FC = () => {
         method: 'POST',
         signal: controller.signal,
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ 
-          nodes: n, 
-          edges: e, 
-          flow_id: selectedBot?.id || null, 
-          standard_process_id: pId 
+        body: JSON.stringify({
+          nodes: n,
+          edges: e,
+          flow_id: selectedBot?.id || null,
+          standard_process_id: pId,
+          force,
+          expected_widget_count: loadedWidgetCountRef.current ?? undefined
         })
       });
 
@@ -678,7 +777,41 @@ const FlowBuilder: React.FC = () => {
           handleSessionExpired();
           return;
         }
+        // Server-side safety guard tripped (empty / stale / shrink). Block any
+        // further auto-saves until the user reloads, then surface a clear
+        // message.
+        if (response.status === 409) {
+          syncBlockedRef.current = true;
+          let body: any = {};
+          try { body = await response.json(); } catch {}
+          console.warn('syncFlow blocked by server guard:', body);
+          const msg = body?.message ||
+            'השמירה נחסמה ע"י השרת כדי למנוע איבוד רכיבים. רענני את הדף לפני שמירה.';
+          // Use setTimeout so we don't alert during a React render cycle
+          setTimeout(() => {
+            if (window.confirm(`${msg}\n\nלטעון מחדש את הדף עכשיו?`)) {
+              window.location.reload();
+            }
+          }, 0);
+          return;
+        }
         console.error('Failed to save flow:', response.status, response.statusText);
+        return;
+      }
+
+      // Successful save — refresh our expected count and tell sibling tabs.
+      try {
+        const result = await response.json();
+        if (typeof result.widget_count === 'number') {
+          loadedWidgetCountRef.current = result.widget_count;
+        }
+        const ch = flowChannelRef.current;
+        if (ch) {
+          const key = buildFlowKey(selectedBot?.id || null, pId, null);
+          ch.postMessage({ type: 'flow-saved', key, widgetCount: result.widget_count });
+        }
+      } catch {
+        // Server returned non-JSON; ignore — guards still hold for next save.
       }
     } catch (err: any) {
       if (err.name === 'AbortError') return; // Superseded by a newer sync – ignore
@@ -1163,7 +1296,9 @@ const FlowBuilder: React.FC = () => {
       setNodes(boundNodes);
       setEdges(formattedEdges);
       
-      await syncFlow(boundNodes, formattedEdges);
+      // User explicitly confirmed restoring an older version — force-bypass the
+      // shrink guard since intentional smaller-than-current saves are valid here.
+      await syncFlow(boundNodes, formattedEdges, undefined, { force: true });
       
       setIsRestoreModalOpen(false);
       setVersionToRestore(null);
@@ -1301,7 +1436,9 @@ const FlowBuilder: React.FC = () => {
           target: idMap[e.target]
         })).filter(e => e.source && e.target);
 
-        await syncFlow(clonedNodes, clonedEdges, newProc.id);
+        // Sync to a brand-new process — bypass the ready-key/shrink guards
+        // (target process has 0 existing widgets and isn't the one currently loaded).
+        await syncFlow(clonedNodes, clonedEdges, newProc.id, { force: true });
         await loadProcesses();
         setIsDuplicateModalOpen(false);
         setDuplicateName('');
@@ -1512,8 +1649,9 @@ const FlowBuilder: React.FC = () => {
       setNodes([]);
       setEdges([]);
       
-      // Sync empty flow to server
-      await syncFlow([], []);
+      // Sync empty flow to server — this is the ONE intentional wipe in the app,
+      // so we pass force:true to bypass the empty/shrink guards.
+      await syncFlow([], [], undefined, { force: true });
       
       // Close modal and go to template selection
       setIsChangeTemplateModalOpen(false);

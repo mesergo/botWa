@@ -7,12 +7,14 @@ import BotSession from '../models/BotSession.js';
 import Contact from '../models/Contact.js';
 import Group from '../models/Group.js';
 import GroupRemovalLog from '../models/GroupRemovalLog.js';
+import RepGroup from '../models/RepGroup.js';
 import fetch from 'node-fetch';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import crypto from 'crypto';
 import { handleWebService, findMatchingOption } from '../utils/webserviceHandler.js';
+import { normalizePhone } from '../utils/phone.js';
 import { getEffectiveRemovalConfig, matchRemovalKeyword, DEFAULT_REMOVAL_CONFIG } from '../utils/removalConfig.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -433,7 +435,7 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
         // Unified add/remove from group node. If groupActionMode === 'remove',
         // delegate to the same logic used by action_remove_from_group.
         if (nodeData.groupActionMode === 'remove') {
-          const waPhone = session.parameters?.waPhone;
+          const waPhone = normalizePhone(session.parameters?.waPhone);
           const isSimulated = !waPhone || waPhone === 'Simulated' || waPhone.toLowerCase() === 'simulator';
           console.log(`[BOT] action_add_to_group(remove) | waPhone=${waPhone} | isSimulated=${isSimulated} | mode=${nodeData.removeFromGroupMode} | removeGroupId=${nodeData.removeGroupId}`);
           const userId = String(session.user_id);
@@ -512,7 +514,7 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
           break;
         }
 
-        const waPhone = session.parameters?.waPhone;
+        const waPhone = normalizePhone(session.parameters?.waPhone);
         // In simulator mode waPhone is absent or 'Simulated' — skip silently
         const isSimulated = !waPhone || waPhone === 'Simulated' || waPhone.toLowerCase() === 'simulator';
         let addedGroupName = null;
@@ -551,7 +553,7 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
       }
 
       case 'action_remove_from_group': {
-        const waPhone = session.parameters?.waPhone;
+        const waPhone = normalizePhone(session.parameters?.waPhone);
         const isSimulated = !waPhone || waPhone === 'Simulated' || waPhone.toLowerCase() === 'simulator';
         console.log(`[BOT] action_remove_from_group | waPhone=${waPhone} | isSimulated=${isSimulated} | mode=${nodeData.removeFromGroupMode} | removeGroupId=${nodeData.removeGroupId}`);
         const userId = String(session.user_id);
@@ -644,6 +646,50 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
         const repGroupId = nodeData.repGroupId || null;
         const repAssignmentMode = nodeData.repAssignmentMode === 'specific' ? 'specific' : 'any';
         const repUserId = repAssignmentMode === 'specific' ? (nodeData.repUserId || null) : null;
+
+        // ── Availability check ──────────────────────────────────────────────
+        // Check if any member of the target group / the specific rep is available.
+        // If no one is available, send the group's unavailableMessage to the customer.
+        let someoneAvailable = true;
+        let unavailableMsg = '';
+        try {
+          if (repAssignmentMode === 'specific' && repUserId) {
+            // Check specific rep's availability
+            const targetRep = await User.findById(repUserId).select('availability_status').lean();
+            someoneAvailable = targetRep?.availability_status === 'available';
+            if (!someoneAvailable && repGroupId) {
+              const grp = await RepGroup.findById(repGroupId).select('unavailableMessage').lean();
+              unavailableMsg = grp?.unavailableMessage || '';
+            }
+          } else if (repGroupId) {
+            // Check if any rep in the group is available
+            const groupDoc = await RepGroup.findById(repGroupId).select('unavailableMessage').lean();
+            unavailableMsg = groupDoc?.unavailableMessage || '';
+            const availableRep = await User.findOne({
+              rep_group_ids: repGroupId,
+              availability_status: 'available'
+            }).select('_id').lean();
+            someoneAvailable = !!availableRep;
+          }
+        } catch (availErr) {
+          console.error('[BOT] action_transfer_to_agent: availability check failed:', availErr.message);
+        }
+
+        if (!someoneAvailable && unavailableMsg) {
+          // Send the unavailable message to the customer before transferring
+          const unavailMsgEntry = {
+            type: 'SendItem',
+            text: unavailableMsg,
+            sender: 'bot',
+            name: 'מערכת',
+            created: new Date().toISOString()
+          };
+          messages.push(unavailMsgEntry);
+          addToHistory(session, unavailMsgEntry, currentNodeId);
+          console.log(`[BOT] ⚠️ action_transfer_to_agent | no one available — sending unavailableMessage`);
+        }
+        // ───────────────────────────────────────────────────────────────────
+
         session.is_agent = true;
         session.agent_since = new Date();
         session.status = 'waiting';
@@ -672,7 +718,7 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
           currentNodeId
         );
 
-        console.log(`[BOT] ✅ action_transfer_to_agent | session=${session._id} | rep_group_id=${repGroupId} | rep_user_id=${repUserId} | bot paused for 30 minutes`);
+        console.log(`[BOT] ✅ action_transfer_to_agent | session=${session._id} | rep_group_id=${repGroupId} | rep_user_id=${repUserId} | someoneAvailable=${someoneAvailable} | bot paused for 30 minutes`);
         return messages;
       }
 
@@ -971,6 +1017,7 @@ const performAutoRemoval = async (user, sender, phone, text, name = '') => {
   try {
     const inboundText = String(text || '').trim();
     if (!inboundText) return null;
+    sender = normalizePhone(sender);
     const isSimulatedSender = !sender || sender === 'Simulated' || String(sender).toLowerCase() === 'simulator';
     if (isSimulatedSender) return null;
 
@@ -1043,7 +1090,8 @@ export const respondToMessage = async (req, res) => {
     const isGetRequest = req.method === 'GET';
     const source = isGetRequest ? req.query : req.body;
     
-    const { phone, text = '', sender = 'unknown', token: tokenParam, bot_id, name = '' } = source;
+    const { phone, text = '', sender: rawSender = 'unknown', token: tokenParam, bot_id, name = '' } = source;
+    const sender = normalizePhone(rawSender);
     const token = req.headers.authorization?.replace('Bearer ', '') || tokenParam;
 
     console.log(`\n${'═'.repeat(80)}`);

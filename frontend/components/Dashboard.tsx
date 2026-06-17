@@ -1223,22 +1223,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                 </div>
                 
                 <div className="flex items-center justify-between mt-6">
-                  <div>
-                    {bot.is_default && (
-                      <div className="px-3 py-1 bg-yellow-100 text-yellow-700 rounded-lg text-xs font-bold">
-                        ברירת מחדל
-                      </div>
-                    )}
-                    {!isRep && !bot.is_default && (
-                      <button
-                        onClick={(e) => { e.stopPropagation(); onSetDefaultBot(bot.id); }}
-                        className="px-3 py-1 text-slate-400 hover:text-yellow-600 hover:bg-yellow-50 rounded-lg transition-all text-xs font-bold"
-                        title="הגדר כברירת מחדל"
-                      >
-                        הגדר כברירת מחדל
-                      </button>
-                    )}
-                  </div>
+                  <div></div>
                   {can('bots.edit') && (
                   <div className="flex items-center gap-2 text-blue-600 font-black text-sm group-hover:gap-4 transition-all">
                     <span>כניסה לעריכה</span>

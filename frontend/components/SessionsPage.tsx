@@ -66,6 +66,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
   const [showAgentConfirm, setShowAgentConfirm] = useState(false);
   const [agentSending, setAgentSending] = useState(false);
   const [agentWaFailed, setAgentWaFailed] = useState(false);
+  const [agentWaError, setAgentWaError] = useState<string | null>(null);
 
   // Template dropdown state
   const [showTemplates, setShowTemplates] = useState(false);
@@ -580,7 +581,8 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
               ));
               if (!msgData.waSent) {
                 setAgentWaFailed(true);
-                setTimeout(() => setAgentWaFailed(false), 8000);
+                setAgentWaError(msgData.waError || null);
+                setTimeout(() => { setAgentWaFailed(false); setAgentWaError(null); }, 8000);
               }
             }
           } catch (msgError) {
@@ -670,7 +672,8 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
             fetchContacts();
           } else {
             setAgentWaFailed(true);
-            setTimeout(() => setAgentWaFailed(false), 8000);
+            setAgentWaError(data.waError || null);
+            setTimeout(() => { setAgentWaFailed(false); setAgentWaError(null); }, 8000);
           }
         }
       } catch (e) {
@@ -740,7 +743,8 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
         ));
         if (!data.waSent) {
           setAgentWaFailed(true);
-          setTimeout(() => setAgentWaFailed(false), 8000);
+          setAgentWaError(data.waError || null);
+          setTimeout(() => { setAgentWaFailed(false); setAgentWaError(null); }, 8000);
         }
       }
     } catch (e) {
@@ -904,6 +908,33 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
 
   const selectedContact = contacts.find(c => c.phone === selectedPhone) ?? null;
 
+  /* ─── resend a failed agent message ─── */
+  const resendMessage = async (sessionId: string, item: any) => {
+    if (!token) return;
+    try {
+      const r = await fetch(`${API_BASE}/sessions/${sessionId}/send-agent-message`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ message: item.text || item.content || '' })
+      });
+      if (r.ok) {
+        const data = await r.json();
+        setPhoneSessions(prev => prev.map(s =>
+          s.id !== sessionId ? s : {
+            ...s,
+            process_history: s.process_history.map(h =>
+              h.created === item.created && h.sender === 'agent'
+                ? { ...h, wa_sent: data.waSent, wa_error: data.waError || null }
+                : h
+            )
+          }
+        ));
+      }
+    } catch (e) {
+      console.error('Failed to resend message', e);
+    }
+  };
+
   /* ─── render messages for one session ─── */
   const renderSessionMessages = (session: Session) => {
     if (!session.process_history.length) return null;
@@ -982,7 +1013,22 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                   {text && <p className="whitespace-pre-wrap leading-relaxed">{text}</p>}
                 </div>
                 {item.wa_sent === false && (
-                  <span className="text-[9px] text-red-500 font-black px-1">⚠️ לא נשלח ללקוח</span>
+                  <div className="flex items-center gap-1.5 px-1 flex-wrap" dir="rtl">
+                    <span className="text-[9px] text-red-500 font-black">⚠️ לא נשלח ללקוח</span>
+                    {item.wa_error && (
+                      <span className="text-[9px] text-red-400">
+                        ({item.wa_error.length > 50 ? item.wa_error.slice(0, 50) + '…' : item.wa_error})
+                      </span>
+                    )}
+                    <button
+                      onClick={() => resendMessage(session.id, item)}
+                      className="flex items-center gap-0.5 text-[9px] text-blue-500 hover:text-blue-700 font-black border border-blue-300 rounded px-1.5 py-0.5 hover:bg-blue-50 transition-colors"
+                      title="שלח מחדש"
+                    >
+                      <RefreshCw size={9} />
+                      שלח מחדש
+                    </button>
+                  </div>
                 )}
                 {msgDate && <span className="text-[10px] text-slate-400 font-semibold px-1">{msgDate}</span>}
               </div>
@@ -1392,7 +1438,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                     title="שיוך נציגים"
                     className="p-2 hover:bg-slate-100 rounded-xl transition-colors text-slate-400"
                   >
-                    <UserPlus size={18} />
+                    <Headphones size={18} />
                   </button>
                 )}
                 <button
@@ -1424,8 +1470,11 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                   <div className="w-2 h-2 rounded-full bg-red-500 flex-shrink-0" />
                   <p className="text-xs font-black text-red-700 flex-1">
                     ⚠️ ההודעה נשמרה בהיסטוריה אך <strong>לא נשלחה ללקוח</strong> — בעיה ב-WhatsApp API
+                    {agentWaError && (
+                      <span className="font-normal text-red-500 mr-1">({agentWaError.length > 80 ? agentWaError.slice(0, 80) + '…' : agentWaError})</span>
+                    )}
                   </p>
-                  <button onClick={() => setAgentWaFailed(false)} className="text-red-400 hover:text-red-600">
+                  <button onClick={() => { setAgentWaFailed(false); setAgentWaError(null); }} className="text-red-400 hover:text-red-600">
                     <X size={14} />
                   </button>
                 </div>

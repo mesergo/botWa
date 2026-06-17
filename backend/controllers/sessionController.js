@@ -741,6 +741,7 @@ export const transferConversation = async (req, res) => {
     // Validate target belongs to the same company.
     let targetLabel = '';
     const update = { is_agent: true, agent_since: new Date(), status: 'waiting' };
+    let groupUnavailableMessage = ''; // group's message when no one is available
 
     if (targetType === 'group') {
       const RepGroup = (await import('../models/RepGroup.js')).default;
@@ -749,6 +750,7 @@ export const transferConversation = async (req, res) => {
       update.rep_group_id = String(targetId);
       update.rep_user_id = null;
       targetLabel = `קבוצה: ${group.name}`;
+      groupUnavailableMessage = group.unavailableMessage || '';
     } else if (targetType === 'rep' || targetType === 'shift_manager') {
       const requiredRole = targetType === 'rep' ? 'rep' : 'rep_manager';
       const targetUser = await User.findOne({
@@ -776,12 +778,97 @@ export const transferConversation = async (req, res) => {
         } else {
           update.rep_group_id = repGroups[0] || null;
         }
+        // Fetch unavailableMessage from ANY of the rep's groups (prefer the aligned group)
+        if (repGroups.length > 0) {
+          try {
+            const RepGroup = (await import('../models/RepGroup.js')).default;
+            // Try the aligned group first, then fall back to any group with a message
+            const groupsToCheck = update.rep_group_id
+              ? [update.rep_group_id, ...repGroups.filter(g => g !== update.rep_group_id)]
+              : repGroups;
+            const grpDocs = await RepGroup.find({ _id: { $in: groupsToCheck } }).select('unavailableMessage').lean();
+            // Prefer the aligned group's message; otherwise pick first non-empty
+            const alignedGrp = grpDocs.find(g => g._id.toString() === update.rep_group_id);
+            const fallbackGrp = grpDocs.find(g => g.unavailableMessage?.trim());
+            groupUnavailableMessage = alignedGrp?.unavailableMessage?.trim()
+              || fallbackGrp?.unavailableMessage?.trim()
+              || '';
+          } catch (_) {}
+        }
       } else {
         // Shift manager — clear group assignment.
         update.rep_group_id = null;
       }
       targetLabel = `${targetType === 'rep' ? 'נציג' : 'מנהל משמרת'}: ${targetUser.name || targetUser.email}`;
     }
+
+    // ── Availability check ──────────────────────────────────────────────────
+    // Verify the target has available members and notify the customer if not.
+    let someoneAvailable = true;
+    const historyEntriesToAdd = [];
+    try {
+      if (targetType === 'group') {
+        const availableRep = await User.findOne({
+          rep_group_ids: String(targetId),
+          availability_status: 'available'
+        }).select('_id').lean();
+        someoneAvailable = !!availableRep;
+      } else if (targetType === 'rep') {
+        const targetRep = await User.findById(targetId).select('availability_status').lean();
+        someoneAvailable = targetRep?.availability_status === 'available';
+      }
+      // shift_manager: skip availability check
+    } catch (availErr) {
+      console.error('[transferConversation] availability check failed:', availErr.message);
+    }
+
+    console.log(`[transferConversation] availability check | targetType=${targetType} | someoneAvailable=${someoneAvailable} | unavailableMessage="${groupUnavailableMessage}"`);
+
+    if (!someoneAvailable && groupUnavailableMessage) {
+      // Send the unavailableMessage to the customer via WhatsApp
+      try {
+        const owner = await User.findById(ownerId);
+        let waEndpoint, waToken;
+        if (owner?.dialog360_bot_id) {
+          waEndpoint = `dialog360/${owner.dialog360_bot_id}`;
+          waToken = crypto.createHash('sha1').update(owner.dialog360_bot_id + 'moomoo').digest('hex');
+        } else {
+          waEndpoint = process.env.WHATSAPP_ENDPOINT || 'dialog360/65aec7ebf1a1d64f29645fd9';
+          waToken = process.env.WHATSAPP_API_TOKEN || crypto.createHash('sha1').update(waEndpoint + 'moomoo').digest('hex');
+        }
+        const rawPhone = session.sender || session.customer_phone || '';
+        let normalizedPhone = rawPhone.replace(/[^0-9]/g, '');
+        normalizedPhone = normalizedPhone.replace(/^972972/, '972');
+        if (!normalizedPhone.startsWith('972')) {
+          normalizedPhone = normalizedPhone.replace(/^0+/, '');
+          normalizedPhone = '972' + normalizedPhone;
+        }
+        if (normalizedPhone && normalizedPhone !== '972') {
+          await fetch(`https://wa.message.co.il/api/${waEndpoint}/send`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json; charset=utf-8',
+              'Accept': 'application/json',
+              token: waToken
+            },
+            body: JSON.stringify({ phone: normalizedPhone, text: groupUnavailableMessage, fromMe: 1 })
+          });
+          console.log(`[transferConversation] ⚠️ No one available — sent unavailableMessage to ${normalizedPhone}`);
+        }
+      } catch (waErr) {
+        console.error('[transferConversation] failed to send unavailableMessage via WhatsApp:', waErr.message);
+      }
+      // Record the unavailable message in session history
+      historyEntriesToAdd.push({
+        type: 'SendItem',
+        text: groupUnavailableMessage,
+        sender: 'bot',
+        name: 'מערכת',
+        event: 'unavailable_message_sent',
+        created: new Date().toISOString()
+      });
+    }
+    // ────────────────────────────────────────────────────────────────────────
 
     const now = new Date();
     const fromName = req.user?.name || req.user?.email || 'נציג';
@@ -799,9 +886,11 @@ export const transferConversation = async (req, res) => {
       created: now.toISOString()
     };
 
+    historyEntriesToAdd.push(historyEntry);
+
     await collection.updateOne(
       { _id: new mongoose.Types.ObjectId(id) },
-      { $set: update, $push: { process_history: historyEntry } }
+      { $set: update, $push: { process_history: { $each: historyEntriesToAdd } } }
     );
 
     res.json({
@@ -809,6 +898,8 @@ export const transferConversation = async (req, res) => {
       status: 'waiting',
       rep_group_id: update.rep_group_id,
       rep_user_id: update.rep_user_id,
+      someoneAvailable,
+      unavailableMessage: (!someoneAvailable && groupUnavailableMessage) ? groupUnavailableMessage : undefined,
       historyEntry
     });
   } catch (err) {
@@ -1018,7 +1109,8 @@ export const sendAgentMessage = async (req, res) => {
       name: 'נציג',
       node_id: 'agent',
       created,
-      wa_sent: waSent
+      wa_sent: waSent,
+      wa_error: waError || null
     };
     
     // Build display content based on template or text

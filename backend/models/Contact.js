@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { normalizePhone } from '../utils/phone.js';
 
 const contactSchema = new mongoose.Schema({
   user_id: { type: String, required: true, index: true },
@@ -16,5 +17,13 @@ const contactSchema = new mongoose.Schema({
 
 // Unique: one contact record per phone per user
 contactSchema.index({ user_id: 1, phone: 1 }, { unique: true });
+
+// Normalize phone to 972XXXXXXXXX format before saving
+contactSchema.pre('validate', function (next) {
+  if (this.phone) {
+    this.phone = normalizePhone(this.phone);
+  }
+  next();
+});
 
 export default mongoose.model('Contact', contactSchema);
