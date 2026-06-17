@@ -1247,8 +1247,8 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
 
       {/* ── Users Tab ── */}
       {activeTab === 'users' && can('users.view') && (
-        <div className="flex-1 overflow-y-auto p-12">
-          <div className="max-w-5xl mx-auto">
+        <div className="flex-1 overflow-y-auto p-8">
+          <div className="max-w-full mx-auto">
             <SubUsersTab token={token} currentUser={currentUser as User | null} />
           </div>
         </div>

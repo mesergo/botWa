@@ -1,5 +1,5 @@
 ﻿import React, { useState, useEffect, useRef } from 'react';
-import { Clock, MessageSquare, Search, Bot, LogOut, User, Phone, List, Users, ExternalLink, X, Headphones, RefreshCw, Shield, Settings, UserCog, Layers, Plus, UserPlus, Check } from 'lucide-react';
+import { Clock, MessageSquare, Search, Bot, LogOut, User, Phone, List, Users, ExternalLink, X, Headphones, RefreshCw, Shield, Settings, UserCog, Layers, Plus, UserPlus, Check, Paperclip } from 'lucide-react';
 import ImpersonationBanner from './ImpersonationBanner';
 import { FileUploader } from './FileUploader';
 import { usePermission } from '../hooks/usePermission';
@@ -67,6 +67,10 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
   const [agentSending, setAgentSending] = useState(false);
   const [agentWaFailed, setAgentWaFailed] = useState(false);
   const [agentWaError, setAgentWaError] = useState<string | null>(null);
+  const [attachedFile, setAttachedFile] = useState<{type: 'image'|'video'|'document'; url: string; name: string} | null>(null);
+  const [fileUploadError, setFileUploadError] = useState<string | null>(null);
+  const [fileUploading, setFileUploading] = useState(false);
+  const fileUploadRef = React.useRef<HTMLInputElement>(null);
 
   // Template dropdown state
   const [showTemplates, setShowTemplates] = useState(false);
@@ -202,6 +206,8 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
   // Clear message input when switching contacts
   useEffect(() => {
     setAgentMessage('');
+    setAttachedFile(null);
+    setFileUploadError(null);
     setShowTemplates(false);
     setSelectedTemplate(null);
     setTemplateParams({});
@@ -519,6 +525,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
     if (!sid) return;
     
     const messageToSend = agentMessage.trim();
+    const capturedFile = attachedFile;
     
     try {
       const r = await fetch(`${API_BASE}/sessions/${sid}/set-agent`, {
@@ -539,7 +546,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
         ));
         
         // אם יש הודעה שנכתבה, שלח אותה מיד
-        if (messageToSend) {
+        if (messageToSend || capturedFile) {
           const created = new Date().toISOString();
           setAgentSending(true);
           setAgentWaFailed(false);
@@ -556,6 +563,10 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
               components: selectedTemplate.components || [],
               params: templateParams
             };
+          } else if (capturedFile) {
+            requestBody.mediaType = capturedFile.type;
+            requestBody.mediaUrl = capturedFile.url;
+            requestBody.mediaFilename = capturedFile.name;
           }
           
           try {
@@ -568,12 +579,16 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
             if (msgResponse.ok) {
               const msgData = await msgResponse.json();
               setAgentMessage('');
+              setAttachedFile(null);
               setSelectedTemplate(null);
               setTemplateParams({});
               const replyStatus: ConvStatus = msgData.status || (isTemplate ? 'waiting' : 'handling');
+              const fallbackEntry = capturedFile
+                ? { type: capturedFile.type === 'image' ? 'Image' : capturedFile.type === 'video' ? 'Video' : 'Document', url: capturedFile.url, text: messageToSend, sender: 'agent', name: 'נציג', created, wa_sent: msgData.waSent }
+                : { type: 'Text', text: messageToSend, sender: 'agent', name: 'נציג', created, wa_sent: msgData.waSent };
               setPhoneSessions(prev => prev.map((s, i) =>
                 i === prev.length - 1
-                  ? { ...s, status: replyStatus, process_history: [...s.process_history, msgData.historyEntry || { type: 'Text', text: messageToSend, sender: 'agent', name: 'נציג', created, wa_sent: msgData.waSent }] }
+                  ? { ...s, status: replyStatus, process_history: [...s.process_history, msgData.historyEntry || fallbackEntry] }
                   : s
               ));
               setContacts(prev => prev.map(c =>
@@ -619,8 +634,66 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
     }
   };
 
+  const handleFileAttach = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Enforce per-type size limits (WhatsApp API constraints)
+    const isImage = file.type.startsWith('image/');
+    const isVideo = file.type.startsWith('video/');
+    const MB = 1024 * 1024;
+    const MAX_IMAGE = 5 * MB;   // WhatsApp: 5MB
+    const MAX_VIDEO = 16 * MB;  // WhatsApp: 16MB
+    const MAX_DOC   = 50 * MB;  // server limit
+
+    if (isImage && file.size > MAX_IMAGE) {
+      setFileUploadError(`תמונות מוגבלות ל-5MB (הקובץ: ${(file.size / MB).toFixed(1)}MB)`);
+      if (fileUploadRef.current) fileUploadRef.current.value = '';
+      return;
+    }
+    if (isVideo && file.size > MAX_VIDEO) {
+      setFileUploadError(`סרטונים מוגבלים ל-16MB בגלל הגבלת WhatsApp (הקובץ: ${(file.size / MB).toFixed(1)}MB). נסה לדחוס את הסרטון או שלח קישור.`);
+      if (fileUploadRef.current) fileUploadRef.current.value = '';
+      return;
+    }
+    if (!isImage && !isVideo && file.size > MAX_DOC) {
+      setFileUploadError(`קבצים מוגבלים ל-50MB (הקובץ: ${(file.size / MB).toFixed(1)}MB)`);
+      if (fileUploadRef.current) fileUploadRef.current.value = '';
+      return;
+    }
+
+    setFileUploadError(null);
+    setFileUploading(true);
+    const formData = new FormData();
+    formData.append('file', file);
+    try {
+      const res = await fetch(`${API_BASE}/upload`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData
+      });
+      if (res.ok) {
+        const data = await res.json();
+        let fileType: 'image' | 'video' | 'document' = 'document';
+        if (isImage) fileType = 'image';
+        else if (isVideo) fileType = 'video';
+        setAttachedFile({ type: fileType, url: data.url, name: file.name });
+      } else {
+        const err = await res.json().catch(() => ({}));
+        setFileUploadError(err.error || `שגיאה בהעלאה (${res.status})`);
+      }
+    } catch (err) {
+      setFileUploadError('שגיאת רשת — לא ניתן להעלות את הקובץ');
+      console.error('Upload failed', err);
+    } finally {
+      setFileUploading(false);
+    }
+    // Reset input so same file can be re-selected
+    if (fileUploadRef.current) fileUploadRef.current.value = '';
+  };
+
   const sendAgentMsg = async () => {
-    if (!agentMessage.trim() || agentSending) return;
+    if (!agentMessage.trim() && !attachedFile || agentSending) return;
 
     // לקוח חדש ללא שיחות — שלח תבנית ישירות לטלפון (ללא session)
     if (phoneSessions.length === 0) {
@@ -698,6 +771,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
     if (!sessionId) return;
     
     const msgText = agentMessage.trim();
+    const currentAttachedFile = attachedFile;
     const created = new Date().toISOString();
     setAgentSending(true);
     setAgentWaFailed(false);
@@ -717,6 +791,10 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
         params: templateParams // Add user-provided parameters
       };
       console.log('[SessionsPage] Sending template:', requestBody.templateData);
+    } else if (currentAttachedFile) {
+      requestBody.mediaType = currentAttachedFile.type;
+      requestBody.mediaUrl = currentAttachedFile.url;
+      requestBody.mediaFilename = currentAttachedFile.name;
     }
     
     try {
@@ -730,12 +808,16 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
         console.log('[SessionsPage] Response from server:', data);
         console.log('[SessionsPage] History entry:', data.historyEntry);
         setAgentMessage('');
+        setAttachedFile(null);
         setSelectedTemplate(null);
         setTemplateParams({});
         const replyStatus: ConvStatus = data.status || (isTemplate ? (currentStatus === 'bot' ? 'waiting' : currentStatus) : 'handling');
+        const fallbackEntry = currentAttachedFile
+          ? { type: currentAttachedFile.type === 'image' ? 'Image' : currentAttachedFile.type === 'video' ? 'Video' : 'Document', url: currentAttachedFile.url, text: msgText, sender: 'agent', name: 'נציג', created, wa_sent: data.waSent }
+          : { type: 'Text', text: msgText, sender: 'agent', name: 'נציג', created, wa_sent: data.waSent };
         setPhoneSessions(prev => prev.map((s, i) =>
           i === prev.length - 1
-            ? { ...s, status: replyStatus, process_history: [...s.process_history, data.historyEntry || { type: 'Text', text: msgText, sender: 'agent', name: 'נציג', created, wa_sent: data.waSent }] }
+            ? { ...s, status: replyStatus, process_history: [...s.process_history, data.historyEntry || fallbackEntry] }
             : s
         ));
         setContacts(prev => prev.map(c =>
@@ -1614,9 +1696,9 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                              ? 'bg-sky-500 text-white hover:bg-sky-600 cursor-pointer'
                              : 'bg-sky-500 text-white opacity-40 cursor-not-allowed'}`}
                       */
-                      disabled={!agentMessage.trim() || agentSending}
-                      className={`w-10 h-10 flex-shrink-0 flex items-center justify-center rounded-2xl transition-colors
-                        ${agentMessage.trim() && !agentSending
+                      disabled={(!agentMessage.trim() && !attachedFile) || agentSending}
+                      className={`w-10 h-10 flex-shrink-0 flex items-center justify-center rounded-2xl transition-colors self-end
+                        ${(agentMessage.trim() || attachedFile) && !agentSending
                           ? 'bg-sky-500 text-white hover:bg-sky-600 cursor-pointer'
                           : 'bg-sky-500 text-white opacity-40 cursor-not-allowed'}`}
                     >
@@ -1624,39 +1706,77 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                         <path d="M22 2 11 13"/><path d="M22 2 15 22 11 13 2 9l20-7z"/>
                       </svg>
                     </button>
+                    <button
+                      onClick={() => fileUploadRef.current?.click()}
+                      title="צרף קובץ / תמונה / וידאו"
+                      disabled={fileUploading}
+                      className={`w-10 h-10 flex-shrink-0 flex items-center justify-center rounded-2xl transition-colors cursor-pointer self-end
+                        ${fileUploading ? 'text-sky-500 bg-sky-50 animate-pulse' : 'text-slate-400 hover:text-sky-500 hover:bg-slate-100'}`}
+                    >
+                      {fileUploading
+                        ? <div className="w-4 h-4 border-2 border-sky-400 border-t-transparent rounded-full animate-spin" />
+                        : <Paperclip size={18} />
+                      }
+                    </button>
                     <input
-                      type="text"
-                      value={agentMessage}
-                      onChange={e => {
-                        const value = e.target.value;
-                        setAgentMessage(value);
-                        if (value === '/' || value.startsWith('/')) {
-                          setShowTemplates(true);
-                          if (value === '/') fetchTemplates();
-                        } else {
-                          setShowTemplates(false);
-                        }
-                      }}
-                      onKeyDown={e => { if (e.key === 'Enter') sendAgentMsg(); }}
-                      /* ── התנהגות "לקוח חדש = פתיחת תבניות אוטומטית" מבוטלת זמנית ──
-                         גרסה מקורית:
-                         onFocus={() => {
-                           if (phoneSessions.length === 0 && !agentMessage) {
-                             setAgentMessage('/');
-                             setShowTemplates(true);
-                             fetchTemplates();
-                           }
-                         }}
-                         placeholder={phoneSessions.length === 0 ? 'הקש / לבחירת תבנית לשליחה...' : 'כתוב הודעה ללקוח... (/ לטמפלייטים)'}
-                         className={`flex-1 bg-slate-50 border rounded-2xl px-4 py-2.5 text-sm text-right font-medium outline-none transition-all
-                           text-slate-800 placeholder:text-slate-400 focus:ring-2 focus:ring-sky-500/20
-                           ${phoneSessions.length === 0 && !selectedTemplate
-                             ? 'border-amber-300 focus:border-amber-400 focus:ring-amber-500/20'
-                             : 'border-slate-200 focus:border-sky-400'}`}
-                      */
-                      placeholder='כתוב הודעה ללקוח... (/ לטמפלייטים)'
-                      className='flex-1 bg-slate-50 border border-slate-200 rounded-2xl px-4 py-2.5 text-sm text-right font-medium outline-none transition-all text-slate-800 placeholder:text-slate-400 focus:ring-2 focus:ring-sky-500/20 focus:border-sky-400'
+                      ref={fileUploadRef}
+                      type="file"
+                      accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.zip"
+                      className="hidden"
+                      onChange={handleFileAttach}
                     />
+                    {/* Composite input: preview thumbnail top-right + text below, all inside one bordered box */}
+                    <div className="flex-1 bg-slate-50 border border-slate-200 rounded-2xl overflow-hidden focus-within:ring-2 focus-within:ring-sky-500/20 focus-within:border-sky-400 transition-all">
+                      {attachedFile && (
+                        <div className="flex justify-start px-2 pt-2">
+                          <div className="relative inline-block">
+                            <button
+                              onClick={() => setAttachedFile(null)}
+                              className="absolute -top-1.5 -left-1.5 z-10 w-5 h-5 bg-slate-600/80 text-white rounded-full flex items-center justify-center hover:bg-red-500 transition-colors shadow"
+                            >
+                              <X size={9} />
+                            </button>
+                            {attachedFile.type === 'image' && (
+                              <img src={attachedFile.url} alt="תצוגה מקדימה" className="block w-16 h-16 object-cover rounded-xl border border-slate-200 shadow-sm" />
+                            )}
+                            {attachedFile.type === 'video' && (
+                              <video src={attachedFile.url} className="block w-16 h-16 object-cover rounded-xl border border-slate-200 shadow-sm" />
+                            )}
+                            {attachedFile.type === 'document' && (
+                              <div className="w-16 h-16 bg-slate-100 rounded-xl border border-slate-200 shadow-sm flex flex-col items-center justify-center gap-1">
+                                <span className="text-2xl">📄</span>
+                                <span className="text-[9px] font-bold text-slate-500 truncate w-full text-center px-1">{attachedFile.name.split('.').pop()?.toUpperCase()}</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                      <input
+                        type="text"
+                        value={agentMessage}
+                        onChange={e => {
+                          const value = e.target.value;
+                          setAgentMessage(value);
+                          if (value === '/' || value.startsWith('/')) {
+                            setShowTemplates(true);
+                            if (value === '/') fetchTemplates();
+                          } else {
+                            setShowTemplates(false);
+                          }
+                        }}
+                        onKeyDown={e => { if (e.key === 'Enter') sendAgentMsg(); }}
+                        placeholder={attachedFile ? 'כיתוב (אופציונלי)...' : 'כתוב הודעה ללקוח... (/ לטמפלייטים)'}
+                        className='w-full bg-transparent px-4 py-2.5 text-sm text-right font-medium outline-none text-slate-800 placeholder:text-slate-400'
+                      />
+                    </div>
+                    {fileUploadError && (
+                      <div className="absolute bottom-full right-0 left-0 mb-1 z-50 flex items-center gap-2 bg-red-50 border border-red-200 rounded-xl px-3 py-2 text-sm shadow-md">
+                        <span className="text-red-600 font-medium flex-1">⚠️ {fileUploadError}</span>
+                        <button onClick={() => setFileUploadError(null)} className="text-slate-400 hover:text-red-500 transition-colors flex-shrink-0">
+                          <X size={14} />
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}

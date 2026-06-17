@@ -16,9 +16,23 @@ import crypto from 'crypto';
 import { handleWebService, findMatchingOption } from '../utils/webserviceHandler.js';
 import { normalizePhone } from '../utils/phone.js';
 import { getEffectiveRemovalConfig, matchRemovalKeyword, DEFAULT_REMOVAL_CONFIG } from '../utils/removalConfig.js';
+import { pushMessagesToWhatsApp } from '../utils/whatsappSender.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Helper: Detect media type from a URL by its file extension.
+// Returns 'Image', 'Video', 'Document', or null (for plain text).
+const detectMediaType = (text) => {
+  if (!text || typeof text !== 'string') return null;
+  // Only consider URLs (must start with http/https)
+  if (!/^https?:\/\//i.test(text.trim())) return null;
+  const ext = text.split('?')[0].split('.').pop()?.toLowerCase() || '';
+  if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) return 'Image';
+  if (['mp4', 'mov', 'avi', 'mkv', 'webm'].includes(ext)) return 'Video';
+  if (['pdf', 'doc', 'docx', 'xls', 'xlsx', 'txt', 'csv', 'zip'].includes(ext)) return 'Document';
+  return null;
+};
 
 // Helper: Convert base64 to URL
 const convertBase64ToUrl = (base64Data, req) => {
@@ -882,12 +896,10 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
 };
 
 // ─── Proactive WhatsApp push ──────────────────────────────────────────────────
-// Sends bot messages directly to WhatsApp via the dialog360 /send endpoint.
-// Handles all message types: Text, Options, Image, Video, Document, URL, SendItem.
-// Returns true if pushed successfully, false if WHATSAPP_ENDPOINT is not configured.
-const _sleep = (ms) => new Promise(r => setTimeout(r, ms));
-
-const pushMessagesToWhatsApp = async (phone, messages, user = null) => {
+// pushMessagesToWhatsApp is now imported from ../utils/whatsappSender.js
+// (shared with sessionController for agent media messages)
+// ─────────────────────────────────────────────────────────────────────────────
+const _UNUSED_pushMessagesToWhatsApp_MOVED = async (phone, messages, user = null) => {
   if (!messages.length) return false;
 
   // Prefer the bot owner's dialog360 credentials (matches sendAgentMessage logic).
@@ -1007,7 +1019,6 @@ const pushMessagesToWhatsApp = async (phone, messages, user = null) => {
   console.log(`[WA-PUSH] 🏁 anySuccess=${anySuccess}`);
   return anySuccess;
 };
-// ─────────────────────────────────────────────────────────────────────────────
 
 // Helper: attempt auto-removal-from-group based on opt-out keywords.
 // Returns { matched, outMessages } when the sender was added to the blocklist,
@@ -1157,14 +1168,12 @@ export const respondToMessage = async (req, res) => {
       if (agentAgeMinutes <= 30) {
         // Active agent — record user message only, return empty bot response
         agentCheckSession.process_history = agentCheckSession.process_history || [];
-        agentCheckSession.process_history.push({
-          type: 'UserInput',
-          text: String(text),
-          sender: 'user',
-          name: 'משתמש',
-          node_id: 'user',
-          created: new Date().toISOString()
-        });
+        const mediaType = detectMediaType(String(text));
+        agentCheckSession.process_history.push(
+          mediaType
+            ? { type: mediaType, url: String(text), sender: 'user', name: 'משתמש', node_id: 'user', created: new Date().toISOString() }
+            : { type: 'UserInput', text: String(text), sender: 'user', name: 'משתמש', node_id: 'user', created: new Date().toISOString() }
+        );
         agentCheckSession.markModified('process_history');
         await agentCheckSession.save();
         console.log(`[BOT] 🙋 AGENT MODE active for sessionId=${agentCheckSession._id} phone=${phone} — bot suppressed, message recorded`);
@@ -1349,6 +1358,17 @@ export const respondToMessage = async (req, res) => {
 
     // Save user message to history
     if (text && !isNewSession) {
+      const mediaType = detectMediaType(text);
+      if (mediaType) {
+        // Customer sent a media file via WhatsApp — store as Image/Video/Document and
+        // return immediately without advancing the bot flow (caption arrives separately).
+        addToHistory(session, { type: mediaType, url: text }, 'user');
+        session.markModified('process_history');
+        await session.save();
+        console.log(`[BOT] 📎 Media received from user | type=${mediaType} | url=${text} | sender=${sender}`);
+        console.log(`${'═'.repeat(80)}\n`);
+        return res.json({ StatusId: 1, StatusDescription: 'Media recorded', sender, messages: [] });
+      }
       addToHistory(session, { type: 'UserInput', text }, 'user');
       session.last_user_input = text; // Save for webservice
     }

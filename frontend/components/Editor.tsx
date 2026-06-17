@@ -14,7 +14,7 @@ import ReactFlow, {
 import Sidebar from './Sidebar';
 import Simulator from './Simulator';
 import { NodeType, FixedProcess, Version, User, BotFlow } from '../types';
-import { Wand2, Search, ChevronUp, ChevronDown, X, Copy, CloudUpload, AlertTriangle, Users, List, Sliders } from 'lucide-react';
+import { Wand2, Search, ChevronUp, ChevronDown, X, Copy, CloudUpload, AlertTriangle, Users, List, Sliders, Settings } from 'lucide-react';
 
 interface EditorProps {
   selectedBot: BotFlow | null;
@@ -68,6 +68,8 @@ interface EditorProps {
   globalSearchResults?: { processId: string; processName: string; nodeId: string; matchText: string }[];
   /** Called when user clicks a global search result to navigate into the process */
   onNavigateToProcessResult?: (processId: string, nodeId: string) => void;
+  /** Opens the bot settings modal (only shown if user has bots.settings permission) */
+  onOpenBotSettings?: () => void;
 }
 
 const HighlightedText: React.FC<{ text: string; query: string }> = ({ text, query }) => {
@@ -89,7 +91,7 @@ const Editor: React.FC<EditorProps> = ({
   onNodesChange, onEdgesChange, onConnect, onInit, onDrop, onSearchChange, onSearchNav, onTidy, onPublish,
   onCloseEditor, onHome, onSimulatorOpen, onSimulatorClose, onDuplicate, onChangeTemplate, sidebarProps,
   isEditingTemplate, onSaveTemplate, existingTemplateData, onOpenContacts, onOpenSessions, initialParams, onManageParams, onNodeFocus, onFixedProcessActive, isTransitioning,
-  globalSearchResults, onNavigateToProcessResult
+  globalSearchResults, onNavigateToProcessResult, onOpenBotSettings
 }) => {
   const [showSaveModal, setShowSaveModal] = React.useState(false);
   const [templateName, setTemplateName] = React.useState(existingTemplateData?.name || '');
@@ -300,6 +302,15 @@ const Editor: React.FC<EditorProps> = ({
                 </div>
               )}
             </div>
+          )}
+          {!isEditingTemplate && onOpenBotSettings && (
+            <button
+              onClick={onOpenBotSettings}
+              title="הגדרות בוט"
+              className="p-2 text-slate-300 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-all"
+            >
+              <Settings size={20} />
+            </button>
           )}
           <button onClick={onHome} className="p-2 text-slate-300 hover:text-blue-600 transition-colors"><X size={22} /></button>
         </div>

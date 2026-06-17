@@ -12,8 +12,6 @@ import { User, UserTypePermissions } from '../types';
 export function usePermission(currentUser: User | null) {
   const check = useCallback((key: string): boolean => {
     if (!currentUser) return false;
-    // Platform admin always has full access
-    if (currentUser.role === 'admin') return true;
 
     const perms = currentUser.permissions as UserTypePermissions | undefined;
     if (!perms) {
