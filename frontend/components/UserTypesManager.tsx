@@ -180,6 +180,38 @@ const UserTypesManager: React.FC<Props> = ({ token, apiBase }) => {
     }));
   };
 
+  const toggleAllPerm = (typeId: string, section: keyof UserTypePermissions, value: boolean) => {
+    setDrafts(prev => {
+      const draft = prev[typeId];
+      if (!draft) return prev;
+      const group = PERMISSION_GROUPS.find(g => g.key === section);
+      if (!group) return prev;
+      const allActions: Record<string, boolean> = {};
+      group.actions.forEach(a => { allActions[a.key] = value; });
+      return {
+        ...prev,
+        [typeId]: {
+          ...draft,
+          permissions: {
+            ...draft.permissions,
+            [section]: { ...(draft.permissions[section] as any), ...allActions }
+          }
+        }
+      };
+    });
+  };
+
+  const toggleAllNewPerm = (section: keyof UserTypePermissions, value: boolean) => {
+    const group = PERMISSION_GROUPS.find(g => g.key === section);
+    if (!group) return;
+    const allActions: Record<string, boolean> = {};
+    group.actions.forEach(a => { allActions[a.key] = value; });
+    setNewPermissions(prev => ({
+      ...prev,
+      [section]: { ...(prev[section] as any), ...allActions }
+    }));
+  };
+
   const save = async (id: string) => {
     setSaving(id);
     try {
@@ -257,37 +289,49 @@ const UserTypesManager: React.FC<Props> = ({ token, apiBase }) => {
   const PermissionsGrid: React.FC<{
     permissions: UserTypePermissions;
     onToggle: (section: keyof UserTypePermissions, action: string) => void;
-    readonlyName?: boolean;
-  }> = ({ permissions, onToggle }) => (
+    onToggleAll: (section: keyof UserTypePermissions, value: boolean) => void;
+  }> = ({ permissions, onToggle, onToggleAll }) => (
     <div className="space-y-4 mt-4">
-      {PERMISSION_GROUPS.map(group => (
-        <div key={group.key} className="bg-slate-50 rounded-xl p-4">
-          <p className="text-xs font-black text-slate-500 uppercase tracking-wider mb-3">{group.label}</p>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-            {group.actions.map(action => {
-              const checked = !!(permissions as any)[group.key]?.[action.key];
-              return (
-                <label
-                  key={action.key}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer border transition-all text-sm font-medium ${
-                    checked
-                      ? 'bg-blue-50 border-blue-300 text-blue-800'
-                      : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'
-                  }`}
-                >
-                  <input
-                    type="checkbox"
-                    className="accent-blue-600"
-                    checked={checked}
-                    onChange={() => onToggle(group.key, action.key)}
-                  />
-                  {action.label}
-                </label>
-              );
-            })}
+      {PERMISSION_GROUPS.map(group => {
+        const allChecked = group.actions.every(action => !!(permissions as any)[group.key]?.[action.key]);
+        return (
+          <div key={group.key} className="bg-slate-50 rounded-xl p-4">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-xs font-black text-slate-500 uppercase tracking-wider">{group.label}</p>
+              <button
+                type="button"
+                onClick={() => onToggleAll(group.key, !allChecked)}
+                className="text-xs font-bold text-blue-600 hover:text-blue-800 transition-colors px-2 py-0.5 rounded hover:bg-blue-50 border border-blue-200 hover:border-blue-400"
+              >
+                {allChecked ? 'הסר הכל' : 'בחר הכל'}
+              </button>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              {group.actions.map(action => {
+                const checked = !!(permissions as any)[group.key]?.[action.key];
+                return (
+                  <label
+                    key={action.key}
+                    className={`flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer border transition-all text-sm font-medium ${
+                      checked
+                        ? 'bg-blue-50 border-blue-300 text-blue-800'
+                        : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      className="accent-blue-600"
+                      checked={checked}
+                      onChange={() => onToggle(group.key, action.key)}
+                    />
+                    {action.label}
+                  </label>
+                );
+              })}
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 
@@ -365,7 +409,7 @@ const UserTypesManager: React.FC<Props> = ({ token, apiBase }) => {
               </div>
             </div>
           )}
-          <PermissionsGrid permissions={newPermissions} onToggle={toggleNewPerm} />
+          <PermissionsGrid permissions={newPermissions} onToggle={toggleNewPerm} onToggleAll={toggleAllNewPerm} />
           <div className="flex gap-3 mt-5">
             <button
               onClick={createType}
@@ -503,6 +547,7 @@ const UserTypesManager: React.FC<Props> = ({ token, apiBase }) => {
                 <PermissionsGrid
                   permissions={draft.permissions}
                   onToggle={(section, action) => togglePerm(ut._id, section, action)}
+                  onToggleAll={(section, value) => toggleAllPerm(ut._id, section, value)}
                 />
               </div>
             )}

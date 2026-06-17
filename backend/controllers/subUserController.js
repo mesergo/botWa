@@ -28,7 +28,12 @@ export const getSubUsers = async (req, res) => {
         // Admin by role always gets all user types
         availableUserTypes = await UserType.find(filter).select('_id name system_role').sort({ createdAt: 1 }).lean();
       } else {
-        const actorType = actor?.user_type_id ? await UserType.findById(actor.user_type_id).lean() : null;
+        // Mirror resolvePermissions: prefer explicit user_type_id, fall back to seeded type by role
+        const actorType = actor?.user_type_id
+          ? await UserType.findById(actor.user_type_id).lean()
+          : actor?.role
+            ? await UserType.findOne({ system_role: actor.role, is_seeded: true }).lean()
+            : null;
         const canAddByType = !!actorType?.can_add_users;
         const allowedIds = Array.isArray(actorType?.allowed_user_type_ids) ? actorType.allowed_user_type_ids : [];
         if (canAddByType) {
@@ -79,9 +84,13 @@ export const createSubUser = async (req, res) => {
       return res.status(403).json({ error: 'אין הרשאה להוספת משתמשים' });
     }
 
-    const actorType = actor?.user_type_id ? await UserType.findById(actor.user_type_id).lean() : null;
+    const actorType = actor?.user_type_id
+      ? await UserType.findById(actor.user_type_id).lean()
+      : actor?.role
+        ? await UserType.findOne({ system_role: actor.role, is_seeded: true }).lean()
+        : null;
     const canAddByType = !!actorType?.can_add_users;
-    if (!canAddByType && actor?.role !== 'admin') {
+    if (!canAddByType && actor?.role !== 'admin' && actor?.role !== 'user') {
       return res.status(403).json({ error: 'סוג המשתמש שלך אינו מורשה להוסיף משתמשים' });
     }
 

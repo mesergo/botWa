@@ -129,7 +129,14 @@ export const resolvePermissions = async (user) => {
     const userType = await UserType.findById(user.user_type_id).lean();
     if (userType) return userType.permissions || {};
   }
-  // Fallback: derive permissions from legacy role string
+  // Fallback: look up the seeded UserType matching the user's role.
+  // This ensures changes made in the UserTypesManager panel take effect
+  // even for users who don't have an explicit user_type_id set.
+  if (user.role) {
+    const seededType = await UserType.findOne({ system_role: user.role, is_seeded: true }).lean();
+    if (seededType) return seededType.permissions || {};
+  }
+  // Final fallback: hardcoded defaults (legacy backward-compat)
   return getDefaultPermissionsForRole(user.role);
 };
 

@@ -7,6 +7,7 @@ import User from '../models/User.js';
 import Contact from '../models/Contact.js';
 import fetch from 'node-fetch';
 import { getEffectiveUserId, resolvePermissions, hasPermission } from '../middleware/auth.js';
+import { pushMessagesToWhatsApp } from '../utils/whatsappSender.js';
 
 export const startSession = async (req, res) => {
   // Safe extraction: explicitly check for req.user to avoid 'undefined' values in DB insert
@@ -868,14 +869,15 @@ export const getTransferTargets = async (req, res) => {
 export const sendAgentMessage = async (req, res) => {
   try {
     const { id } = req.params;
-    const { message, isTemplate, templateData } = req.body;
-    if (!message || !String(message).trim()) {
-      return res.status(400).json({ error: 'message is required' });
+    const { message, isTemplate, templateData, mediaType, mediaUrl, mediaFilename } = req.body;
+    const hasMedia = !!(mediaType && mediaUrl);
+    if (!hasMedia && (!message || !String(message).trim())) {
+      return res.status(400).json({ error: 'message or media is required' });
     }
     const { session, collection, error, status } = await getSessionWithOwnership(id, req);
     if (error) return res.status(status).json({ error });
 
-    const msgText = String(message).trim();
+    const msgText = String(message || '').trim();
     const now = new Date();
     const created = now.toISOString(); // for process_history
 
@@ -974,42 +976,52 @@ export const sendAgentMessage = async (req, res) => {
           }
         }
       }
-    } else {
-      // Regular text message
-      console.log(`[sendAgentMessage] 💬 Sending TEXT | phone=${normalizedPhone}`);
-      waBody = {
-        phone: normalizedPhone,
-        text: msgText,
-        fromMe: 1
-      };
     }
+    // (text and media messages are sent via pushMessagesToWhatsApp below)
 
     let waSent = false;
     let waError = null;
-    console.log(`[sendAgentMessage] 📤 Sending | endpoint=${endpoint} | phone=${normalizedPhone}`);
-    console.log(`[sendAgentMessage] 📤 Body:`, JSON.stringify(waBody, null, 2));
-    try {
-      const waRes = await fetch(`https://wa.message.co.il/api/${endpoint}/send`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json; charset=utf-8',
-          'Accept': 'application/json',
-          token: waToken
-        },
-        body: JSON.stringify(waBody)
-      });
-      if (waRes.ok) { 
-        waSent = true;
-        let responseBody = '';
-        try { responseBody = await waRes.text(); } catch (_) {}
-        console.log(`[sendAgentMessage] ✅ WhatsApp OK | phone=${normalizedPhone} | status=${waRes.status} | response=${responseBody}`);
-      } else {
-        waError = `HTTP ${waRes.status}: ${await waRes.text()}`;
-        console.error(`[sendAgentMessage] ❌ WhatsApp FAILED | phone=${normalizedPhone} | ${waError}`);
+
+    if (isTemplate && templateData) {
+      // Templates use a different body structure — send directly
+      console.log(`[sendAgentMessage] 📤 Sending TEMPLATE | endpoint=${endpoint} | phone=${normalizedPhone}`);
+      console.log(`[sendAgentMessage] 📤 Body:`, JSON.stringify(waBody, null, 2));
+      try {
+        const waRes = await fetch(`https://wa.message.co.il/api/${endpoint}/send`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json; charset=utf-8',
+            'Accept': 'application/json',
+            token: waToken
+          },
+          body: JSON.stringify(waBody)
+        });
+        if (waRes.ok) {
+          waSent = true;
+          let responseBody = '';
+          try { responseBody = await waRes.text(); } catch (_) {}
+          console.log(`[sendAgentMessage] ✅ WhatsApp OK | phone=${normalizedPhone} | status=${waRes.status} | response=${responseBody}`);
+        } else {
+          waError = `HTTP ${waRes.status}: ${await waRes.text()}`;
+          console.error(`[sendAgentMessage] ❌ WhatsApp FAILED | phone=${normalizedPhone} | ${waError}`);
+        }
+      } catch (waErr) {
+        waError = waErr.message;
+        console.error(`[sendAgentMessage] ❌ WhatsApp exception:`, waErr.message);
       }
-    } catch (waErr) {
-      waError = waErr.message;
-      console.error(`[sendAgentMessage] ❌ WhatsApp exception:`, waErr.message);
+    } else {
+      // Text or media: use shared whatsappSender utility
+      const waMessages = hasMedia
+        ? [{ type: mediaType === 'video' ? 'Video' : mediaType === 'document' ? 'Document' : 'Image', url: mediaUrl, text: msgText, filename: mediaFilename || 'file' }]
+        : [{ type: 'Text', text: msgText }];
+      console.log(`[sendAgentMessage] 📤 Sending ${hasMedia ? `MEDIA (${mediaType})` : 'TEXT'} | phone=${normalizedPhone}`);
+      try {
+        waSent = await pushMessagesToWhatsApp(normalizedPhone, waMessages, user);
+        if (!waSent) waError = 'WhatsApp delivery failed';
+      } catch (waErr) {
+        waError = waErr.message;
+        console.error(`[sendAgentMessage] ❌ WhatsApp exception:`, waErr.message);
+      }
     }
 
     // Always save to history (for audit trail), but mark if not delivered
@@ -1062,8 +1074,13 @@ export const sendAgentMessage = async (req, res) => {
         historyEntry.type = 'Text';
         historyEntry.text = displayText || msgText;
       }
+    } else if (hasMedia) {
+      const waMediaType = mediaType === 'video' ? 'Video' : mediaType === 'document' ? 'Document' : 'Image';
+      historyEntry.type = waMediaType;
+      historyEntry.url = mediaUrl;
+      historyEntry.text = msgText;
+      if (waMediaType === 'Document') historyEntry.filename = mediaFilename || 'file';
     } else {
-      // Regular text message
       historyEntry.type = 'Text';
       historyEntry.text = msgText;
     }

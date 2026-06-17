@@ -18,6 +18,7 @@ import { CloudUpload, RotateCcw, Plus, AlertTriangle, Copy, X, Lock, Wallet, Sli
 import Simulator from './components/Simulator';
 import AdminPanel from './components/AdminPanel';
 import HomePage from './components/HomePage'; 
+import BotSettingsModal from './components/BotSettingsModal';
   
 // ── Trial Expired Screen ─────────────────────────────────────────────────────
 const TrialExpiredScreen: React.FC<{ userName: string; onLogout: () => void }> = ({ userName, onLogout }) => (
@@ -206,6 +207,7 @@ const FlowBuilder: React.FC = () => {
   const [sessionsInitialPhone, setSessionsInitialPhone] = useState<string | null>(null);
   const [contactsInitialPhone, setContactsInitialPhone] = useState<string | null>(null);
   const [dashboardInitialTab, setDashboardInitialTab] = useState<'bots' | 'settings' | 'users'>('bots');
+  const [isBotSettingsOpen, setIsBotSettingsOpen] = useState(false);
 
   // Clear initialPhone when navigating away so it doesn't re-open on return
   useEffect(() => {
@@ -2110,6 +2112,7 @@ const FlowBuilder: React.FC = () => {
         isTransitioning={isFlowTransitioning}
         globalSearchResults={globalSearchResults}
         onNavigateToProcessResult={navigateToProcessResult}
+        onOpenBotSettings={can('bots.settings') ? () => setIsBotSettingsOpen(true) : undefined}
         sidebarProps={{
           fixedProcesses,
           versions,
@@ -2129,6 +2132,20 @@ const FlowBuilder: React.FC = () => {
           }
         }}
       />
+
+      {/* Bot Settings Modal – accessible from within the editor */}
+      {isBotSettingsOpen && selectedBot && (
+        <BotSettingsModal
+          bot={selectedBot}
+          currentUser={currentUser}
+          onClose={() => setIsBotSettingsOpen(false)}
+          onUpdateBotPublicId={async (id, publicId) => {
+            await handleUpdateBotPublicId(id, publicId);
+            setSelectedBot(prev => prev ? { ...prev, public_id: publicId } : null);
+          }}
+          onConnectFacebook={handleConnectFacebook}
+        />
+      )}
 
       {quotaError && quotaError.type === 'versions' && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[200] p-6 text-right">

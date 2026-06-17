@@ -124,6 +124,17 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [settingsError, setSettingsError] = useState<string | null>(null);
 
+  // Expanded rep list per group
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  const toggleGroupExpanded = (id: string) =>
+    setExpandedGroups(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+
+  const REPS_PREVIEW = 3;
+
   const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
 
   const loadUsers = async () => {
@@ -419,7 +430,6 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
           can('users.add') && (
           <button
             onClick={openCreate}
-            disabled={availableUserTypes.length === 0}
             className="flex items-center gap-2 px-5 py-2 mb-3 bg-blue-600 text-white rounded-xl font-bold shadow-sm shadow-blue-600/20 hover:bg-blue-700 transition-all"
           >
             <Plus size={16} /> הוסף נציג
@@ -453,14 +463,15 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
               <p className="text-xl font-bold">אין נציגים עדיין. הוסף את הראשון!</p>
             </div>
           ) : (
-            <div className="bg-white border border-slate-100 rounded-[2rem] shadow-sm overflow-hidden">
-              <table className="w-full text-sm">
+            <div className="bg-white border border-slate-100 rounded-[2rem] shadow-sm overflow-x-auto">
+              <table className="w-full text-sm min-w-[800px]">
                 <thead>
                   <tr className="border-b border-slate-100 bg-slate-50 text-slate-500 font-bold">
                     <th className="px-6 py-4 text-right">שם</th>
                     <th className="px-6 py-4 text-right">אימייל</th>
                     <th className="px-6 py-4 text-right">טלפון</th>
                     <th className="px-6 py-4 text-right">סוג</th>
+                    <th className="px-6 py-4 text-right">קבוצות</th>
                     <th className="px-6 py-4 text-right">זמינות</th>
                     <th className="px-6 py-4 text-right">פעולות</th>
                   </tr>
@@ -479,6 +490,35 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
                         }`}>
                           {ROLE_LABELS[u.role] || u.role}
                         </span>
+                      </td>
+                      <td className="px-6 py-4">
+                        {(() => {
+                          const resolved = (u.repGroupIds || []).map(gid => groups.find(gr => gr.id === gid)).filter(Boolean) as RepGroup[];
+                          if (resolved.length === 0) return <span className="text-slate-400 text-xs">—</span>;
+                          const PREVIEW = 2;
+                          const visible = resolved.slice(0, PREVIEW);
+                          const hidden = resolved.slice(PREVIEW);
+                          return (
+                            <div className="flex flex-wrap items-center gap-1">
+                              {visible.map(g => (
+                                <span key={g.id} className="px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded-full text-xs font-bold whitespace-nowrap">{g.name}</span>
+                              ))}
+                              {hidden.length > 0 && (
+                                <span
+                                  className="relative group px-2 py-0.5 bg-slate-100 text-slate-500 rounded-full text-xs font-bold cursor-default select-none"
+                                  title={hidden.map(g => g.name).join('، ')}
+                                >
+                                  +{hidden.length}
+                                  <span className="absolute bottom-full right-0 mb-2 hidden group-hover:flex flex-col gap-1 bg-white border border-slate-200 rounded-xl shadow-lg p-2 z-50 min-w-max">
+                                    {hidden.map(g => (
+                                      <span key={g.id} className="px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded-full text-xs font-bold whitespace-nowrap">{g.name}</span>
+                                    ))}
+                                  </span>
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </td>
                       <td className="px-6 py-4">
                         {(() => {
@@ -535,34 +575,66 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
             </div>
           ) : (
             <div className="bg-white border border-slate-100 rounded-[2rem] shadow-sm overflow-hidden">
-              {groups.map((g, i) => (
-                <div
-                  key={g.id}
-                  className={`flex items-center justify-between px-6 py-4 ${
-                    i < groups.length - 1 ? 'border-b border-slate-50' : ''
-                  } hover:bg-slate-50 transition-colors`}
-                >
-                  <span className="font-bold text-slate-900">{g.name}</span>
-                  <div className="flex items-center gap-1">
-                    <button
-                      onClick={() => openGroupSettings(g)}
-                      className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all"
-                      title="הגדרות כלליות"
-                    >
-                      <Settings size={16} />
-                    </button>
-                  </div>
-                  {can('rep_groups.delete') && (
-                  <button
-                    onClick={() => setDeletingGroupId(g.id)}
-                    className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
-                    title="מחיקת קבוצה"
+              {groups.map((g, i) => {
+                const groupReps = users.filter(u => u.repGroupIds?.includes(g.id));
+                return (
+                  <div
+                    key={g.id}
+                    className={`flex items-start justify-between px-6 py-4 ${
+                      i < groups.length - 1 ? 'border-b border-slate-50' : ''
+                    } hover:bg-slate-50 transition-colors`}
                   >
-                    <Trash2 size={16} />
-                  </button>
-                  )}
-                </div>
-              ))}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-slate-900">{g.name}</span>
+                        {groupReps.length > 0 && (
+                          <span className="px-2 py-0.5 bg-slate-100 text-slate-500 rounded-full text-xs font-bold">{groupReps.length}</span>
+                        )}
+                      </div>
+                      <div className="flex flex-wrap gap-1 mt-2">
+                        {groupReps.length === 0 ? (
+                          <span className="text-xs text-slate-400">אין נציגים משויכים</span>
+                        ) : (
+                          <>
+                            {(expandedGroups.has(g.id) ? groupReps : groupReps.slice(0, REPS_PREVIEW)).map(u => (
+                              <span key={u.id} className="inline-flex items-center gap-1 px-2 py-0.5 bg-slate-100 text-slate-600 rounded-full text-xs font-bold">
+                                <span className={`inline-block h-1.5 w-1.5 rounded-full ${AVAILABILITY_LABELS[u.availability_status || 'available'].dot}`}></span>
+                                {u.name}
+                              </span>
+                            ))}
+                            {groupReps.length > REPS_PREVIEW && (
+                              <button
+                                onClick={() => toggleGroupExpanded(g.id)}
+                                className="px-2 py-0.5 bg-blue-50 text-blue-600 rounded-full text-xs font-bold hover:bg-blue-100 transition-colors"
+                              >
+                                {expandedGroups.has(g.id) ? 'הצג פחות ↑' : `+ ${groupReps.length - REPS_PREVIEW} נוספים`}
+                              </button>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0 mr-4">
+                      <button
+                        onClick={() => openGroupSettings(g)}
+                        className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all"
+                        title="הגדרות כלליות"
+                      >
+                        <Settings size={16} />
+                      </button>
+                      {can('rep_groups.delete') && (
+                      <button
+                        onClick={() => setDeletingGroupId(g.id)}
+                        className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
+                        title="מחיקת קבוצה"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
         </>
@@ -583,6 +655,11 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
                 <X size={20} />
               </button>
             </div>
+            {availableUserTypes.length === 0 && (
+              <div className="mb-4 p-3 bg-amber-50 text-amber-700 rounded-xl text-sm font-bold">
+                לא הוגדרו סוגי משתמשים. יש להגדיר לפחות סוג משתמש אחד לפני הוספת נציגים.
+              </div>
+            )}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               {/* Name */}
               <div>
