@@ -141,6 +141,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
   // Edit Mode
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState<Partial<User>>({});
+  const [showPassword, setShowPassword] = useState(false);
   
   // Dialog360 Templates
   const [dialog360Templates, setDialog360Templates] = useState<any[]>([]);
@@ -318,6 +319,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
       setSelectedUser(data.user);
       setEditForm({});
       setIsEditing(false);
+      setShowPassword(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load details');
     }
@@ -568,7 +570,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
 
       const payload = {
         ...editForm,
-        custom_limits: cleanLimits
+        custom_limits: cleanLimits,
+        user_type_id: editForm.user_type_id ? editForm.user_type_id._id : null
       };
 
       console.log('[AdminPanel] Updating user with payload:', payload);
@@ -1832,16 +1835,40 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                                 <div className="flex flex-col gap-2">
                                     <label className="text-xs font-bold text-slate-400 flex items-center gap-2"><Lock size={12} /> סיסמה</label>
                                     {isEditing ? (
-                                        <input
-                                            type="text"
-                                            className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-sky-500 outline-none transition-all font-mono"
-                                            value={editForm.password || ''}
-                                            onChange={e => setEditForm(prev => ({ ...prev, password: e.target.value }))}
-                                            placeholder="סיסמת המשתמש"
-                                        />
+                                        <div className="relative">
+                                            <input
+                                                type={showPassword ? 'text' : 'password'}
+                                                className="w-full p-3 pr-10 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-sky-500 outline-none transition-all font-mono"
+                                                value={editForm.password || ''}
+                                                onChange={e => setEditForm(prev => ({ ...prev, password: e.target.value }))}
+                                                placeholder="סיסמת המשתמש"
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={() => setShowPassword(p => !p)}
+                                                className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
+                                                title={showPassword ? 'הסתר סיסמה' : 'הצג סיסמה'}
+                                            >
+                                                {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                                            </button>
+                                        </div>
                                     ) : (
-                                        <div className="text-slate-800 font-medium text-lg truncate select-all px-2 font-mono bg-slate-50 p-3 rounded-xl" title={selectedUser.password || ''}>
-                                            {selectedUser.password || '-'}
+                                        <div className="relative">
+                                            <div className="font-mono bg-slate-50 p-3 pr-10 rounded-xl border border-slate-100 text-slate-800 text-sm select-all tracking-widest">
+                                                {selectedUser.password
+                                                    ? (showPassword ? selectedUser.password : '••••••••••••')
+                                                    : '-'}
+                                            </div>
+                                            {selectedUser.password && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setShowPassword(p => !p)}
+                                                    className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
+                                                    title={showPassword ? 'הסתר סיסמה' : 'הצג סיסמה'}
+                                                >
+                                                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                                                </button>
+                                            )}
                                         </div>
                                     )}
                                 </div>
@@ -1932,6 +1959,32 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                                             <div className="w-full bg-slate-50 px-4 py-3 rounded-xl border border-slate-100 text-slate-800 font-bold text-sm flex justify-between items-center">
                                                 {(selectedUser.role === 'rep' || selectedUser.role === 'rep_manager') ? '—' : (selectedUser.account_type || '—')}
                                                 {selectedUser.role !== 'rep' && selectedUser.role !== 'rep_manager' && <Star size={16} className="text-amber-400 fill-amber-400" />}
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-400 mb-2 flex items-center gap-1"><Shield size={12} /> סוג משתמש / הרשאות</label>
+                                        {isEditing ? (
+                                            <select
+                                                className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none cursor-pointer"
+                                                value={editForm.user_type_id?._id || ''}
+                                                onChange={e => {
+                                                    const selected = createUserTypes.find(ut => ut._id === e.target.value);
+                                                    setEditForm(prev => ({
+                                                        ...prev,
+                                                        user_type_id: selected ? { _id: selected._id, name: selected.name, system_role: selected.system_role } : null
+                                                    }));
+                                                }}
+                                            >
+                                                <option value="">— ללא סוג מוגדר</option>
+                                                {createUserTypes.map(ut => (
+                                                    <option key={ut._id} value={ut._id}>{ut.name}</option>
+                                                ))}
+                                            </select>
+                                        ) : (
+                                            <div className="w-full bg-slate-50 px-4 py-3 rounded-xl border border-slate-100 text-slate-800 font-bold text-sm flex justify-between items-center">
+                                                {selectedUser.user_type_id?.name || '—'}
+                                                {selectedUser.user_type_id && <Shield size={14} className="text-purple-400" />}
                                             </div>
                                         )}
                                     </div>
