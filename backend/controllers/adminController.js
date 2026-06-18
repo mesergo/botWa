@@ -231,7 +231,7 @@ export const getUserDetails = async (req, res) => {
 export const updateUser = async (req, res) => {
   try {
     const { userId } = req.params;
-    const { name, email, phone, password, status, account_type, custom_limits, dialog360_bot_id } = req.body;
+    const { name, email, phone, password, status, account_type, custom_limits, dialog360_bot_id, user_type_id } = req.body;
     
     console.log('[Admin] Updating user:', userId, 'with data:', { ...req.body, password: password ? '***' : undefined });
     
@@ -249,6 +249,19 @@ export const updateUser = async (req, res) => {
     if (account_type) user.account_type = account_type;
     if (dialog360_bot_id !== undefined) user.dialog360_bot_id = dialog360_bot_id;
     
+    // Update user type / permissions
+    if (user_type_id !== undefined) {
+      if (user_type_id) {
+        const userType = await UserType.findById(user_type_id);
+        if (!userType) return res.status(400).json({ error: 'סוג משתמש לא נמצא' });
+        user.user_type_id = user_type_id;
+        // Sync the legacy role field from the user type's system_role
+        if (userType.system_role) user.role = userType.system_role;
+      } else {
+        user.user_type_id = null;
+      }
+    }
+    
     // Update custom limits if provided
     if (custom_limits) {
       user.custom_limits = {
@@ -258,6 +271,7 @@ export const updateUser = async (req, res) => {
     }
     
     await user.save();
+    await user.populate('user_type_id', 'name system_role');
     
     console.log('[Admin] User saved successfully. dialog360_bot_id:', user.dialog360_bot_id);
     
@@ -284,6 +298,7 @@ export const updateUser = async (req, res) => {
         status: user.status,
         api_token: user.token,
         dialog360_bot_id: user.dialog360_bot_id,
+        user_type_id: user.user_type_id || null,
         custom_limits: user.custom_limits,
         limits_in_effect: limits,
         createdAt: user.createdAt,
