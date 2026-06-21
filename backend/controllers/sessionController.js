@@ -1105,13 +1105,28 @@ export const sendAgentMessage = async (req, res) => {
       const waMessages = hasMedia
         ? [{ type: mediaType === 'video' ? 'Video' : mediaType === 'document' ? 'Document' : 'Image', url: mediaUrl, text: msgText, filename: mediaFilename || 'file' }]
         : [{ type: 'Text', text: msgText }];
-      console.log(`[sendAgentMessage] 📤 Sending ${hasMedia ? `MEDIA (${mediaType})` : 'TEXT'} | phone=${normalizedPhone}`);
+      console.log(`\n${'─'.repeat(60)}`);
+      console.log(`[AGENT-SEND] 📤 Agent → Customer`);
+      console.log(`[AGENT-SEND]    session id : ${id}`);
+      console.log(`[AGENT-SEND]    phone      : ${normalizedPhone}`);
+      console.log(`[AGENT-SEND]    type       : ${hasMedia ? `MEDIA (${mediaType})` : 'TEXT'}`);
+      if (hasMedia) {
+        console.log(`[AGENT-SEND]    media url  : ${mediaUrl}`);
+        console.log(`[AGENT-SEND]    filename   : ${mediaFilename || '—'}`);
+        console.log(`[AGENT-SEND]    caption    : ${msgText || '(none)'}`);
+      } else {
+        console.log(`[AGENT-SEND]    message    : ${msgText.substring(0, 100)}`);
+      }
+      console.log(`[AGENT-SEND]    wa payload : ${JSON.stringify(waMessages[0])}`);
       try {
         waSent = await pushMessagesToWhatsApp(normalizedPhone, waMessages, user);
+        console.log(`[AGENT-SEND] ${waSent ? '✅ WhatsApp delivered' : '❌ WhatsApp delivery FAILED'}`);
+        console.log(`${'─'.repeat(60)}\n`);
         if (!waSent) waError = 'WhatsApp delivery failed';
       } catch (waErr) {
         waError = waErr.message;
-        console.error(`[sendAgentMessage] ❌ WhatsApp exception:`, waErr.message);
+        console.error(`[AGENT-SEND] ❌ WhatsApp exception:`, waErr.message);
+        console.log(`${'─'.repeat(60)}\n`);
       }
     }
 

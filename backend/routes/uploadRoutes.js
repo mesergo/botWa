@@ -88,8 +88,14 @@ const uploadImageMulter = multer({
 });
 
 router.post('/upload-image', uploadImageMulter.single('file'), (req, res) => {
+  console.log(`\n${'─'.repeat(60)}`);
+  console.log(`[UploadImage] 📥 POST /api/upload-image — request received`);
+  console.log(`[UploadImage]    caller IP   : ${req.ip || req.connection?.remoteAddress || 'unknown'}`);
+  console.log(`[UploadImage]    content-type: ${req.headers['content-type'] || 'none'}`);
+  console.log(`[UploadImage]    user-agent  : ${req.headers['user-agent'] || 'none'}`);
   try {
     if (!req.file) {
+      console.error(`[UploadImage] ❌ No file in request`);
       return res.status(400).json({ success: false, message: 'Missing file' });
     }
 
@@ -97,7 +103,13 @@ router.post('/upload-image', uploadImageMulter.single('file'), (req, res) => {
     const host = req.get('host');
     const url = `${protocol}://${host}/uploads/${req.file.filename}`;
 
-    console.log(`[UploadImage] dialog360 media upload | filename=${req.file.filename} | mime=${req.file.mimetype} | size=${req.file.size}`);
+    console.log(`[UploadImage] ✅ File saved`);
+    console.log(`[UploadImage]    original name: ${req.file.originalname}`);
+    console.log(`[UploadImage]    saved as     : ${req.file.filename}`);
+    console.log(`[UploadImage]    mime         : ${req.file.mimetype}`);
+    console.log(`[UploadImage]    size         : ${(req.file.size / 1024).toFixed(1)} KB`);
+    console.log(`[UploadImage]    public URL   : ${url}`);
+    console.log(`${'─'.repeat(60)}\n`);
 
     res.json({
       success: true,
@@ -105,7 +117,7 @@ router.post('/upload-image', uploadImageMulter.single('file'), (req, res) => {
       mime: req.file.mimetype
     });
   } catch (error) {
-    console.error('[UploadImage] Error:', error);
+    console.error(`[UploadImage] ❌ Exception:`, error);
     res.status(500).json({ success: false, message: 'Upload failed' });
   }
 });

@@ -31,6 +31,7 @@ const detectMediaType = (text) => {
   if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) return 'Image';
   if (['mp4', 'mov', 'avi', 'mkv', 'webm'].includes(ext)) return 'Video';
   if (['pdf', 'doc', 'docx', 'xls', 'xlsx', 'txt', 'csv', 'zip'].includes(ext)) return 'Document';
+  console.log(`[detectMediaType] 🔍 URL has unknown extension: .${ext} — treating as text | url=${text.substring(0, 80)}`);
   return null;
 };
 
@@ -1169,11 +1170,18 @@ export const respondToMessage = async (req, res) => {
         // Active agent — record user message only, return empty bot response
         agentCheckSession.process_history = agentCheckSession.process_history || [];
         const mediaType = detectMediaType(String(text));
+        console.log(`\n${'═'.repeat(60)}`);
+        console.log(`[BOT-MEDIA] 📨 Incoming from customer (AGENT MODE)`);
+        console.log(`[BOT-MEDIA]    sender      : ${sender}`);
+        console.log(`[BOT-MEDIA]    session id  : ${agentCheckSession._id}`);
+        console.log(`[BOT-MEDIA]    text/url    : ${String(text).substring(0, 120)}`);
+        console.log(`[BOT-MEDIA]    detected as : ${mediaType || 'plain text (UserInput)'}`);
         agentCheckSession.process_history.push(
           mediaType
             ? { type: mediaType, url: String(text), sender: 'user', name: 'משתמש', node_id: 'user', created: new Date().toISOString() }
             : { type: 'UserInput', text: String(text), sender: 'user', name: 'משתמש', node_id: 'user', created: new Date().toISOString() }
         );
+        console.log(`[BOT-MEDIA] ✅ Saved to process_history as ${mediaType || 'UserInput'}`);
         agentCheckSession.markModified('process_history');
         await agentCheckSession.save();
         console.log(`[BOT] 🙋 AGENT MODE active for sessionId=${agentCheckSession._id} phone=${phone} — bot suppressed, message recorded`);
@@ -1362,11 +1370,18 @@ export const respondToMessage = async (req, res) => {
       if (mediaType) {
         // Customer sent a media file via WhatsApp — store as Image/Video/Document and
         // return immediately without advancing the bot flow (caption arrives separately).
+        console.log(`\n${'═'.repeat(60)}`);
+        console.log(`[BOT-MEDIA] 📨 Incoming from customer (BOT MODE)`);
+        console.log(`[BOT-MEDIA]    sender      : ${sender}`);
+        console.log(`[BOT-MEDIA]    session id  : ${session._id}`);
+        console.log(`[BOT-MEDIA]    session status: ${session.status || 'bot'}`);
+        console.log(`[BOT-MEDIA]    url         : ${text.substring(0, 120)}`);
+        console.log(`[BOT-MEDIA]    detected as : ${mediaType}`);
         addToHistory(session, { type: mediaType, url: text }, 'user');
         session.markModified('process_history');
         await session.save();
-        console.log(`[BOT] 📎 Media received from user | type=${mediaType} | url=${text} | sender=${sender}`);
-        console.log(`${'═'.repeat(80)}\n`);
+        console.log(`[BOT-MEDIA] ✅ Saved to process_history as ${mediaType} | bot flow NOT advanced`);
+        console.log(`${'═'.repeat(60)}\n`);
         return res.json({ StatusId: 1, StatusDescription: 'Media recorded', sender, messages: [] });
       }
       addToHistory(session, { type: 'UserInput', text }, 'user');
@@ -1800,42 +1815,16 @@ export const respondToMessage = async (req, res) => {
 
     const elapsedMs = Date.now() - reqStartedAt;
     console.log(`[BOT] ✅ DONE | phone=${phone} | sender=${sender} | sessionId=${session._id} | msgs=${messages.length} | waPushed=${waPushed} | elapsed=${elapsedMs}ms`);
+    console.log(`${'═'.repeat(80)}\n`);
 
-    // ── Detailed send logging ─────────────────────────────────────────────────
-    const isSimulatorRequest = !sender || sender === 'Simulated' || String(sender).toLowerCase() === 'simulator'
-      || !!(session.parameters && session.parameters._simulatorId);
-    const clientMessages = waPushed ? [] : messages;
-    const clientResponse = {
+    return res.json({
       StatusId: 1,
       StatusDescription: 'Success',
       sender,
-      messages: clientMessages,
+      messages: waPushed ? [] : messages,
       control,
       ...(waPushed && { wa_pushed: true }),
-    };
-    if (isSimulatorRequest) {
-      console.log(`[BOT] 🎮 SIMULATOR RESPONSE`);
-      console.log(`[BOT]    Messages sent to simulator: ${clientMessages.length}`);
-      clientMessages.forEach((msg, i) => {
-        const preview = msg.text ? ` text="${msg.text.substring(0, 100)}"` : '';
-        const opts = msg.options ? ` options=[${(msg.options || []).slice(0, 5).join(', ')}]` : '';
-        console.log(`[BOT]    msg[${i}]: type=${msg.type}${preview}${opts}`);
-      });
-      console.log(`[BOT]    Full response to simulator:`, JSON.stringify(clientResponse).substring(0, 2000));
-    } else {
-      console.log(`[BOT] 📤 SENDING TO CLIENT (WhatsApp/Webhook)`);
-      console.log(`[BOT]    waPushed=${waPushed} — ${waPushed ? 'messages pushed via WhatsApp API → empty array returned to webhook' : 'messages included directly in response'}`);
-      console.log(`[BOT]    Messages in response: ${clientMessages.length}`);
-      clientMessages.forEach((msg, i) => {
-        const preview = msg.text ? ` text="${msg.text.substring(0, 100)}"` : '';
-        const opts = msg.options ? ` options=[${(msg.options || []).slice(0, 5).join(', ')}]` : '';
-        console.log(`[BOT]    msg[${i}]: type=${msg.type}${preview}${opts}`);
-      });
-      console.log(`[BOT]    Full response to client:`, JSON.stringify(clientResponse).substring(0, 2000));
-    }
-    console.log(`${'═'.repeat(80)}\n`);
-
-    return res.json(clientResponse);
+    });
 
   } catch (error) {
     const elapsedMs = Date.now() - reqStartedAt;

@@ -104,6 +104,7 @@ export const pushMessagesToWhatsApp = async (phone, messages, user = null) => {
 
       case 'Image': {
         if (textBuffer.trim()) { if (await sendOne({ text: textBuffer.trim() })) anySuccess = true; textBuffer = ''; await _sleep(400); }
+        console.log(`[WA-PUSH] 🖼  Sending IMAGE | url=${msg.url?.substring(0, 80)} | caption=${msg.text?.substring(0, 40) || '(none)'}`);
         if (await sendOne({ image: msg.url, text: msg.text || '' })) anySuccess = true;
         await _sleep(600);
         break;
@@ -111,6 +112,7 @@ export const pushMessagesToWhatsApp = async (phone, messages, user = null) => {
 
       case 'Video': {
         if (textBuffer.trim()) { if (await sendOne({ text: textBuffer.trim() })) anySuccess = true; textBuffer = ''; await _sleep(400); }
+        console.log(`[WA-PUSH] 🎬 Sending VIDEO | url=${msg.url?.substring(0, 80)} | caption=${msg.text?.substring(0, 40) || '(none)'}`);
         if (await sendOne({ video: msg.url, text: msg.text || '' })) anySuccess = true;
         await _sleep(600);
         break;
@@ -118,6 +120,7 @@ export const pushMessagesToWhatsApp = async (phone, messages, user = null) => {
 
       case 'Document': {
         if (textBuffer.trim()) { if (await sendOne({ text: textBuffer.trim() })) anySuccess = true; textBuffer = ''; await _sleep(400); }
+        console.log(`[WA-PUSH] 📄 Sending DOCUMENT | url=${msg.url?.substring(0, 80)} | filename=${msg.filename || 'file'}`);
         if (await sendOne({ file: msg.url, filename: msg.filename || 'file', text: msg.text || '' })) anySuccess = true;
         await _sleep(600);
         break;
