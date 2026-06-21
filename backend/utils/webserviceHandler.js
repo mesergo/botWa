@@ -101,6 +101,17 @@ export const handleWebService = async (node, session, userInput = null) => {
         process_history: session.process_history || []
       };
 
+      // ── Detailed request logging ──────────────────────────────────────────
+      const payloadStr = JSON.stringify(payload);
+      console.log(`\n${'─'.repeat(60)}`);
+      console.log(`[WS] 📤 REQUEST (attempt ${attempt}/${maxRetries})`);
+      console.log(`[WS]    URL      : ${url}`);
+      console.log(`[WS]    Method   : POST`);
+      console.log(`[WS]    Headers  : Content-Type=application/json | User-Agent=ChatBot/1.0`);
+      console.log(`[WS]    Payload  (${payloadStr.length} bytes):`);
+      console.log(`[WS]    ${payloadStr.substring(0, 2000)}${payloadStr.length > 2000 ? '\n[WS]    ...(truncated)' : ''}`);
+      console.log(`${'─'.repeat(60)}`);
+
       // Create abort controller for timeout
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -133,7 +144,14 @@ export const handleWebService = async (node, session, userInput = null) => {
         }
 
         const data = await response.json();
-        console.log('[WS] ◀◀◀ Received response:', JSON.stringify(data).substring(0, 500));
+        const responseStr = JSON.stringify(data);
+        console.log(`\n${'─'.repeat(60)}`);
+        console.log(`[WS] ◀◀◀ RESPONSE (attempt ${attempt}/${maxRetries})`);
+        console.log(`[WS]    HTTP Status  : ${response.status} ${response.statusText}`);
+        console.log(`[WS]    Content-Type : ${response.headers.get('content-type') || '(none)'}`);
+        console.log(`[WS]    Body (${responseStr.length} bytes):`);
+        console.log(`[WS]    ${responseStr.substring(0, 2000)}${responseStr.length > 2000 ? '\n[WS]    ...(truncated)' : ''}`);
+        console.log(`${'─'.repeat(60)}`);
         
         // Validate response structure
         if (!data || typeof data !== 'object') {
@@ -271,14 +289,19 @@ export const handleWebService = async (node, session, userInput = null) => {
         session.waiting_text_input = waitingInput;
         session.waiting_webservice = waitingInput;
 
-        console.log('[WS] 📤 Returning result:', {
-          messageCount: messages.length,
-          messageTypes: messages.map(m => m.type),
-          returnValue,
-          waitingInput,
-          session_waiting_text_input: session.waiting_text_input,
-          session_waiting_webservice: session.waiting_webservice
+        console.log(`\n${'─'.repeat(60)}`);
+        console.log(`[WS] ✅ SUCCESS — result to caller`);
+        console.log(`[WS]    Messages count : ${messages.length}`);
+        console.log(`[WS]    Message types  : [${messages.map(m => m.type).join(', ')}]`);
+        console.log(`[WS]    ReturnValue    : ${JSON.stringify(returnValue)}`);
+        console.log(`[WS]    WaitingInput   : ${waitingInput}`);
+        console.log(`[WS]    GotoLabel      : ${gotoLabel || '(none)'}`);
+        messages.forEach((msg, i) => {
+          const preview = msg.text ? ` text="${msg.text.substring(0, 80)}"` : '';
+          const opts = msg.options ? ` options=[${(msg.options || []).slice(0, 5).join(', ')}]` : '';
+          console.log(`[WS]    msg[${i}]: type=${msg.type}${preview}${opts}`);
         });
+        console.log(`${'─'.repeat(60)}`);
 
         // Success! Return the result
         return {

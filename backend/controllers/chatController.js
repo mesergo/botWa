@@ -1800,16 +1800,42 @@ export const respondToMessage = async (req, res) => {
 
     const elapsedMs = Date.now() - reqStartedAt;
     console.log(`[BOT] ✅ DONE | phone=${phone} | sender=${sender} | sessionId=${session._id} | msgs=${messages.length} | waPushed=${waPushed} | elapsed=${elapsedMs}ms`);
-    console.log(`${'═'.repeat(80)}\n`);
 
-    return res.json({
+    // ── Detailed send logging ─────────────────────────────────────────────────
+    const isSimulatorRequest = !sender || sender === 'Simulated' || String(sender).toLowerCase() === 'simulator'
+      || !!(session.parameters && session.parameters._simulatorId);
+    const clientMessages = waPushed ? [] : messages;
+    const clientResponse = {
       StatusId: 1,
       StatusDescription: 'Success',
       sender,
-      messages: waPushed ? [] : messages,
+      messages: clientMessages,
       control,
       ...(waPushed && { wa_pushed: true }),
-    });
+    };
+    if (isSimulatorRequest) {
+      console.log(`[BOT] 🎮 SIMULATOR RESPONSE`);
+      console.log(`[BOT]    Messages sent to simulator: ${clientMessages.length}`);
+      clientMessages.forEach((msg, i) => {
+        const preview = msg.text ? ` text="${msg.text.substring(0, 100)}"` : '';
+        const opts = msg.options ? ` options=[${(msg.options || []).slice(0, 5).join(', ')}]` : '';
+        console.log(`[BOT]    msg[${i}]: type=${msg.type}${preview}${opts}`);
+      });
+      console.log(`[BOT]    Full response to simulator:`, JSON.stringify(clientResponse).substring(0, 2000));
+    } else {
+      console.log(`[BOT] 📤 SENDING TO CLIENT (WhatsApp/Webhook)`);
+      console.log(`[BOT]    waPushed=${waPushed} — ${waPushed ? 'messages pushed via WhatsApp API → empty array returned to webhook' : 'messages included directly in response'}`);
+      console.log(`[BOT]    Messages in response: ${clientMessages.length}`);
+      clientMessages.forEach((msg, i) => {
+        const preview = msg.text ? ` text="${msg.text.substring(0, 100)}"` : '';
+        const opts = msg.options ? ` options=[${(msg.options || []).slice(0, 5).join(', ')}]` : '';
+        console.log(`[BOT]    msg[${i}]: type=${msg.type}${preview}${opts}`);
+      });
+      console.log(`[BOT]    Full response to client:`, JSON.stringify(clientResponse).substring(0, 2000));
+    }
+    console.log(`${'═'.repeat(80)}\n`);
+
+    return res.json(clientResponse);
 
   } catch (error) {
     const elapsedMs = Date.now() - reqStartedAt;
