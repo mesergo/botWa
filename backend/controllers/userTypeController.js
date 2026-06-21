@@ -53,7 +53,10 @@ export const updateUserType = async (req, res) => {
     if (allowed_user_type_ids !== undefined) {
       userType.allowed_user_type_ids = Array.isArray(allowed_user_type_ids) ? allowed_user_type_ids : [];
     }
-    if (permissions) userType.permissions = permissions;
+    if (permissions) {
+      userType.permissions = permissions;
+      userType.markModified('permissions'); // ensure Mongoose detects nested object change
+    }
 
     await userType.save();
     const updated = await UserType.findById(userType._id).populate('allowed_user_type_ids', 'name system_role');

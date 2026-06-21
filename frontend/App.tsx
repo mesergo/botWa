@@ -166,6 +166,8 @@ const FlowBuilder: React.FC = () => {
   const processNodesCacheRef = useRef<Record<string, any[]>>({});
   const pendingFocusNodeIdRef = useRef<string | null>(null);
   const [globalSearchTrigger, setGlobalSearchTrigger] = useState(0);
+  // Signals that the next nodes update is a fresh bot load and needs fitView
+  const pendingFitViewRef = useRef(false);
 
   const [authForm, setAuthForm] = useState({ name: '', email: '', password: '' });
   const [authErrors, setAuthErrors] = useState<Record<string, string>>({});
@@ -242,6 +244,16 @@ const FlowBuilder: React.FC = () => {
       const check = (val?: string) => typeof val === 'string' && val.toLowerCase().includes(q);
       const reasons: string[] = [];
 
+      // ID search: when query starts with #, match by serialId across all node types
+      if (q.startsWith('#')) {
+        const numPart = q.slice(1);
+        const sid = typeof d.serialId === 'string' ? d.serialId.toLowerCase() : '';
+        const sidNumPart = sid.replace(/^[^0-9]*/, '');
+        if (numPart && sidNumPart.includes(numPart)) {
+          reasons.push(`serialId: "${d.serialId}"`);
+        }
+      }
+
       // Only search fields that are actually user-editable for each node type
       switch (node.type as NodeType) {
         case NodeType.INPUT_TEXT:
@@ -283,7 +295,7 @@ const FlowBuilder: React.FC = () => {
             reasons.push(`options`);
           break;
         case NodeType.FIXED_PROCESS:
-          // Do not include fixed-process nodes in search results (name comes from the process definition, not user input)
+          // Included in results only when searching by #ID (handled above)
           break;
         default:
           if (check(d.label))   reasons.push(`label: "${d.label}"`);
@@ -318,6 +330,20 @@ const FlowBuilder: React.FC = () => {
       }
     }
   }, [currentSearchIndex, searchResults, reactFlowInstance, nodes]);
+
+  // After a bot switch (enterBot), wait for the new nodes to arrive then fitView
+  useEffect(() => {
+    if (!pendingFitViewRef.current || nodes.length === 0) return;
+    pendingFitViewRef.current = false;
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() =>
+        requestAnimationFrame(() => {
+          reactFlowInstance?.fitView({ padding: 0.5, duration: 0 });
+          requestAnimationFrame(() => requestAnimationFrame(() => setIsFlowTransitioning(false)));
+        })
+      )
+    );
+  }, [nodes, reactFlowInstance]);
 
   // --- Pre-fetch process nodes into cache when fixedProcesses list changes ---
   useEffect(() => {
@@ -1664,12 +1690,15 @@ const FlowBuilder: React.FC = () => {
     }
   };
 
-  const enterBot = (bot: BotFlow) => {
+  const enterBot = useCallback((bot: BotFlow) => {
+    setIsFlowTransitioning(true);  // show spinner while loading
+    pendingFitViewRef.current = true;  // signal: next nodes update needs fitView
+    setNodes([]);   // clear stale nodes so fitView has no old canvas to inherit
+    setEdges([]);
     setActiveProcessId(null);
-    setSelectedBot(bot);
+    setSelectedBot(bot);  // triggers useEffect → loadFlow (single call)
     setViewMode('editor');
-    loadFlow(bot.id);
-  };
+  }, []);
 
   /**
    * Flush any pending sync BEFORE changing activeProcessId/viewMode.
@@ -1816,7 +1845,7 @@ const FlowBuilder: React.FC = () => {
   }, [simulatorFixedProcessNodeId, simulatorActiveNodeId, reactFlowInstance, nodes]);
 
   const nodesWithSearch = useMemo(() => nodes.map(n => ({
-    ...n, data: { ...n.data, groups, repGroups, repUsers, searchQuery, isCurrentMatch: searchResults[currentSearchIndex] === n.id, isSimulatorActive: n.id === simulatorActiveNodeId || n.id === simulatorFixedProcessNodeId }
+    ...n, data: { ...n.data, groups, repGroups, repUsers, searchQuery, isCurrentMatch: searchResults[currentSearchIndex] === n.id, isSearchMatch: searchResults.includes(n.id), isSimulatorActive: n.id === simulatorActiveNodeId || n.id === simulatorFixedProcessNodeId }
   })), [nodes, groups, repGroups, repUsers, searchQuery, searchResults, currentSearchIndex, simulatorActiveNodeId, simulatorFixedProcessNodeId]);
 
   const openPublishModal = useCallback(() => {
@@ -1960,8 +1989,7 @@ const FlowBuilder: React.FC = () => {
           onOpenSessions={() => { setSessionsOwnOnly(true); setViewMode('sessions'); }}
           onOpenGroups={() => setViewMode('groups')}
           onStopImpersonation={handleStopImpersonation}
-          onConnectFacebook={handleConnectFacebook}
-          onUpdateBotPublicId={handleUpdateBotPublicId}
+          onConnectFacebook={(can('bots.publish') || currentUser?.isImpersonating) ? handleConnectFacebook : undefined}
           onUpdateAvailability={handleUpdateAvailability}
           token={token}
           initialTab={dashboardInitialTab}
@@ -2281,7 +2309,7 @@ const FlowBuilder: React.FC = () => {
             await handleUpdateBotPublicId(id, publicId);
             setSelectedBot(prev => prev ? { ...prev, public_id: publicId } : null);
           }}
-          onConnectFacebook={handleConnectFacebook}
+          onConnectFacebook={(can('bots.publish') || currentUser?.isImpersonating) ? handleConnectFacebook : undefined}
         />
       )}
 

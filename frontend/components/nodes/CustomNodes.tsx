@@ -241,7 +241,7 @@ export const StartNode = (props: any) => (
 );
 
 export const InputTextNode = (props: any) => (
-  <BaseNode id={props.id} title="קלט: טקסט" icon={<Type size={20} />} type={NodeType.INPUT_TEXT} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive}>
+  <BaseNode id={props.id} title="קלט: טקסט" icon={<Type size={20} />} type={NodeType.INPUT_TEXT} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} isSearchMatch={props.data.isSearchMatch}>
     <InputFieldWrapper label="שאלה מהבוט">
       <SearchableInput value={props.data.label} onChange={(v: string) => props.data.onChange({ label: v })} placeholder="מה השם שלך?" searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
     </InputFieldWrapper>
@@ -272,7 +272,7 @@ export const InputTextNode = (props: any) => (
 );
 
 export const InputDateNode = (props: any) => (
-  <BaseNode id={props.id} title="קלט: תאריך" icon={<Calendar size={20} />} type={NodeType.INPUT_DATE} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive}>
+  <BaseNode id={props.id} title="קלט: תאריך" icon={<Calendar size={20} />} type={NodeType.INPUT_DATE} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} isSearchMatch={props.data.isSearchMatch}>
     <InputFieldWrapper label="בקשת תאריך">
       <SearchableInput value={props.data.label} onChange={(v: string) => props.data.onChange({ label: v })} placeholder="מתי תרצה להגיע?" searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
     </InputFieldWrapper>
@@ -283,7 +283,7 @@ export const InputDateNode = (props: any) => (
 );
 
 export const InputFileNode = (props: any) => (
-  <BaseNode id={props.id} title="קלט: קובץ" icon={<Upload size={20} />} type={NodeType.INPUT_FILE} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive}>
+  <BaseNode id={props.id} title="קלט: קובץ" icon={<Upload size={20} />} type={NodeType.INPUT_FILE} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} isSearchMatch={props.data.isSearchMatch}>
     <InputFieldWrapper label="בקשת קובץ">
       <SearchableInput value={props.data.label} onChange={(v: string) => props.data.onChange({ label: v })} placeholder="אנא העלה תמונה" searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
     </InputFieldWrapper>
@@ -291,7 +291,7 @@ export const InputFileNode = (props: any) => (
 );
 
 export const OutputTextNode = (props: any) => (
-  <BaseNode id={props.id} title="הודעת טקסט" icon={<MessageSquare size={20} />} type={NodeType.OUTPUT_TEXT} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive}>
+  <BaseNode id={props.id} title="הודעת טקסט" icon={<MessageSquare size={20} />} type={NodeType.OUTPUT_TEXT} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} isSearchMatch={props.data.isSearchMatch}>
     <InputFieldWrapper label="תוכן ההודעה">
       <SearchableInput isTextArea value={props.data.content} onChange={(v: string) => props.data.onChange({ content: v })} placeholder="היי, איך אני יכול לעזור?" searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
     </InputFieldWrapper>
@@ -349,7 +349,7 @@ export const OutputImageNode = (props: any) => {
   };
   
   return (
-    <BaseNode id={props.id} title="הודעת מדיה" icon={<ImageIcon size={20} />} type={NodeType.OUTPUT_IMAGE} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive}>
+    <BaseNode id={props.id} title="הודעת מדיה" icon={<ImageIcon size={20} />} type={NodeType.OUTPUT_IMAGE} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} isSearchMatch={props.data.isSearchMatch}>
       <InputFieldWrapper label="סוג מדיה">
         <div className="relative">
           <select 
@@ -462,7 +462,7 @@ export const OutputLinkNode = (props: any) => {
   const isVarSyntax = /--[^-]+--/.test(urlValue);
 
   return (
-    <BaseNode id={props.id} title="קישור חיצוני" icon={<ExternalLink size={20} />} type={NodeType.OUTPUT_LINK} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive}>
+    <BaseNode id={props.id} title="קישור חיצוני" icon={<ExternalLink size={20} />} type={NodeType.OUTPUT_LINK} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} isSearchMatch={props.data.isSearchMatch}>
       <InputFieldWrapper label="טקסט הקישור">
         <SearchableInput value={props.data.linkLabel} onChange={(v: string) => props.data.onChange({ linkLabel: v })} placeholder="בקר באתר שלנו" searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
       </InputFieldWrapper>
@@ -518,7 +518,7 @@ export const OutputMenuNode = (props: any) => {
   };
 
   return (
-    <BaseNode id={props.id} title="תפריט בחירה" icon={<List size={20} />} type={NodeType.OUTPUT_MENU} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive}>
+    <BaseNode id={props.id} title="תפריט בחירה" icon={<List size={20} />} type={NodeType.OUTPUT_MENU} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} isSearchMatch={props.data.isSearchMatch}>
       <InputFieldWrapper label="הנחיית בחירה">
         <SearchableInput value={props.data.content} onChange={(v: string) => props.data.onChange({ content: v })} placeholder="בחר בבקשה מהרשימה:" searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
       </InputFieldWrapper>
@@ -613,7 +613,7 @@ export const ActionWebServiceNode = (props: any) => {
   };
 
   return (
-    <BaseNode id={props.id} title="חיבור API" icon={<Globe size={20} />} type={NodeType.ACTION_WEB_SERVICE} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive}>
+    <BaseNode id={props.id} title="חיבור API" icon={<Globe size={20} />} type={NodeType.ACTION_WEB_SERVICE} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} isSearchMatch={props.data.isSearchMatch}>
       <InputFieldWrapper label="כתובת Webhook">
         <SearchableInput value={props.data.url} onChange={(v: string) => props.data.onChange({ url: v })} placeholder="https://api.yourdomain.com" searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
       </InputFieldWrapper>
@@ -657,7 +657,7 @@ export const ActionWebServiceNode = (props: any) => {
 };
 
 export const ActionWaitNode = (props: any) => (
-  <BaseNode id={props.id} title="השהיית מערכת" icon={<Clock size={20} />} type={NodeType.ACTION_WAIT} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive}>
+  <BaseNode id={props.id} title="השהיית מערכת" icon={<Clock size={20} />} type={NodeType.ACTION_WAIT} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} isSearchMatch={props.data.isSearchMatch}>
     <InputFieldWrapper label="זמן המתנה (שניות)">
       <SearchableInput type="number" value={props.data.waitTime?.toString()} onChange={(v: string) => props.data.onChange({ waitTime: parseInt(v) || 0 })} placeholder="למשל: 3" searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
     </InputFieldWrapper>
@@ -665,7 +665,7 @@ export const ActionWaitNode = (props: any) => (
 );
 
 export const FixedProcessNode = (props: any) => (
-  <BaseNode id={props.id} title={`תת תזרים ${props.data.label}`} icon={<Layers size={20} />} type={NodeType.FIXED_PROCESS} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive}>
+  <BaseNode id={props.id} title={`תת תזרים ${props.data.label}`} icon={<Layers size={20} />} type={NodeType.FIXED_PROCESS} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} isSearchMatch={props.data.isSearchMatch}>
     <div className="bg-slate-50 p-5 rounded-2xl border border-slate-100 text-[14px] text-slate-500 font-bold uppercase tracking-widest flex items-center justify-end gap-3 text-right">תת תזרים {props.data.label} <Layers size={20} className="text-slate-400" /></div>
   </BaseNode>
 );
@@ -714,7 +714,7 @@ export const ActionTimeRoutingNode = (props: any) => {
   const nodeTitle = isDateMode ? 'ניתוב לפי תאריך' : 'ניתוב לפי שעות';
 
   return (
-    <BaseNode id={props.id} title={nodeTitle} icon={<Clock size={20} />} type={NodeType.ACTION_TIME_ROUTING} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive}>
+    <BaseNode id={props.id} title={nodeTitle} icon={<Clock size={20} />} type={NodeType.ACTION_TIME_ROUTING} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} isSearchMatch={props.data.isSearchMatch}>
       <div className="space-y-4 relative text-right">
 
         {/* Mode toggle */}
@@ -860,7 +860,7 @@ export const ActionAddToGroupNode = (props: any) => {
   };
 
   return (
-    <BaseNode id={props.id} title={title} icon={icon} type={NodeType.ACTION_ADD_TO_GROUP} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive}>
+    <BaseNode id={props.id} title={title} icon={icon} type={NodeType.ACTION_ADD_TO_GROUP} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} isSearchMatch={props.data.isSearchMatch}>
       <InputFieldWrapper label="סוג פעולה">
         <div className="flex flex-col gap-2 nodrag">
           <label className="flex items-center gap-2 cursor-pointer text-slate-700 text-sm font-medium">
@@ -954,7 +954,7 @@ export const ActionRemoveFromGroupNode = (props: any) => {
   const mode: 'specific' | 'all' = props.data.removeFromGroupMode || 'specific';
 
   return (
-    <BaseNode id={props.id} title="הסר מקבוצה" icon={<UserMinus size={20} />} type={NodeType.ACTION_REMOVE_FROM_GROUP} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive}>
+    <BaseNode id={props.id} title="הסר מקבוצה" icon={<UserMinus size={20} />} type={NodeType.ACTION_REMOVE_FROM_GROUP} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} isSearchMatch={props.data.isSearchMatch}>
       <InputFieldWrapper label="סוג הסרה">
         <div className="flex flex-col gap-2 nodrag">
           <label className="flex items-center gap-2 cursor-pointer text-slate-700 text-sm font-medium">
@@ -1053,6 +1053,9 @@ export const ActionTransferToAgentNode = (props: any) => {
       onDelete={props.data.onDelete}
       serialId={props.data.serialId}
       isSimulatorActive={props.data?.isSimulatorActive}
+      searchQuery={props.data.searchQuery}
+      isCurrentMatch={props.data.isCurrentMatch}
+      isSearchMatch={props.data.isSearchMatch}
     >
       <InputFieldWrapper label="קבוצת נציגים לשיוך">
         <div className="relative">
@@ -1184,7 +1187,7 @@ export const AutomaticResponsesNode = (props: any) => {
   };
 
   return (
-    <BaseNode id={props.id} title="תגובות אוטומטיות" icon={<Zap size={20} />} type={NodeType.AUTOMATIC_RESPONSES} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive}>
+    <BaseNode id={props.id} title="תגובות אוטומטיות" icon={<Zap size={20} />} type={NodeType.AUTOMATIC_RESPONSES} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} isSearchMatch={props.data.isSearchMatch}>
       <div className="space-y-4 relative text-right">
         <label className="block text-[14px] font-bold text-slate-400 uppercase tracking-widest">מילות מפתח ופתיחים</label>
         {/* Always render hidden handles for collapsed options so ReactFlow edges stay connected */}

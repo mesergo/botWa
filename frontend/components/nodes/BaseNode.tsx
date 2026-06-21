@@ -14,9 +14,12 @@ interface BaseNodeProps {
   onDelete?: (id: string) => void;
   serialId?: string;
   isSimulatorActive?: boolean;
+  searchQuery?: string;
+  isCurrentMatch?: boolean;
+  isSearchMatch?: boolean;
 }
 
-const BaseNode: React.FC<BaseNodeProps> = ({ id, title, icon, children, type, selected, onDelete, serialId, isSimulatorActive }) => {
+const BaseNode: React.FC<BaseNodeProps> = ({ id, title, icon, children, type, selected, onDelete, serialId, isSimulatorActive, searchQuery, isCurrentMatch, isSearchMatch }) => {
   const [isHovered, setIsHovered] = useState(false);
   const { setEdges } = useReactFlow();
   const isStart = type === NodeType.START;
@@ -92,7 +95,13 @@ const BaseNode: React.FC<BaseNodeProps> = ({ id, title, icon, children, type, se
       <div className="flex items-center justify-between px-6 py-5 bg-white border-b border-slate-100">
         <div className="flex items-center gap-3">
           {serialId && (
-            <span className={`text-[12px] font-black px-2 py-0.5 rounded-lg bg-slate-50 border border-slate-100 ${theme.iconColor}`}>
+            <span className={`text-[12px] font-black px-2 py-0.5 rounded-lg border transition-colors ${
+              searchQuery?.startsWith('#') && isCurrentMatch
+                ? 'bg-yellow-400 border-yellow-400 text-slate-900'
+                : searchQuery?.startsWith('#') && isSearchMatch
+                  ? 'bg-yellow-200 border-yellow-200 text-slate-900'
+                  : `bg-slate-50 border-slate-100 ${theme.iconColor}`
+            }`}>
               {serialId}
             </span>
           )}

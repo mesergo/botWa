@@ -26,6 +26,8 @@ export function usePermission(currentUser: User | null) {
 }
 
 function roleDefaultCheck(role: string | undefined, key: string): boolean {
+  // admin has all permissions — fallback for old sessions without a permissions object
+  if (role === 'admin') return true;
   const managerKeys = [
     'bots.view_tab','bots.create','bots.edit','bots.delete','bots.settings','bots.publish',
     'sessions.view','sessions.add','sessions.view_all','sessions.templates_as_manager',

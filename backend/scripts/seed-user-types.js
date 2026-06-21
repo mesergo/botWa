@@ -81,24 +81,19 @@ export const seedUserTypes = async () => {
     }
   }
 
-  // Keep seeded allow-list defaults in sync (idempotent)
-  const seeded = await UserType.find({ is_seeded: true }).select('_id system_role').lean();
-  const byRole = Object.fromEntries(seeded.map(t => [t.system_role, t._id]));
+  // Set allowed_user_type_ids defaults ONLY on first-time creation (never overwrite admin changes).
+  const seeded = await UserType.find({ is_seeded: true }).select('_id system_role allowed_user_type_ids').lean();
+  const byRole = Object.fromEntries(seeded.map(t => [t.system_role, t]));
 
-  if (byRole.user) {
-    const allowed = [byRole.rep_manager, byRole.rep].filter(Boolean);
-    await UserType.updateOne({ _id: byRole.user }, { $set: { allowed_user_type_ids: allowed } });
+  if (byRole.user && (!byRole.user.allowed_user_type_ids || byRole.user.allowed_user_type_ids.length === 0)) {
+    const allowed = [byRole.rep_manager?._id, byRole.rep?._id].filter(Boolean);
+    await UserType.updateOne({ _id: byRole.user._id }, { $set: { allowed_user_type_ids: allowed } });
   }
-  if (byRole.admin) {
-    const all = Object.values(byRole).filter(Boolean);
-    await UserType.updateOne({ _id: byRole.admin }, { $set: { allowed_user_type_ids: all } });
+  if (byRole.admin && (!byRole.admin.allowed_user_type_ids || byRole.admin.allowed_user_type_ids.length === 0)) {
+    const all = seeded.map(t => t._id);
+    await UserType.updateOne({ _id: byRole.admin._id }, { $set: { allowed_user_type_ids: all } });
   }
-  if (byRole.rep_manager) {
-    await UserType.updateOne({ _id: byRole.rep_manager }, { $set: { allowed_user_type_ids: [] } });
-  }
-  if (byRole.rep) {
-    await UserType.updateOne({ _id: byRole.rep }, { $set: { allowed_user_type_ids: [] } });
-  }
+  // rep_manager and rep default to empty — no need to update if already empty
 };
 
 export default seedUserTypes;
