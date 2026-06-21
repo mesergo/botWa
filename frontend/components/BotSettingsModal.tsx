@@ -10,7 +10,7 @@ const FacebookIcon: React.FC<{ size?: number; className?: string }> = ({ size = 
 
 interface BotSettingsModalProps {
   bot: BotFlow;
-  currentUser?: { role?: string; isImpersonating?: boolean } | null;
+  currentUser?: { role?: string; isImpersonating?: boolean; permissions?: { bots?: { publish?: boolean } } } | null;
   onClose: () => void;
   onUpdateBotPublicId?: (id: string, publicId: string) => Promise<void>;
   onConnectFacebook?: (bot: BotFlow) => void;
@@ -51,8 +51,7 @@ const BotSettingsModal: React.FC<BotSettingsModalProps> = ({
     }
   };
 
-  const canShowFacebook =
-    !!onConnectFacebook && (currentUser?.role === 'admin' || currentUser?.isImpersonating);
+  const canShowFacebook = !!onConnectFacebook;
 
   return (
     <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[100] p-6" dir="rtl">

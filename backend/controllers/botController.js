@@ -858,7 +858,7 @@ button{background:#2563eb;color:#fff;border:0;padding:12px 28px;border-radius:14
     console.error(`${tag} ❌ Exception:`, err);
     return renderClose('שגיאה לא צפויה', err.message, false);
   }
-};
+}; 
 
 /**
  * Update bot parameters (values filled in from template form).
