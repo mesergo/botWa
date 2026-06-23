@@ -116,33 +116,73 @@ export const pushMessagesToWhatsApp = async (phone, messages, user = null, bot =
   };
 
   let textBuffer = '';
+  let sendItemBuffer = []; // צובר SendItem-ים ללא כפתורים לשליחה בהודעה אחת
   let anySuccess = false;
 
+  const SEND_ITEM_SEPARATOR = '─────────────────────';
+
+  // שולח את כל ה-SendItem-ים הצבורים כהודעה אחת עם קווי הפרדה
+  const flushSendItems = async () => {
+    if (sendItemBuffer.length === 0) return;
+    const combined = sendItemBuffer
+      .map(item => [item.title, item.subtitle].filter(Boolean).join('\n'))
+      .join(`\n${SEND_ITEM_SEPARATOR}\n`);
+    for (const chunk of splitText(combined)) {
+      if (await sendOne({ text: chunk })) anySuccess = true;
+      await _sleep(300);
+    }
+    sendItemBuffer = [];
+    await _sleep(100);
+  };
+
+  // עוזר לשטוף את textBuffer כהודעות טקסט
+  const flushTextBuffer = async () => {
+    if (!textBuffer.trim()) return;
+    for (const chunk of splitText(textBuffer.trim())) {
+      if (await sendOne({ text: chunk })) anySuccess = true;
+      await _sleep(300);
+    }
+    textBuffer = '';
+    await _sleep(100);
+  };
+
   for (const msg of messages) {
+    // לפני כל סוג הודעה שאינו SendItem, שטוף את בופר ה-SendItem-ים
+    if (msg.type !== 'SendItem') await flushSendItems();
+
     switch (msg.type) {
-      case 'Text':
+      case 'Text': {
+        // שטוף כל טקסט צבור קודם לפני הוספת הטקסט החדש, כדי שכל הודעת טקסט תישלח בנפרד
+        await flushTextBuffer();
         if (msg.text) textBuffer += msg.text + '\n';
         break;
+      }
 
       case 'Options': {
-        // Prefer accumulated textBuffer; fall back to text embedded in the Options message.
-        const headerText = textBuffer.trim() || (msg.text && msg.text.trim()) || '';
-        // Interactive messages (text + buttons) have a 1024-char body limit.
-        // If text exceeds that, flush it as plain text chunks first, then send buttons alone.
+        const msgText = msg.text && msg.text.trim() ? msg.text.trim() : '';
+
+        // אם יש טקסט צבור מצומת קודם וגם ל-Options יש שאלה משלו —
+        // שלח את הטקסט הצבור כהודעה נפרדת קודם
+        if (textBuffer.trim() && msgText) {
+          await flushTextBuffer();
+        }
+
+        const headerText = textBuffer.trim() || msgText;
+        // הודעות אינטראקטיביות (טקסט + כפתורים) מוגבלות ל-1024 תווים בגוף
+        // אם הטקסט ארוך מדי, שלח אותו כטקסט רגיל קודם ואז שלח את הכפתורים
         if (headerText.length > WA_MAX_INTERACTIVE_BODY) {
           for (const chunk of splitText(headerText)) {
             if (await sendOne({ text: chunk })) anySuccess = true;
             await _sleep(300);
           }
-          // After flushing long text, still need to send the buttons with a minimal body
-          const btnBodyText = msg.text && msg.text.trim() ? msg.text.trim().substring(0, WA_MAX_INTERACTIVE_BODY) : null;
+          const btnBodyText = msgText ? msgText.substring(0, WA_MAX_INTERACTIVE_BODY) : null;
           if (btnBodyText) {
             if (await sendOne({ text: btnBodyText, buttons: msg.options })) anySuccess = true;
           }
         } else if (headerText) {
           if (await sendOne({ text: headerText, buttons: msg.options })) anySuccess = true;
         } else {
-          // No body text — WhatsApp requires non-empty body; send options as plain text list
+          // אין טקסט — וואטסאפ דורש גוף לא ריק; שלח את האפשרויות כרשימת טקסט
           const fallbackText = msg.options.join('\n');
           if (fallbackText && await sendOne({ text: fallbackText })) anySuccess = true;
         }
@@ -152,7 +192,7 @@ export const pushMessagesToWhatsApp = async (phone, messages, user = null, bot =
       }
 
       case 'Image': {
-        if (textBuffer.trim()) { for (const chunk of splitText(textBuffer.trim())) { if (await sendOne({ text: chunk })) anySuccess = true; await _sleep(300); } textBuffer = ''; await _sleep(100); }
+        await flushTextBuffer();
         console.log(`[WA-PUSH] 🖼  Sending IMAGE | url=${msg.url?.substring(0, 80)} | caption=${msg.text?.substring(0, 40) || '(none)'}`);
         if (await sendOne({ image: msg.url, text: msg.text || '' })) anySuccess = true;
         await _sleep(600);
@@ -160,7 +200,7 @@ export const pushMessagesToWhatsApp = async (phone, messages, user = null, bot =
       }
 
       case 'Video': {
-        if (textBuffer.trim()) { for (const chunk of splitText(textBuffer.trim())) { if (await sendOne({ text: chunk })) anySuccess = true; await _sleep(300); } textBuffer = ''; await _sleep(100); }
+        await flushTextBuffer();
         console.log(`[WA-PUSH] 🎬 Sending VIDEO | url=${msg.url?.substring(0, 80)} | caption=${msg.text?.substring(0, 40) || '(none)'}`);
         if (await sendOne({ video: msg.url, text: msg.text || '' })) anySuccess = true;
         await _sleep(600);
@@ -168,7 +208,7 @@ export const pushMessagesToWhatsApp = async (phone, messages, user = null, bot =
       }
 
       case 'Document': {
-        if (textBuffer.trim()) { for (const chunk of splitText(textBuffer.trim())) { if (await sendOne({ text: chunk })) anySuccess = true; await _sleep(300); } textBuffer = ''; await _sleep(100); }
+        await flushTextBuffer();
         console.log(`[WA-PUSH] 📄 Sending DOCUMENT | url=${msg.url?.substring(0, 80)} | filename=${msg.filename || 'file'}`);
         if (await sendOne({ file: msg.url, filename: msg.filename || 'file', text: msg.text || '' })) anySuccess = true;
         await _sleep(600);
@@ -181,13 +221,21 @@ export const pushMessagesToWhatsApp = async (phone, messages, user = null, bot =
         break;
 
       case 'SendItem': {
-        if (textBuffer.trim()) { for (const chunk of splitText(textBuffer.trim())) { if (await sendOne({ text: chunk })) anySuccess = true; await _sleep(300); } textBuffer = ''; await _sleep(100); }
-        const itemText = [msg.title, msg.subtitle].filter(Boolean).join('\n');
+        // שטוף textBuffer לפני SendItem
+        await flushTextBuffer();
         const btnList = (msg.options || []).map(o =>
           typeof o === 'string' ? o : (o.label || o.text || o.value || String(o))
         );
-        if (await sendOne(btnList.length > 0 ? { text: itemText, buttons: btnList } : { text: itemText })) anySuccess = true;
-        await _sleep(400);
+        if (btnList.length > 0) {
+          // יש כפתורים — שלח מיד כהודעה אינטראקטיבית (שטוף sendItemBuffer קודם)
+          await flushSendItems();
+          const itemText = [msg.title, msg.subtitle].filter(Boolean).join('\n');
+          if (await sendOne({ text: itemText, buttons: btnList })) anySuccess = true;
+          await _sleep(400);
+        } else {
+          // אין כפתורים — צבור עם שאר ה-SendItem-ים לשליחה כהודעה אחת
+          sendItemBuffer.push(msg);
+        }
         break;
       }
 
@@ -196,7 +244,8 @@ export const pushMessagesToWhatsApp = async (phone, messages, user = null, bot =
     }
   }
 
-  // Flush any remaining accumulated text (split if too long)
+  // שטוף שאריות
+  await flushSendItems();
   if (textBuffer.trim()) {
     const chunks = splitText(textBuffer.trim());
     for (let i = 0; i < chunks.length; i++) {
