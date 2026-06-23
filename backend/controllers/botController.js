@@ -82,7 +82,8 @@ export const getBots = async (req, res) => {
         created_at: b.created_at,
         is_default: b.is_default || false,
         display_phone_number: phone,
-        botParams: b.botParams ? Object.fromEntries(b.botParams) : {}
+        botParams: b.botParams ? Object.fromEntries(b.botParams) : {},
+        endpoint: b.endpoint || ''
       };
     }));
   } catch (err) {
@@ -900,6 +901,29 @@ export const updateBotPublicId = async (req, res) => {
     bot.public_id = trimmed;
     await bot.save();
     res.json({ success: true, public_id: bot.public_id });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+/**
+ * Update the bot's endpoint field (admin-impersonating only).
+ */
+export const updateBotEndpoint = async (req, res) => {
+  const { id } = req.params;
+  const { endpoint } = req.body;
+  const userId = req.user.id;
+  let trimmed = String(endpoint ?? '').trim();
+  // Normalize: if the user entered just an ID (no slash), wrap it as dialog360/{id}
+  if (trimmed && !trimmed.includes('/')) {
+    trimmed = `dialog360/${trimmed}`;
+  }
+  try {
+    const bot = await BotFlow.findOne({ _id: id, user_id: userId });
+    if (!bot) return res.status(404).json({ error: 'Bot not found' });
+    bot.endpoint = trimmed;
+    await bot.save();
+    res.json({ success: true, endpoint: bot.endpoint });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

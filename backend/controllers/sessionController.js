@@ -829,13 +829,20 @@ export const transferConversation = async (req, res) => {
       // Send the unavailableMessage to the customer via WhatsApp
       try {
         const owner = await User.findById(ownerId);
+        // Prefer the bot's own endpoint (from the session's flow_id)
+        const transferBot = session.flow_id ? await BotFlow.findById(session.flow_id).select('endpoint').lean() : null;
         let waEndpoint, waToken;
-        if (owner?.dialog360_bot_id) {
+        if (transferBot && transferBot.endpoint) {
+          const rawEndpoint = transferBot.endpoint;
+          waEndpoint = rawEndpoint.includes('/') ? rawEndpoint : `dialog360/${rawEndpoint}`;
+          const botIdPart = waEndpoint.split('/').pop();
+          waToken = crypto.createHash('sha1').update(botIdPart + 'moomoo').digest('hex');
+        } else if (owner?.dialog360_bot_id) {
           waEndpoint = `dialog360/${owner.dialog360_bot_id}`;
           waToken = crypto.createHash('sha1').update(owner.dialog360_bot_id + 'moomoo').digest('hex');
         } else {
-          waEndpoint = process.env.WHATSAPP_ENDPOINT || 'dialog360/65aec7ebf1a1d64f29645fd9';
-          waToken = process.env.WHATSAPP_API_TOKEN || crypto.createHash('sha1').update(waEndpoint + 'moomoo').digest('hex');
+          waEndpoint = null;
+          waToken = null;
         }
         const rawPhone = session.sender || session.customer_phone || '';
         let normalizedPhone = rawPhone.replace(/[^0-9]/g, '');
@@ -974,15 +981,23 @@ export const sendAgentMessage = async (req, res) => {
 
     // Get user (effective company manager) to access Dialog360 credentials
     const user = await User.findById(getEffectiveUserId(req));
-    
+
+    // Load the bot associated with this session for per-bot endpoint
+    const bot = session.flow_id ? await BotFlow.findById(session.flow_id).select('endpoint').lean() : null;
+
     // Build WhatsApp API endpoint and token
     let endpoint, waToken;
-    if (user && user.dialog360_bot_id) {
+    if (bot && bot.endpoint) {
+      const rawEndpoint = bot.endpoint;
+      endpoint = rawEndpoint.includes('/') ? rawEndpoint : `dialog360/${rawEndpoint}`;
+      const botIdPart = endpoint.split('/').pop();
+      waToken = crypto.createHash('sha1').update(botIdPart + 'moomoo').digest('hex');
+    } else if (user && user.dialog360_bot_id) {
       endpoint = `dialog360/${user.dialog360_bot_id}`;
       waToken = crypto.createHash('sha1').update(user.dialog360_bot_id + 'moomoo').digest('hex');
     } else {
-      endpoint = process.env.WHATSAPP_ENDPOINT || 'dialog360/65aec7ebf1a1d64f29645fd9';
-      waToken = process.env.WHATSAPP_API_TOKEN || crypto.createHash('sha1').update(endpoint + 'moomoo').digest('hex');
+      endpoint = null;
+      waToken = null;
     }
 
     // Normalize phone: strip non-digits, ensure 972 country code
@@ -1119,7 +1134,7 @@ export const sendAgentMessage = async (req, res) => {
       }
       console.log(`[AGENT-SEND]    wa payload : ${JSON.stringify(waMessages[0])}`);
       try {
-        waSent = await pushMessagesToWhatsApp(normalizedPhone, waMessages, user);
+        waSent = await pushMessagesToWhatsApp(normalizedPhone, waMessages, user, bot);
         console.log(`[AGENT-SEND] ${waSent ? '✅ WhatsApp delivered' : '❌ WhatsApp delivery FAILED'}`);
         console.log(`${'─'.repeat(60)}\n`);
         if (!waSent) waError = 'WhatsApp delivery failed';
@@ -1233,16 +1248,7 @@ export const sendTemplateToPhone = async (req, res) => {
     const user = await User.findById(getEffectiveUserId(req));
     if (!user) return res.status(404).json({ error: 'User not found' });
 
-    let endpoint, waToken;
-    if (user.dialog360_bot_id) {
-      endpoint = `dialog360/${user.dialog360_bot_id}`;
-      waToken = crypto.createHash('sha1').update(user.dialog360_bot_id + 'moomoo').digest('hex');
-    } else {
-      endpoint = process.env.WHATSAPP_ENDPOINT || 'dialog360/65aec7ebf1a1d64f29645fd9';
-      waToken = process.env.WHATSAPP_API_TOKEN || crypto.createHash('sha1').update(endpoint + 'moomoo').digest('hex');
-    }
-
-    // Normalize phone: ensure 972 country code
+    // Normalize phone first so we can look up the last session
     let normalizedPhone = String(phone).replace(/[^0-9]/g, '');
     normalizedPhone = normalizedPhone.replace(/^972972/, '972');
     if (!normalizedPhone.startsWith('972')) {
@@ -1250,7 +1256,30 @@ export const sendTemplateToPhone = async (req, res) => {
       normalizedPhone = '972' + normalizedPhone;
     }
 
-    console.log(`[sendTemplateToPhone] 📤 phone=${phone} → normalized=${normalizedPhone} | template=${templateData.name} | lang=${templateData.language || 'he'}`);
+    // Find the last session for this phone to determine which bot endpoint to use
+    const collection = mongoose.connection.collection('BotSession');
+    const lastSession = await collection.findOne(
+      { $or: [{ sender: normalizedPhone }, { customer_phone: normalizedPhone }], user_id: String(user._id) },
+      { sort: { created_at: -1 } }
+    );
+    const lastBot = lastSession?.flow_id ? await BotFlow.findById(lastSession.flow_id).select('endpoint').lean() : null;
+    console.log(`[sendTemplateToPhone] 🔍 last session=${lastSession?._id || '(none)'} | lastBot.endpoint=${lastBot?.endpoint || '(none)'}`);
+
+    let endpoint, waToken;
+    if (lastBot && lastBot.endpoint) {
+      const rawEndpoint = lastBot.endpoint;
+      endpoint = rawEndpoint.includes('/') ? rawEndpoint : `dialog360/${rawEndpoint}`;
+      const botIdPart = endpoint.split('/').pop();
+      waToken = crypto.createHash('sha1').update(botIdPart + 'moomoo').digest('hex');
+    } else if (user.dialog360_bot_id) {
+      endpoint = `dialog360/${user.dialog360_bot_id}`;
+      waToken = crypto.createHash('sha1').update(user.dialog360_bot_id + 'moomoo').digest('hex');
+    } else {
+      endpoint = null;
+      waToken = null;
+    }
+
+    console.log(`[sendTemplateToPhone] 📤 phone=${phone} → normalized=${normalizedPhone} | template=${templateData.name} | lang=${templateData.language || 'he'} | endpoint=${endpoint}`);
 
     const waBody = {
       chat: normalizedPhone,
@@ -1348,7 +1377,7 @@ export const sendTemplateToPhone = async (req, res) => {
     }
 
     // Create a BotSession so the contact appears in the sessions list and message is saved
-    const collection = mongoose.connection.collection('BotSession');
+    // (collection is already declared above for the lastSession lookup)
     const sessionDoc = {
       sender: normalizedPhone,
       customer_phone: normalizedPhone,
@@ -1405,15 +1434,22 @@ export const sendAdminMessageToSession = async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    // Build WhatsApp API endpoint and token
+    // Load the bot associated with this session for per-bot endpoint
+    const adminMsgBot = session.flow_id ? await BotFlow.findById(session.flow_id).select('endpoint').lean() : null;
+
+    // Build WhatsApp API endpoint and token — bot.endpoint takes priority
     let endpoint, waToken;
-    if (user.dialog360_bot_id) {
+    if (adminMsgBot && adminMsgBot.endpoint) {
+      const rawEndpoint = adminMsgBot.endpoint;
+      endpoint = rawEndpoint.includes('/') ? rawEndpoint : `dialog360/${rawEndpoint}`;
+      const botIdPart = endpoint.split('/').pop();
+      waToken = crypto.createHash('sha1').update(botIdPart + 'moomoo').digest('hex');
+    } else if (user.dialog360_bot_id) {
       endpoint = `dialog360/${user.dialog360_bot_id}`;
       waToken = crypto.createHash('sha1').update(user.dialog360_bot_id + 'moomoo').digest('hex');
     } else {
-      // Fallback to env variables
-      endpoint = process.env.WHATSAPP_ENDPOINT || 'dialog360/65aec7ebf1a1d64f29645fd9';
-      waToken = process.env.WHATSAPP_API_TOKEN || crypto.createHash('sha1').update(endpoint + 'moomoo').digest('hex');
+      endpoint = null;
+      waToken = null;
     }
 
     // Normalize phone: ensure 972 country code

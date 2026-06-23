@@ -370,8 +370,8 @@ async function processBroadcast(broadcastId, userId, group, contacts, opts) {
       endpoint = `dialog360/${user.dialog360_bot_id}`;
       waToken = crypto.createHash('sha1').update(user.dialog360_bot_id + 'moomoo').digest('hex');
     } else {
-      endpoint = process.env.WHATSAPP_ENDPOINT || 'dialog360/65aec7ebf1a1d64f29645fd9';
-      waToken = process.env.WHATSAPP_API_TOKEN || crypto.createHash('sha1').update(endpoint + 'moomoo').digest('hex');
+      endpoint = null;
+      waToken = null;
     }
 
     let sent = 0;

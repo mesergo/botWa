@@ -207,6 +207,12 @@ const getFlowData = async (flowId, processId = null) => {
       };
     }
     
+    // For action_web_service: exclude the 'default' option from the conditional options
+    // so that findMatchingOption uses the correct indices (matching flowController behaviour).
+    const conditionalOptions = w.type === 'action_web_service'
+      ? nodeOptions.filter(o => o.operator !== 'default')
+      : nodeOptions;
+
     return { 
       id: w.id, 
       type: w.type, 
@@ -215,9 +221,9 @@ const getFlowData = async (flowId, processId = null) => {
         ...metadata,
         label: metadata.label !== undefined ? metadata.label : (w.value || ''), 
         content: metadata.content !== undefined ? metadata.content : (w.value || ''), 
-        options: nodeOptions.length > 0 ? nodeOptions.map(o => o.value) : undefined, 
-        optionOperators: nodeOptions.length > 0 ? nodeOptions.map(o => o.operator || 'eq') : undefined,
-        optionImages: nodeOptions.length > 0 ? nodeOptions.map(o => o.image_url) : undefined,
+        options: conditionalOptions.length > 0 ? conditionalOptions.map(o => o.value) : undefined, 
+        optionOperators: conditionalOptions.length > 0 ? conditionalOptions.map(o => o.operator || 'eq') : undefined,
+        optionImages: conditionalOptions.length > 0 ? conditionalOptions.map(o => o.image_url) : undefined,
         url: metadata.url,
         linkLabel: metadata.linkLabel,
         variableName: metadata.variableName,
@@ -250,6 +256,30 @@ const getFlowData = async (flowId, processId = null) => {
         }
         if (o.operator === 'time_range' || o.operator === 'date_range') rangeIndex++;
       });
+    } else if (w.type === 'action_web_service') {
+      // For action_web_service: build conditional option edges with sequential indices
+      // (excluding 'default'), and build the default exit edge with sourceHandle='default'
+      // so that findNextNode(wsId, edges, 'default') can locate it correctly.
+      const defaultOpts = wOptions.filter(o => o.operator === 'default');
+      const conditionalOpts = wOptions.filter(o => o.operator !== 'default');
+      console.log(`[getFlowData] action_web_service node=${w.id} | DB options (${wOptions.length}): ${wOptions.map(o => o.operator + '→' + (o.next || 'null')).join(', ')}`);
+      conditionalOpts.forEach((o, i) => {
+        if (o.next) {
+          edges.push({ id: `e-${w.id}-opt-${i}`, source: w.id, sourceHandle: `option-${i}`, target: o.next });
+          console.log(`[getFlowData]   conditional edge option-${i} → ${o.next}`);
+        }
+      });
+      defaultOpts.forEach(o => {
+        if (o.next) {
+          edges.push({ id: `e-${w.id}-default-${o.next}`, source: w.id, sourceHandle: 'default', target: o.next });
+          console.log(`[getFlowData]   default edge → ${o.next}`);
+        } else {
+          console.log(`[getFlowData]   ⚠️ default option exists but next=null (not connected in editor!)`);
+        }
+      });
+      if (defaultOpts.length === 0) {
+        console.log(`[getFlowData]   ⚠️ NO default option found in DB for WS node ${w.id} — default exit will be null!`);
+      }
     } else {
       wOptions.forEach((o, i) => { 
         if (o.next) { 
@@ -291,6 +321,12 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
   let depth = 0;
   const maxDepth = 250;
 
+  console.log(`\n${'▶'.repeat(60)}`);
+  console.log(`[WALK] 🚀 START | startNodeId=${startNodeId}`);
+  console.log(`[WALK]    nodes (${nodes.length}): ${nodes.map(n => n.type + '(' + n.id + ')').join(', ')}`);
+  console.log(`[WALK]    edges (${edges.length}): ${edges.map(e => e.source + (e.sourceHandle ? '[' + e.sourceHandle + ']' : '') + '→' + e.target).join(', ')}`);
+  console.log(`${'▶'.repeat(60)}`);
+
   // Helper: end of sub-flow → return to automatic_responses (keep session alive)
   // Mirrors simulator behaviour: flow end does NOT close the session.
   const returnToMenu = () => {
@@ -309,13 +345,20 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
 
   while (currentNodeId && depth < maxDepth) {
     depth++;
+
+    console.log(`[WALK] ➡️  depth=${depth} | currentNodeId=${currentNodeId}`);
     
     const node = nodes.find(n => n.id === currentNodeId);
-    if (!node) break;
+    if (!node) {
+      console.log(`[WALK] ❌ Node NOT FOUND in nodes array: ${currentNodeId}`);
+      break;
+    }
 
     const nodeType = node.type;
     const nodeData = node.data;
     const params = session.parameters || {};
+
+    console.log(`[WALK]    type=${nodeType} | data.content="${String(nodeData.content || '').substring(0, 60)}"`);
 
     // Handle different node types
     switch (nodeType) {
@@ -337,7 +380,9 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
         
         // Check if this is the last node (no outgoing edges)
         const nextNode = findNextNode(currentNodeId, edges);
+        console.log(`[WALK]    output_text → nextNode=${nextNode || '(none — last node)'}`);
         if (!nextNode) {
+          console.log(`[WALK]    ⏹ output_text: no outgoing edge → returnToMenu()`);
           returnToMenu();
           return messages;
         }
@@ -412,7 +457,8 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
           .filter(opt => opt !== 'default')
           .map(opt => String(opt));
         
-        const optionsMsg = { type: 'Options', options, created: new Date().toISOString() };
+        // Embed text inside Options message as fallback (used when textBuffer is empty)
+        const optionsMsg = { type: 'Options', text, options, created: new Date().toISOString() };
         messages.push(optionsMsg);
         addToHistory(session, optionsMsg, currentNodeId);
         
@@ -804,6 +850,7 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
         
         // If waiting for input, stop here (even if this is the last node)
         if (wsResult.waitingInput) {
+          console.log(`[WALK]    action_web_service → waitingInput=true → STOP`);
           session.current_node_id = currentNodeId;
           session.waiting_webservice = true;
           session.waiting_text_input = true;
@@ -814,33 +861,40 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
         if (wsResult.gotoLabel) {
           const gotoNode = nodes.find(n => n.data.label === wsResult.gotoLabel);
           if (gotoNode) {
-            console.log(`[BOT] Goto node "${wsResult.gotoLabel}" (${gotoNode.id})`);
+            console.log(`[WALK]    action_web_service → Goto "${wsResult.gotoLabel}" (${gotoNode.id})`);
             session.waiting_webservice = false;
             currentNodeId = gotoNode.id;
             break;
           }
-          console.warn(`[BOT] Goto target not found: "${wsResult.gotoLabel}"`);
+          console.warn(`[WALK]    action_web_service → Goto target NOT FOUND: "${wsResult.gotoLabel}"`);
         }
         
         // If we have a return value, find matching option
         if (wsResult.returnValue !== null && wsResult.returnValue !== undefined) {
-          console.log(`[BOT] 🔄 WS returnValue=${wsResult.returnValue} — trying to match an option in node ${currentNodeId}`);
+          console.log(`[WALK]    action_web_service → returnValue=${wsResult.returnValue}`);
+          console.log(`[WALK]    node.data.options=${JSON.stringify(node.data.options)} | node.data.optionOperators=${JSON.stringify(node.data.optionOperators)}`);
+          const edgesFromWs = edges.filter(e => e.source === currentNodeId);
+          console.log(`[WALK]    edges from WS node: ${edgesFromWs.map(e => (e.sourceHandle || 'no-handle') + '→' + e.target).join(', ')}`);
           const matchedIdx = findMatchingOption(node, wsResult.returnValue);
           if (matchedIdx !== -1) {
             const nextIdAfterWs = findNextNode(currentNodeId, edges, `option-${matchedIdx}`);
-            console.log(`[BOT] ✅ Matched option-${matchedIdx} → next node: ${nextIdAfterWs}`);
+            console.log(`[WALK]    ✅ Matched option-${matchedIdx} → nextNode=${nextIdAfterWs}`);
             currentNodeId = nextIdAfterWs;
             session.waiting_webservice = false;
             break;
           }
+          console.log(`[WALK]    ⚠️ No option matched returnValue=${wsResult.returnValue} → falling through to default exit`);
         }
         
         // No match or no return value - take default exit
         session.waiting_webservice = false;
+        const allWsEdges = edges.filter(e => e.source === currentNodeId);
+        console.log(`[WALK]    action_web_service → all edges from this node: ${allWsEdges.map(e => (e.sourceHandle || 'no-handle') + '→' + e.target).join(', ')}`);
         const nextNode = findNextNode(currentNodeId, edges, 'default');
-        console.log(`[BOT] ➡️ Taking default exit from WS node → next: ${nextNode}`);
+        console.log(`[WALK]    action_web_service → default exit → nextNode=${nextNode || '(none)'}`);
         
         if (!nextNode) {
+          console.log(`[WALK]    ⏹ action_web_service: no default edge → returnToMenu()`);
           returnToMenu();
           return messages;
         }
@@ -852,30 +906,58 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
       case 'fixed_process': {
         // Load subprocess
         const processId = nodeData.processId;
+        console.log(`\n${'─'.repeat(60)}`);
+        console.log(`[SUB-FLOW] ▶ ENTER fixed_process | fpNode=${currentNodeId} | processId=${processId || '(none)'} | flowId=${flowId}`);
+        console.log(`[SUB-FLOW]   session._id=${session._id} | current_node BEFORE=${session.current_node_id} | stack_before=${JSON.stringify(session.execution_stack || [])}`);
         if (processId) {
           const subFlow = await getFlowData(flowId, processId);
+          console.log(`[SUB-FLOW]   getFlowData(flowId=${flowId}, processId=${processId}) → ${subFlow.nodes.length} nodes, ${subFlow.edges.length} edges`);
+          console.log(`[SUB-FLOW]   node types in sub-flow: ${subFlow.nodes.map(n => n.type + '(' + n.id + ')').join(', ')}`);
+          console.log(`[SUB-FLOW]   edges in sub-flow: ${subFlow.edges.map(e => e.source + '->' + e.target + (e.sourceHandle ? '[' + e.sourceHandle + ']' : '')).join(', ')}`);
           const startNode = subFlow.nodes.find(n => n.type === 'start');
+          console.log(`[SUB-FLOW]   startNode: ${startNode ? startNode.id : '❌ NOT FOUND — sub-flow will be SKIPPED'}`);
           
           if (startNode) {
             // Save parent context
+            const returnToId = findNextNode(currentNodeId, edges);
             const stack = session.execution_stack || [];
-            stack.push({ nodeId: currentNodeId, returnTo: findNextNode(currentNodeId, edges) });
+            stack.push({ nodeId: currentNodeId, returnTo: returnToId });
             session.execution_stack = stack;
+            session.markModified('execution_stack');
+            console.log(`[SUB-FLOW]   pushed execution_stack | nodeId=${currentNodeId} | returnTo=${returnToId} | stackSize=${stack.length}`);
             
             // Process subprocess
+            console.log(`[SUB-FLOW]   calling walkChain from startNode=${startNode.id}`);
             const subMessages = await walkChain(startNode.id, subFlow.nodes, subFlow.edges, session, flowId, req);
+            console.log(`[SUB-FLOW]   walkChain RETURNED | msgs=${subMessages.length} | waiting_text=${session.waiting_text_input} | waiting_ws=${session.waiting_webservice} | current_node=${session.current_node_id}`);
             messages.push(...subMessages);
             
-            // If subprocess finished, return to parent
-            if (!session.waiting_text_input && !session.waiting_webservice) {
+            // If subprocess finished, return to parent.
+            // NOTE: output_menu pauses with waiting_text_input=false, so we must
+            // also check whether the sub-flow stopped at an output_menu node.
+            const currentSubNode = subFlow.nodes.find(n => n.id === session.current_node_id);
+            const pausedAtMenu = currentSubNode?.type === 'output_menu';
+            if (!session.waiting_text_input && !session.waiting_webservice && !pausedAtMenu) {
               const returnTo = stack.pop()?.returnTo;
               session.execution_stack = stack;
+              session.markModified('execution_stack');
+              console.log(`[SUB-FLOW]   ✅ sub-flow DONE — popped stack | returnTo=${returnTo} | stackSize=${stack.length}`);
+              console.log(`${'─'.repeat(60)}\n`);
               currentNodeId = returnTo;
             } else {
+              console.log(`[SUB-FLOW]   ⏸ sub-flow PAUSED — waiting for user input${pausedAtMenu ? ' (output_menu)' : ''}`);
+              console.log(`[SUB-FLOW]   session.current_node_id=${session.current_node_id} | waiting_text=${session.waiting_text_input} | waiting_ws=${session.waiting_webservice} | pausedAtMenu=${pausedAtMenu}`);
+              console.log(`[SUB-FLOW]   stack saved to DB: ${JSON.stringify(session.execution_stack)}`);
+              console.log(`${'─'.repeat(60)}\n`);
               return messages;
             }
+          } else {
+            console.warn(`[SUB-FLOW] ❌ no start node in sub-flow for processId=${processId} — SKIPPING`);
+            console.log(`${'─'.repeat(60)}\n`);
           }
         } else {
+          console.warn(`[SUB-FLOW] ❌ no processId on fixed_process node=${currentNodeId} — SKIPPING`);
+          console.log(`${'─'.repeat(60)}\n`);
           currentNodeId = findNextNode(currentNodeId, edges);
         }
         break;
@@ -888,11 +970,13 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
 
   // End of chain
   if (depth >= maxDepth) {
-    console.error('[BOT] ⚠️ Max depth reached');
+    console.error('[WALK] ⚠️ Max depth reached');
   } else if (!currentNodeId) {
+    console.log(`[WALK] 🏁 currentNodeId=null → returnToMenu()`);
     returnToMenu();
   }
-  
+
+  console.log(`[WALK] 🏁 END | depth=${depth} | messages=${messages.length} | currentNodeId=${currentNodeId}`);
   return messages;
 };
 
@@ -904,16 +988,14 @@ const _UNUSED_pushMessagesToWhatsApp_MOVED = async (phone, messages, user = null
   if (!messages.length) return false;
 
   // Prefer the bot owner's dialog360 credentials (matches sendAgentMessage logic).
-  // Fall back to env vars / hard-coded endpoint only if the user has none.
   let endpoint;
   let waToken;
   if (user && user.dialog360_bot_id) {
     endpoint = `dialog360/${user.dialog360_bot_id}`;
     waToken = crypto.createHash('sha1').update(user.dialog360_bot_id + 'moomoo').digest('hex');
   } else {
-    endpoint = process.env.WHATSAPP_ENDPOINT || 'dialog360/65aec7ebf1a1d64f29645fd9';
-    waToken = process.env.WHATSAPP_API_TOKEN ||
-      crypto.createHash('sha1').update(endpoint + 'moomoo').digest('hex');
+    endpoint = null;
+    waToken = null;
   }
   if (!endpoint) return false;
 
@@ -960,8 +1042,15 @@ const _UNUSED_pushMessagesToWhatsApp_MOVED = async (phone, messages, user = null
 
       case 'Options': {
         // Group accumulated text + options → buttons (≤3) or list (>3)
-        const headerText = textBuffer.trim() || ' ';
-        if (await sendOne({ text: headerText, buttons: msg.options })) anySuccess = true;
+        // Prefer accumulated textBuffer; fall back to text embedded in the Options message.
+        const headerText = textBuffer.trim() || (msg.text && msg.text.trim()) || '';
+        if (headerText) {
+          if (await sendOne({ text: headerText, buttons: msg.options })) anySuccess = true;
+        } else {
+          // No body text — WhatsApp requires non-empty body; send options as plain text list
+          const fallbackText = msg.options.join('\n');
+          if (fallbackText && await sendOne({ text: fallbackText })) anySuccess = true;
+        }
         textBuffer = '';
         await _sleep(400);
         break;
@@ -1072,7 +1161,7 @@ const performAutoRemoval = async (user, sender, phone, text, name = '') => {
         console.error('[BOT] removal-keyword log write failed:', logErr.message);
       }
     }
-
+ 
     try {
       await BotSession.updateMany(
         { $or: [{ sender }, { customer_phone: phone }], is_active: true },
@@ -1395,21 +1484,49 @@ export const respondToMessage = async (req, res) => {
     // If the node is not found in the main flow, it may be inside a fixed_process sub-flow.
     // This happens when an input_text is the last node inside a fixed_process.
     let subFlowContext = null; // { nodes, edges, returnTo }
-    if (!currentNode && session.waiting_text_input && (session.execution_stack || []).length > 0) {
+    console.log(`\n${'─'.repeat(60)}`);
+    console.log(`[SUB-FLOW] 🔎 RESUME CHECK`);
+    console.log(`[SUB-FLOW]   session._id=${session._id}`);
+    console.log(`[SUB-FLOW]   current_node_id in DB = ${session.current_node_id}`);
+    console.log(`[SUB-FLOW]   currentNode found in mainFlow = ${currentNode ? currentNode.type + '(' + currentNode.id + ')' : '❌ NOT FOUND'}`);
+    console.log(`[SUB-FLOW]   waiting_text_input = ${session.waiting_text_input}`);
+    console.log(`[SUB-FLOW]   waiting_webservice = ${session.waiting_webservice}`);
+    console.log(`[SUB-FLOW]   execution_stack (${(session.execution_stack || []).length} entries) = ${JSON.stringify(session.execution_stack || [])}`);
+    // Load sub-flow context when the execution stack is non-empty.
+    // This covers both input_text (waiting_text_input=true) AND output_menu
+    // (waiting_text_input=false) nodes that live inside a fixed_process.
+    if ((session.execution_stack || []).length > 0) {
       const stack = session.execution_stack;
       const lastEntry = stack[stack.length - 1];
+      console.log(`[SUB-FLOW]   stack non-empty → looking for lastEntry.nodeId=${lastEntry.nodeId} in main flow`);
       // lastEntry.nodeId is the fixed_process node in the parent (main) flow
       const fpNode = flowData.nodes.find(n => n.id === lastEntry.nodeId);
+      console.log(`[SUB-FLOW]   fpNode in main flow: ${fpNode ? fpNode.type + '(' + fpNode.id + ') processId=' + fpNode.data?.processId : '❌ NOT FOUND — cannot load sub-flow'}`);
       if (fpNode && fpNode.data && fpNode.data.processId) {
+        console.log(`[SUB-FLOW]   loading sub-flow: getFlowData(flow_id=${session.flow_id}, processId=${fpNode.data.processId})`);
         const subFlow = await getFlowData(session.flow_id, fpNode.data.processId);
+        console.log(`[SUB-FLOW]   sub-flow loaded: ${subFlow.nodes.length} nodes | types: ${subFlow.nodes.map(n => n.type + '(' + n.id + ')').join(', ')}`);
+        console.log(`[SUB-FLOW]   sub-flow edges: ${subFlow.edges.map(e => e.source + '->' + e.target + (e.sourceHandle ? '[' + e.sourceHandle + ']' : '')).join(', ')}`);
+        console.log(`[SUB-FLOW]   looking for session.current_node_id=${session.current_node_id} inside sub-flow`);
         const nodeInSub = subFlow.nodes.find(n => n.id === session.current_node_id);
+        console.log(`[SUB-FLOW]   nodeInSub: ${nodeInSub ? '✅ ' + nodeInSub.type + '(' + nodeInSub.id + ')' : '❌ NOT FOUND in sub-flow nodes'}`);
         if (nodeInSub) {
           currentNode = nodeInSub;
           subFlowContext = { nodes: subFlow.nodes, edges: subFlow.edges, returnTo: lastEntry.returnTo };
-          console.log(`[BOT] 🔁 Node found in sub-flow (processId=${fpNode.data.processId}), returnTo=${lastEntry.returnTo}`);
+          console.log(`[SUB-FLOW]   ✅ subFlowContext SET | returnTo=${lastEntry.returnTo}`);
+        } else {
+          console.warn(`[SUB-FLOW]   ⚠️ node ${session.current_node_id} not found in sub-flow — will use main flow node (may be wrong)`);
         }
+      } else if (!fpNode) {
+        console.warn(`[SUB-FLOW]   ⚠️ fpNode not found in main flow for nodeId=${lastEntry.nodeId} — execution_stack may be stale`);
+      }
+    } else {
+      console.log(`[SUB-FLOW]   execution_stack empty → no sub-flow resume needed`);
+      if (!currentNode) {
+        console.error(`[SUB-FLOW]   ❌ currentNode NOT FOUND and no stack — session may be in bad state`);
       }
     }
+    console.log(`${'─'.repeat(60)}\n`);
 
     if (!currentNode) {
       console.error('[BOT] ❌ Current node not found:', session.current_node_id);
@@ -1429,7 +1546,9 @@ export const respondToMessage = async (req, res) => {
     // shown menu (output_menu) or automatic_responses jumps back to that node,
     // even if the flow has already advanced or ended.
     // Fired whenever we are NOT explicitly waiting for free-text input.
-    if (!isNewSession && text && !session.waiting_text_input) {
+    // Do NOT interrupt when inside a sub-flow (execution_stack non-empty) — the
+    // sub-flow must handle the response via its own edges, not the main-flow interrupt.
+    if (!isNewSession && text && !session.waiting_text_input && (session.execution_stack || []).length === 0) {
 
       // 1. Check all output_menu nodes in the flow for a match
       const interruptMenuNodes = flowData.nodes.filter(n => n.type === 'output_menu');
@@ -1473,7 +1592,7 @@ export const respondToMessage = async (req, res) => {
             addToHistory(session, { type: 'UserInput', text }, 'user');
             messages = await walkChain(interruptNextId, flowData.nodes, flowData.edges, session, session.flow_id, req);
             await session.save();
-            const waPushedInterrupt1 = await pushMessagesToWhatsApp(sender, messages, user);
+            const waPushedInterrupt1 = await pushMessagesToWhatsApp(sender, messages, user, tokenBot);
             return res.json({ StatusId: 1, StatusDescription: 'Success', sender, messages: waPushedInterrupt1 ? [] : messages, control: null, ...(waPushedInterrupt1 && { wa_pushed: true }) });
           }
         }
@@ -1512,7 +1631,7 @@ export const respondToMessage = async (req, res) => {
               addToHistory(session, { type: 'UserInput', text }, 'user');
               messages = await walkChain(interruptNextId, flowData.nodes, flowData.edges, session, session.flow_id, req);
               await session.save();
-              const waPushedInterrupt2 = await pushMessagesToWhatsApp(sender, messages, user);
+              const waPushedInterrupt2 = await pushMessagesToWhatsApp(sender, messages, user, tokenBot);
               return res.json({ StatusId: 1, StatusDescription: 'Success', sender, messages: waPushedInterrupt2 ? [] : messages, control: null, ...(waPushedInterrupt2 && { wa_pushed: true }) });
             }
           }
@@ -1536,7 +1655,7 @@ export const respondToMessage = async (req, res) => {
           console.error('[BOT] failed to close current session after removal:', sessSaveErr.message);
         }
         const waPushed = removalResult.outMessages.length > 0
-          ? await pushMessagesToWhatsApp(sender, removalResult.outMessages, user)
+          ? await pushMessagesToWhatsApp(sender, removalResult.outMessages, user, tokenBot)
           : false;
         return res.json({
           StatusId: 1,
@@ -1584,7 +1703,7 @@ export const respondToMessage = async (req, res) => {
             console.error('[BOT] failed to close current session after removal:', sessSaveErr.message);
           }
           const waPushed = removalResult.outMessages.length > 0
-            ? await pushMessagesToWhatsApp(sender, removalResult.outMessages, user)
+            ? await pushMessagesToWhatsApp(sender, removalResult.outMessages, user, tokenBot)
             : false;
           return res.json({
             StatusId: 1,
@@ -1619,6 +1738,7 @@ export const respondToMessage = async (req, res) => {
       // Re-call the webservice with the user input
       messages = await walkChain(currentNode.id, flowData.nodes, flowData.edges, session, session.flow_id, req);
     } else if (currentNode.type === 'input_text' || currentNode.type === 'input_date' || currentNode.type === 'input_file') {
+      console.log(`[SUB-FLOW] 📝 input_text/date/file branch | node=${currentNode.id} | subFlowContext=${subFlowContext ? 'YES (returnTo=' + subFlowContext.returnTo + ')' : 'NO'} | varName=${currentNode.data.variableName || '(none)'}`);
       // Validate input type if configured on input_text nodes
       const validationType = currentNode.data.validationType;
       if (currentNode.type === 'input_text' && validationType && !validateInput(validationType, text)) {
@@ -1654,19 +1774,23 @@ export const respondToMessage = async (req, res) => {
       // Use sub-flow edges if the node lives inside a fixed_process
       const activeNodes = subFlowContext ? subFlowContext.nodes : flowData.nodes;
       const activeEdges = subFlowContext ? subFlowContext.edges : flowData.edges;
+      console.log(`[SUB-FLOW]   activeEdges source: ${subFlowContext ? 'sub-flow' : 'main flow'} | ${activeEdges.length} edges`);
 
       const nextNodeId = findNextNode(currentNode.id, activeEdges);
+      console.log(`[SUB-FLOW]   nextNodeId after input = ${nextNodeId || '(none — last node in flow)'}`);
       if (nextNodeId) {
         // There is a next node inside the same (sub-)flow — continue normally
+        console.log(`[SUB-FLOW]   → continuing sub-flow from ${nextNodeId}`);
         messages = await walkChain(nextNodeId, activeNodes, activeEdges, session, session.flow_id, req);
       } else if (subFlowContext) {
         // Last node in sub-flow — pop execution stack and continue in parent flow
+        console.log(`[SUB-FLOW]   last node in sub-flow — popping stack and returning to parent`);
         const newStack = [...session.execution_stack];
         newStack.pop();
         session.execution_stack = newStack;
         session.markModified('execution_stack');
         if (subFlowContext.returnTo) {
-          console.log(`[BOT] 🔁 Sub-flow input done, returning to parent node: ${subFlowContext.returnTo}`);
+          console.log(`[SUB-FLOW]   🔁 Sub-flow input done, returning to parent node: ${subFlowContext.returnTo}`);
           messages = await walkChain(subFlowContext.returnTo, flowData.nodes, flowData.edges, session, session.flow_id, req);
         } else {
           // No return node — go back to main menu
@@ -1702,9 +1826,18 @@ export const respondToMessage = async (req, res) => {
       //   2. No match but `option-default` edge exists → follow default
       //   3. Otherwise → short error message (DO NOT restart the flow,
       //      the user is intentionally inside this menu)
+      // Use sub-flow edges/nodes when the menu is inside a fixed_process sub-flow.
+      const menuActiveNodes = subFlowContext ? subFlowContext.nodes : flowData.nodes;
+      const menuActiveEdges = subFlowContext ? subFlowContext.edges : flowData.edges;
+      console.log(`[SUB-FLOW] 📋 output_menu branch | node=${currentNode.id} | subFlowContext=${subFlowContext ? 'YES (returnTo=' + subFlowContext.returnTo + ')' : 'NO'}`);
+      console.log(`[SUB-FLOW]   menuActiveEdges source: ${subFlowContext ? 'sub-flow' : 'main flow'} | ${menuActiveEdges.length} edges`);
+      console.log(`[SUB-FLOW]   menu options: ${JSON.stringify(currentNode.data.options || [])}`);
+      console.log(`[SUB-FLOW]   user sent: "${text.trim()}"`);
+
       const selectedValue = text.trim();
       const options = currentNode.data.options || [];
       const selectedIdx = options.findIndex(opt => opt.trim() === selectedValue);
+      console.log(`[SUB-FLOW]   selectedIdx=${selectedIdx} | edgesFromThisNode: ${menuActiveEdges.filter(e => e.source === currentNode.id).map(e => e.sourceHandle + '->' + e.target).join(', ')}`);
 
       if (selectedIdx !== -1) {
         if (currentNode.data.variableName) {
@@ -1714,18 +1847,52 @@ export const respondToMessage = async (req, res) => {
         session.parameters = params;
         session.markModified('parameters');
 
-        const nextNodeId = findNextNode(currentNode.id, flowData.edges, `option-${selectedIdx}`);
+        const nextNodeId = findNextNode(currentNode.id, menuActiveEdges, `option-${selectedIdx}`);
+        console.log(`[SUB-FLOW]   matched option-${selectedIdx} → nextNodeId=${nextNodeId || '(none)'}`);
         if (nextNodeId) {
-          messages = await walkChain(nextNodeId, flowData.nodes, flowData.edges, session, session.flow_id, req);
+          messages = await walkChain(nextNodeId, menuActiveNodes, menuActiveEdges, session, session.flow_id, req);
+          console.log(`[SUB-FLOW]   walkChain after menu: msgs=${messages.length} | waiting_text=${session.waiting_text_input} | waiting_ws=${session.waiting_webservice}`);
+          // If sub-flow finished (not waiting), pop stack and continue in parent
+          if (subFlowContext && !session.waiting_text_input && !session.waiting_webservice) {
+            const newStack = [...session.execution_stack];
+            newStack.pop();
+            session.execution_stack = newStack;
+            session.markModified('execution_stack');
+            if (subFlowContext.returnTo) {
+              console.log(`[SUB-FLOW]   🔁 Sub-flow menu done, returning to parent node: ${subFlowContext.returnTo}`);
+              const parentMsgs = await walkChain(subFlowContext.returnTo, flowData.nodes, flowData.edges, session, session.flow_id, req);
+              messages.push(...parentMsgs);
+            }
+          } else if (subFlowContext) {
+            console.log(`[SUB-FLOW]   ⏸ sub-flow menu still waiting — not returning to parent yet`);
+          }
+        } else {
+          console.warn(`[SUB-FLOW]   ⚠️ no edge found for option-${selectedIdx} from node ${currentNode.id}`);
         }
       } else {
-        const defaultNextId = findNextNode(currentNode.id, flowData.edges, 'option-default');
+        const defaultNextId = findNextNode(currentNode.id, menuActiveEdges, 'option-default');
+        console.log(`[SUB-FLOW]   no match for "${selectedValue}" → defaultNextId=${defaultNextId || '(none)'}`);
         if (defaultNextId) {
-          console.log(`[BOT] 🔀 output_menu: no match for "${selectedValue}", routing to option-default`);
+          console.log(`[SUB-FLOW]   routing to option-default → ${defaultNextId}`);
           params['open'] = selectedValue;
           session.parameters = params;
           session.markModified('parameters');
-          messages = await walkChain(defaultNextId, flowData.nodes, flowData.edges, session, session.flow_id, req);
+          messages = await walkChain(defaultNextId, menuActiveNodes, menuActiveEdges, session, session.flow_id, req);
+          console.log(`[SUB-FLOW]   walkChain after default: msgs=${messages.length} | waiting_text=${session.waiting_text_input} | waiting_ws=${session.waiting_webservice}`);
+          // If sub-flow finished (not waiting), pop stack and continue in parent
+          if (subFlowContext && !session.waiting_text_input && !session.waiting_webservice) {
+            const newStack = [...session.execution_stack];
+            newStack.pop();
+            session.execution_stack = newStack;
+            session.markModified('execution_stack');
+            if (subFlowContext.returnTo) {
+              console.log(`[SUB-FLOW]   🔁 Sub-flow menu default done, returning to parent node: ${subFlowContext.returnTo}`);
+              const parentMsgs = await walkChain(subFlowContext.returnTo, flowData.nodes, flowData.edges, session, session.flow_id, req);
+              messages.push(...parentMsgs);
+            }
+          } else if (subFlowContext) {
+            console.log(`[SUB-FLOW]   ⏸ sub-flow menu default still waiting — not returning to parent yet`);
+          }
         } else {
           messages.push({
             type: 'Text',
@@ -1763,7 +1930,7 @@ export const respondToMessage = async (req, res) => {
             console.error('[BOT] failed to close current session after removal:', sessSaveErr.message);
           }
           const waPushed = removalResult.outMessages.length > 0
-            ? await pushMessagesToWhatsApp(sender, removalResult.outMessages, user)
+            ? await pushMessagesToWhatsApp(sender, removalResult.outMessages, user, tokenBot)
             : false;
           return res.json({
             StatusId: 1,
@@ -1808,9 +1975,9 @@ export const respondToMessage = async (req, res) => {
     console.log(`[BOT] 🌐 WHATSAPP_ENDPOINT=${process.env.WHATSAPP_ENDPOINT || '(not set)'}`);
 
     // Proactively push messages to WhatsApp via dialog360 /send endpoint.
-    // Uses the bot owner's dialog360_bot_id when available (matches sendAgentMessage).
+    // Uses the bot's endpoint when available, falling back to user credentials or env vars.
     // When push succeeds, return an empty messages array so dialog360 does NOT double-send.
-    const waPushed = await pushMessagesToWhatsApp(sender, messages, user);
+    const waPushed = await pushMessagesToWhatsApp(sender, messages, user, tokenBot);
     console.log(`[BOT] 🚀 pushMessagesToWhatsApp → waPushed=${waPushed}`);
 
     const elapsedMs = Date.now() - reqStartedAt;

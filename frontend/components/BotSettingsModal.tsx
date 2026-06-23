@@ -13,6 +13,7 @@ interface BotSettingsModalProps {
   currentUser?: { role?: string; isImpersonating?: boolean; permissions?: { bots?: { publish?: boolean } } } | null;
   onClose: () => void;
   onUpdateBotPublicId?: (id: string, publicId: string) => Promise<void>;
+  onUpdateBotEndpoint?: (id: string, endpoint: string) => Promise<void>;
   onConnectFacebook?: (bot: BotFlow) => void;
 }
 
@@ -21,6 +22,7 @@ const BotSettingsModal: React.FC<BotSettingsModalProps> = ({
   currentUser,
   onClose,
   onUpdateBotPublicId,
+  onUpdateBotEndpoint,
   onConnectFacebook,
 }) => {
   const [editBotPublicId, setEditBotPublicId] = useState(bot.public_id);
@@ -29,11 +31,23 @@ const BotSettingsModal: React.FC<BotSettingsModalProps> = ({
   const [botPublicIdError, setBotPublicIdError] = useState<string | null>(null);
   const [botPublicIdSuccess, setBotPublicIdSuccess] = useState(false);
 
+  const [editBotEndpoint, setEditBotEndpoint] = useState(
+    bot.endpoint ? bot.endpoint.split('/').pop() ?? '' : ''
+  );
+  const [savingBotEndpoint, setSavingBotEndpoint] = useState(false);
+  const [botEndpointError, setBotEndpointError] = useState<string | null>(null);
+  const [botEndpointSuccess, setBotEndpointSuccess] = useState(false);
+
+  const isAdminImpersonating = !!currentUser?.isImpersonating;
+
   useEffect(() => {
     setEditBotPublicId(bot.public_id);
     setBotPublicIdError(null);
     setBotPublicIdSuccess(false);
-  }, [bot.id, bot.public_id]);
+    setEditBotEndpoint(bot.endpoint ? bot.endpoint.split('/').pop() ?? '' : '');
+    setBotEndpointError(null);
+    setBotEndpointSuccess(false);
+  }, [bot.id, bot.public_id, bot.endpoint]);
 
   const handleSave = async () => {
     if (!onUpdateBotPublicId) return;
@@ -48,6 +62,23 @@ const BotSettingsModal: React.FC<BotSettingsModalProps> = ({
       setBotPublicIdError(err.message || 'שגיאה בשמירה');
     } finally {
       setSavingBotPublicId(false);
+    }
+  };
+
+  const handleSaveEndpoint = async () => {
+    if (!onUpdateBotEndpoint) return;
+    setSavingBotEndpoint(true);
+    setBotEndpointError(null);
+    setBotEndpointSuccess(false);
+    try {
+      // Pass just the ID — backend will normalize to dialog360/{id}
+      await onUpdateBotEndpoint(bot.id, editBotEndpoint.trim());
+      setBotEndpointSuccess(true);
+      setTimeout(() => setBotEndpointSuccess(false), 3000);
+    } catch (err: any) {
+      setBotEndpointError(err.message || 'שגיאה בשמירה');
+    } finally {
+      setSavingBotEndpoint(false);
     }
   };
 
@@ -111,6 +142,63 @@ const BotSettingsModal: React.FC<BotSettingsModalProps> = ({
             {botPublicIdSuccess && (
               <div className="mt-3 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-2 text-emerald-600 text-sm font-bold flex items-center gap-2">
                 <Check size={14} /> המזהה עודכן בהצלחה
+              </div>
+            )}
+          </div>
+
+          {/* Endpoint */}
+          <div>
+            <h4 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-1 flex items-center gap-2">
+              <Settings size={12} /> Endpoint (מספר הבוט)
+            </h4>
+            <p className="text-xs text-slate-400 mb-3">הכנס רק את המזהה — המערכת תבנה אוטומטית את הקישור <code className="bg-slate-100 px-1 rounded">dialog360/{'{id}'}</code></p>
+            {isAdminImpersonating ? (
+              <>
+                <div className="flex gap-2 items-center">
+                  <button
+                    onClick={handleSaveEndpoint}
+                    disabled={savingBotEndpoint || editBotEndpoint.trim() === (bot.endpoint ? bot.endpoint.split('/').pop() ?? '' : '')}
+                    className="px-5 py-3 bg-blue-600 text-white rounded-2xl font-bold text-sm hover:bg-blue-700 transition-all disabled:opacity-50 shrink-0"
+                  >
+                    {savingBotEndpoint ? 'שומר...' : 'שמור'}
+                  </button>
+                  <div className="flex flex-1 items-center bg-slate-50 border border-slate-200 rounded-2xl overflow-hidden">
+                    <span className="px-3 py-3 text-sm text-slate-500 bg-slate-100 border-l border-slate-200 shrink-0 font-mono">dialog360/</span>
+                    <input
+                      className="flex-1 px-3 py-3 bg-transparent text-sm outline-none font-mono"
+                      value={editBotEndpoint}
+                      onChange={e => setEditBotEndpoint(e.target.value)}
+                      dir="ltr"
+                      placeholder="6a2fa4c95a175e32fb3c6ef3"
+                    />
+                  </div>
+                </div>
+                {editBotEndpoint.trim() && (
+                  <div className="mt-2 text-xs text-slate-400 font-mono px-1">
+                    URL: https://wa.message.co.il/api/dialog360/{editBotEndpoint.trim()}/send
+                  </div>
+                )}
+                {botEndpointError && (
+                  <div className="mt-3 bg-red-50 border border-red-200 rounded-xl px-4 py-2 text-red-600 text-sm font-bold">
+                    {botEndpointError}
+                  </div>
+                )}
+                {botEndpointSuccess && (
+                  <div className="mt-3 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-2 text-emerald-600 text-sm font-bold flex items-center gap-2">
+                    <Check size={14} /> ה-Endpoint עודכן בהצלחה
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="space-y-1">
+                <div className="px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-mono text-slate-700 select-all" dir="ltr">
+                  {bot.endpoint || <span className="text-slate-400 italic font-sans">לא הוגדר</span>}
+                </div>
+                {bot.endpoint && (
+                  <div className="text-xs text-slate-400 font-mono px-1">
+                    URL: https://wa.message.co.il/api/{bot.endpoint}/send
+                  </div>
+                )}
               </div>
             )}
           </div>

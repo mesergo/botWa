@@ -23,7 +23,8 @@ const botFlowSchema = new mongoose.Schema({
   whatsapp_two_factor_pin: { type: String, default: '' },
   whatsapp_registered: { type: Boolean, default: false },
   whatsapp_register_response: { type: mongoose.Schema.Types.Mixed, default: null },
-  whatsapp_connected_at: { type: Date, default: null }
+  whatsapp_connected_at: { type: Date, default: null },
+  endpoint: { type: String, default: '' }
 }, {
   timestamps: true,
   collection: 'bot_flows'

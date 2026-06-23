@@ -25,6 +25,7 @@ interface DashboardProps {
   onOpenGroups?: () => void;
   onConnectFacebook?: (bot: BotFlow) => Promise<void>;
   onUpdateBotPublicId?: (id: string, publicId: string) => Promise<void>;
+  onUpdateBotEndpoint?: (id: string, endpoint: string) => Promise<void>;
   onUpdateAvailability?: (status: 'available' | 'unavailable' | 'on_break') => Promise<void>;
   token?: string | null;
   initialTab?: 'bots' | 'settings' | 'users';
@@ -142,7 +143,7 @@ const AvailabilityBadge: React.FC<{
   );
 };
 
-const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, onDeleteBot, onSetDefaultBot, onLogout, currentUser, onOpenAdminPanel, onStopImpersonation, onOpenContacts, onOpenSessions, onOpenGroups, onConnectFacebook, onUpdateBotPublicId, onUpdateAvailability, token, initialTab }) => {
+const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, onDeleteBot, onSetDefaultBot, onLogout, currentUser, onOpenAdminPanel, onStopImpersonation, onOpenContacts, onOpenSessions, onOpenGroups, onConnectFacebook, onUpdateBotPublicId, onUpdateBotEndpoint, onUpdateAvailability, token, initialTab }) => {
   const can = usePermission(currentUser as User | null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newBotName, setNewBotName] = useState('');
@@ -761,13 +762,6 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                       </div>
                     )}
 
-                    {profile.dialog360_bot_id && (
-                      <div className="flex items-center justify-between py-1">
-                        <span className="text-xs font-bold text-slate-400">Bot ID (WhatsApp)</span>
-                        <span className="text-slate-800 font-mono text-sm bg-slate-50 px-3 py-1 rounded-lg border border-slate-100 select-all">{profile.dialog360_bot_id}</span>
-                      </div>
-                    )}
-
                   </div>
                 </div>
 
@@ -777,10 +771,6 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                     <Wifi size={14} /> הגדרות חיבור
                   </h2>
                   <div className="space-y-5">
-                    <div className="flex items-center justify-between py-1">
-                      <span className="text-xs font-bold text-slate-400">Bot ID</span>
-                      <span className="text-slate-800 font-mono text-sm bg-slate-50 px-3 py-1 rounded-lg border border-slate-100 select-all">{profile.dialog360_bot_id || '-'}</span>
-                    </div>
                     <div className="flex items-center justify-between py-1">
                       <span className="text-xs font-bold text-slate-400">בוטים פעילים</span>
                       <span className="text-slate-700 font-bold text-sm">{profile.active_bots_count ?? 0}</span>
@@ -1338,6 +1328,10 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
           onUpdateBotPublicId={onUpdateBotPublicId ? async (id, publicId) => {
             await onUpdateBotPublicId(id, publicId);
             setSettingsBot(prev => prev ? { ...prev, public_id: publicId } : null);
+          } : undefined}
+          onUpdateBotEndpoint={onUpdateBotEndpoint ? async (id, endpoint) => {
+            await onUpdateBotEndpoint(id, endpoint);
+            setSettingsBot(prev => prev ? { ...prev, endpoint } : null);
           } : undefined}
           onConnectFacebook={onConnectFacebook ? (bot) => {
             setSettingsBot(null);

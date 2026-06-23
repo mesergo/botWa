@@ -69,6 +69,8 @@ export interface BotFlow {
   display_phone_number?: string;
   /** Parameter values filled by the user when this bot was created from a template */
   botParams?: Record<string, string>;
+  /** External endpoint identifier */
+  endpoint?: string;
 }
 
 export interface FixedProcess {

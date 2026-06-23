@@ -1881,7 +1881,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                                 <MessageSquare size={16} className="text-slate-400" /> הגדרות חיבור
                             </h3>
                             <div className="flex flex-col gap-2">
-                                <label className="text-xs font-bold text-slate-400">Bot ID</label>
+                                <label className="text-xs font-bold text-slate-400">Bot ID <span className="text-amber-500 font-normal">(לצורך שליחה לקבוצות בלבד)</span></label>
                                 {isEditing ? (
                                     <div className="space-y-2">
                                         <input 
@@ -1894,18 +1894,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                                             הזן רק את Bot ID. הקישור ייבנה אוטומטית: <code className="bg-slate-100 px-1 rounded">dialog360/{'{bot_id}'}</code>
                                         </div>
                                     </div>
-                                ) : ( 
-                                    <div className="space-y-2">
-                                        <div className="text-slate-800 font-medium text-sm select-all px-2 font-mono bg-slate-50 p-3 rounded-xl" title={selectedUser.dialog360_bot_id || ''}>
-                                            {selectedUser.dialog360_bot_id || '-'}
-                                        </div>
-                                        {selectedUser.dialog360_bot_id && (
-                                            <div className="text-xs text-slate-500 px-2">
-                                                Endpoint: <code className="bg-slate-100 px-1 rounded">dialog360/{selectedUser.dialog360_bot_id}</code>
-                                            </div>
-                                        )}
+                                ) : (
+                                    <div className="text-slate-800 font-medium text-sm select-all px-2 font-mono bg-slate-50 p-3 rounded-xl">
+                                        {selectedUser.dialog360_bot_id || '-'}
                                     </div>
-                                ) }
+                                )}
                             </div>
                         </div>
 

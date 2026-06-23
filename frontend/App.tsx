@@ -1059,6 +1059,20 @@ const FlowBuilder: React.FC = () => {
     setBots(prev => prev.map(b => b.id === id ? { ...b, public_id: data.public_id } : b));
   };
 
+  const handleUpdateBotEndpoint = async (id: string, endpoint: string) => {
+    const res = await fetch(`${API_BASE}/bots/${id}/endpoint`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify({ endpoint }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || 'שגיאה בעדכון ה-Endpoint');
+    }
+    const data = await res.json();
+    setBots(prev => prev.map(b => b.id === id ? { ...b, endpoint: data.endpoint } : b));
+  };
+
   // Update current user's availability status (rep / rep_manager)
   const handleUpdateAvailability = useCallback(async (status: 'available' | 'unavailable' | 'on_break') => {
     if (!token) return;
@@ -1990,6 +2004,8 @@ const FlowBuilder: React.FC = () => {
           onOpenGroups={() => setViewMode('groups')}
           onStopImpersonation={handleStopImpersonation}
           onConnectFacebook={(can('bots.publish') || currentUser?.isImpersonating) ? handleConnectFacebook : undefined}
+          onUpdateBotPublicId={handleUpdateBotPublicId}
+          onUpdateBotEndpoint={currentUser?.isImpersonating ? handleUpdateBotEndpoint : undefined}
           onUpdateAvailability={handleUpdateAvailability}
           token={token}
           initialTab={dashboardInitialTab}
@@ -2309,6 +2325,10 @@ const FlowBuilder: React.FC = () => {
             await handleUpdateBotPublicId(id, publicId);
             setSelectedBot(prev => prev ? { ...prev, public_id: publicId } : null);
           }}
+          onUpdateBotEndpoint={currentUser?.isImpersonating ? async (id, endpoint) => {
+            await handleUpdateBotEndpoint(id, endpoint);
+            setSelectedBot(prev => prev ? { ...prev, endpoint } : null);
+          } : undefined}
           onConnectFacebook={(can('bots.publish') || currentUser?.isImpersonating) ? handleConnectFacebook : undefined}
         />
       )}
