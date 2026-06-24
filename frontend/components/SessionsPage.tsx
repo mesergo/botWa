@@ -1,5 +1,5 @@
 ﻿import React, { useState, useEffect, useRef } from 'react';
-import { Clock, MessageSquare, Search, Bot, LogOut, User, Phone, List, Users, ExternalLink, X, Headphones, RefreshCw, Shield, Settings, UserCog, Layers, Plus, UserPlus, Check, Paperclip } from 'lucide-react';
+import { Clock, MessageSquare, Search, Bot, LogOut, User, Phone, List, Users, ExternalLink, X, Headphones, RefreshCw, Shield, Settings, UserCog, Layers, Plus, UserPlus, Check, Paperclip, ChevronRight } from 'lucide-react';
 import ImpersonationBanner from './ImpersonationBanner';
 import { FileUploader } from './FileUploader';
 import { usePermission } from '../hooks/usePermission';
@@ -114,6 +114,14 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
     myGroupIds: string[] | null;
   }>({ groups: [], reps: [], shiftManagers: [], myGroupIds: null });
 
+  // Bot picker state
+  interface BotEntry { id: string; name: string; display_phone_number: string; }
+  const [botList, setBotList] = useState<BotEntry[]>([]);
+  const [botsLoading, setBotsLoading] = useState(true);
+  const [activeBotFilter, setActiveBotFilter] = useState<BotEntry | null>(null);
+  // If initialPhone is provided, skip bot picker and show all contacts
+  const [showBotPicker, setShowBotPicker] = useState<boolean>(!initialPhone);
+
   const chatScrollRef = useRef<HTMLDivElement>(null);
 
   // Fetch contacts (sorted most-recent-first by backend)
@@ -133,7 +141,16 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
     fetchContacts();
   }, [fetchContacts]);
 
-  // Fetch all sessions for the selected phone (oldest → newest)
+  // Fetch bots list for bot picker
+  useEffect(() => {
+    if (!token) return;
+    setBotsLoading(true);
+    fetch(`${API_BASE}/bots`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.ok ? r.json() : Promise.reject(r))
+      .then((data: BotEntry[]) => setBotList(data))
+      .catch(e => console.error('Failed to load bots', e))
+      .finally(() => setBotsLoading(false));
+  }, [token]);
   useEffect(() => {
     if (!selectedPhone || !token) {
       setPhoneSessions([]);
@@ -985,9 +1002,13 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
     }
   };
 
-  const filteredContacts = contacts.filter(c =>
-    c.phone.toLowerCase().includes(contactSearch.toLowerCase())
-  );
+  const filteredContacts = contacts.filter(c => {
+    if (!c.phone.toLowerCase().includes(contactSearch.toLowerCase())) return false;
+    if (activeBotFilter) {
+      return c.bots.some(b => b.id === activeBotFilter.id);
+    }
+    return true;
+  });
 
   const selectedContact = contacts.find(c => c.phone === selectedPhone) ?? null;
 
@@ -1304,7 +1325,76 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
         </div>
       </nav>
 
-      {/* Main area  —  contacts panel on the right, chat area on the left (RTL flex) */}
+      {/* ── Bot Picker ─────────────────────────────────────────────────────── */}
+      {showBotPicker ? (
+        <div className="flex-1 flex overflow-hidden">
+          {currentUser?.role !== 'rep' && (
+            <AppNav
+              mode="sidebar"
+              activePage="sessions"
+              onBots={onBack && can('bots.view_tab') ? onBack : undefined}
+              onContacts={onOpenContacts ? () => onOpenContacts() : undefined}
+              onGroups={onOpenGroups}
+              onSettings={onOpenSettings}
+              onUsers={onOpenSubUsers && can('users.view') ? onOpenSubUsers : undefined}
+            />
+          )}
+          <div className="flex-1 overflow-y-auto p-10 bg-[#f8fafc]">
+          <div className="max-w-5xl mx-auto">
+            <div className="flex items-center gap-4 mb-8">
+              <div className="w-12 h-12 bg-sky-50 text-sky-600 rounded-2xl flex items-center justify-center">
+                <MessageSquare size={26} />
+              </div>
+              <div>
+                <h1 className="text-3xl font-black text-slate-900">שיחות</h1>
+                <p className="text-slate-400 text-sm font-semibold mt-0.5">בחר בוט לצפייה בשיחות</p>
+              </div>
+            </div>
+
+            {botsLoading ? (
+              <div className="flex items-center justify-center py-24">
+                <div className="animate-spin w-10 h-10 border-4 border-slate-200 border-t-sky-500 rounded-full" />
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
+                {/* All bots card */}
+                <button
+                  onClick={() => { setActiveBotFilter(null); setShowBotPicker(false); }}
+                  className="group bg-white border-2 border-slate-200 hover:border-sky-400 rounded-3xl p-6 flex flex-col items-center gap-3 transition-all hover:shadow-lg hover:-translate-y-0.5 text-center"
+                >
+                  <div className="w-14 h-14 rounded-2xl bg-slate-100 group-hover:bg-sky-50 flex items-center justify-center transition-colors">
+                    <Users size={28} className="text-slate-400 group-hover:text-sky-500 transition-colors" />
+                  </div>
+                  <div>
+                    <p className="text-lg font-black text-slate-800 group-hover:text-sky-700 transition-colors">הכל</p>
+                    <p className="text-xs text-slate-400 font-semibold mt-0.5">כל השיחות</p>
+                  </div>
+                </button>
+
+                {/* Per-bot cards */}
+                {botList.map(bot => (
+                  <button
+                    key={bot.id}
+                    onClick={() => { setActiveBotFilter(bot); setShowBotPicker(false); }}
+                    className="group bg-white border-2 border-slate-200 hover:border-indigo-400 rounded-3xl p-6 flex flex-col items-center gap-3 transition-all hover:shadow-lg hover:-translate-y-0.5 text-center"
+                  >
+                    <div className="w-14 h-14 rounded-2xl bg-indigo-50 group-hover:bg-indigo-100 flex items-center justify-center transition-colors">
+                      <Phone size={26} className="text-indigo-400 group-hover:text-indigo-600 transition-colors" />
+                    </div>
+                    <div>
+                      <p className="text-base font-black text-indigo-700 group-hover:text-indigo-800 transition-colors leading-tight">
+                        {bot.display_phone_number || '—'}
+                      </p>
+                      <p className="text-xs text-slate-500 font-bold mt-1 truncate max-w-[9rem]">{bot.name}</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          </div>
+        </div>
+      ) : (
       <div className="flex-1 flex overflow-hidden">
         {currentUser?.role !== 'rep' && (
           <AppNav
@@ -1322,14 +1412,26 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
         <div className="w-[25%] flex-shrink-0 bg-white border-l border-slate-100 flex flex-col overflow-hidden">
           {/* Header */}
           <div className="flex-shrink-0 px-5 py-4 border-b border-slate-100">
+            {/* Bot filter breadcrumb */}
+            {activeBotFilter && (
+              <button
+                onClick={() => { setActiveBotFilter(null); setShowBotPicker(true); setSelectedPhone(null); }}
+                className="flex items-center gap-1.5 text-xs font-bold text-indigo-500 hover:text-indigo-700 mb-3 transition-colors"
+              >
+                <ChevronRight size={14} />
+                <span className="truncate">{activeBotFilter.display_phone_number || activeBotFilter.name}</span>
+              </button>
+            )}
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-3">
-                <div className="w-9 h-9 bg-sky-50 text-sky-600 rounded-xl flex items-center justify-center">
+                <div className="w-9 h-9 bg-sky-50 text-sky-600 rounded-xl flex items-center justify-center cursor-pointer" onClick={() => setShowBotPicker(true)} title="חזור לבחירת בוט">
                   <Users size={18} />
                 </div>
                 <div>
-                  <h2 className="text-base font-black text-slate-900">אנשי קשר</h2>
-                  <p className="text-xs text-slate-400 font-semibold">{contacts.length} קשרים</p>
+                  <h2 className="text-base font-black text-slate-900">
+                    {activeBotFilter ? (activeBotFilter.display_phone_number || activeBotFilter.name) : 'שיחות'}
+                  </h2>
+                  <p className="text-xs text-slate-400 font-semibold">{filteredContacts.length} קשרים</p>
                 </div>
               </div>
               {can('sessions.add') && (
@@ -1747,6 +1849,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
         </div>
 
       </div>
+      )}
 
       {/* New conversation modal */}
       {showNewConvModal && (
