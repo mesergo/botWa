@@ -24,12 +24,14 @@ interface SessionStats {
   sessionCount: number;
   lastSeen: string | null;
   bots: { id: string; name: string }[];
+  botPhones?: string[];
 }
 
 interface MergedContact extends ContactRecord {
   sessionCount: number;
   lastSeen: string | null;
   bots: { id: string; name: string }[];
+  botPhones: string[];
 }
 
 interface ContactsPageProps {
@@ -53,6 +55,51 @@ const API_BASE = window.location.hostname === 'localhost'
   : `${window.location.origin}/api`;
 
 const EMPTY_FORM = { phone: '', full_name: '', whatsapp_name: '', email: '' };
+
+// ─── BotPhonesTags ────────────────────────────────────────────────────────────
+
+const BotPhonesTags: React.FC<{ phones: string[] }> = ({ phones }) => {
+  const [showPopover, setShowPopover] = React.useState(false);
+  const MAX_VISIBLE = 2;
+
+  if (!phones || phones.length === 0) {
+    return <span className="text-slate-300 text-sm">—</span>;
+  }
+
+  const visible = phones.slice(0, MAX_VISIBLE);
+  const hidden = phones.slice(MAX_VISIBLE);
+
+  return (
+    <div className="flex items-center gap-1 flex-wrap">
+      {visible.map(p => (
+        <span key={p} className="text-xs bg-indigo-50 text-indigo-600 border border-indigo-100 px-2 py-0.5 rounded-full font-bold truncate max-w-[7rem]" title={p}>
+          {p}
+        </span>
+      ))}
+      {hidden.length > 0 && (
+        <div className="relative"
+          onMouseEnter={() => setShowPopover(true)}
+          onMouseLeave={() => setShowPopover(false)}
+        >
+          <button
+            className="text-xs bg-slate-100 text-slate-500 border border-slate-200 px-2 py-0.5 rounded-full font-bold hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-200 transition-colors"
+          >
+            +{hidden.length}
+          </button>
+          {showPopover && (
+            <div className="absolute bottom-full mb-1 right-0 bg-white border border-slate-200 rounded-xl shadow-lg p-2 z-50 flex flex-col gap-1 min-w-[10rem]">
+              {hidden.map(p => (
+                <span key={p} className="text-xs text-slate-700 font-semibold px-2 py-1 bg-slate-50 rounded-lg whitespace-nowrap">
+                  {p}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -194,6 +241,7 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
           sessionCount: s?.sessionCount ?? 0,
           lastSeen: s?.lastSeen ?? null,
           bots: s?.bots ?? [],
+          botPhones: s?.botPhones ?? [],
         };
       });
 
@@ -412,11 +460,12 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
           ) : (
             <div className="bg-white border border-slate-100 rounded-2xl overflow-hidden shadow-sm">
               {/* Table header */}
-              <div className="grid grid-cols-[1.6fr_1.5fr_1.3fr_1.6fr_0.65fr_1.3fr_7rem] gap-3 px-6 py-3 bg-slate-50 border-b border-slate-100 text-xs font-bold text-slate-400 uppercase tracking-wide">
+              <div className="grid grid-cols-[1.6fr_1.5fr_1.3fr_1.4fr_1.4fr_0.65fr_1.3fr_7rem] gap-3 px-6 py-3 bg-slate-50 border-b border-slate-100 text-xs font-bold text-slate-400 uppercase tracking-wide">
                 <span>טלפון</span>
                 <span>שם מלא</span>
                 <span>שם וואטסאפ</span>
                 <span>כתובת מייל</span>
+                <span>שוחח עם</span>
                 <span className="text-center">שיחות</span>
                 <span>פעיל לאחרונה</span>
                 <span></span>
@@ -428,7 +477,7 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
                   <div
                     key={contact.phone}
                     onClick={() => setDetailContact(contact)}
-                    className={`grid grid-cols-[1.6fr_1.5fr_1.3fr_1.6fr_0.65fr_1.3fr_7rem] gap-3 px-6 py-3.5 items-center hover:bg-slate-50/70 transition-colors cursor-pointer ${idx !== contacts.length - 1 ? 'border-b border-slate-100' : ''}`}
+                    className={`grid grid-cols-[1.6fr_1.5fr_1.3fr_1.4fr_1.4fr_0.65fr_1.3fr_7rem] gap-3 px-6 py-3.5 items-center hover:bg-slate-50/70 transition-colors cursor-pointer ${idx !== contacts.length - 1 ? 'border-b border-slate-100' : ''}`}
                   >
                     {/* Phone */}
                     <div className="flex items-center gap-3 min-w-0">
@@ -461,6 +510,11 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
                       ) : (
                         <span className="text-slate-300 text-sm">—</span>
                       )}
+                    </div>
+
+                    {/* Bot phones */}
+                    <div className="flex items-center min-w-0" onClick={e => e.stopPropagation()}>
+                      <BotPhonesTags phones={contact.botPhones ?? []} />
                     </div>
 
                     {/* Session count */}
@@ -855,6 +909,24 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
                     </div>
                   ))}
                 </div>
+              </div>
+
+              {/* Bot phones this contact interacted with */}
+              <div className="flex flex-col gap-3">
+                <h3 className="text-xs font-bold text-indigo-400 uppercase tracking-wider border-b border-indigo-100 pb-2">טלפונים שהתכתבו עם איש קשר זה</h3>
+                {detailContact.botPhones && detailContact.botPhones.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {detailContact.botPhones.map(p => (
+                      <span key={p} className="text-sm bg-indigo-50 text-indigo-700 border border-indigo-100 px-3 py-1.5 rounded-full font-bold">
+                        {p}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="px-5 py-3.5 bg-slate-50 rounded-2xl border border-slate-100">
+                    <span className="text-sm text-slate-300 font-semibold">—</span>
+                  </div>
+                )}
               </div>
 
               {/* Custom fields from bot flows */}

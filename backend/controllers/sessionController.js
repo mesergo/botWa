@@ -195,6 +195,7 @@ export const getContacts = async (req, res) => {
           widgetIds: { $addToSet: '$widget_id' },
           repGroupIds: { $addToSet: '$rep_group_id' },
           repUserIds: { $addToSet: '$rep_user_id' },
+          customerPhones: { $addToSet: '$customer_phone' },
           // Status of the most recent session for this contact
           latestStatus: { $first: '$status' },
           latestSessionDate: { $first: '$_date' }
@@ -217,6 +218,7 @@ export const getContacts = async (req, res) => {
         sessionCount: c.sessionCount,
         lastSeen: c.lastSeen,
         bots: [...usedBotIds].map(id => ({ id, name: botNameMap[id] })),
+        botPhones: (c.customerPhones || []).filter(p => p && p !== 'Simulated' && p !== 'simulated'),
         repGroupIds: (c.repGroupIds || []).filter(Boolean).map(String),
         repUserIds: (c.repUserIds || []).filter(Boolean).map(String),
         status: c.latestStatus || 'bot'

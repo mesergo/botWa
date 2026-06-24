@@ -17,7 +17,7 @@ interface AppNavProps {
   mode?: 'sidebar' | 'tabs';
 }
 
-const NAV_ITEMS: { key: NavPage; label: string; Icon: React.FC<{ size?: number }> }[] = [
+const NAV_ITEMS: { key: NavPage; label: string; Icon: React.FC<{ size?: number; className?: string }> }[] = [
   { key: 'bots',     label: 'הבוטים שלי', Icon: Bot },
   { key: 'sessions', label: 'שיחות',       Icon: List },
   { key: 'contacts', label: 'אנשי קשר',   Icon: Users },
@@ -50,7 +50,11 @@ const AppNav: React.FC<AppNavProps> = ({
 
   if (mode === 'sidebar') {
     return (
-      <aside className="w-60 bg-white border-l border-slate-100 flex flex-col py-4 px-3 gap-1 shadow-sm z-10 overflow-y-auto" dir="rtl">
+      <aside
+        className="w-64 bg-white border-l border-slate-100 flex flex-col py-4 px-3 gap-1 z-10 overflow-y-auto"
+        style={{ boxShadow: '4px 0 24px rgba(0,0,0,0.03)' }}
+        dir="rtl"
+      >
         {visibleItems.map(({ key, label, Icon }) => {
           const isActive = key === activePage;
           return (
@@ -58,14 +62,35 @@ const AppNav: React.FC<AppNavProps> = ({
               key={key}
               onClick={handlers[key]}
               disabled={isActive}
-              className={`flex items-center gap-3 px-4 py-3 rounded-2xl font-bold text-sm transition-all w-full ${
+              className={`relative flex items-center gap-3 px-4 py-3.5 rounded-xl font-bold text-sm transition-all duration-200 w-full group overflow-hidden ${
                 isActive
-                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20 cursor-default'
-                  : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700'
+                  ? 'cursor-default'
+                  : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'
               }`}
+              style={
+                isActive
+                  ? {
+                      background: 'linear-gradient(90deg, rgb(219 234 254) 0%, rgb(239 246 255) 100%)',
+                      color: 'rgb(37 99 235)',
+                    }
+                  : {}
+              }
             >
-              <Icon size={20} />
-              <span>{label}</span>
+              {isActive && (
+                <span
+                  className="absolute right-0 top-2 bottom-2 w-1 rounded-l-full"
+                  style={{ backgroundColor: 'rgb(37 99 235)' }}
+                />
+              )}
+              <Icon
+                size={20}
+                className={`flex-shrink-0 transition-colors ${
+                  isActive
+                    ? ''
+                    : 'text-slate-400 group-hover:text-slate-600'
+                }`}
+              />
+              <span className="tracking-tight">{label}</span>
             </button>
           );
         })}
