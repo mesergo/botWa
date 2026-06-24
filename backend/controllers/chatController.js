@@ -443,13 +443,7 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
       }
 
      case 'output_menu': {
-        // Send text message first (if exists)
         const text = replaceParameters(nodeData.content || '', params);
-        if (text) {
-          const textMsg = { type: 'Text', text, created: new Date().toISOString() };
-          messages.push(textMsg);
-          addToHistory(session, textMsg, currentNodeId);
-        }
         
         // Build options as simple string array
         const rawOptions = nodeData.options || [];
@@ -457,8 +451,8 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
           .filter(opt => opt !== 'default')
           .map(opt => String(opt));
         
-        // Embed text inside Options message as fallback (used when textBuffer is empty)
-        const optionsMsg = { type: 'Options', text, options, created: new Date().toISOString() };
+        // הטקסט נשלח פעם אחת בלבד — כחלק מהודעת Options עם הכפתורים (לא נפרד)
+        const optionsMsg = { type: 'Options', text: text || '', options, created: new Date().toISOString() };
         messages.push(optionsMsg);
         addToHistory(session, optionsMsg, currentNodeId);
         
