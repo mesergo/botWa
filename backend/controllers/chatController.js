@@ -1183,7 +1183,7 @@ export const respondToMessage = async (req, res) => {
   try {
     // Support both GET (query params) and POST (body) requests
     const isGetRequest = req.method === 'GET';
-    const source = isGetRequest ? req.query : req.body;
+    const source = (isGetRequest ? req.query : req.body) || {};
     
     const { phone, text = '', sender: rawSender = 'unknown', token: tokenParam, bot_id, name = '' } = source;
     const sender = normalizePhone(rawSender);

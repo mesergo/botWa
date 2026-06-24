@@ -308,6 +308,15 @@ export const syncFlow = async (req, res) => {
   const scopeQuery = buildScopeQuery(userId, flow_id, standard_process_id);
   const existingCount = await Widget.countDocuments(scopeQuery);
 
+  // ── Fix 3: warn when caller didn't send expected_widget_count ────────────
+  // Without this value Guard 2 (stale-state) is blind. Log so we know which
+  // client/code-path is missing it.
+  if (typeof expected_widget_count !== 'number' && existingCount > 0) {
+    console.warn('⚠️ syncFlow: expected_widget_count חסר — Guard 2 מושבת לשמירה זו', {
+      userId, flow_id, standard_process_id, existingCount
+    });
+  }
+
   // ── Guard 1: empty payload ────────────────────────────────────────────────
   // Refuse to wipe a flow when the client sent an empty nodes array — root cause
   // of the 15/06/2026 incident where bots were silently emptied.
@@ -350,11 +359,11 @@ export const syncFlow = async (req, res) => {
   // smaller, refuse. Catches "loaded empty due to UI bug, then saved" cases that
   // slip past Guard 1 because the UI auto-injected a single bootstrap node.
   const SHRINK_FLOOR = 5;        // only protect once a flow has at least this many nodes
-  const SHRINK_RATIO = 0.5;      // incoming must be < 50% of existing to trip
+const SHRINK_RATIO = 0.75;  // במקום 0.5
   if (
     !force &&
     existingCount >= SHRINK_FLOOR &&
-    nodes.length < Math.ceil(existingCount * SHRINK_RATIO)
+    nodes.length <= Math.ceil(existingCount * SHRINK_RATIO)
   ) {
     // Special-case: client sent only a single auto-bootstrap node (start /
     // automatic_responses with no real children). This is the signature of the
@@ -376,10 +385,38 @@ export const syncFlow = async (req, res) => {
     });
   }
 
+  // ── Guard 4: critical node types vanishing ─────────────────────────────
+  // If the server has action_web_service nodes and the incoming payload has none,
+  // that is almost certainly a UI bug (blank canvas loaded, then auto-saved).
+  if (!force) {
+    const existingWebServiceCount = await Widget.countDocuments({ ...scopeQuery, type: 'action_web_service' });
+    if (existingWebServiceCount > 0) {
+      const incomingWebServiceCount = nodes.filter(n => n.type === 'action_web_service').length;
+      if (incomingWebServiceCount === 0) {
+        console.warn('🛑 syncFlow rejected — all web service nodes lost', {
+          userId, flow_id, standard_process_id, existingWebServiceCount
+        });
+        await logSyncEvent('SYNC_REJECTED_WEB_SERVICE_LOST', req, userId, flow_id, standard_process_id, {
+          existingWebServiceCount, existingCount, incoming: nodes.length,
+          incomingTypes: [...new Set(nodes.map(n => n.type))]
+        });
+        return res.status(409).json({
+          error: 'WEB_SERVICE_LOST',
+          message: `שמירה נחסמה: הבוט מכיל ${existingWebServiceCount} רכיבי קריאת API אך אף אחד מהם לא נמצא בנתונים שנשלחו. רענני את הדף ונסי שוב.`,
+          existingWebServiceCount,
+          existingCount,
+          incoming: nodes.length
+        });
+      }
+    }
+  }
+
   // If we got here with force=true and the action is destructive, log it loudly.
+  // Fix 4: include incomingTypes so we can see exactly what was in the payload.
   if (force && (nodes.length === 0 || nodes.length < existingCount)) {
+    const incomingTypes = [...new Set(nodes.map(n => n.type))];
     await logSyncEvent('SYNC_FORCED_DESTRUCTIVE', req, userId, flow_id, standard_process_id, {
-      existingCount, incoming: nodes.length
+      existingCount, incoming: nodes.length, incomingTypes
     });
   }
 
