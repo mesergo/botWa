@@ -8,6 +8,7 @@ import {
 import ImpersonationBanner from './ImpersonationBanner';
 import { FileUploader } from './FileUploader';
 import { usePermission } from '../hooks/usePermission';
+import AppNav from './AppNav';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -538,38 +539,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
           <img src="/images/mesergo-logo.png" alt="Logo" className="h-10 w-auto cursor-pointer" onClick={onBack} />
         </div>
 
-        <div className="flex items-center gap-1 bg-slate-100 rounded-2xl p-1" dir="rtl">
-          {onBack && can('bots.view_tab') && (
-          <button onClick={onBack} className="flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm text-slate-500 hover:text-slate-700 transition-all">
-            <Bot size={16} /> הבוטים שלי
-          </button>
-          )}
-          {onOpenSessions && (
-            <button onClick={() => onOpenSessions()} className="flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm text-slate-500 hover:text-slate-700 transition-all">
-              <List size={16} /> שיחות
-            </button>
-          )}
-          {onOpenContacts && (
-            <button onClick={() => onOpenContacts()} className="flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm text-slate-500 hover:text-slate-700 transition-all">
-              <Users size={16} /> אנשי קשר
-            </button>
-          )}
-          <button className="flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm bg-white text-slate-900 shadow-sm transition-all">
-            <Layers size={16} /> קבוצות
-          </button>
-          {onOpenSettings && (
-            <button onClick={onOpenSettings} className="flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm text-slate-500 hover:text-slate-700 transition-all">
-              <Settings size={16} /> הגדרות
-            </button>
-          )}
-          {onOpenSubUsers && currentUser?.role === 'user' && (
-            <button onClick={onOpenSubUsers} className="flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm text-slate-500 hover:text-slate-700 transition-all">
-              <UserCog size={16} /> משתמשים
-            </button>
-          )}
-        </div>
-
-        <div className="flex items-center gap-4">
+<div className="flex items-center gap-4">
           {currentUser && (
             <span className="text-sm font-bold text-slate-600">שלום, {currentUser.name ?? currentUser.email}</span>
           )}
@@ -589,6 +559,16 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
 
       {/* Content */}
       <div className="flex-1 overflow-hidden flex">
+        {/* ── App nav sidebar ── */}
+        <AppNav
+          mode="sidebar"
+          activePage="groups"
+          onBots={can('bots.view_tab') ? onBack : undefined}
+          onSessions={onOpenSessions ? () => onOpenSessions() : undefined}
+          onContacts={onOpenContacts ? () => onOpenContacts() : undefined}
+          onSettings={onOpenSettings}
+          onUsers={onOpenSubUsers && can('users.view') ? onOpenSubUsers : undefined}
+        />
         {/* Sidebar — list of groups */}
         <aside className="w-96 border-l border-slate-100 bg-white flex flex-col flex-shrink-0">
           <div className="p-6 border-b border-slate-100">

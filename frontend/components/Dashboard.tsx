@@ -5,6 +5,7 @@ import { BotFlow, User } from '../types';
 import SubUsersTab from './SubUsersTab';
 import BotSettingsModal from './BotSettingsModal';
 import { usePermission } from '../hooks/usePermission';
+import AppNav from './AppNav';
 
 const API_BASE = window.location.hostname === 'localhost'
   ? 'http://localhost:3001/api'
@@ -157,6 +158,10 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
     }
     return requested;
   });
+
+  // Settings tab section
+  type SettingsSection = 'profile' | 'account' | 'connection' | 'quota' | 'numbers' | 'templates' | 'removal';
+  const [settingsSection, setSettingsSection] = useState<SettingsSection>('profile');
 
   // Settings tab state
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -534,63 +539,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
         <div className="flex items-center gap-4">
           <img src="/images/mesergo-logo.png" alt="Logo" className="h-10 w-auto" />
         </div>
-        {/* ── Navigation tabs ── */}
-        <div className="flex items-center gap-1 bg-slate-100 rounded-2xl p-1" dir="rtl">
-          {can('bots.view_tab') && (
-          <button
-            onClick={() => setActiveTab('bots')}
-            className={`flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm transition-all ${
-              activeTab === 'bots' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-            }`}
-          >
-            <Bot size={16} /> הבוטים שלי
-          </button>
-          )}
-          {onOpenSessions && can('sessions.view') && (
-            <button
-              onClick={onOpenSessions}
-              className="flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm text-slate-500 hover:text-slate-700 transition-all"
-            >
-              <List size={16} /> שיחות
-            </button>
-          )}
-          {onOpenContacts && can('contacts.view') && (
-            <button
-              onClick={onOpenContacts}
-              className="flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm text-slate-500 hover:text-slate-700 transition-all"
-            >
-              <Users size={16} /> אנשי קשר
-            </button>
-          )}
-          {onOpenGroups && can('groups.view') && (
-            <button
-              onClick={onOpenGroups}
-              className="flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm text-slate-500 hover:text-slate-700 transition-all"
-            >
-              <Layers size={16} /> קבוצות
-            </button>
-          )}
-          {can('settings.view') && (
-            <button
-              onClick={() => setActiveTab('settings')}
-              className={`flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm transition-all ${
-                activeTab === 'settings' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-              }`}
-            >
-              <Settings size={16} /> הגדרות
-            </button>
-          )}
-          {can('users.view') && (
-            <button
-              onClick={() => setActiveTab('users')}
-              className={`flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm transition-all ${
-                activeTab === 'users' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-              }`}
-            >
-              <UserCog size={16} /> משתמשים
-            </button>
-          )}
-        </div>
+
         <div className="flex items-center gap-4">
           {currentUser && (
             <span className="text-sm font-bold text-slate-600">שלום, {currentUser.name || currentUser.email}</span>
@@ -632,19 +581,68 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
         </div>
       </nav>
 
+      {/* ── Main layout: sidebar + content ── */}
+      <div className="flex-1 flex flex-row-reverse overflow-hidden">
+
+        {/* ── Right Sidebar ── */}
+        <AppNav
+          mode="sidebar"
+          activePage={activeTab}
+          onBots={can('bots.view_tab') ? () => setActiveTab('bots') : undefined}
+          onSessions={onOpenSessions && can('sessions.view') ? onOpenSessions : undefined}
+          onContacts={onOpenContacts && can('contacts.view') ? onOpenContacts : undefined}
+          onGroups={onOpenGroups && can('groups.view') ? onOpenGroups : undefined}
+          onSettings={can('settings.view') ? () => setActiveTab('settings') : undefined}
+          onUsers={can('users.view') ? () => setActiveTab('users') : undefined}
+        />
+
+        {/* ── Content area ── */}
+        <div className="flex-1 flex flex-col overflow-hidden">
+
       {/* ── Settings Tab ── */}
       {activeTab === 'settings' && (
-        <div className="flex-1 overflow-y-auto p-12">
-          <div className="max-w-5xl mx-auto">
-            <h1 className="text-3xl font-black text-slate-900 mb-10 text-right">הגדרות</h1>
+        <div className="flex-1 flex overflow-hidden" dir="rtl">
+
+          {/* ── Inner settings sidebar ── */}
+          <aside className="w-56 bg-white border-l border-slate-100 flex flex-col py-6 px-3 gap-1 flex-shrink-0 overflow-y-auto">
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider px-3 mb-2">הגדרות</p>
+            {([
+              { key: 'profile',    label: 'פרטים אישיים',     icon: <UserIcon size={16} /> },
+              { key: 'account',    label: 'פרטי חשבון',        icon: <Shield size={16} /> },
+              { key: 'connection', label: 'הגדרות חיבור',      icon: <Wifi size={16} /> },
+              { key: 'quota',      label: 'מכסות אישיות',      icon: <Gauge size={16} /> },
+              { key: 'numbers',    label: 'מספרים מחוברים',    icon: <Phone size={16} /> },
+              { key: 'templates',  label: 'הודעות תבנית',      icon: <MessageSquare size={16} /> },
+              { key: 'removal',    label: 'ניהול הסרה מקבוצה', icon: <UserMinus size={16} /> },
+            ] as { key: SettingsSection; label: string; icon: React.ReactNode }[]).map(({ key, label, icon }) => (
+              <button
+                key={key}
+                onClick={() => setSettingsSection(key)}
+                className={`flex items-center gap-3 px-4 py-3 rounded-2xl font-bold text-sm transition-all w-full text-right ${
+                  settingsSection === key
+                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20'
+                    : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700'
+                }`}
+              >
+                {icon}
+                <span>{label}</span>
+              </button>
+            ))}
+          </aside>
+
+          {/* ── Settings content ── */}
+          <div className="flex-1 overflow-y-auto p-10">
+            <div className="max-w-2xl mx-auto">
 
             {profileLoading ? (
               <div className="text-center text-slate-400 py-20 font-bold">טוען פרטים...</div>
-            ) : profile ? (
+            ) : !profile ? (
+              <div className="text-center text-slate-400 py-20 font-bold">לא ניתן לטעון פרטים. אנא נסה שוב.</div>
+            ) : (
               <>
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6" dir="rtl">
 
-                {/* Editable personal details */}
+              {/* ── פרטים אישיים ── */}
+              {settingsSection === 'profile' && (
                 <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-8">
                   <h2 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-6 flex items-center gap-2 border-b border-slate-100 pb-4">
                     <UserIcon size={14} /> פרטים אישיים
@@ -682,37 +680,34 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                       />
                     </div>
                   </div>
-
                   {profileError && (
-                    <div className="mt-4 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-red-600 text-sm font-bold text-right">
-                      {profileError}
-                    </div>
+                    <div className="mt-4 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-red-600 text-sm font-bold text-right">{profileError}</div>
                   )}
                   {profileSuccess && (
                     <div className="mt-4 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 text-emerald-600 text-sm font-bold text-right flex items-center gap-2">
                       <Check size={16} /> הפרטים נשמרו בהצלחה
                     </div>
                   )}
-
                   {can('settings.edit_profile') && (
-                  <button
-                    onClick={handleSaveProfile}
-                    disabled={profileSaving}
-                    className="mt-6 flex items-center gap-2 px-8 py-4 bg-blue-600 text-white rounded-2xl font-bold shadow-lg shadow-blue-600/20 hover:bg-blue-700 transition-all disabled:opacity-60 active:scale-95"
-                  >
-                    <Save size={18} />
-                    {profileSaving ? 'שומר...' : 'שמור שינויים'}
-                  </button>
+                    <button
+                      onClick={handleSaveProfile}
+                      disabled={profileSaving}
+                      className="mt-6 flex items-center gap-2 px-8 py-4 bg-blue-600 text-white rounded-2xl font-bold shadow-lg shadow-blue-600/20 hover:bg-blue-700 transition-all disabled:opacity-60 active:scale-95"
+                    >
+                      <Save size={18} />
+                      {profileSaving ? 'שומר...' : 'שמור שינויים'}
+                    </button>
                   )}
                 </div>
+              )}
 
-                {/* Read-only account details */}
+              {/* ── פרטי חשבון ── */}
+              {settingsSection === 'account' && (
                 <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-8">
                   <h2 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-6 flex items-center gap-2 border-b border-slate-100 pb-4">
                     <Shield size={14} /> פרטי חשבון
                   </h2>
                   <div className="space-y-5">
-
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-bold text-slate-400">מזהה ציבורי</span>
                       <div className="flex items-center gap-3">
@@ -722,7 +717,6 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                         <span className="text-slate-800 font-mono text-sm bg-slate-50 px-3 py-1 rounded-lg border border-slate-100 select-all">{profile.public_id}</span>
                       </div>
                     </div>
-
                     <div className="flex items-center justify-between py-1">
                       <span className="text-xs font-bold text-slate-400">סוג חשבון</span>
                       <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold border ${
@@ -734,38 +728,35 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                         {profile.account_type === 'Trial' ? 'ניסיוני' : profile.account_type}
                       </div>
                     </div>
-
                     <div className="flex items-center justify-between py-1">
                       <span className="text-xs font-bold text-slate-400">סטטוס</span>
                       <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold border ${
                         profile.status === 'active' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-red-50 text-red-600 border-red-100'
                       }`}>
-                        <span className={`w-1.5 h-1.5 rounded-full ${ profile.status === 'active' ? 'bg-emerald-500' : 'bg-red-500'}`} />
+                        <span className={`w-1.5 h-1.5 rounded-full ${profile.status === 'active' ? 'bg-emerald-500' : 'bg-red-500'}`} />
                         {profile.status === 'active' ? 'פעיל' : 'חסום'}
                       </div>
                     </div>
-
                     <div className="flex items-center justify-between py-1">
                       <span className="text-xs font-bold text-slate-400">תפקיד</span>
                       <span className="text-slate-700 font-bold text-sm">{profile.role === 'admin' ? 'מנהל' : 'משתמש'}</span>
                     </div>
-
                     <div className="flex items-center justify-between py-1">
                       <span className="text-xs font-bold text-slate-400">תאריך הצטרפות</span>
                       <span className="text-slate-700 font-bold text-sm">{profile.createdAt ? new Date(profile.createdAt).toLocaleDateString('he-IL') : '-'}</span>
                     </div>
-
                     {profile.trial_expires_at && (
                       <div className="flex items-center justify-between py-1">
                         <span className="text-xs font-bold text-slate-400">תפוגת תקופת ניסיון</span>
                         <span className="text-orange-600 font-bold text-sm">{new Date(profile.trial_expires_at).toLocaleDateString('he-IL')}</span>
                       </div>
                     )}
-
                   </div>
                 </div>
+              )}
 
-                {/* Connection Settings */}
+              {/* ── הגדרות חיבור ── */}
+              {settingsSection === 'connection' && (
                 <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-8">
                   <h2 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-6 flex items-center gap-2 border-b border-slate-100 pb-4">
                     <Wifi size={14} /> הגדרות חיבור
@@ -781,11 +772,13 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                     </div>
                   </div>
                 </div>
+              )}
 
-                {/* Personal Quota */}
+              {/* ── מכסות אישיות ── */}
+              {settingsSection === 'quota' && (
                 <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-8">
                   <h2 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-6 flex items-center gap-2 border-b border-slate-100 pb-4">
-                    <Gauge size={14} /> מכסה אישיות
+                    <Gauge size={14} /> מכסות אישיות
                   </h2>
                   <div className="space-y-5">
                     <div className="flex items-center justify-between py-1">
@@ -806,11 +799,11 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                     </div>
                   </div>
                 </div>
+              )}
 
-              </div>
-
-              {/* ── Connected WhatsApp Numbers ── */}
-              <div dir="rtl" className="bg-white rounded-3xl border border-slate-100 shadow-sm p-8 mt-2">
+              {/* ── מספרים מחוברים ── */}
+              {settingsSection === 'numbers' && (
+              <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-8">
                 <h2 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-6 flex items-center gap-2 border-b border-slate-100 pb-4">
                   <Phone size={14} /> מספרים מחוברים
                 </h2>
@@ -898,10 +891,12 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                   </div>
                 )}
               </div>
+              )}{/* end numbers */}
 
-              {/* ── WA Message Templates ── */}
-              <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-8 mt-2">
-                <h2 dir="rtl" className="text-xs font-black text-slate-400 uppercase tracking-wider mb-6 flex items-center gap-2 border-b border-slate-100 pb-4">
+              {/* ── הודעות תבנית ── */}
+              {settingsSection === 'templates' && (
+              <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-8">
+                <h2 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-6 flex items-center gap-2 border-b border-slate-100 pb-4">
                   <MessageSquare size={14} /> הודעות תבנית
                 </h2>
                 {waTemplatesLoading ? (
@@ -999,9 +994,11 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                   </div>
                 )}
               </div>
+              )}{/* end templates */}
 
-              {/* ── Auto-removal-from-group config (per-user override) ── */}
-              <div dir="rtl" className="bg-white rounded-3xl border border-slate-100 shadow-sm p-8 mt-2">
+              {/* ── ניהול הסרה מקבוצה ── */}
+              {settingsSection === 'removal' && (
+              <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-8">
                 <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-slate-100 pb-5 mb-6">
                   <div>
                     <h2 className="text-base font-black text-slate-800 flex items-center gap-2">
@@ -1142,11 +1139,11 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                   </div>
                 )}
               </div>
+              )}{/* end removal */}
 
-            </>
-            ) : (
-              <div className="text-center text-slate-400 py-20 font-bold">לא ניתן לטעון פרטים. אנא נסה שוב.</div>
+              </>
             )}
+            </div>
           </div>
         </div>
       )}
@@ -1243,6 +1240,9 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
           </div>
         </div>
       )}
+
+        </div>{/* end content area */}
+      </div>{/* end main layout */}
 
       {facebookConfirmBot && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[100] p-6 text-right">

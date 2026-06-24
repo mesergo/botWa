@@ -5,6 +5,7 @@ import {
   Upload, Download, Eye, ChevronRight, ChevronLeft, Layers
 } from 'lucide-react';
 import ImpersonationBanner from './ImpersonationBanner';
+import AppNav from './AppNav';
 import { usePermission } from '../hooks/usePermission';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -295,39 +296,7 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
           <img src="/images/mesergo-logo.png" alt="Logo" className="h-10 w-auto cursor-pointer" onClick={onBack} />
         </div>
 
-        {/* Navigation tabs */}
-        <div className="flex items-center gap-1 bg-slate-100 rounded-2xl p-1" dir="rtl">
-          {onBack && can('bots.view_tab') && (
-          <button onClick={onBack} className="flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm text-slate-500 hover:text-slate-700 transition-all">
-            <Bot size={16} /> הבוטים שלי
-          </button>
-          )}
-          {onOpenSessions && (
-            <button onClick={() => onOpenSessions()} className="flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm text-slate-500 hover:text-slate-700 transition-all">
-              <List size={16} /> שיחות
-            </button>
-          )}
-          <button className="flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm bg-white text-slate-900 shadow-sm transition-all">
-            <Users size={16} /> אנשי קשר
-          </button>
-          {onOpenGroups && (
-            <button onClick={onOpenGroups} className="flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm text-slate-500 hover:text-slate-700 transition-all">
-              <Layers size={16} /> קבוצות
-            </button>
-          )}
-          {onOpenSettings && (
-            <button onClick={onOpenSettings} className="flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm text-slate-500 hover:text-slate-700 transition-all">
-              <Settings size={16} /> הגדרות
-            </button>
-          )}
-          {onOpenSubUsers && currentUser?.role === 'user' && (
-            <button onClick={onOpenSubUsers} className="flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm text-slate-500 hover:text-slate-700 transition-all">
-              <UserCog size={16} /> משתמשים
-            </button>
-          )}
-        </div>
-
-        <div className="flex items-center gap-4">
+<div className="flex items-center gap-4">
           {currentUser && (
             <span className="text-sm font-bold text-slate-600">שלום, {currentUser.name ?? currentUser.email}</span>
           )}
@@ -348,8 +317,18 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
         </div>
       </nav>
 
-      {/* Content */}
-      <div className="flex-1 overflow-y-auto p-10">
+      {/* Main layout */}
+      <div className="flex-1 flex overflow-hidden">
+        <AppNav
+          mode="sidebar"
+          activePage="contacts"
+          onBots={can('bots.view_tab') ? onBack : undefined}
+          onSessions={onOpenSessions ? () => onOpenSessions() : undefined}
+          onGroups={onOpenGroups}
+          onSettings={onOpenSettings}
+          onUsers={onOpenSubUsers && can('users.view') ? onOpenSubUsers : undefined}
+        />
+        <div className="flex-1 overflow-y-auto p-10">
         <div className="max-w-7xl mx-auto">
 
           {/* Page header */}
@@ -603,7 +582,8 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
             </div>
           )}
         </div>
-      </div>
+        </div>
+      </div>{/* end main layout */}
 
       {/* Import modal */}
       {importModalOpen && (

@@ -3,6 +3,7 @@ import { Clock, MessageSquare, Search, Bot, LogOut, User, Phone, List, Users, Ex
 import ImpersonationBanner from './ImpersonationBanner';
 import { FileUploader } from './FileUploader';
 import { usePermission } from '../hooks/usePermission';
+import AppNav from './AppNav';
 
 interface Session {
   id: string;
@@ -1233,56 +1234,6 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
         <div className="flex items-center gap-4">
           <img src="/images/mesergo-logo.png" alt="Logo" className="h-10 w-auto cursor-pointer" onClick={onBack} />
         </div>
-        {/* ── Navigation tabs ── */}
-        {currentUser?.role !== 'rep' && (
-        <div className="flex items-center gap-1 bg-slate-100 rounded-2xl p-1" dir="rtl">
-          {onBack && can('bots.view_tab') && (
-            <button
-              onClick={onBack}
-              className="flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm text-slate-500 hover:text-slate-700 transition-all"
-            >
-              <Bot size={16} /> הבוטים שלי
-            </button>
-          )}
-          <button
-            className="flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm bg-white text-slate-900 shadow-sm transition-all"
-          >
-            <List size={16} /> שיחות
-          </button>
-          {onOpenContacts && (
-            <button
-              onClick={() => onOpenContacts()}
-              className="flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm text-slate-500 hover:text-slate-700 transition-all"
-            >
-              <Users size={16} /> אנשי קשר
-            </button>
-          )}
-          {onOpenGroups && (
-            <button
-              onClick={onOpenGroups}
-              className="flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm text-slate-500 hover:text-slate-700 transition-all"
-            >
-              <Layers size={16} /> קבוצות
-            </button>
-          )}
-          {onOpenSettings && (
-            <button
-              onClick={onOpenSettings}
-              className="flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm text-slate-500 hover:text-slate-700 transition-all"
-            >
-              <Settings size={16} /> הגדרות
-            </button>
-          )}
-          {onOpenSubUsers && (currentUser?.role === 'user' || currentUser?.role === 'rep_manager') && (
-            <button
-              onClick={onOpenSubUsers}
-              className="flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm text-slate-500 hover:text-slate-700 transition-all"
-            >
-              <UserCog size={16} /> משתמשים
-            </button>
-          )}
-        </div>
-        )}
         <div className="flex items-center gap-4">
           {currentUser && (
             <span className="text-sm font-bold text-slate-600">שלום, {currentUser.name || currentUser.email}</span>
@@ -1355,9 +1306,20 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
 
       {/* Main area  —  contacts panel on the right, chat area on the left (RTL flex) */}
       <div className="flex-1 flex overflow-hidden">
+        {currentUser?.role !== 'rep' && (
+          <AppNav
+            mode="sidebar"
+            activePage="sessions"
+            onBots={onBack && can('bots.view_tab') ? onBack : undefined}
+            onContacts={onOpenContacts ? () => onOpenContacts() : undefined}
+            onGroups={onOpenGroups}
+            onSettings={onOpenSettings}
+            onUsers={onOpenSubUsers && can('users.view') ? onOpenSubUsers : undefined}
+          />
+        )}
 
-        {/* ── Contacts panel (first child = right side in RTL, ~30%) ── */}
-        <div className="w-[30%] flex-shrink-0 bg-white border-l border-slate-100 flex flex-col overflow-hidden">
+        {/* ── Contacts panel (right side in RTL, ~25%) ── */}
+        <div className="w-[25%] flex-shrink-0 bg-white border-l border-slate-100 flex flex-col overflow-hidden">
           {/* Header */}
           <div className="flex-shrink-0 px-5 py-4 border-b border-slate-100">
             <div className="flex items-center justify-between mb-3">
