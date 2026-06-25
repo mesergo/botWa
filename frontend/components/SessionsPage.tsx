@@ -4,7 +4,7 @@ import ImpersonationBanner from './ImpersonationBanner';
 import { FileUploader } from './FileUploader';
 import { usePermission } from '../hooks/usePermission';
 import AppNav from './AppNav';
-
+ 
 interface Session {
   id: string;
   phone: string;
@@ -25,6 +25,7 @@ interface Contact {
   sessionCount: number;
   lastSeen: string | null;
   bots: { id: string; name: string }[];
+  botPhones?: string[];
   assigned_to?: string[];
   status?: 'bot' | 'waiting' | 'handling' | 'closed';
 }
@@ -157,14 +158,15 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
       return;
     }
     setPhoneSessionsLoading(true);
-    fetch(`${API_BASE}/sessions/by-phone?phone=${encodeURIComponent(selectedPhone)}`, {
+    const botParam = activeBotFilter ? `&botId=${encodeURIComponent(activeBotFilter.id)}` : '';
+    fetch(`${API_BASE}/sessions/by-phone?phone=${encodeURIComponent(selectedPhone)}${botParam}`, {
       headers: { Authorization: `Bearer ${token}` }
     })
       .then(r => r.ok ? r.json() : Promise.reject(r))
       .then(data => setPhoneSessions(data))
       .catch(e => console.error('Failed to load sessions for phone', e))
       .finally(() => setPhoneSessionsLoading(false));
-  }, [selectedPhone, token]);
+  }, [selectedPhone, token, activeBotFilter]);
 
   // Real-time polling: every 4s re-fetch sessions for the selected phone so that
   // incoming WhatsApp messages (saved server-side to process_history) show up
@@ -173,7 +175,8 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
   useEffect(() => {
     if (!selectedPhone || !token) return;
     const interval = setInterval(() => {
-      fetch(`${API_BASE}/sessions/by-phone?phone=${encodeURIComponent(selectedPhone)}`, {
+      const botParam = activeBotFilter ? `&botId=${encodeURIComponent(activeBotFilter.id)}` : '';
+      fetch(`${API_BASE}/sessions/by-phone?phone=${encodeURIComponent(selectedPhone)}${botParam}`, {
         headers: { Authorization: `Bearer ${token}` }
       })
         .then(r => r.ok ? r.json() : Promise.reject(r))
@@ -1005,7 +1008,12 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
   const filteredContacts = contacts.filter(c => {
     if (!c.phone.toLowerCase().includes(contactSearch.toLowerCase())) return false;
     if (activeBotFilter) {
-      return c.bots.some(b => b.id === activeBotFilter.id);
+      // Match by bot flow id (widget-based sessions)
+      if (c.bots.some(b => b.id === activeBotFilter.id)) return true;
+      // Match by customer_phone (direct WhatsApp sessions without widget)
+      const filterDigits = (activeBotFilter.display_phone_number || '').replace(/\D/g, '');
+      if (filterDigits && c.botPhones?.some(p => p.replace(/\D/g, '') === filterDigits)) return true;
+      return false;
     }
     return true;
   });

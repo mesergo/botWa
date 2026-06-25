@@ -1545,12 +1545,18 @@ export const respondToMessage = async (req, res) => {
     if (!isNewSession && text && !session.waiting_text_input && (session.execution_stack || []).length === 0) {
 
       // 1. Check all output_menu nodes in the flow for a match
+      // Always check the current node first to avoid matching an identically-named
+      // option in a different menu branch (e.g. "רשימה מלאה" appearing in multiple menus).
       const interruptMenuNodes = flowData.nodes.filter(n => n.type === 'output_menu');
-      for (const menuNode of interruptMenuNodes) {
+      const interruptMenuNodesSorted = [
+        ...interruptMenuNodes.filter(n => n.id === session.current_node_id),
+        ...interruptMenuNodes.filter(n => n.id !== session.current_node_id)
+      ];
+      for (const menuNode of interruptMenuNodesSorted) {
         const menuOptions = (menuNode.data.options || []).filter(o => o !== 'default');
         const matchedMenuIdx = menuOptions.findIndex(
           opt => String(opt).trim().toLowerCase() === text.trim().toLowerCase()
-        );
+        ); 
 
         // Determine which edge to follow: matched option or default
         const isCurrentMenuNode = menuNode.id === session.current_node_id;
