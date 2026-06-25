@@ -577,8 +577,8 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                 <Layers size={20} />
               </div>
               <div>
-                <h2 className="text-lg font-black text-slate-900">קבוצות תפוצה</h2>
-                <p className="text-xs font-semibold text-slate-400">{regularGroups.length} קבוצות</p>
+                <h2 className="text-lg font-black text-slate-900">רשימות תפוצה</h2>
+                <p className="text-xs font-semibold text-slate-400">{regularGroups.length} רשימות</p>
               </div>
             </div>
 
@@ -589,7 +589,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                 value={newGroupName}
                 onChange={e => setNewGroupName(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter') createGroup(); }}
-                placeholder="שם קבוצה חדשה..."
+                placeholder="שם רשימה חדשה..."
                 className="flex-1 px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-500 transition-all"
               />
               <button
@@ -637,7 +637,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                 {regularGroups.length === 0 ? (
                   <div className="text-center py-10 text-slate-300">
                     <Layers size={48} strokeWidth={1} className="mx-auto mb-3" />
-                    <p className="text-sm font-bold">אין קבוצות עדיין</p>
+                    <p className="text-sm font-bold">אין רשימות תפוצה עדיין</p>
                   </div>
                 ) : (
                   regularGroups.map(g => (
@@ -707,8 +707,8 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
           {!selectedGroup ? (
             <div className="h-full flex flex-col items-center justify-center text-slate-300">
               <Layers size={72} strokeWidth={1} />
-              <p className="text-xl font-bold mt-4">בחר קבוצה מהרשימה</p>
-              <p className="text-sm font-semibold mt-1">או צור קבוצה חדשה</p>
+              <p className="text-xl font-bold mt-4">בחר רשימת תפוצה</p>
+              <p className="text-sm font-semibold mt-1">או צור רשימה חדשה</p>
             </div>
           ) : (
             <div className="max-w-5xl mx-auto">

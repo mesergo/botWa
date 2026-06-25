@@ -154,6 +154,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
   const [adminTemplates, setAdminTemplates] = useState<any[]>([]);
   const [adminTemplatesLoading, setAdminTemplatesLoading] = useState(false);
 
+  // Delete User confirmation modal
+  const [deleteConfirmUserId, setDeleteConfirmUserId] = useState<string | null>(null);
+  const [isDeletingUser, setIsDeletingUser] = useState(false);
+
   // Create User modal
   const [showCreateUserModal, setShowCreateUserModal] = useState(false);
   const [createUserForm, setCreateUserForm] = useState({ name: '', email: '', phone: '', password: '', account_type: 'Trial', user_type_id: '' });
@@ -608,22 +612,29 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
     }
   };
 
-  const handleDeleteUser = async (userId: string) => {
-    if (!window.confirm('האם אתה בטוח שברצונך למחוק משתמש זה לצמיתות? פעולה זו תמחק גם את כל הבוטים שלו!')) return;
-    
+  const handleDeleteUser = (userId: string) => {
+    setDeleteConfirmUserId(userId);
+  };
+
+  const confirmDeleteUser = async () => {
+    if (!deleteConfirmUserId) return;
+    setIsDeletingUser(true);
     try {
-      const response = await fetch(`${API_BASE}/admin/users/${userId}`, {
+      const response = await fetch(`${API_BASE}/admin/users/${deleteConfirmUserId}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       });
       
       if (!response.ok) throw new Error('Delete failed');
       
+      setDeleteConfirmUserId(null);
       setSelectedUser(null);
       fetchAllUsers();
       fetchStats();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Delete failed');
+    } finally {
+      setIsDeletingUser(false);
     }
   };
 
@@ -2986,6 +2997,48 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
               <button
                 onClick={() => setShowCreateUserModal(false)}
                 className="px-5 py-3 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-100 transition-colors"
+              >
+                ביטול
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete User Confirmation Modal */}
+      {deleteConfirmUserId && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-[200] p-6" dir="rtl">
+          <div className="bg-white w-full max-w-sm rounded-[2rem] shadow-2xl p-8 border border-slate-100 text-right animate-in zoom-in duration-200">
+            <div className="w-14 h-14 bg-red-100 text-red-600 rounded-2xl flex items-center justify-center mb-5">
+              <Trash2 size={28} />
+            </div>
+            <h3 className="text-xl font-black text-slate-900 mb-2">מחיקת לקוח</h3>
+            <p className="text-slate-500 text-sm mb-2 font-medium leading-relaxed">
+              האם אתה בטוח שברצונך למחוק לקוח זה לצמיתות?
+            </p>
+            <div className="bg-red-50 border border-red-100 rounded-xl p-3 mb-6">
+              <p className="text-red-700 text-xs font-bold leading-relaxed">
+                ⚠️ פעולה זו תמחק לצמיתות את:
+              </p>
+              <ul className="text-red-600 text-xs mt-1.5 space-y-0.5 font-medium">
+                <li>• כל הבוטים שלו</li>
+                <li>• כל השיחות וההיסטוריה</li>
+                <li>• כל הנתונים המשויכים לחשבון</li>
+              </ul>
+              <p className="text-red-700 text-xs font-bold mt-2">פעולה זו אינה ניתנת לביטול!</p>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={confirmDeleteUser}
+                disabled={isDeletingUser}
+                className="flex-1 py-3 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 transition-all disabled:opacity-60 text-sm"
+              >
+                {isDeletingUser ? 'מוחק...' : 'כן, מחק לצמיתות'}
+              </button>
+              <button
+                onClick={() => setDeleteConfirmUserId(null)}
+                disabled={isDeletingUser}
+                className="flex-1 py-3 bg-slate-100 text-slate-700 rounded-xl font-bold hover:bg-slate-200 transition-all text-sm"
               >
                 ביטול
               </button>

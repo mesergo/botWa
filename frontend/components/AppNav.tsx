@@ -21,7 +21,7 @@ const NAV_ITEMS: { key: NavPage; label: string; Icon: React.FC<{ size?: number; 
   { key: 'bots',     label: 'הבוטים שלי', Icon: Bot },
   { key: 'sessions', label: 'שיחות',       Icon: List },
   { key: 'contacts', label: 'אנשי קשר',   Icon: Users },
-  { key: 'groups',   label: 'קבוצות',      Icon: Layers },
+  { key: 'groups',   label: 'רשימות תפוצה', Icon: Layers },
   { key: 'settings', label: 'הגדרות',      Icon: Settings },
   { key: 'users',    label: 'משתמשים',     Icon: UserCog },
 ];
