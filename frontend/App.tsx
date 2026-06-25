@@ -435,14 +435,33 @@ const FlowBuilder: React.FC = () => {
     setEdges((eds) => eds.filter((edge) => edge.source !== id && edge.target !== id));
   }, []);
 
+  // When a menu/branch option is removed at `optionIndex`, we must:
+  // 1. Delete any edge connected to that option's handle (option-<optionIndex>)
+  // 2. Re-index handles of options that shifted down (indices > optionIndex)
+  const onRemoveOption = useCallback((nodeId: string, optionIndex: number) => {
+    setEdges((eds) =>
+      eds
+        .filter((e) => !(e.source === nodeId && e.sourceHandle === `option-${optionIndex}`))
+        .map((e) => {
+          if (e.source !== nodeId) return e;
+          const match = e.sourceHandle?.match(/^option-(\d+)$/);
+          if (!match) return e;
+          const idx = parseInt(match[1], 10);
+          if (idx > optionIndex) return { ...e, sourceHandle: `option-${idx - 1}` };
+          return e;
+        })
+    );
+  }, []);
+
   const bindNodeCallbacks = useCallback((node: Node): Node => ({
     ...node,
     data: { 
       ...node.data, 
       onChange: (data: Partial<NodeData>) => onNodeDataChange(node.id, data), 
       onDelete: () => onDeleteNode(node.id),
+      onRemoveOption: (optionIndex: number) => onRemoveOption(node.id, optionIndex),
     }
-  }), [onNodeDataChange, onDeleteNode]);
+  }), [onNodeDataChange, onDeleteNode, onRemoveOption]);
 
   // Centralized session-expiry handler — called from any place that gets 401/403
   const handleSessionExpired = useCallback(() => {

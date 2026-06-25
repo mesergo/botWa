@@ -514,6 +514,7 @@ export const OutputMenuNode = (props: any) => {
     if (options.length <= 1) return;
     const newOptions = options.filter((_: any, i: number) => i !== index);
     const newImages = (props.data.optionImages || []).filter((_: any, i: number) => i !== index);
+    props.data.onRemoveOption?.(index);
     props.data.onChange({ options: newOptions, optionImages: newImages });
   };
 
@@ -535,6 +536,13 @@ export const OutputMenuNode = (props: any) => {
         {options.map((opt: string, i: number) => (
           <div key={i} className="flex items-center gap-2 p-2 bg-slate-50 border border-slate-100 rounded-2xl group/item relative transition-colors hover:bg-white hover:border-blue-100">
             <Handle type="source" position={Position.Right} id={`option-${i}`} style={{ top: '50%', right: -16 }} className="w-4 h-4 bg-slate-400 border-2 border-white rounded-full shadow-lg" />
+            <button 
+              onClick={() => removeOption(i)} 
+              className="w-10 h-10 rounded-lg flex items-center justify-center text-red-400 hover:text-red-600 hover:bg-red-50 transition-all nodrag flex-shrink-0"
+              title="מחק אפשרות"
+            >
+              <X size={18} />
+            </button>
             <div className="flex-1">
               <SearchableInput value={opt} onChange={(v: string) => updateOption(i, v)} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} placeholder="הזן ערך" />
             </div>
@@ -558,13 +566,6 @@ export const OutputMenuNode = (props: any) => {
                   <ImageIcon size={20} />
                 </button>
               )}
-              <button 
-                onClick={() => removeOption(i)} 
-                className="w-10 h-10 rounded-lg flex items-center justify-center text-slate-200 hover:text-red-500 hover:bg-red-50 transition-all opacity-0 group-hover/item:opacity-100 nodrag flex-shrink-0"
-                title="מחק אפשרות"
-              >
-                <X size={18} />
-              </button>
             </div>
             <input 
               type="file" 
@@ -609,6 +610,7 @@ export const ActionWebServiceNode = (props: any) => {
   const removeBranch = (index: number) => {
     const newBranches = branches.filter((_: any, i: number) => i !== index);
     const newOps = operators.filter((_: any, i: number) => i !== index);
+    props.data.onRemoveOption?.(index);
     props.data.onChange({ options: newBranches, optionOperators: newOps });
   };
 
@@ -1183,6 +1185,7 @@ export const AutomaticResponsesNode = (props: any) => {
     if (index === 0) return; // Prevent deleting the fixed "כניסה" option
     const newOptions = options.filter((_: any, i: number) => i !== index);
     const newOps = operators.filter((_: any, i: number) => i !== index);
+    props.data.onRemoveOption?.(index);
     props.data.onChange({ options: newOptions, optionOperators: newOps });
   };
 
@@ -1208,7 +1211,7 @@ export const AutomaticResponsesNode = (props: any) => {
                     <ResponseOperatorSelector value={operators[i]} onChange={(op) => updateOperator(i, op)} disabled={isDefault} />
                     <button 
                       onClick={() => removeOption(i)} 
-                      className="w-10 h-10 rounded-lg flex items-center justify-center text-slate-200 hover:text-red-500 hover:bg-red-50 transition-all opacity-0 group-hover/item:opacity-100 nodrag flex-shrink-0"
+                      className="w-10 h-10 rounded-lg flex items-center justify-center text-red-400 hover:text-red-600 hover:bg-red-50 transition-all nodrag flex-shrink-0"
                       title="מחק פתיח"
                     >
                       <X size={18} />
