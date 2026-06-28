@@ -148,7 +148,14 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
     setBotsLoading(true);
     fetch(`${API_BASE}/bots`, { headers: { Authorization: `Bearer ${token}` } })
       .then(r => r.ok ? r.json() : Promise.reject(r))
-      .then((data: BotEntry[]) => setBotList(data))
+      .then((data: BotEntry[]) => {
+        setBotList(data);
+        // If there is exactly one bot, skip the picker and go straight to sessions
+        // Keep activeBotFilter null so contacts are not filtered (avoids ID mismatch)
+        if (data.length === 1 && !initialPhone) {
+          setShowBotPicker(false);
+        }
+      })
       .catch(e => console.error('Failed to load bots', e))
       .finally(() => setBotsLoading(false));
   }, [token]);
@@ -1261,6 +1268,9 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
       {/* Navbar */}
       <nav className="h-20 bg-white border-b border-slate-100 flex items-center justify-between px-10 z-20 flex-shrink-0" dir="ltr">
         <div className="flex items-center gap-4">
+          <button onClick={onLogout} className="p-2.5 text-slate-300 hover:text-red-500 transition-colors rounded-xl hover:bg-red-50">
+            <LogOut size={22} />
+          </button>
           <img src="/images/mesergo-logo.png" alt="Logo" className="h-10 w-auto cursor-pointer" onClick={onBack} />
         </div>
         <div className="flex items-center gap-4">
@@ -1316,7 +1326,8 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
           <div className="relative">
             <div
               title={currentUser?.name || currentUser?.email || ''}
-              className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-sm shadow-md select-none"
+              className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-sm shadow-md select-none cursor-pointer hover:scale-105 transition-transform"
+              onClick={onBack}
             >
               {firstName}
             </div>
@@ -1327,9 +1338,6 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
               />
             )}
           </div>
-          <button onClick={onLogout} className="p-2.5 text-slate-300 hover:text-red-500 transition-colors rounded-xl hover:bg-red-50">
-            <LogOut size={22} />
-          </button>
         </div>
       </nav>
 
@@ -1409,6 +1417,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
             mode="sidebar"
             activePage="sessions"
             onBots={onBack && can('bots.view_tab') ? onBack : undefined}
+            onSessions={botList.length > 1 ? () => { setActiveBotFilter(null); setSelectedPhone(null); setShowBotPicker(true); } : undefined}
             onContacts={onOpenContacts ? () => onOpenContacts() : undefined}
             onGroups={onOpenGroups}
             onSettings={onOpenSettings}
@@ -1420,8 +1429,8 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
         <div className="w-[25%] flex-shrink-0 bg-white border-l border-slate-100 flex flex-col overflow-hidden">
           {/* Header */}
           <div className="flex-shrink-0 px-5 py-4 border-b border-slate-100">
-            {/* Bot filter breadcrumb */}
-            {activeBotFilter && (
+            {/* Bot filter breadcrumb — only shown when there are multiple bots */}
+            {activeBotFilter && botList.length > 1 && (
               <button
                 onClick={() => { setActiveBotFilter(null); setShowBotPicker(true); setSelectedPhone(null); }}
                 className="flex items-center gap-1.5 text-xs font-bold text-indigo-500 hover:text-indigo-700 mb-3 transition-colors"
@@ -1432,7 +1441,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
             )}
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-3">
-                <div className="w-9 h-9 bg-sky-50 text-sky-600 rounded-xl flex items-center justify-center cursor-pointer" onClick={() => setShowBotPicker(true)} title="חזור לבחירת בוט">
+                <div className="w-9 h-9 bg-sky-50 text-sky-600 rounded-xl flex items-center justify-center cursor-pointer" onClick={() => botList.length > 1 && setShowBotPicker(true)} title={botList.length > 1 ? 'חזור לבחירת בוט' : undefined}>
                   <Users size={18} />
                 </div>
                 <div>

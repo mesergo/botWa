@@ -1,6 +1,6 @@
 
 import React, { useEffect, useRef, useState } from 'react';
-import { Handle, Position, useReactFlow } from 'reactflow';
+import { Handle, Position, useReactFlow, useEdges } from 'reactflow';
 import { 
   Type, Calendar, Upload, MessageSquare, 
   Image as ImageIcon, ExternalLink, List, Globe, Clock, PlayCircle, Plus, Layers, X, GitBranch, Trash2, ChevronDown, Zap,
@@ -74,6 +74,52 @@ const SearchableInput = ({ value, onChange, placeholder, type = "text", searchQu
         />
       )}
     </div>
+  );
+};
+
+const DeletableHandle = ({ nodeId, handleId, style }: { nodeId: string; handleId: string; style?: React.CSSProperties }) => {
+  const [hovered, setHovered] = useState(false);
+  const { setEdges } = useReactFlow();
+  const edges = useEdges();
+  const hasEdge = edges.some(e => e.source === nodeId && e.sourceHandle === handleId);
+
+  const deleteEdge = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEdges(eds => eds.filter(edge => !(edge.source === nodeId && edge.sourceHandle === handleId)));
+    setHovered(false);
+  };
+
+  const overlayStyle: React.CSSProperties = {
+    position: 'absolute',
+    top: style?.top ?? '50%',
+    right: typeof style?.right === 'number' ? style.right : -10,
+    transform: 'translateY(-50%)',
+    width: 20,
+    height: 20,
+    zIndex: 50,
+  };
+
+  return (
+    <>
+      <Handle
+        type="source"
+        position={Position.Right}
+        id={handleId}
+        style={style}
+        className={`w-5 h-5 border-2 border-white rounded-full shadow-lg transition-colors duration-200 ${hovered && hasEdge ? 'bg-red-500' : 'bg-slate-400'}`}
+      />
+      <div
+        style={overlayStyle}
+        className={`flex items-center justify-center rounded-full nodrag ${hasEdge ? 'cursor-pointer' : 'pointer-events-none'}`}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        onClick={hasEdge ? deleteEdge : undefined}
+      >
+        {hovered && hasEdge && (
+          <X size={10} className="text-white pointer-events-none" strokeWidth={3} />
+        )}
+      </div>
+    </>
   );
 };
 
@@ -530,7 +576,7 @@ export const OutputMenuNode = (props: any) => {
         <label className="block text-[14px] font-bold text-slate-400 uppercase tracking-widest">רשימת אפשרויות</label>
         {/* Default (catch-all) handle — always first */}
         <div className="flex items-center gap-2 p-2 bg-slate-50 border border-dashed border-slate-300 rounded-2xl relative">
-          <Handle type="source" position={Position.Right} id="option-default" style={{ top: '50%', right: -16 }} className="w-4 h-4 bg-slate-400 border-2 border-white rounded-full shadow-lg" />
+          <DeletableHandle nodeId={props.id} handleId="option-default" style={{ top: '50%', right: -10 }} />
           <span className="flex-1 text-[12px] font-black text-slate-400 uppercase tracking-widest px-2 text-right">ברירת מחדל</span>
         </div>
         {options.map((opt: string, i: number) => (
@@ -543,6 +589,7 @@ export const OutputMenuNode = (props: any) => {
             >
               <X size={18} />
             </button>
+            {/* <DeletableHandle nodeId={props.id} handleId={`option-${i}`} style={{ top: '50%', right: -10 }} /> */}
             <div className="flex-1">
               <SearchableInput value={opt} onChange={(v: string) => updateOption(i, v)} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} placeholder="הזן ערך" />
             </div>
@@ -625,7 +672,7 @@ export const ActionWebServiceNode = (props: any) => {
         <div>
           <label className="block text-[14px] font-bold text-slate-400 uppercase tracking-widest mb-2">יציאה ברירת מחדל</label>
           <div className="flex items-center gap-2 p-3 bg-slate-50 border border-slate-100 rounded-2xl relative">
-            <Handle type="source" position={Position.Right} id="default" style={{ top: '50%', right: -16 }} className="w-4 h-4 bg-slate-400 border-2 border-white rounded-full shadow-lg" />
+            <DeletableHandle nodeId={props.id} handleId="default" style={{ top: '50%', right: -10 }} />
             <div className="flex-1 text-center">
               <span className="text-sm font-bold text-slate-600">default</span>
             </div>
@@ -637,7 +684,7 @@ export const ActionWebServiceNode = (props: any) => {
           <label className="block text-[14px] font-bold text-slate-400 uppercase tracking-widest mb-2">יציאות מותנות לפי Return</label>
           {branches.map((branch: string, i: number) => (
             <div key={i} className="flex flex-col gap-2 p-3 bg-slate-50 border border-slate-100 rounded-2xl group/branch relative transition-colors hover:bg-white hover:border-blue-100 mb-3">
-              <Handle type="source" position={Position.Right} id={`option-${i}`} style={{ top: '50%', right: -16 }} className="w-4 h-4 bg-slate-400 border-2 border-white rounded-full shadow-lg" />
+              <DeletableHandle nodeId={props.id} handleId={`option-${i}`} style={{ top: '50%', right: -10 }} />
               
               <div className="flex items-center gap-2 flex-row-reverse">
                 <OperatorSelector value={operators[i]} onChange={(op) => updateOperator(i, op)} />
@@ -741,7 +788,7 @@ export const ActionTimeRoutingNode = (props: any) => {
 
         {/* Default option */}
         <div className="flex items-center gap-2 p-2 bg-slate-50 border border-slate-200 rounded-2xl relative">
-          <Handle type="source" position={Position.Right} id="option-default" style={{ top: '50%', right: -16 }} className="w-4 h-4 bg-slate-400 border-2 border-white rounded-full shadow-lg" />
+          <DeletableHandle nodeId={props.id} handleId="option-default" style={{ top: '50%', right: -10 }} />
           <div className="flex-1 text-center py-2">
             <span className="text-sm font-bold text-slate-600">
               {isDateMode ? 'ברירת מחדל (כל שאר התאריכים)' : 'ברירת מחדל (כל שאר השעות)'}
@@ -752,7 +799,7 @@ export const ActionTimeRoutingNode = (props: any) => {
         {/* Time ranges */}
         {!isDateMode && timeRanges.map((range: any, i: number) => (
           <div key={i} className="flex items-center gap-2 p-3 bg-slate-50 border border-slate-100 rounded-2xl group/item relative transition-colors hover:bg-white hover:border-orange-100">
-            <Handle type="source" position={Position.Right} id={`option-${i}`} style={{ top: '50%', right: -16 }} className="w-4 h-4 bg-slate-400 border-2 border-white rounded-full shadow-lg" />
+            <DeletableHandle nodeId={props.id} handleId={`option-${i}`} style={{ top: '50%', right: -10 }} />
 
             <div className="flex-1">
               <div className="flex gap-2 items-center justify-center py-1">
@@ -790,7 +837,7 @@ export const ActionTimeRoutingNode = (props: any) => {
         {/* Date ranges */}
         {isDateMode && dateRanges.map((range: any, i: number) => (
           <div key={i} className="flex items-center gap-1 p-1.5 bg-slate-50 border border-slate-100 rounded-xl group/item relative transition-colors hover:bg-white hover:border-orange-100">
-            <Handle type="source" position={Position.Right} id={`option-${i}`} style={{ top: '50%', right: -16 }} className="w-4 h-4 bg-slate-400 border-2 border-white rounded-full shadow-lg" />
+            <DeletableHandle nodeId={props.id} handleId={`option-${i}`} style={{ top: '50%', right: -10 }} />
 
             <div className="flex-1">
               <div className="flex gap-1 items-center" dir="rtl">
@@ -1201,7 +1248,7 @@ export const AutomaticResponsesNode = (props: any) => {
           const isDefault = i === 0;
           return (
             <div key={i} className={`flex items-center gap-2 p-2 border rounded-2xl group/item relative transition-colors ${isDefault ? 'bg-slate-50 border-slate-200' : 'bg-slate-50 border-slate-100 hover:bg-white hover:border-blue-100'}`}>
-              <Handle type="source" position={Position.Right} id={`option-${i}`} style={{ top: '50%', right: -16 }} className="w-4 h-4 bg-slate-400 border-2 border-white rounded-full shadow-lg" />
+              <DeletableHandle nodeId={props.id} handleId={`option-${i}`} style={{ top: '50%', right: -10 }} />
               <div className="flex-1">
                 <SearchableInput value={opt} onChange={(v: string) => updateOption(i, v)} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} disabled={isDefault} placeholder={!isDefault ? "הזן ערך" : ""} />
               </div>

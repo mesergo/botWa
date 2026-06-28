@@ -1,7 +1,7 @@
 
 import React, { memo, useState } from 'react';
-import { Handle, Position, useReactFlow } from 'reactflow';
-import { Trash2 } from 'lucide-react';
+import { Handle, Position, useReactFlow, useEdges } from 'reactflow';
+import { Trash2, X } from 'lucide-react';
 import { NodeType } from '../../types';
 
 interface BaseNodeProps {
@@ -21,12 +21,22 @@ interface BaseNodeProps {
 
 const BaseNode: React.FC<BaseNodeProps> = ({ id, title, icon, children, type, selected, onDelete, serialId, isSimulatorActive, searchQuery, isCurrentMatch, isSearchMatch }) => {
   const [isHovered, setIsHovered] = useState(false);
+  const [isSourceHovered, setIsSourceHovered] = useState(false);
   const { setEdges } = useReactFlow();
+  const edges = useEdges();
   const isStart = type === NodeType.START;
   const isAutomaticResponses = type === NodeType.AUTOMATIC_RESPONSES;
   const isTerminal = type === NodeType.ACTION_TRANSFER_TO_AGENT;
   const isBranchingNode = type === NodeType.OUTPUT_MENU || type === NodeType.ACTION_WEB_SERVICE || type === NodeType.AUTOMATIC_RESPONSES || type === NodeType.ACTION_TIME_ROUTING;
   const isMediaNode = type === NodeType.OUTPUT_IMAGE;
+
+  const hasSourceEdge = !isBranchingNode && !isTerminal && edges.some(e => e.source === id);
+
+  const handleDeleteSourceEdge = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEdges(eds => eds.filter(edge => edge.source !== id));
+    setIsSourceHovered(false);
+  };
 
   const getNodeTheme = (nodeType: NodeType) => {
     switch (nodeType) {
@@ -88,7 +98,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ id, title, icon, children, type, se
         <Handle
           type="target"
           position={Position.Left}
-          className={`w-4 h-4 border-2 border-white rounded-full -left-[8px] shadow-lg transition-colors duration-200 ${isHovered ? 'bg-blue-500' : 'bg-slate-400'}`}
+          className={`w-5 h-5 border-2 border-white rounded-full -left-[10px] shadow-lg transition-colors duration-200 ${isHovered ? 'bg-blue-500' : 'bg-slate-400'}`}
         />
       )}
       
@@ -122,11 +132,26 @@ const BaseNode: React.FC<BaseNodeProps> = ({ id, title, icon, children, type, se
       </div>
       
       {!isBranchingNode && (
-        <Handle
-          type="source"
-          position={Position.Right}
-          className={`w-4 h-4 border-2 border-white rounded-full -right-[8px] shadow-lg transition-colors duration-200 ${isHovered ? 'bg-emerald-500' : 'bg-slate-400'} ${isTerminal ? 'hidden' : ''}`}
-        />
+        <>
+          <Handle
+            type="source"
+            position={Position.Right}
+            className={`w-5 h-5 border-2 border-white rounded-full -right-[10px] shadow-lg transition-colors duration-200 ${isSourceHovered ? 'bg-red-500' : isHovered ? 'bg-emerald-500' : 'bg-slate-400'} ${isTerminal ? 'hidden' : ''}`}
+          />
+          {hasSourceEdge && (
+            <div
+              className="absolute -right-[10px] top-1/2 -translate-y-1/2 w-5 h-5 flex items-center justify-center cursor-pointer rounded-full"
+              style={{ zIndex: 1000 }}
+              onMouseEnter={() => setIsSourceHovered(true)}
+              onMouseLeave={() => setIsSourceHovered(false)}
+              onClick={handleDeleteSourceEdge}
+            >
+              {isSourceHovered && (
+                <X size={12} className="text-white pointer-events-none" strokeWidth={3} />
+              )}
+            </div>
+          )}
+        </>
       )}
     </div>
   );

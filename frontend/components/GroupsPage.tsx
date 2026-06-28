@@ -536,6 +536,9 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
       {/* Navbar */}
       <nav className="h-20 bg-white border-b border-slate-100 flex items-center justify-between px-10 z-20 flex-shrink-0" dir="ltr">
         <div className="flex items-center gap-4">
+          <button onClick={onLogout} className="p-2.5 text-slate-300 hover:text-red-500 transition-colors rounded-xl hover:bg-red-50">
+            <LogOut size={22} />
+          </button>
           <img src="/images/mesergo-logo.png" alt="Logo" className="h-10 w-auto cursor-pointer" onClick={onBack} />
         </div>
 
@@ -548,12 +551,9 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
               <Shield size={18} /> פאנל ניהול
             </button>
           )}
-          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-sm shadow-md select-none">
+          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-sm shadow-md select-none cursor-pointer hover:scale-105 transition-transform" onClick={onBack}>
             {firstName}
           </div>
-          <button onClick={onLogout} className="p-2.5 text-slate-300 hover:text-red-500 transition-colors rounded-xl hover:bg-red-50">
-            <LogOut size={22} />
-          </button>
         </div>
       </nav>
 

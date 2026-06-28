@@ -61,7 +61,7 @@ const AppNav: React.FC<AppNavProps> = ({
             <button
               key={key}
               onClick={handlers[key]}
-              disabled={isActive}
+              disabled={isActive && !handlers[key]}
               className={`relative flex items-center gap-3 px-4 py-3.5 rounded-xl font-bold text-sm transition-all duration-200 w-full group overflow-hidden ${
                 isActive
                   ? 'cursor-default'
@@ -107,7 +107,7 @@ const AppNav: React.FC<AppNavProps> = ({
           <button
             key={key}
             onClick={handlers[key]}
-            disabled={isActive}
+            disabled={isActive && !handlers[key]}
             className={`flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm transition-all ${
               isActive
                 ? 'bg-white text-slate-900 shadow-sm cursor-default'
