@@ -97,7 +97,14 @@ const HomePage: React.FC<HomePageProps> = ({
       {/* ── Top Nav ── */}
       <nav className="h-20 bg-white border-b border-slate-100 flex items-center justify-between px-8 md:px-12 shadow-sm">
         <div className="flex items-center gap-3">
-          <img src="/images/mesergo-logo.png" alt="Logo" className="h-10 w-auto" />
+          <button
+            onClick={onLogout}
+            title="התנתק"
+            className="p-2.5 text-slate-400 hover:text-red-500 transition-colors rounded-xl hover:bg-red-50"
+          >
+            <LogOut size={20} />
+          </button>
+          <img src="/images/mesergo-logo.png" alt="Logo" className="h-10 w-auto cursor-pointer hover:scale-105 transition-transform" onClick={onGoToBots} />
         </div>
         <div className="flex items-center gap-3">
           {currentUser?.role === 'admin' && onOpenAdminPanel && (
@@ -111,17 +118,11 @@ const HomePage: React.FC<HomePageProps> = ({
           )}
           <div
             title={currentUser?.name || currentUser?.email || ''}
-            className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-sm shadow-md select-none"
+            className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-sm shadow-md select-none cursor-pointer hover:scale-105 transition-transform"
+            onClick={onGoToBots}
           >
             {initial}
           </div>
-          <button
-            onClick={onLogout}
-            title="התנתק"
-            className="p-2.5 text-slate-400 hover:text-red-500 transition-colors rounded-xl hover:bg-red-50"
-          >
-            <LogOut size={20} />
-          </button>
         </div>
       </nav>
 

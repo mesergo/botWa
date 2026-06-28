@@ -162,6 +162,12 @@ const FlowBuilder: React.FC = () => {
   const [searchResults, setSearchResults] = useState<string[]>([]);
   const [currentSearchIndex, setCurrentSearchIndex] = useState(-1);
   const lastSearchQueryRef = useRef('');
+  // Incremented only on explicit navigation (new query or arrow press) so the
+  // pan effect does NOT fire when unrelated nodes are moved/edited.
+  const [searchNavigateTrigger, setSearchNavigateTrigger] = useState(0);
+  const nodesRef = useRef<Node[]>([]);
+  const searchResultsRef = useRef<string[]>([]);
+  const currentSearchIndexRef = useRef(-1);
   const [globalSearchResults, setGlobalSearchResults] = useState<{ processId: string; processName: string; nodeId: string; matchText: string }[]>([]);
   const processNodesCacheRef = useRef<Record<string, any[]>>({});
   const pendingFocusNodeIdRef = useRef<string | null>(null);
@@ -285,6 +291,14 @@ const FlowBuilder: React.FC = () => {
           if (Array.isArray(d.options) && d.options.some((opt: string) => check(opt)))
             reasons.push(`branches`);
           break;
+        case NodeType.ACTION_TRANSFER_TO_AGENT:
+          // No searchable text fields (only dropdowns)
+          break;
+        case NodeType.ACTION_ADD_TO_GROUP:
+        case NodeType.ACTION_REMOVE_FROM_GROUP:
+          // Only removalReason is user-typed text (shown when removing from all groups)
+          if (check(d.removalReason)) reasons.push(`removalReason: "${d.removalReason}"`);
+          break;
         case NodeType.ACTION_TIME_ROUTING:
         case NodeType.ACTION_WAIT:
         case NodeType.START:
@@ -312,24 +326,53 @@ const FlowBuilder: React.FC = () => {
     const matchesArr = Array.from(uniqueMatches);
     setSearchResults(matchesArr);
     
+    searchResultsRef.current = matchesArr;
     if (pendingFocusNodeIdRef.current) {
       const idx = matchesArr.indexOf(pendingFocusNodeIdRef.current);
-      setCurrentSearchIndex(idx >= 0 ? idx : matchesArr.length > 0 ? 0 : -1);
+      const newIdx = idx >= 0 ? idx : matchesArr.length > 0 ? 0 : -1;
+      setCurrentSearchIndex(newIdx);
       pendingFocusNodeIdRef.current = null;
+      if (newIdx >= 0) setSearchNavigateTrigger(t => t + 1);
     } else if (searchQuery !== lastSearchQueryRef.current) {
       setCurrentSearchIndex(matchesArr.length > 0 ? 0 : -1);
       lastSearchQueryRef.current = searchQuery;
+      if (matchesArr.length > 0) setSearchNavigateTrigger(t => t + 1);
     }
   }, [searchQuery, nodes]);
 
+  // Keep refs current on every render so the nav effect never needs nodes/searchResults in its deps
+  nodesRef.current = nodes;
+  currentSearchIndexRef.current = currentSearchIndex;
+
   useEffect(() => {
-    if (currentSearchIndex >= 0 && searchResults[currentSearchIndex] && reactFlowInstance) {
-      const node = nodes.find(n => n.id === searchResults[currentSearchIndex]);
+    const idx = currentSearchIndexRef.current;
+    const nodeId = searchResultsRef.current[idx];
+    if (idx < 0 || !nodeId || !reactFlowInstance) return;
+
+    // requestAnimationFrame ensures React has already painted the new isCurrentMatch
+    // so the <mark> elements inside the node reflect the current match
+    requestAnimationFrame(() => {
+      const nodeEl = document.querySelector(`.react-flow__node[data-id="${nodeId}"]`) as HTMLElement | null;
+      if (nodeEl) {
+        // Find the first highlighted match element inside this node
+        const markEl = nodeEl.querySelector('mark') as HTMLElement | null;
+        if (markEl) {
+          const rect = markEl.getBoundingClientRect();
+          const flowPos = reactFlowInstance.screenToFlowPosition({
+            x: rect.left + rect.width / 2,
+            y: rect.top + rect.height / 2,
+          });
+          reactFlowInstance.setCenter(flowPos.x, flowPos.y, { zoom: 1.1, duration: 800 });
+          return;
+        }
+      }
+      // Fallback: center on node top (no mark found – e.g. header-only match)
+      const node = nodesRef.current.find(n => n.id === nodeId);
       if (node) {
         reactFlowInstance.setCenter(node.position.x + 140, node.position.y + 120, { zoom: 1.1, duration: 800 });
       }
-    }
-  }, [currentSearchIndex, searchResults, reactFlowInstance, nodes]);
+    });
+  }, [searchNavigateTrigger, reactFlowInstance]);
 
   // After a bot switch (enterBot), wait for the new nodes to arrive then fitView
   useEffect(() => {
@@ -405,6 +448,14 @@ const FlowBuilder: React.FC = () => {
             break;
           case NodeType.ACTION_WEB_SERVICE:
             matchText = check(d.url) ? d.url : '';
+            break;
+          case NodeType.ACTION_TRANSFER_TO_AGENT:
+            // No searchable text fields (only dropdowns)
+            break;
+          case NodeType.ACTION_ADD_TO_GROUP:
+          case NodeType.ACTION_REMOVE_FROM_GROUP:
+            // Only removalReason is user-typed text
+            matchText = check(d.removalReason) ? d.removalReason : '';
             break;
           case NodeType.AUTOMATIC_RESPONSES:
             if (Array.isArray(d.options)) {
@@ -2097,7 +2148,7 @@ const FlowBuilder: React.FC = () => {
           onInit={setReactFlowInstance}
           onDrop={onDrop}
           onSearchChange={setSearchQuery}
-          onSearchNav={(dir) => setCurrentSearchIndex(i => dir === 'up' ? (i > 0 ? i - 1 : searchResults.length - 1) : (i + 1) % searchResults.length)}
+          onSearchNav={(dir) => { setCurrentSearchIndex(i => dir === 'up' ? (i > 0 ? i - 1 : searchResults.length - 1) : (i + 1) % searchResults.length); setSearchNavigateTrigger(t => t + 1); }}
           onTidy={tidyFlow}
           onPublish={() => {}}
           onCloseEditor={handleCloseTemplateEditor}
@@ -2277,7 +2328,7 @@ const FlowBuilder: React.FC = () => {
         onInit={setReactFlowInstance}
         onDrop={onDrop}
         onSearchChange={setSearchQuery}
-        onSearchNav={(dir) => setCurrentSearchIndex(i => dir === 'up' ? (i > 0 ? i - 1 : searchResults.length - 1) : (i + 1) % searchResults.length)}
+        onSearchNav={(dir) => { setCurrentSearchIndex(i => dir === 'up' ? (i > 0 ? i - 1 : searchResults.length - 1) : (i + 1) % searchResults.length); setSearchNavigateTrigger(t => t + 1); }}
         onTidy={tidyFlow}
         onPublish={openPublishModal}
         onCloseEditor={handleCloseProcessEditor}

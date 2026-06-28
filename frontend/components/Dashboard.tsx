@@ -537,7 +537,8 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
       
       <nav className="h-20 bg-white border-b border-slate-100 flex items-center justify-between px-10 z-20">
         <div className="flex items-center gap-4">
-          <img src="/images/mesergo-logo.png" alt="Logo" className="h-10 w-auto" />
+          <button onClick={onLogout} className="p-2.5 text-slate-300 hover:text-red-500 transition-colors rounded-xl hover:bg-red-50"><LogOut size={22} /></button>
+          <img src="/images/mesergo-logo.png" alt="Logo" className="h-10 w-auto cursor-pointer hover:scale-105 transition-transform" onClick={() => setActiveTab('bots')} />
         </div>
 
         <div className="flex items-center gap-4">
@@ -562,7 +563,8 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
           <div className="relative">
             <div
               title={currentUser?.name || currentUser?.email || ''}
-              className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-sm shadow-md select-none"
+              className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-sm shadow-md select-none cursor-pointer hover:scale-105 transition-transform"
+              onClick={() => setActiveTab('bots')}
             >
               {(currentUser?.name?.charAt(0) || currentUser?.email?.charAt(0) || '?').toUpperCase()}
             </div>
@@ -577,7 +579,6 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
               );
             })()}
           </div>
-          <button onClick={onLogout} className="p-2.5 text-slate-300 hover:text-red-500 transition-colors rounded-xl hover:bg-red-50"><LogOut size={22} /></button>
         </div>
       </nav>
 
