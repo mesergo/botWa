@@ -22,6 +22,7 @@ interface User {
   status: string;
   dialog360_bot_id?: string;
   manager_id?: string | null;
+  allowed_bot_ids?: string[];
   user_type_id?: { _id: string; name: string; system_role: string } | null;
   createdAt: string;
   updatedAt: string;
@@ -142,6 +143,30 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState<Partial<User>>({});
   const [showPassword, setShowPassword] = useState(false);
+
+  // Rep-specific edit state
+  interface BotEntry { id: string; name: string; display_phone_number: string; }
+  const [repManagerBots, setRepManagerBots] = useState<BotEntry[]>([]);
+  const [editAllowedBotIds, setEditAllowedBotIds] = useState<string[]>([]);
+  const [editManagerId, setEditManagerId] = useState<string>('');
+  const [managerBotsLoading, setManagerBotsLoading] = useState(false);
+
+  // Fetch connected bots for a given manager user (admin API)
+  const fetchManagerBots = async (managerId: string) => {
+    if (!managerId) { setRepManagerBots([]); return; }
+    setManagerBotsLoading(true);
+    try {
+      const r = await fetch(`${API_BASE}/admin/users/${managerId}`, { headers: { Authorization: `Bearer ${token}` } });
+      if (!r.ok) { setRepManagerBots([]); return; }
+      const d = await r.json();
+      const bots: BotEntry[] = (d.bots || []).map((b: any) => ({
+        id: b._id || b.id,
+        name: b.name,
+        display_phone_number: b.display_phone_number || ''
+      })).filter((b: BotEntry) => b.display_phone_number);
+      setRepManagerBots(bots);
+    } catch { setRepManagerBots([]); } finally { setManagerBotsLoading(false); }
+  };
   
   // Dialog360 Templates
   const [dialog360Templates, setDialog360Templates] = useState<any[]>([]);
@@ -160,7 +185,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
 
   // Create User modal
   const [showCreateUserModal, setShowCreateUserModal] = useState(false);
-  const [createUserForm, setCreateUserForm] = useState({ name: '', email: '', phone: '', password: '', account_type: 'Trial', user_type_id: '' });
+  const [createUserForm, setCreateUserForm] = useState({ name: '', email: '', phone: '', password: '', account_type: 'Trial', user_type_id: '', manager_id: '', allowed_bot_ids: [] as string[] });
+  const [createUserManagerBots, setCreateUserManagerBots] = useState<{id: string; name: string; display_phone_number: string}[]>([]);
   const [createUserTypes, setCreateUserTypes] = useState<any[]>([]);
   const [creatingUser, setCreatingUser] = useState(false);
   const [createUserError, setCreateUserError] = useState<string | null>(null);
@@ -243,13 +269,16 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
           phone: createUserForm.phone.trim(),
           password: createUserForm.password || null,
           account_type: createUserForm.account_type,
-          user_type_id: createUserForm.user_type_id || null
+          user_type_id: createUserForm.user_type_id || null,
+          manager_id: createUserForm.manager_id || null,
+          allowed_bot_ids: createUserForm.allowed_bot_ids
         })
       });
       const d = await r.json();
       if (!r.ok) { setCreateUserError(d.error); return; }
       setShowCreateUserModal(false);
-      setCreateUserForm({ name: '', email: '', phone: '', password: '', account_type: 'Trial', user_type_id: '' });
+      setCreateUserForm({ name: '', email: '', phone: '', password: '', account_type: 'Trial', user_type_id: '', manager_id: '', allowed_bot_ids: [] });
+      setCreateUserManagerBots([]);
       fetchAllUsers();
     } catch (e: any) {
       setCreateUserError(e.message);
@@ -324,6 +353,12 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
       setEditForm({});
       setIsEditing(false);
       setShowPassword(false);
+      // Populate rep-specific edit state
+      const mid = data.user.manager_id || '';
+      setEditManagerId(mid);
+      setEditAllowedBotIds(data.user.allowed_bot_ids || []);
+      if (mid) fetchManagerBots(mid);
+      else setRepManagerBots([]);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load details');
     }
@@ -572,10 +607,13 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
         bot_price: limits.bot_price === '' ? null : limits.bot_price
       };
 
+      const isRep = (editForm.role || selectedUser.role) === 'rep' || (editForm.role || selectedUser.role) === 'rep_manager';
+
       const payload = {
         ...editForm,
         custom_limits: cleanLimits,
-        user_type_id: editForm.user_type_id ? editForm.user_type_id._id : null
+        user_type_id: editForm.user_type_id ? editForm.user_type_id._id : null,
+        ...(isRep ? { manager_id: editManagerId || null, allowed_bot_ids: editAllowedBotIds } : {})
       };
 
       console.log('[AdminPanel] Updating user with payload:', payload);
@@ -600,10 +638,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
       
       const data = await response.json();
       console.log('[AdminPanel] Server response data:', data);
-      console.log('[AdminPanel] User from server:', data.user);
-      console.log('[AdminPanel] dialog360_bot_id from server:', data.user?.dialog360_bot_id);
       
       setSelectedUser(data.user);
+      setEditManagerId(data.user.manager_id || '');
+      setEditAllowedBotIds(data.user.allowed_bot_ids || []);
       setIsEditing(false);
       fetchAllUsers(); // Refresh list
       setError(null);
@@ -1801,7 +1839,13 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                                         <UserCog size={18} /> כניסה למשתמש
                                     </button>
                                     <button 
-                                        onClick={() => { setIsEditing(true); setEditForm(selectedUser); }}
+                                        onClick={() => {
+                                          setIsEditing(true);
+                                          setEditForm(selectedUser);
+                                          setEditManagerId(selectedUser.manager_id || '');
+                                          setEditAllowedBotIds(selectedUser.allowed_bot_ids || []);
+                                          if (selectedUser.manager_id) fetchManagerBots(selectedUser.manager_id);
+                                        }}
                                         className="bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 px-5 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2 hover:shadow-sm"
                                     >
                                         <Edit2 size={18} /> עריכה
@@ -1995,6 +2039,85 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                                 </div>
                             </div>
                         </div>
+
+                        {/* ── Rep: Manager assignment + Allowed phone numbers ── */}
+                        {(selectedUser.role === 'rep' || selectedUser.role === 'rep_manager') && (
+                          <div className={`col-span-12 p-8 rounded-3xl border transition-all ${isEditing ? 'bg-indigo-50 border-indigo-200' : 'bg-white border-slate-100 shadow-sm'}`}>
+                            <h3 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-6 flex items-center gap-2 border-b border-slate-100 pb-4">
+                              <Phone size={16} className="text-slate-400" /> שיוך ומספרים מורשים
+                            </h3>
+                            {/* Manager assignment */}
+                            <div className="mb-6">
+                              <label className="block text-xs font-bold text-slate-400 mb-2">משויך למנהל / חשבון</label>
+                              {isEditing ? (
+                                <select
+                                  className="w-full p-3 bg-white border border-indigo-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-400 cursor-pointer"
+                                  value={editManagerId}
+                                  onChange={async e => {
+                                    const newMid = e.target.value;
+                                    setEditManagerId(newMid);
+                                    setEditAllowedBotIds([]);
+                                    await fetchManagerBots(newMid);
+                                  }}
+                                >
+                                  <option value="">— ללא שיוך</option>
+                                  {users.filter(u => u.role !== 'rep' && u.role !== 'rep_manager' && u.id !== selectedUser.id).map(u => (
+                                    <option key={u.id} value={u.id}>{u.name} ({u.email})</option>
+                                  ))}
+                                </select>
+                              ) : (
+                                <div className="bg-slate-50 px-4 py-3 rounded-xl border border-slate-100 text-sm font-bold text-slate-700">
+                                  {selectedUser.manager_id
+                                    ? (() => { const mgr = users.find(u => u.id === selectedUser.manager_id); return mgr ? `${mgr.name} (${mgr.email})` : selectedUser.manager_id; })()
+                                    : <span className="text-slate-400">ללא שיוך</span>}
+                                </div>
+                              )}
+                            </div>
+                            {/* Allowed phone numbers (bots) */}
+                            <div>
+                              <label className="block text-xs font-bold text-slate-400 mb-2">מספרים מורשים לצפייה בשיחות</label>
+                              {isEditing ? (
+                                managerBotsLoading ? (
+                                  <div className="text-xs text-slate-400 py-2">טוען מספרים...</div>
+                                ) : repManagerBots.length === 0 ? (
+                                  <div className="text-xs text-slate-400 py-2">{editManagerId ? 'למנהל זה אין מספרים מחוברים' : 'בחר מנהל כדי לראות מספרים זמינים'}</div>
+                                ) : (
+                                  <div className="flex flex-wrap gap-2 mt-1">
+                                    {repManagerBots.map(b => {
+                                      const selected = editAllowedBotIds.includes(b.id);
+                                      return (
+                                        <button
+                                          key={b.id}
+                                          type="button"
+                                          title={b.name}
+                                          onClick={() => setEditAllowedBotIds(prev => selected ? prev.filter(id => id !== b.id) : [...prev, b.id])}
+                                          className={`flex flex-col items-center px-4 py-2 rounded-2xl text-sm font-bold border transition-all ${selected ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-slate-600 border-slate-300 hover:border-emerald-400'}`}
+                                        >
+                                          <span className="font-black text-base leading-tight">{b.display_phone_number}</span>
+                                          <span className={`text-xs font-semibold mt-0.5 ${selected ? 'text-emerald-100' : 'text-slate-400'}`}>{b.name}</span>
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                )
+                              ) : (
+                                <div className="flex flex-wrap gap-2 mt-1">
+                                  {(selectedUser.allowed_bot_ids || []).length === 0
+                                    ? <span className="text-xs text-slate-400">כל המספרים (ללא הגבלה)</span>
+                                    : (selectedUser.allowed_bot_ids || []).map(bid => {
+                                        const b = repManagerBots.find(x => x.id === bid);
+                                        return (
+                                          <span key={bid} className="px-3 py-1 bg-emerald-50 text-emerald-700 rounded-full text-xs font-bold" title={b?.name}>
+                                            {b?.display_phone_number || bid}
+                                          </span>
+                                        );
+                                      })
+                                  }
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
 
                          {/* Custom Limits - Full Width */}
                         {(isEditing || selectedUser.custom_limits) && (
@@ -2908,7 +3031,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
       {/* Create User Modal */}
       {showCreateUserModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" dir="rtl">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-5">
               <h3 className="text-lg font-black text-slate-800">הוספת לקוח חדש</h3>
               <button onClick={() => setShowCreateUserModal(false)} className="p-2 rounded-lg hover:bg-slate-100 text-slate-400"><X size={18} /></button>
@@ -2978,6 +3101,68 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                   ))}
                 </select>
               </div>
+
+              {/* Manager assignment */}
+              <div>
+                <label className="block text-xs font-bold text-slate-600 mb-1">שיוך למנהל / חשבון (לנציגים)</label>
+                <select
+                  value={createUserForm.manager_id}
+                  onChange={async e => {
+                    const mid = e.target.value;
+                    setCreateUserForm(f => ({ ...f, manager_id: mid, allowed_bot_ids: [] }));
+                    if (mid) {
+                      setManagerBotsLoading(true);
+                      try {
+                        const r = await fetch(`${API_BASE}/admin/users/${mid}`, { headers: { Authorization: `Bearer ${token}` } });
+                        if (r.ok) {
+                          const d = await r.json();
+                          setCreateUserManagerBots((d.bots || []).filter((b: any) => b.display_phone_number).map((b: any) => ({ id: b._id || b.id, name: b.name, display_phone_number: b.display_phone_number })));
+                        } else setCreateUserManagerBots([]);
+                      } catch { setCreateUserManagerBots([]); } finally { setManagerBotsLoading(false); }
+                    } else { setCreateUserManagerBots([]); }
+                  }}
+                  className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                >
+                  <option value="">— ללא שיוך</option>
+                  {users.filter(u => u.role !== 'rep' && u.role !== 'rep_manager').map(u => (
+                    <option key={u.id} value={u.id}>{u.name} ({u.email})</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Allowed phone numbers */}
+              {createUserForm.manager_id && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 mb-1">מספרים מורשים לצפייה</label>
+                  {managerBotsLoading ? (
+                    <div className="text-xs text-slate-400 py-2">טוען מספרים...</div>
+                  ) : createUserManagerBots.length === 0 ? (
+                    <div className="text-xs text-slate-400 py-2">למנהל זה אין מספרים מחוברים</div>
+                  ) : (
+                    <div className="flex flex-wrap gap-2">
+                      {createUserManagerBots.map(b => {
+                        const sel = createUserForm.allowed_bot_ids.includes(b.id);
+                        return (
+                          <button
+                            key={b.id}
+                            type="button"
+                            title={b.name}
+                            onClick={() => setCreateUserForm(f => ({ ...f, allowed_bot_ids: sel ? f.allowed_bot_ids.filter(id => id !== b.id) : [...f.allowed_bot_ids, b.id] }))}
+                            className={`flex flex-col items-center px-3 py-1.5 rounded-2xl text-xs font-bold border transition-all ${sel ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-slate-600 border-slate-300 hover:border-emerald-400'}`}
+                          >
+                            <span className="font-black leading-tight">{b.display_phone_number}</span>
+                            <span className={`text-[10px] ${sel ? 'text-emerald-100' : 'text-slate-400'}`}>{b.name}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {createUserForm.allowed_bot_ids.length === 0 && createUserManagerBots.length > 0 && (
+                    <p className="text-[10px] text-slate-400 mt-1">ללא בחירה — גישה לכל המספרים</p>
+                  )}
+                </div>
+              )}
+
               {createUserError && (
                 <div className="flex items-center gap-2 text-red-600 text-sm bg-red-50 p-3 rounded-xl">
                   <AlertCircle size={14} />

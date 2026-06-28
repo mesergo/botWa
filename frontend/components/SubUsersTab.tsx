@@ -43,6 +43,12 @@ const emptyGroupSettings = (id = '', name = ''): RepGroup => ({
   workingHours: emptyWorkingHours(),
 });
 
+interface BotOption {
+  id: string;
+  name: string;
+  display_phone_number?: string;
+}
+
 interface SubUser {
   id: string;
   name: string;
@@ -54,6 +60,7 @@ interface SubUser {
   availability_status?: 'available' | 'unavailable' | 'on_break';
   createdAt: string;
   repGroupIds: string[];
+  allowedBotIds: string[];
 }
 
 interface AvailableUserType {
@@ -80,7 +87,7 @@ const AVAILABILITY_LABELS: Record<string, { label: string; dot: string; text: st
 };
 
   // Reps state 
-const emptyForm = { name: '', email: '', password: '', phone: '', role: 'rep' as 'rep' | 'rep_manager' | 'user', user_type_id: '', repGroupIds: [] as string[] };
+const emptyForm = { name: '', email: '', password: '', phone: '', role: 'rep' as 'rep' | 'rep_manager' | 'user', user_type_id: '', repGroupIds: [] as string[], allowedBotIds: [] as string[] };
 
 const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
   const can = usePermission(currentUser ?? null);
@@ -93,6 +100,9 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
   const [groups, setGroups] = useState<RepGroup[]>([]);
   const [groupsLoading, setGroupsLoading] = useState(false);
   const [availableUserTypes, setAvailableUserTypes] = useState<AvailableUserType[]>([]);
+
+  // Available bots for restriction selection
+  const [availableBots, setAvailableBots] = useState<BotOption[]>([]);
 
   // Sub-tab navigation
   const [activeTab, setActiveTab] = useState<'reps' | 'groups'>('reps');
@@ -181,9 +191,22 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
     }
   };
 
+  const loadBots = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/bots`, { headers });
+      if (!res.ok) return;
+      const data = await res.json();
+      const list: BotOption[] = (Array.isArray(data) ? data : (data.bots || [])).map((b: any) => ({ id: b._id || b.id, name: b.name, display_phone_number: b.display_phone_number || '' }));
+      setAvailableBots(list);
+    } catch {
+      // silent
+    }
+  };
+
   useEffect(() => {
     loadUsers();
     loadGroups();
+    loadBots();
   }, []);
 
   // Live-update reps availability while the "reps" tab is visible.
@@ -221,6 +244,7 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
       role: u.role as 'rep' | 'rep_manager' | 'user',
       user_type_id: u.user_type_id || '',
       repGroupIds: u.role === 'rep' ? (u.repGroupIds || []) : [],
+      allowedBotIds: u.role === 'rep' ? (u.allowedBotIds || []) : [],
     });
     setFormError(null);
     setShowPassword(false);
@@ -255,6 +279,7 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
       };
       if (form.password.trim()) body.password = form.password.trim();
       if (form.role === 'rep') body.rep_group_ids = form.repGroupIds;
+      if (form.role === 'rep') body.allowed_bot_ids = form.allowedBotIds;
 
       const url = editingId ? `${API_BASE}/sub-users/${editingId}` : `${API_BASE}/sub-users`;
       const method = editingId ? 'PATCH' : 'POST';
@@ -472,6 +497,7 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
                     <th className="px-6 py-4 text-right">טלפון</th>
                     <th className="px-6 py-4 text-right">סוג</th>
                     <th className="px-6 py-4 text-right">קבוצות</th>
+                    <th className="px-6 py-4 text-right">מספרים מורשים</th>
                     <th className="px-6 py-4 text-right">זמינות</th>
                     <th className="px-6 py-4 text-right">פעולות</th>
                   </tr>
@@ -516,6 +542,21 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
                                   </span>
                                 </span>
                               )}
+                            </div>
+                          );
+                        })()}
+                      </td>
+                      <td className="px-6 py-4">
+                        {(() => {
+                          const resolved = (u.allowedBotIds || []).map(bid => availableBots.find(b => b.id === bid)).filter(Boolean) as BotOption[];
+                          if (resolved.length === 0) return <span className="text-slate-400 text-xs">כל המספרים</span>;
+                          return (
+                            <div className="flex flex-wrap items-center gap-1">
+                              {resolved.map(b => (
+                                <span key={b.id} className="px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded-full text-xs font-bold whitespace-nowrap" title={b.name}>
+                                  {b.display_phone_number || b.name}
+                                </span>
+                              ))}
                             </div>
                           );
                         })()}
@@ -768,6 +809,41 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
                           }`}
                         >
                           {g.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+              {/* Bot restriction chips (rep only) — show by phone number, only connected bots */}
+              {form.role === 'rep' && availableBots.filter(b => b.display_phone_number).length > 0 && (
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-bold text-slate-600 mb-1">הגבלת מספרים לצפייה</label>
+                  <p className="text-xs text-slate-400 mb-2">בחר מספרים מחוברים שהנציג יוכל לצפות בשיחותיהם. ללא בחירה — הנציג יצפה בכל המספרים.</p>
+                  <div className="flex flex-wrap gap-2">
+                    {availableBots.filter(b => b.display_phone_number).map(b => {
+                      const selected = form.allowedBotIds.includes(b.id);
+                      return (
+                        <button
+                          key={b.id}
+                          type="button"
+                          title={b.name}
+                          onClick={() =>
+                            setForm(f => ({
+                              ...f,
+                              allowedBotIds: selected
+                                ? f.allowedBotIds.filter(id => id !== b.id)
+                                : [...f.allowedBotIds, b.id],
+                            }))
+                          }
+                          className={`flex flex-col items-center px-4 py-2 rounded-2xl text-sm font-bold border transition-all ${
+                            selected
+                              ? 'bg-emerald-600 text-white border-emerald-600'
+                              : 'bg-white text-slate-600 border-slate-300 hover:border-emerald-400'
+                          }`}
+                        >
+                          <span className="font-black text-base leading-tight">{b.display_phone_number}</span>
+                          <span className={`text-xs font-semibold mt-0.5 ${selected ? 'text-emerald-100' : 'text-slate-400'}`}>{b.name}</span>
                         </button>
                       );
                     })}

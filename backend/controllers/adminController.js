@@ -166,6 +166,7 @@ export const getAllUsers = async (req, res) => {
         account_type: user.account_type,
         status: user.status,
         manager_id: user.manager_id || null,
+        allowed_bot_ids: (user.allowed_bot_ids || []).map(id => id.toString()),
         user_type_id: user.user_type_id || null,
         createdAt: user.createdAt,
         updatedAt: user.updatedAt,
@@ -211,6 +212,8 @@ export const getUserDetails = async (req, res) => {
         status: user.status,
         api_token: user.token,
         dialog360_bot_id: user.dialog360_bot_id,
+        manager_id: user.manager_id || null,
+        allowed_bot_ids: (user.allowed_bot_ids || []).map(id => id.toString()),
         custom_limits: user.custom_limits,
         limits_in_effect: limits,
         createdAt: user.createdAt,
@@ -231,7 +234,7 @@ export const getUserDetails = async (req, res) => {
 export const updateUser = async (req, res) => {
   try {
     const { userId } = req.params;
-    const { name, email, phone, password, status, account_type, custom_limits, dialog360_bot_id, user_type_id } = req.body;
+    const { name, email, phone, password, status, account_type, custom_limits, dialog360_bot_id, user_type_id, manager_id, allowed_bot_ids } = req.body;
     
     console.log('[Admin] Updating user:', userId, 'with data:', { ...req.body, password: password ? '***' : undefined });
     
@@ -248,6 +251,8 @@ export const updateUser = async (req, res) => {
     if (status) user.status = status;
     if (account_type) user.account_type = account_type;
     if (dialog360_bot_id !== undefined) user.dialog360_bot_id = dialog360_bot_id;
+    if (manager_id !== undefined) user.manager_id = manager_id || null;
+    if (Array.isArray(allowed_bot_ids)) user.allowed_bot_ids = allowed_bot_ids;
     
     // Update user type / permissions
     if (user_type_id !== undefined) {
@@ -299,6 +304,8 @@ export const updateUser = async (req, res) => {
         api_token: user.token,
         dialog360_bot_id: user.dialog360_bot_id,
         user_type_id: user.user_type_id || null,
+        manager_id: user.manager_id || null,
+        allowed_bot_ids: (user.allowed_bot_ids || []).map(id => id.toString()),
         custom_limits: user.custom_limits,
         limits_in_effect: limits,
         createdAt: user.createdAt,
@@ -478,7 +485,7 @@ export const updateUserRole = async (req, res) => {
 // Create a new user directly from the admin panel
 export const createUser = async (req, res) => {
   try {
-    const { name, email, phone, password, account_type, user_type_id } = req.body;
+    const { name, email, phone, password, account_type, user_type_id, manager_id, allowed_bot_ids } = req.body;
 
     if (!name || !email) {
       return res.status(400).json({ error: 'שם ואימייל נדרשים' });
@@ -513,7 +520,9 @@ export const createUser = async (req, res) => {
       account_type: account_type || 'Trial',
       status: 'active',
       trial_expires_at: trialExpiresAt,
-      user_type_id: resolvedUserTypeId
+      user_type_id: resolvedUserTypeId,
+      manager_id: manager_id || null,
+      allowed_bot_ids: Array.isArray(allowed_bot_ids) ? allowed_bot_ids : []
     });
 
     await logAdminAction(req.userId, req.user.email, 'CREATE_USER', user._id.toString(), 'User', {

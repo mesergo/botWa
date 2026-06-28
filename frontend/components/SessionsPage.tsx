@@ -1363,7 +1363,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
               </div>
               <div>
                 <h1 className="text-3xl font-black text-slate-900">שיחות</h1>
-                <p className="text-slate-400 text-sm font-semibold mt-0.5">בחר בוט לצפייה בשיחות</p>
+                <p className="text-slate-400 text-sm font-semibold mt-0.5">בחר מספר מחובר לצפייה בשיחות</p>
               </div>
             </div>
 
@@ -1387,8 +1387,8 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                   </div>
                 </button>
 
-                {/* Per-bot cards */}
-                {botList.map(bot => (
+                {/* Per-bot cards — only bots with a connected phone number */}
+                {botList.filter(bot => bot.display_phone_number && bot.display_phone_number.trim()).map(bot => (
                   <button
                     key={bot.id}
                     onClick={() => { setActiveBotFilter(bot); setShowBotPicker(false); }}
@@ -1399,9 +1399,9 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                     </div>
                     <div>
                       <p className="text-base font-black text-indigo-700 group-hover:text-indigo-800 transition-colors leading-tight">
-                        {bot.display_phone_number || '—'}
+                        {bot.display_phone_number}
                       </p>
-                      <p className="text-xs text-slate-500 font-bold mt-1 truncate max-w-[9rem]">{bot.name}</p>
+                      <p className="text-xs text-slate-400 font-semibold mt-1 truncate max-w-[9rem]">{bot.name}</p>
                     </div>
                   </button>
                 ))}
@@ -1595,7 +1595,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                     <RefreshCw size={14} /> החזרת השיחה לבוט
                   </button>
                 )}
-                {currentUser?.role !== 'rep' && !isSimulator(selectedPhone) && (
+                {/* {currentUser?.role !== 'rep' && !isSimulator(selectedPhone) && (
                   <button
                     onClick={() => openAssignModal(selectedPhone)}
                     title="שיוך נציגים"
@@ -1603,7 +1603,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                   >
                     <Headphones size={18} />
                   </button>
-                )}
+                )} */}
                 <button
                   onClick={() => setSelectedPhone(null)}
                   className="p-2 hover:bg-slate-100 rounded-xl transition-colors text-slate-400"

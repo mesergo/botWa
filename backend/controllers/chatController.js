@@ -1447,8 +1447,8 @@ export const respondToMessage = async (req, res) => {
       isNewSession = true;
     }
 
-    // Save user message to history
-    if (text && !isNewSession) {
+    // Save user message to history (always — including first message of new/reset sessions)
+    if (text) {
       const mediaType = detectMediaType(text);
       if (mediaType) {
         // Customer sent a media file via WhatsApp — store as Image/Video/Document and
@@ -1468,6 +1468,7 @@ export const respondToMessage = async (req, res) => {
         return res.json({ StatusId: 1, StatusDescription: 'Media recorded', sender, messages: [] });
       }
       addToHistory(session, { type: 'UserInput', text }, 'user');
+      session.markModified('process_history');
       session.last_user_input = text; // Save for webservice
     }
 

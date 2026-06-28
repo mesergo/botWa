@@ -233,14 +233,24 @@ export const getContacts = async (req, res) => {
 
     let finalResult = result.map(c => ({ ...c, assigned_to: assignedToMap[c.phone] || [] }));
 
-    // If user has view_assigned_only permission (but NOT view_all), filter to assigned contacts only
+    // Fetch rep user doc once (used for both restrictions below)
     const userDoc = await User.findById(req.userId).lean();
     const perms = await resolvePermissions(userDoc || { role: req.user?.role });
+
+    // If rep has allowed_bot_ids restriction, keep only contacts whose sessions belong to those bots
+    const repAllowedBotIds = (userDoc?.allowed_bot_ids || []).map(id => id.toString());
+    if (repAllowedBotIds.length > 0) {
+      const allowedBotSet = new Set(repAllowedBotIds);
+      finalResult = finalResult.filter(c =>
+        (c.bots || []).some(b => allowedBotSet.has(b.id))
+      );
+    }
+
+    // If user has view_assigned_only permission (but NOT view_all), filter to assigned contacts only
     const viewOnlyAssigned = hasPermission(perms, 'sessions.view_assigned_only') && !hasPermission(perms, 'sessions.view_all');
     if (viewOnlyAssigned) {
       const repId = req.userId;
-      const repUser = await User.findById(repId).select('rep_group_ids').lean();
-      const repGroupSet = new Set(((repUser?.rep_group_ids) || []).map(id => id.toString()));
+      const repGroupSet = new Set(((userDoc?.rep_group_ids) || []).map(id => id.toString()));
       finalResult = finalResult.filter(c =>
         c.assigned_to.includes(repId) ||
         (c.repUserIds || []).includes(repId) ||

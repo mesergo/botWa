@@ -41,6 +41,9 @@ const userSchema = new mongoose.Schema({
   },
   trial_expires_at: { type: Date, default: null },
   rep_group_ids: [{ type: mongoose.Schema.Types.ObjectId, ref: 'RepGroup', default: [] }],
+  // Bot restriction for reps: when non-empty, this rep can only see sessions of these bots.
+  // Empty array = no restriction (sees all bots of the account).
+  allowed_bot_ids: [{ type: mongoose.Schema.Types.ObjectId, ref: 'BotFlow', default: [] }],
   // Per-user override for the auto-removal-from-group feature.
   // When `customized=true`, these values override the global SystemSetting('removal_config').
   removal_config: {

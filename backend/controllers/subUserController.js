@@ -50,7 +50,7 @@ export const getSubUsers = async (req, res) => {
     }
 
     const reps = await User.find({ manager_id: managerId }).select(
-      'name email phone role status createdAt rep_group_ids user_type_id'
+      'name email phone role status createdAt rep_group_ids allowed_bot_ids user_type_id'
     ).sort({ createdAt: -1 });
     res.json({
       users: reps.map(r => ({
@@ -64,6 +64,7 @@ export const getSubUsers = async (req, res) => {
       createdAt: r.createdAt,
       user_type_id: r.user_type_id || null,
       repGroupIds: (r.rep_group_ids || []).map(id => id.toString()),
+      allowedBotIds: (r.allowed_bot_ids || []).map(id => id.toString()),
       })),
       availableUserTypes
     });
@@ -76,7 +77,7 @@ export const getSubUsers = async (req, res) => {
 export const createSubUser = async (req, res) => {
   try {
     const managerId = await getRootManagerId(req.userId);
-    const { name, email, password, phone, role, rep_group_ids, user_type_id } = req.body;
+    const { name, email, password, phone, role, rep_group_ids, allowed_bot_ids, user_type_id } = req.body;
 
     const actor = await User.findById(req.userId).select('role user_type_id').lean();
     const actorPerms = await resolvePermissions(actor || { role: req.user?.role });
@@ -145,6 +146,9 @@ export const createSubUser = async (req, res) => {
     if (effectiveRole === 'rep' && Array.isArray(rep_group_ids) && rep_group_ids.length > 0) {
       repData.rep_group_ids = rep_group_ids.map(id => new mongoose.Types.ObjectId(id));
     }
+    if (effectiveRole === 'rep' && Array.isArray(allowed_bot_ids)) {
+      repData.allowed_bot_ids = allowed_bot_ids.map(id => new mongoose.Types.ObjectId(id));
+    }
     const rep = await User.create(repData);
 
     res.status(201).json({
@@ -157,6 +161,7 @@ export const createSubUser = async (req, res) => {
       createdAt: rep.createdAt,
       user_type_id: rep.user_type_id || null,
       repGroupIds: (rep.rep_group_ids || []).map(id => id.toString()),
+      allowedBotIds: (rep.allowed_bot_ids || []).map(id => id.toString()),
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -168,7 +173,7 @@ export const updateSubUser = async (req, res) => {
   try {
     const managerId = await getRootManagerId(req.userId);
     const { id } = req.params;
-    const { name, email, phone, role, password, rep_group_ids } = req.body;
+    const { name, email, phone, role, password, rep_group_ids, allowed_bot_ids } = req.body;
 
     const rep = await User.findOne({ _id: id, manager_id: managerId });
     if (!rep) {
@@ -198,6 +203,14 @@ export const updateSubUser = async (req, res) => {
         ? rep_group_ids.map(id => new mongoose.Types.ObjectId(id))
         : [];
     }
+    // allowed_bot_ids: only meaningful for reps
+    if (rep.role === 'rep' && allowed_bot_ids !== undefined) {
+      rep.allowed_bot_ids = Array.isArray(allowed_bot_ids)
+        ? allowed_bot_ids.map(id => new mongoose.Types.ObjectId(id))
+        : [];
+    } else if (rep.role === 'rep_manager') {
+      rep.allowed_bot_ids = [];
+    }
 
     await rep.save();
     res.json({
@@ -209,6 +222,7 @@ export const updateSubUser = async (req, res) => {
       status: rep.status,
       createdAt: rep.createdAt,
       repGroupIds: (rep.rep_group_ids || []).map(id => id.toString()),
+      allowedBotIds: (rep.allowed_bot_ids || []).map(id => id.toString()),
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
