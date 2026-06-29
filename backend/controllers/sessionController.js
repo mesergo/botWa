@@ -136,12 +136,14 @@ export const addHistoryMessage = async (req, res) => {
 
 export const getContacts = async (req, res) => {
   const userId = getEffectiveUserId(req);
+  console.log(`[getContacts] userId=${userId} | reqUserId=${req.userId} | role=${req.user?.role} | manager_id=${req.user?.manager_id}`);
   try {
     // Get all bots owned by this user
     const userBots = await BotFlow.find({ user_id: userId });
     const botNameMap = {};
     userBots.forEach(b => { botNameMap[b._id.toString()] = b.name; });
     const botIds = userBots.map(b => b._id.toString());
+    console.log(`[getContacts] userBots=${userBots.length} | botIds=${JSON.stringify(botIds)}`);
 
     // Get all widget_ids that belong to the user's bots
     // (covers historical sessions saved before user_id was stored properly)
@@ -165,7 +167,8 @@ export const getContacts = async (req, res) => {
           $or: [
             { user_id: userId },
             { user_id: userId.toString() },
-            { widget_id: { $in: widgetIds } }
+            { widget_id: { $in: widgetIds } },
+            { flow_id: { $in: botIds } }
           ]
         }
       },
@@ -193,6 +196,7 @@ export const getContacts = async (req, res) => {
           sessionCount: { $sum: 1 },
           lastSeen: { $max: '$_date' },
           widgetIds: { $addToSet: '$widget_id' },
+          flowIds: { $addToSet: '$flow_id' },
           repGroupIds: { $addToSet: '$rep_group_id' },
           repUserIds: { $addToSet: '$rep_user_id' },
           customerPhones: { $addToSet: '$customer_phone' },
@@ -205,14 +209,18 @@ export const getContacts = async (req, res) => {
     ];
 
     const contacts = await collection.aggregate(pipeline).toArray();
+    console.log(`[getContacts] aggregation returned ${contacts.length} contacts`);
 
-    // Map widget_ids → bot names via widgetFlowMap
+    // Map widget_ids → bot names via widgetFlowMap, with fallback to session flow_id
+    // (WhatsApp sessions created via respondToMessage set flow_id but NOT widget_id)
     const result = contacts.map(c => {
-      const usedBotIds = new Set(
-        (c.widgetIds || [])
+      const usedBotIds = new Set([
+        ...(c.widgetIds || [])
           .map(wid => widgetFlowMap[wid])
+          .filter(fid => fid && botNameMap[fid]),
+        ...(c.flowIds || [])
           .filter(fid => fid && botNameMap[fid])
-      );
+      ]);
       return {
         phone: c._id,
         sessionCount: c.sessionCount,
@@ -239,6 +247,8 @@ export const getContacts = async (req, res) => {
 
     // If rep has allowed_bot_ids restriction, keep only contacts whose sessions belong to those bots
     const repAllowedBotIds = (userDoc?.allowed_bot_ids || []).map(id => id.toString());
+    console.log(`[getContacts] repAllowedBotIds=${JSON.stringify(repAllowedBotIds)} | finalResult before filter=${finalResult.length}`);
+    console.log(`[getContacts] sample bots:`, finalResult.slice(0,3).map(c=>({phone:c.phone, bots:c.bots})));
     if (repAllowedBotIds.length > 0) {
       const allowedBotSet = new Set(repAllowedBotIds);
       finalResult = finalResult.filter(c =>
@@ -248,6 +258,7 @@ export const getContacts = async (req, res) => {
 
     // If user has view_assigned_only permission (but NOT view_all), filter to assigned contacts only
     const viewOnlyAssigned = hasPermission(perms, 'sessions.view_assigned_only') && !hasPermission(perms, 'sessions.view_all');
+    console.log(`[getContacts] perms.sessions=${JSON.stringify(perms?.sessions)} | viewOnlyAssigned=${viewOnlyAssigned} | finalResult=${finalResult.length}`);
     if (viewOnlyAssigned) {
       const repId = req.userId;
       const repGroupSet = new Set(((userDoc?.rep_group_ids) || []).map(id => id.toString()));
