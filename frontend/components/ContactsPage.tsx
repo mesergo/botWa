@@ -159,8 +159,8 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
   const downloadSample = () => {
     const header = 'טלפון,שם מלא,שם וואטסאפ,מייל';
     const rows = [
-      '0501234567,ישראל ישראלי,ישראל,israel@example.com',
-      '0529876543,שרה כהן,שרה\' כהן,sarah@example.com',
+      '972501234567,ישראל ישראלי,ישראל,israel@example.com',
+      '972529876543,שרה כהן,שרה\' כהן,sarah@example.com',
     ];
     const csv = '\uFEFF' + [header, ...rows].join('\n'); // BOM for Excel Hebrew support
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });

@@ -35,6 +35,7 @@ export interface NodeData {
   options?: string[];
   optionOperators?: string[];
   optionImages?: string[];
+  dateTimeMode?: 'date' | 'time' | 'datetime';
   routingMode?: 'time' | 'date';
   timeRanges?: Array<{ fromHour: number; toHour: number; }>;
   dateRanges?: Array<{ fromDate: string; toDate: string; }>;
@@ -57,6 +58,12 @@ export interface NodeData {
   searchQuery?: string;
   isCurrentMatch?: boolean;
   serialId?: string;
+  /** Nodes whose outgoing edge connects to this node (populated at render time) */
+  incomingNodes?: Array<{ id: string; serialId?: string; type: string; label?: string }>;
+  /** Nodes this node connects to (populated at render time) */
+  outgoingNodes?: Array<{ id: string; serialId?: string; type: string; label?: string }>;
+  /** Navigate the canvas to a node by id */
+  onNavigateToNode?: (nodeId: string) => void;
 }
 
 export interface BotFlow {
@@ -183,4 +190,5 @@ export interface ChatMessage {
   carouselItems?: CarouselItem[];
   timestamp: Date;
   sourceNodeId?: string;
+  dateTimeMode?: 'date' | 'time' | 'datetime';
 }

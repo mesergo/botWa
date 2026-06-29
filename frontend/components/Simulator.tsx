@@ -780,7 +780,8 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
         return processNext(findNextNodeId(nodeId, instance), instance, depth + 1, stack);
       }
       case NodeType.OUTPUT_MENU: { setIsBotTyping(true); await new Promise(r => setTimeout(r, 400)); if (cancelled()) return; menuInstanceMapRef.current[nodeId] = instance; const menuOpts = (node.data.options || []).filter((o: any) => o !== 'default'); const menuImgs = (node.data.optionImages || []).filter((_: any, i: number) => (node.data.options || [])[i] !== 'default'); addMessage({ sender: 'bot', type: 'menu', content: node.data.content, options: menuOpts, optionImages: menuImgs, sourceNodeId: nodeId }); setIsBotTyping(false); break; }
-      case NodeType.INPUT_TEXT: case NodeType.INPUT_DATE: case NodeType.INPUT_FILE: setIsBotTyping(true); await new Promise(r => setTimeout(r, 300)); if (cancelled()) return; if (node.data.label) { addMessage({ sender: 'bot', type: node.type as any, content: node.data.label }); } setIsBotTyping(false); break;
+      case NodeType.INPUT_TEXT: case NodeType.INPUT_FILE: setIsBotTyping(true); await new Promise(r => setTimeout(r, 300)); if (cancelled()) return; if (node.data.label) { addMessage({ sender: 'bot', type: node.type as any, content: node.data.label }); } setIsBotTyping(false); break;
+      case NodeType.INPUT_DATE: setIsBotTyping(true); await new Promise(r => setTimeout(r, 300)); if (cancelled()) return; if (node.data.label) { addMessage({ sender: 'bot', type: 'input_date', content: node.data.label, dateTimeMode: node.data.dateTimeMode || 'date' }); } setIsBotTyping(false); break;
       case NodeType.ACTION_WAIT: await new Promise(r => setTimeout(r, (node.data.waitTime || 1) * 1000)); return processNext(findNextNodeId(nodeId, instance), instance, depth + 1, stack);
       case NodeType.ACTION_TIME_ROUTING: {
         // Get current date/time in Israel timezone
@@ -944,14 +945,24 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
 
   const handleDateSend = async () => {
     if (!dateInput || !currentNodeId || !currentInstance) return;
-    const [year, month, day] = dateInput.split('-');
-    const formattedDate = `${day}/${month}/${year}`;
-    setDateInput('');
     const nodesList = currentInstance.getNodes() || [];
     const node = nodesList.find((n: any) => n.id === currentNodeId);
-    if (node && node.data.variableName) updateParam(node.data.variableName, formattedDate);
-    addMessage({ sender: 'user', type: 'text', content: formattedDate });
-    updateParam('open', formattedDate);
+    const mode = node?.data?.dateTimeMode || 'date';
+    let formattedValue: string;
+    if (mode === 'time') {
+      formattedValue = dateInput; // HH:MM from <input type="time">
+    } else if (mode === 'datetime') {
+      const [datePart, timePart] = dateInput.split('T');
+      const [year, month, day] = datePart.split('-');
+      formattedValue = `${day}/${month}/${year} ${timePart}`;
+    } else {
+      const [year, month, day] = dateInput.split('-');
+      formattedValue = `${day}/${month}/${year}`;
+    }
+    setDateInput('');
+    if (node && node.data.variableName) updateParam(node.data.variableName, formattedValue);
+    addMessage({ sender: 'user', type: 'text', content: formattedValue });
+    updateParam('open', formattedValue);
     await processNext(findNextNodeId(currentNodeId, currentInstance), currentInstance, 0, executionStack);
   };
 
@@ -1161,25 +1172,29 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
                       </div>
                     </div>
                   )}
-                  {msg.type === 'input_date' && (
-                    <div className="flex flex-col items-end gap-3">
-                      <div className="text-slate-900">{msg.content}</div>
-                      <input
-                        type="date"
-                        value={dateInput}
-                        onChange={e => setDateInput(e.target.value)}
-                        className="border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold text-slate-900 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        dir="ltr"
-                      />
-                      <button
-                        onClick={handleDateSend}
-                        disabled={!dateInput}
-                        className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-xs transition-all shadow-lg active:scale-95 ${dateInput ? 'bg-blue-600 text-white shadow-blue-600/20 hover:bg-blue-700' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`}
-                      >
-                        <Check size={14} /> אשר תאריך
-                      </button>
-                    </div>
-                  )}
+                  {msg.type === 'input_date' && (() => {
+                    const _bubbleInputType = msg.dateTimeMode === 'time' ? 'time' : msg.dateTimeMode === 'datetime' ? 'datetime-local' : 'date';
+                    const _bubbleLabel = msg.dateTimeMode === 'time' ? 'אשר שעה' : msg.dateTimeMode === 'datetime' ? 'אשר תאריך ושעה' : 'אשר תאריך';
+                    return (
+                      <div className="flex flex-col items-end gap-3">
+                        <div className="text-slate-900">{msg.content}</div>
+                        <input
+                          type={_bubbleInputType}
+                          value={dateInput}
+                          onChange={e => setDateInput(e.target.value)}
+                          className="border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold text-slate-900 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          dir="ltr"
+                        />
+                        <button
+                          onClick={handleDateSend}
+                          disabled={!dateInput}
+                          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-xs transition-all shadow-lg active:scale-95 ${dateInput ? 'bg-blue-600 text-white shadow-blue-600/20 hover:bg-blue-700' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`}
+                        >
+                          <Check size={14} /> {_bubbleLabel}
+                        </button>
+                      </div>
+                    );
+                  })()}
                   {msg.type === 'input_file' && (
                     <div className="flex flex-col items-end gap-3">
                        <div className="flex items-center justify-end gap-2 italic text-slate-400">{msg.content} <FileText size={16} /></div>
@@ -1209,10 +1224,12 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
           const _activeNodes = currentInstance?.getNodes() || [];
           const _currentNode = _activeNodes.find((n: any) => n.id === currentNodeId);
           const _isWaitingForDate = _currentNode?.type === NodeType.INPUT_DATE;
+          const _dateTimeMode = _currentNode?.data?.dateTimeMode || 'date';
+          const _inputType = _dateTimeMode === 'time' ? 'time' : _dateTimeMode === 'datetime' ? 'datetime-local' : 'date';
           return _isWaitingForDate ? (
             <div className="flex items-center gap-3 bg-slate-50 rounded-[1.5rem] p-2.5 pr-4 border border-slate-100 flex-row-reverse">
               <input
-                type="date"
+                type={_inputType}
                 dir="ltr"
                 className="flex-1 bg-transparent border-none outline-none text-sm font-bold text-black h-10"
                 value={dateInput}

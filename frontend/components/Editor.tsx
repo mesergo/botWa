@@ -304,7 +304,7 @@ const Editor: React.FC<EditorProps> = ({
                   {viewMode === 'main' ? (
                     <button 
                       onClick={onSimulatorOpen} 
-                      title="בדיקת תזרים"
+                      title="סימולטור"
                       className="w-16 h-16 bg-white rounded-full flex items-center justify-center shadow-2xl hover:scale-110 active:scale-95 transition-all overflow-hidden border-2 border-slate-100 group nodrag"
                     >
                       <img src="/images/go_favicon.png" alt="Simulator" className="w-full h-full object-cover" />

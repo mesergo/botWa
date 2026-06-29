@@ -50,7 +50,7 @@ export const getSubUsers = async (req, res) => {
     }
 
     const reps = await User.find({ manager_id: managerId }).select(
-      'name email phone role status createdAt rep_group_ids allowed_bot_ids user_type_id'
+      'name email phone role status availability_status createdAt rep_group_ids allowed_bot_ids user_type_id'
     ).sort({ createdAt: -1 });
     res.json({
       users: reps.map(r => ({

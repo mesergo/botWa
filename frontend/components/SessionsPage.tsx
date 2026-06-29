@@ -1093,8 +1093,8 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
       if (isSystem) {
         const isClosed = item.event === 'conversation_closed' || /הסתיימה/.test(text);
         return (
-          <div key={`${session.id}-${idx}`} className="flex w-full justify-center py-2">
-            <div className={`flex items-center gap-2 px-3 py-1 rounded-full border text-[11px] font-black
+          <div key={`${session.id}-${idx}`} className="flex w-full justify-center py-1">
+            <div className={`flex items-center gap-2 px-3 py-0.5 rounded-full border text-[11px] font-black
               ${isClosed
                 ? 'bg-slate-100 border-slate-300 text-slate-600'
                 : 'bg-amber-50 border-amber-200 text-amber-700'}`}>
@@ -1110,13 +1110,16 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
       if (isAgent) {
         return (
           <div key={`${session.id}-${idx}`} className="flex w-full justify-start">
-            <div className="flex gap-2 max-w-[88%] flex-row-reverse">
-              <div className="w-8 h-8 rounded-xl flex-shrink-0 flex items-center justify-center shadow-sm bg-purple-100 border border-purple-200 text-purple-700">
-                <Headphones size={15} />
+            <div className="flex gap-1.5 max-w-[88%] flex-row-reverse">
+              <div className="flex flex-col items-center gap-0.5 flex-shrink-0">
+                <div className="w-6 h-6 rounded-lg flex items-center justify-center shadow-sm bg-purple-100 border border-purple-200 text-purple-700">
+                  <Headphones size={12} />
+                </div>
+                {msgDate && <span className="text-[9px] text-slate-400 font-semibold">{msgDate}</span>}
               </div>
-              <div className="flex flex-col gap-1 items-end">
-                <div className="px-4 py-2.5 rounded-3xl text-sm font-semibold shadow-sm text-right bg-purple-50 border border-purple-200 text-purple-900 rounded-tr-none">
-                  <p className="text-[9px] text-purple-400 font-black mb-1 uppercase tracking-widest">נציג</p>
+              <div className="flex flex-col gap-0.5 items-end">
+                <div className="px-3 py-1.5 rounded-2xl text-sm font-semibold shadow-sm text-right bg-purple-50 border border-purple-200 text-purple-900 rounded-tr-none">
+                  <p className="text-[9px] text-purple-400 font-black mb-0.5 uppercase tracking-widest">נציג</p>
                   {item.type === 'Image' && item.url && (
                     <img src={item.url} alt="תמונה" className="rounded-xl max-w-[200px] h-auto mb-2" />
                   )}
@@ -1129,7 +1132,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                       <ExternalLink size={13} /> פתח מסמך
                     </a>
                   )}
-                  {text && <p className="whitespace-pre-wrap leading-relaxed">{text}</p>}
+                  {text && <p className="whitespace-pre-wrap leading-snug">{text}</p>}
                 </div>
                 {item.wa_sent === false && (
                   <div className="flex items-center gap-1.5 px-1 flex-wrap" dir="rtl">
@@ -1149,7 +1152,6 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                     </button>
                   </div>
                 )}
-                {msgDate && <span className="text-[10px] text-slate-400 font-semibold px-1">{msgDate}</span>}
               </div>
             </div>
           </div>
@@ -1161,30 +1163,33 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
           key={`${session.id}-${idx}`}
           className={`flex w-full ${isBot ? 'justify-start' : 'justify-end'}`}
         >
-          <div className={`flex gap-2 max-w-[88%] ${isBot ? 'flex-row-reverse' : 'flex-row'}`}>
-            <div className={`w-8 h-8 rounded-xl flex-shrink-0 flex items-center justify-center shadow-sm
-              ${isBot ? 'bg-white border border-slate-100 text-slate-700' : 'bg-sky-500 text-white'}`}>
-              {isBot ? <Bot size={15} /> : <User size={15} />}
+          <div className={`flex gap-1.5 max-w-[88%] ${isBot ? 'flex-row-reverse' : 'flex-row'}`}>
+            <div className="flex flex-col items-center gap-0.5 flex-shrink-0">
+              <div className={`w-6 h-6 rounded-lg flex items-center justify-center shadow-sm
+                ${isBot ? 'bg-white border border-slate-100 text-slate-700' : 'bg-sky-500 text-white'}`}>
+                {isBot ? <Bot size={12} /> : <User size={12} />}
+              </div>
+              {msgDate && <span className="text-[9px] text-slate-400 font-semibold">{msgDate}</span>}
             </div>
-            <div className={`flex flex-col gap-1 ${isBot ? 'items-end' : 'items-start'}`}>
-              <div className={`px-4 py-2.5 rounded-3xl text-sm font-semibold shadow-sm text-right
+            <div className={`flex flex-col gap-0.5 ${isBot ? 'items-end' : 'items-start'}`}>
+              <div className={`px-3 py-1.5 rounded-2xl text-sm font-semibold shadow-sm text-right
                 ${isBot
                   ? 'bg-white border border-slate-100 text-slate-900 rounded-tr-none'
                   : 'bg-sky-500 text-white rounded-tl-none'}`}
               >
                 {(item.type === 'Text' || item.type === 'UserInput' || !item.type || item.type.startsWith('input_')) && text && (
-                  <p className="whitespace-pre-wrap leading-relaxed">{text}</p>
+                  <p className="whitespace-pre-wrap leading-snug">{text}</p>
                 )}
                 {item.type === 'Image' && item.url && (
                   <>
-                    <img src={item.url} alt="תמונה" className="rounded-xl max-w-[200px] h-auto mb-2" />
-                    {text && <p className="whitespace-pre-wrap leading-relaxed">{text}</p>}
+                    <img src={item.url} alt="תמונה" className="rounded-xl max-w-[200px] h-auto mb-1" />
+                    {text && <p className="whitespace-pre-wrap leading-snug">{text}</p>}
                   </>
                 )}
                 {item.type === 'Video' && item.url && (
                   <>
-                    <video src={item.url} controls className="rounded-xl max-w-[200px] mb-2" />
-                    {text && <p className="whitespace-pre-wrap leading-relaxed">{text}</p>}
+                    <video src={item.url} controls className="rounded-xl max-w-[200px] mb-1" />
+                    {text && <p className="whitespace-pre-wrap leading-snug">{text}</p>}
                   </>
                 )}
                 {item.type === 'Document' && item.url && (
@@ -1209,14 +1214,14 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 )}
                 {item.type === 'Options' && (
                   <div>
-                    {text && <p className="mb-2 text-slate-400 text-[10px] uppercase tracking-widest font-black">{text}</p>}
+                    {text && <p className="mb-1 text-slate-400 text-[10px] uppercase tracking-widest font-black">{text}</p>}
                     {Array.isArray(item.options) && (
-                      <div className="flex flex-col gap-1.5 mt-1">
+                      <div className="flex flex-col gap-1 mt-0.5">
                         {item.options
                           .map((o: any) => (typeof o === 'object' && o !== null) ? (o.label ?? o.value ?? o.text ?? '') : String(o))
                           .filter((o: string) => o !== 'default' && o !== '')
                           .map((opt: string, i: number) => (
-                            <div key={i} className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700">{opt}</div>
+                            <div key={i} className="px-2 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-700">{opt}</div>
                           ))}
                       </div>
                     )}
@@ -1251,9 +1256,6 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                   </div>
                 )}
               </div>
-              {msgDate && (
-                <span className="text-[10px] text-slate-400 font-semibold px-1">{msgDate}</span>
-              )}
             </div>
           </div>
         </div>
@@ -1653,11 +1655,11 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 </div>
               ) : (
                 /* Sessions ordered oldest (top) → newest (bottom) */
-                <div ref={chatScrollRef} className="flex-1 overflow-y-auto p-6" dir="rtl">
+                <div ref={chatScrollRef} className="flex-1 overflow-y-auto p-3" dir="rtl">
                   {phoneSessions.map(session => (
                     <React.Fragment key={session.id}>
                       {/* Thin divider with session date and bot name */}
-                      <div className="flex items-center gap-3 py-3">
+                      <div className="flex items-center gap-3 py-1.5">
                         <hr className="flex-1 border-slate-200" />
                         <div className="flex items-center gap-1.5 flex-shrink-0">
                           <Clock size={10} className="text-slate-400" />
@@ -1672,7 +1674,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                       </div>
 
                       {/* Messages for this session */}
-                      <div className="space-y-3 mb-2">
+                      <div className="space-y-1 mb-1">
                         {renderSessionMessages(session) ?? (
                           <p className="text-center text-xs text-slate-300 font-semibold py-2">אין הודעות בשיחה זו</p>
                         )}

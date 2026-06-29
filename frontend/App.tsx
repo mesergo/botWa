@@ -963,7 +963,7 @@ const FlowBuilder: React.FC = () => {
       let height = 112; 
       switch(node.type) {
         case NodeType.INPUT_TEXT: height += 160; break;
-        case NodeType.INPUT_DATE: height += 80; break;
+        case NodeType.INPUT_DATE: height += 185; break;
         case NodeType.INPUT_FILE: height += 80; break;
         case NodeType.OUTPUT_TEXT: height += 120; break;
         case NodeType.OUTPUT_IMAGE: height += 80 + 360; break;
@@ -1911,7 +1911,7 @@ const FlowBuilder: React.FC = () => {
     const nextNum = nodes.filter(n => n.data.serialId?.startsWith(prefix)).length + 1;
     const hebrewNodeNames: Record<string, string> = {
       [NodeType.INPUT_TEXT]: 'שדה טקסט',
-      [NodeType.INPUT_DATE]: 'בחירת תאריך',
+      [NodeType.INPUT_DATE]: 'בחירת תאריך/שעה',
       [NodeType.INPUT_FILE]: 'העלאת קובץ',
       [NodeType.OUTPUT_TEXT]: 'הודעת טקסט',
       [NodeType.OUTPUT_IMAGE]: 'הודעת תמונה',

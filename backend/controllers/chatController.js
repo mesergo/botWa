@@ -143,6 +143,17 @@ const validateInput = (type, value) => {
   }
 };
 
+const validateDateTimeInput = (mode, value) => {
+  const v = String(value || '').trim();
+  if (mode === 'time') {
+    return /^([01]\d|2[0-3]):([0-5]\d)$/.test(v);
+  } else if (mode === 'datetime') {
+    return /^(0[1-9]|[12]\d|3[01])\/(0[1-9]|1[0-2])\/\d{4} ([01]\d|2[0-3]):([0-5]\d)$/.test(v);
+  } else {
+    return /^(0[1-9]|[12]\d|3[01])\/(0[1-9]|1[0-2])\/\d{4}$/.test(v);
+  }
+};
+
 // Helper: Get flow data (nodes + edges)
 const getFlowData = async (flowId, processId = null) => {
   let query = {};
@@ -1745,6 +1756,17 @@ export const respondToMessage = async (req, res) => {
       if (currentNode.type === 'input_text' && validationType && !validateInput(validationType, text)) {
         // Invalid input — notify user and re-prompt without advancing
         messages.push({ type: 'Text', text: 'הערך שהוזן אינו חוקי, אנא הזן ערך מתאים.', created: new Date().toISOString() });
+        if (currentNode.data.label) {
+          messages.push({ type: 'Text', text: replaceParameters(currentNode.data.label, params), created: new Date().toISOString() });
+        }
+        session.waiting_text_input = true;
+        // current_node_id stays unchanged — fall through to session.save()
+      } else if (currentNode.type === 'input_date' && !validateDateTimeInput(currentNode.data.dateTimeMode || 'date', text)) {
+        const dtMode = currentNode.data.dateTimeMode || 'date';
+        const formatHint = dtMode === 'time'     ? 'HH:MM (לדוגמה: 14:30)' :
+                           dtMode === 'datetime' ? 'DD/MM/YYYY HH:MM (לדוגמה: 25/06/2025 14:30)' :
+                                                   'DD/MM/YYYY (לדוגמה: 25/06/2025)';
+        messages.push({ type: 'Text', text: `הפורמט שהוזן אינו תקין. אנא הזן בפורמט ${formatHint}`, created: new Date().toISOString() });
         if (currentNode.data.label) {
           messages.push({ type: 'Text', text: replaceParameters(currentNode.data.label, params), created: new Date().toISOString() });
         }

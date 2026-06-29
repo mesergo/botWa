@@ -22,7 +22,7 @@ export const COMPONENT_GROUPS = [
     title: 'קלט (משתמש)',
     items: [
       { type: NodeType.INPUT_TEXT, label: 'שדה טקסט', icon: <Type size={18} /> },
-      { type: NodeType.INPUT_DATE, label: 'בחירת תאריך', icon: <Calendar size={18} /> },
+      { type: NodeType.INPUT_DATE, label: 'בחירת תאריך/שעה', icon: <Calendar size={18} /> },
       { type: NodeType.INPUT_FILE, label: 'העלאת קובץ', icon: <Upload size={18} /> },
     ]
   },
