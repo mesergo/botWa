@@ -88,7 +88,7 @@ const DEFAULT_EDGE_STYLE = { stroke: '#3b82f6', strokeWidth: 2, strokeDasharray:
 
 /** Returns true if the stored JWT token is expired (or unreadable). */
 function isStoredTokenExpired(): boolean {
-  const token = localStorage.getItem('flowbot_token');
+  const token = localStorage.getItem('flowbot_token') || sessionStorage.getItem('flowbot_token');
   if (!token) return false;
   try {
     // JWT uses base64url — replace chars before decoding
@@ -100,6 +100,28 @@ function isStoredTokenExpired(): boolean {
   }
 }
 
+function getStoredToken(): string | null {
+  return localStorage.getItem('flowbot_token') || sessionStorage.getItem('flowbot_token');
+}
+
+function getStoredUser(): string | null {
+  return localStorage.getItem('flowbot_user') || sessionStorage.getItem('flowbot_user');
+}
+
+function clearStoredAuth() {
+  localStorage.removeItem('flowbot_token');
+  localStorage.removeItem('flowbot_user');
+  sessionStorage.removeItem('flowbot_token');
+  sessionStorage.removeItem('flowbot_user');
+}
+
+function saveStoredAuth(token: string, user: any, rememberMe: boolean) {
+  clearStoredAuth();
+  const storage = rememberMe ? localStorage : sessionStorage;
+  storage.setItem('flowbot_token', token);
+  storage.setItem('flowbot_user', JSON.stringify(user));
+}
+
 type ViewMode = 'home' | 'dashboard' | 'editor' | 'editing-process' | 'viewing-process' | 'simulator-only' | 'template-selection' | 'template-form' | 'admin-panel' | 'editing-template' | 'creating-template' | 'contacts' | 'sessions' | 'groups';
 
 const FlowBuilder: React.FC = () => {
@@ -108,15 +130,14 @@ const FlowBuilder: React.FC = () => {
   // Detect expired token once on mount, before any render
   const tokenExpiredOnLoad = (() => {
     if (!isStoredTokenExpired()) return false;
-    localStorage.removeItem('flowbot_token');
-    localStorage.removeItem('flowbot_user');
+    clearStoredAuth();
     return true;
   })();
 
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
     if (tokenExpiredOnLoad) return null;
     try {
-      const saved = localStorage.getItem('flowbot_user');
+      const saved = getStoredUser();
       if (!saved || saved === "undefined") return null;
       return JSON.parse(saved);
     } catch (e) {
@@ -125,7 +146,7 @@ const FlowBuilder: React.FC = () => {
     }
   });
   const can = usePermission(currentUser);
-  const [token, setToken] = useState<string | null>(tokenExpiredOnLoad ? null : localStorage.getItem('flowbot_token'));
+  const [token, setToken] = useState<string | null>(tokenExpiredOnLoad ? null : getStoredToken());
   const [sessionExpired, setSessionExpired] = useState(tokenExpiredOnLoad);
   
   const [bots, setBots] = useState<BotFlow[]>([]);
@@ -175,7 +196,7 @@ const FlowBuilder: React.FC = () => {
   // Signals that the next nodes update is a fresh bot load and needs fitView
   const pendingFitViewRef = useRef(false);
 
-  const [authForm, setAuthForm] = useState({ name: '', email: '', password: '' });
+  const [authForm, setAuthForm] = useState({ name: '', email: '', password: '', rememberMe: false });
   const [authErrors, setAuthErrors] = useState<Record<string, string>>({});
 
   const [isPublishModalOpen, setIsPublishModalOpen] = useState(false);
@@ -518,8 +539,7 @@ const FlowBuilder: React.FC = () => {
   const handleSessionExpired = useCallback(() => {
     setToken(null);
     setCurrentUser(null);
-    localStorage.removeItem('flowbot_token');
-    localStorage.removeItem('flowbot_user');
+    clearStoredAuth();
     setSessionExpired(true);
   }, []);
 
@@ -1158,7 +1178,13 @@ const FlowBuilder: React.FC = () => {
     setCurrentUser(prev => {
       if (!prev) return prev;
       const updated = { ...prev, availability_status: status } as User;
-      try { localStorage.setItem('flowbot_user', JSON.stringify(updated)); } catch {}
+      try {
+        if (localStorage.getItem('flowbot_token')) {
+          localStorage.setItem('flowbot_user', JSON.stringify(updated));
+        } else {
+          sessionStorage.setItem('flowbot_user', JSON.stringify(updated));
+        }
+      } catch {}
       return updated;
     });
   }, [token]);
@@ -1177,6 +1203,7 @@ const FlowBuilder: React.FC = () => {
       } catch { /* ignore */ }
     }
     localStorage.clear();
+    sessionStorage.clear();
     window.location.reload();
   }, [token]);
  
@@ -1190,10 +1217,9 @@ const FlowBuilder: React.FC = () => {
       });
       const data = await res.json();
       if (res.ok && data.token) {
+        saveStoredAuth(data.token, data.user, authForm.rememberMe);
         setToken(data.token);
         setCurrentUser(data.user);
-        localStorage.setItem('flowbot_token', data.token);
-        localStorage.setItem('flowbot_user', JSON.stringify(data.user));
         // Route reps directly to sessions view
         if (data.user?.role === 'rep' || data.user?.role === 'rep_manager') {
           setSessionsOwnOnly(false);
@@ -1215,14 +1241,13 @@ const FlowBuilder: React.FC = () => {
     const res = await fetch(`${API_BASE}${endpoint}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(authForm)
+      body: JSON.stringify({ email: authForm.email, password: authForm.password })
     });
     const data = await res.json();
     if (res.ok && data.token) {
+      saveStoredAuth(data.token, data.user, authForm.rememberMe);
       setToken(data.token);
       setCurrentUser(data.user);
-      localStorage.setItem('flowbot_token', data.token);
-      localStorage.setItem('flowbot_user', JSON.stringify(data.user));
       // Route reps directly to sessions view
       if (data.user?.role === 'rep' || data.user?.role === 'rep_manager') {
         setSessionsOwnOnly(false);
@@ -1238,8 +1263,7 @@ const FlowBuilder: React.FC = () => {
   const handleImpersonate = useCallback((userData: any, impersonationToken: string) => {
     setToken(impersonationToken);
     setCurrentUser(userData);
-    localStorage.setItem('flowbot_token', impersonationToken);
-    localStorage.setItem('flowbot_user', JSON.stringify(userData));
+    saveStoredAuth(impersonationToken, userData, true);
     // Route based on role — same logic as normal login
     if (userData.role === 'rep' || userData.role === 'rep_manager') {
       setSessionsOwnOnly(false);
@@ -1265,8 +1289,7 @@ const FlowBuilder: React.FC = () => {
       if (res.ok && data.token) {
         setToken(data.token);
         setCurrentUser(data.user);
-        localStorage.setItem('flowbot_token', data.token);
-        localStorage.setItem('flowbot_user', JSON.stringify(data.user));
+        saveStoredAuth(data.token, data.user, true);
         setViewMode('dashboard');
         // Pass the new token directly to avoid stale closure with the old impersonation token
         loadBots(data.token);
