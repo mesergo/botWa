@@ -1,8 +1,8 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { Handle, Position, useReactFlow, useEdges } from 'reactflow';
-import { 
-  Type, Calendar, Upload, MessageSquare, 
+import {
+  Type, Calendar, Upload, MessageSquare,
   Image as ImageIcon, ExternalLink, List, Globe, Clock, PlayCircle, Plus, Layers, X, GitBranch, Trash2, ChevronDown, Zap,
   Mail, Phone, CreditCard, Link, Users, UserMinus, UserCheck
 } from 'lucide-react';
@@ -14,7 +14,7 @@ const HighlightedText = ({ text, highlight, isCurrent }: { text: string; highlig
   const parts = text.split(new RegExp(`(${highlight})`, 'gi'));
   return (
     <>
-      {parts.map((part, i) => 
+      {parts.map((part, i) =>
         part.toLowerCase() === highlight.toLowerCase() ? (
           <mark key={i} className={`${isCurrent ? 'bg-yellow-400' : 'bg-yellow-200'} text-slate-900 rounded-sm px-0.5`}>{part}</mark>
         ) : part
@@ -25,7 +25,7 @@ const HighlightedText = ({ text, highlight, isCurrent }: { text: string; highlig
 
 const SearchableInput = ({ value, onChange, placeholder, type = "text", searchQuery, isCurrentMatch, isTextArea = false, disabled = false }: any) => {
   const [isFocused, setIsFocused] = React.useState(false);
-  
+ 
   const fontStyles: React.CSSProperties = {
     fontFamily: 'Heebo, sans-serif',
     fontSize: '1rem',
@@ -41,14 +41,14 @@ const SearchableInput = ({ value, onChange, placeholder, type = "text", searchQu
   return (
     <div className={`relative w-full transition-all rounded-xl overflow-hidden ${isCurrentMatch ? 'ring-2 ring-blue-600 border-transparent shadow-md' : 'border border-slate-200'} ${disabled ? 'bg-slate-50 opacity-70 cursor-not-allowed' : ''}`}>
       {showHighlight && (
-        <div 
+        <div
           className="absolute inset-0 pointer-events-none pr-4 pl-4 pt-2.5 whitespace-pre-wrap break-words overflow-hidden bg-white z-0"
           style={fontStyles}
         >
           <HighlightedText text={value} highlight={searchQuery} isCurrent={isCurrentMatch} />
         </div>
       )}
-      
+     
       {isTextArea ? (
         <textarea
           disabled={disabled}
@@ -142,10 +142,10 @@ const RESPONSE_OPERATORS = [
 const ResponseOperatorSelector = ({ value, onChange, disabled = false }: { value: string, onChange: (op: string) => void, disabled?: boolean }) => {
   const [isOpen, setIsOpen] = useState(false);
   const currentOp = RESPONSE_OPERATORS.find(o => o.id === value) || RESPONSE_OPERATORS[0];
-  
+ 
   return (
     <div className="relative">
-      <button 
+      <button
         disabled={disabled}
         onClick={() => setIsOpen(!isOpen)}
         className={`flex items-center justify-center w-10 h-10 border rounded-lg transition-all text-slate-900 font-bold nodrag ${disabled ? 'bg-slate-100 border-slate-100 text-slate-400 cursor-not-allowed' : 'bg-slate-50 border-slate-100 hover:border-blue-600'}`}
@@ -153,7 +153,7 @@ const ResponseOperatorSelector = ({ value, onChange, disabled = false }: { value
       >
         <span className="text-xs">{currentOp.icon}</span>
       </button>
-      
+     
       {!disabled && isOpen && (
         <div className="absolute right-0 top-full mt-1 w-48 bg-white border border-slate-100 rounded-xl shadow-2xl z-[100] overflow-hidden animate-in fade-in slide-in-from-top-1 duration-150">
           {RESPONSE_OPERATORS.map((op) => (
@@ -234,17 +234,17 @@ const OPERATORS = [
 const OperatorSelector = ({ value, onChange }: { value: string, onChange: (op: string) => void }) => {
   const [isOpen, setIsOpen] = useState(false);
   const currentOp = OPERATORS.find(o => o.id === value) || OPERATORS[0];
-  
+ 
   return (
     <div className="relative">
-      <button 
+      <button
         onClick={() => setIsOpen(!isOpen)}
         className="flex items-center justify-center w-12 h-12 bg-white border border-slate-200 rounded-xl hover:border-blue-600 transition-all text-slate-900 font-bold nodrag"
         title={currentOp.label}
       >
         {currentOp.icon}
       </button>
-      
+     
       {isOpen && (
         <div className="absolute right-0 top-full mt-2 w-48 bg-white border border-slate-100 rounded-2xl shadow-2xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
           {OPERATORS.map((op) => (
@@ -317,16 +317,46 @@ export const InputTextNode = (props: any) => (
   </BaseNode>
 );
 
-export const InputDateNode = (props: any) => (
-  <BaseNode id={props.id} title="קלט: תאריך" icon={<Calendar size={20} />} type={NodeType.INPUT_DATE} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} isSearchMatch={props.data.isSearchMatch}>
-    <InputFieldWrapper label="בקשת תאריך">
-      <SearchableInput value={props.data.label} onChange={(v: string) => props.data.onChange({ label: v })} placeholder="מתי תרצה להגיע?" searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
-    </InputFieldWrapper>
-    <InputFieldWrapper label="שם משתנה לאחסון">
-      <SearchableInput value={props.data.variableName} onChange={(v: string) => props.data.onChange({ variableName: v })} placeholder="selected_date" searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
-    </InputFieldWrapper>
-  </BaseNode>
-);
+export const InputDateNode = (props: any) => {
+  const mode: 'date' | 'time' | 'datetime' = props.data.dateTimeMode || 'date';
+
+  const MODES = [
+    { id: 'date',     label: 'תאריך' },
+    { id: 'time',     label: 'שעה' },
+    { id: 'datetime', label: 'תאריך ושעה' },
+  ] as const;
+
+  const modeTitle       = mode === 'time' ? 'קלט: שעה' : mode === 'datetime' ? 'קלט: תאריך ושעה' : 'קלט: תאריך';
+  const modeIcon        = mode === 'time' ? <Clock size={20} /> : <Calendar size={20} />;
+  const modePlaceholder = mode === 'time' ? 'באיזו שעה?' : mode === 'datetime' ? 'מתי ובאיזו שעה?' : 'מתי תרצה להגיע?';
+  const modeVarPH       = mode === 'time' ? 'selected_time' : mode === 'datetime' ? 'selected_datetime' : 'selected_date';
+  const modeHint        = mode === 'time' ? 'תבנית פלט: HH:MM' : mode === 'datetime' ? 'תבנית פלט: DD/MM/YYYY HH:MM' : 'תבנית פלט: DD/MM/YYYY';
+
+  return (
+    <BaseNode id={props.id} title={modeTitle} icon={modeIcon} type={NodeType.INPUT_DATE} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} isSearchMatch={props.data.isSearchMatch}>
+      <InputFieldWrapper label="סוג קלט">
+        <div className="flex rounded-xl overflow-hidden border border-slate-200 mb-1">
+          {MODES.map(m => (
+            <button
+              key={m.id}
+              onClick={() => props.data.onChange({ dateTimeMode: m.id })}
+              className={`flex-1 py-2 text-xs font-bold nodrag transition-colors ${mode === m.id ? 'bg-blue-500 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}`}
+            >
+              {m.label}
+            </button>
+          ))}
+        </div>
+        <p className="text-[11px] text-slate-400 text-right">{modeHint}</p>
+      </InputFieldWrapper>
+      <InputFieldWrapper label="שאלה מהבוט">
+        <SearchableInput value={props.data.label} onChange={(v: string) => props.data.onChange({ label: v })} placeholder={modePlaceholder} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
+      </InputFieldWrapper>
+      <InputFieldWrapper label="שם משתנה לאחסון">
+        <SearchableInput value={props.data.variableName} onChange={(v: string) => props.data.onChange({ variableName: v })} placeholder={modeVarPH} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
+      </InputFieldWrapper>
+    </BaseNode>
+  );
+};
 
 export const InputFileNode = (props: any) => (
   <BaseNode id={props.id} title="קלט: קובץ" icon={<Upload size={20} />} type={NodeType.INPUT_FILE} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} isSearchMatch={props.data.isSearchMatch}>
@@ -347,9 +377,9 @@ export const OutputTextNode = (props: any) => (
 export const OutputImageNode = (props: any) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadMode, setUploadMode] = useState<'file' | 'url'>(props.data.url && !props.data.url.startsWith('data:') ? 'url' : 'file');
-  
+ 
   const mediaType = props.data.mediaType || 'image';
-  
+ 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
@@ -358,7 +388,7 @@ export const OutputImageNode = (props: any) => {
       reader.readAsDataURL(file);
     }
   };
-  
+ 
   const getAcceptTypes = () => {
     switch(mediaType) {
       case 'image': return 'image/*';
@@ -367,7 +397,7 @@ export const OutputImageNode = (props: any) => {
       default: return 'image/*,video/*,application/pdf';
     }
   };
-  
+ 
   const getMediaIcon = (type: string) => {
     switch(type) {
       case 'image': return <ImageIcon size={14} className="inline" />;
@@ -376,10 +406,10 @@ export const OutputImageNode = (props: any) => {
       default: return <ImageIcon size={14} className="inline" />;
     }
   };
-  
+ 
   const renderMediaPreview = () => {
     if (!props.data.url) return null;
-    
+   
     if (mediaType === 'video') {
       return <video src={props.data.url} controls className="max-w-full h-full object-contain" />;
     } else if (mediaType === 'pdf') {
@@ -393,12 +423,12 @@ export const OutputImageNode = (props: any) => {
       return <img src={props.data.url} alt="Bot upload" className="max-w-full h-full object-contain" />;
     }
   };
-  
+ 
   return (
     <BaseNode id={props.id} title="הודעת מדיה" icon={<ImageIcon size={20} />} type={NodeType.OUTPUT_IMAGE} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} isSearchMatch={props.data.isSearchMatch}>
       <InputFieldWrapper label="סוג מדיה">
         <div className="relative">
-          <select 
+          <select
             className="w-full appearance-none border border-slate-200 rounded-lg px-3.5 py-2 pr-9 text-right bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent focus:outline-none transition-all nodrag cursor-pointer text-slate-700 text-[13px] font-medium shadow-sm hover:border-slate-300 hover:shadow"
             value={mediaType}
             onChange={(e) => props.data.onChange({ mediaType: e.target.value, url: '' })}
@@ -415,27 +445,27 @@ export const OutputImageNode = (props: any) => {
           </div>
         </div>
       </InputFieldWrapper>
-      
+     
       <InputFieldWrapper label="אופן העלאה">
         <div className="flex gap-1.5 mb-3 bg-slate-100/80 p-1.5 rounded-lg border border-slate-200/60">
-          <button 
+          <button
             type="button"
             onClick={(e) => { e.preventDefault(); e.stopPropagation(); setUploadMode('file'); }}
             className={`flex-1 px-2.5 py-1.5 rounded-md transition-all duration-150 font-medium text-[13px] nodrag select-none outline-none whitespace-nowrap ${
-              uploadMode === 'file' 
-                ? 'bg-white text-blue-600 shadow-sm border border-slate-200/50' 
+              uploadMode === 'file'
+                ? 'bg-white text-blue-600 shadow-sm border border-slate-200/50'
                 : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50/50'
             }`}
           >
             <Upload size={13} className="inline ml-1 -mt-0.5" />
             העלאת קובץ
           </button>
-          <button 
+          <button
             type="button"
             onClick={(e) => { e.preventDefault(); e.stopPropagation(); setUploadMode('url'); }}
             className={`flex-1 px-2.5 py-1.5 rounded-md transition-all duration-150 font-medium text-[13px] nodrag select-none outline-none whitespace-nowrap ${
-              uploadMode === 'url' 
-                ? 'bg-white text-blue-600 shadow-sm border border-slate-200/50' 
+              uploadMode === 'url'
+                ? 'bg-white text-blue-600 shadow-sm border border-slate-200/50'
                 : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50/50'
             }`}
           >
@@ -443,14 +473,14 @@ export const OutputImageNode = (props: any) => {
             הוספת קישור
           </button>
         </div>
-        
+       
         {uploadMode === 'url' ? (
-          <SearchableInput 
-            value={props.data.url} 
-            onChange={(v: string) => props.data.onChange({ url: v })} 
+          <SearchableInput
+            value={props.data.url}
+            onChange={(v: string) => props.data.onChange({ url: v })}
             placeholder={`הכנס קישור ל${mediaType === 'image' ? 'תמונה' : mediaType === 'video' ? 'וידאו' : 'PDF'}`}
-            searchQuery={props.data.searchQuery} 
-            isCurrentMatch={props.data.isCurrentMatch} 
+            searchQuery={props.data.searchQuery}
+            isCurrentMatch={props.data.isCurrentMatch}
           />
         ) : (
           <div className="space-y-3">
@@ -458,16 +488,16 @@ export const OutputImageNode = (props: any) => {
               <div className="relative group rounded-xl overflow-hidden border border-slate-200 shadow-sm w-full h-40 bg-slate-50 flex items-center justify-center">
                 {renderMediaPreview()}
                 <div className="absolute inset-0 bg-slate-900/60 opacity-0 group-hover:opacity-100 transition-all flex items-center justify-center gap-2 backdrop-blur-[2px]">
-                  <button 
-                    type="button" 
-                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); fileInputRef.current?.click(); }} 
+                  <button
+                    type="button"
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); fileInputRef.current?.click(); }}
                     className="p-2.5 bg-white text-slate-900 rounded-lg shadow-xl hover:bg-slate-100 transition-all outline-none"
                   >
                     <Upload size={18} />
                   </button>
-                  <button 
-                    type="button" 
-                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); props.data.onChange({ url: '' }); }} 
+                  <button
+                    type="button"
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); props.data.onChange({ url: '' }); }}
                     className="p-2.5 bg-red-500 text-white rounded-lg shadow-xl hover:bg-red-600 transition-all outline-none"
                   >
                     <X size={18} />
@@ -475,9 +505,9 @@ export const OutputImageNode = (props: any) => {
                 </div>
               </div>
             ) : (
-              <button 
-                type="button" 
-                onClick={(e) => { e.preventDefault(); e.stopPropagation(); fileInputRef.current?.click(); }} 
+              <button
+                type="button"
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); fileInputRef.current?.click(); }}
                 className="w-full h-40 border-2 border-dashed border-slate-300 rounded-xl flex flex-col items-center justify-center gap-3 text-slate-400 hover:border-blue-400 hover:text-blue-500 hover:bg-blue-50/30 transition-all nodrag outline-none"
               >
                 <Upload size={28} strokeWidth={1.5} />
@@ -488,13 +518,13 @@ export const OutputImageNode = (props: any) => {
         )}
         <input type="file" ref={fileInputRef} className="hidden" accept={getAcceptTypes()} onChange={handleFileUpload} />
       </InputFieldWrapper>
-      
+     
       <InputFieldWrapper label="טקסט (אופציונלי)">
-        <SearchableInput 
-          value={props.data.caption} 
-          onChange={(v: string) => props.data.onChange({ caption: v })} 
+        <SearchableInput
+          value={props.data.caption}
+          onChange={(v: string) => props.data.onChange({ caption: v })}
           placeholder="הוסף טקסט מתחת למדיה"
-          searchQuery={props.data.searchQuery} 
+          searchQuery={props.data.searchQuery}
           isCurrentMatch={props.data.isCurrentMatch}
           isTextArea={true}
         />
@@ -550,7 +580,7 @@ export const OutputMenuNode = (props: any) => {
   };
 
   const addOption = () => {
-    props.data.onChange({ 
+    props.data.onChange({
       options: [...options, ''],
       optionImages: [...(props.data.optionImages || Array(options.length).fill('')), '']
     });
@@ -581,15 +611,14 @@ export const OutputMenuNode = (props: any) => {
         </div>
         {options.map((opt: string, i: number) => (
           <div key={i} className="flex items-center gap-2 p-2 bg-slate-50 border border-slate-100 rounded-2xl group/item relative transition-colors hover:bg-white hover:border-blue-100">
-            <Handle type="source" position={Position.Right} id={`option-${i}`} style={{ top: '50%', right: -16 }} className="w-4 h-4 bg-slate-400 border-2 border-white rounded-full shadow-lg" />
-            <button 
-              onClick={() => removeOption(i)} 
+            <DeletableHandle nodeId={props.id} handleId={`option-${i}`} style={{ top: '50%', right: -10 }} />
+            <button
+              onClick={() => removeOption(i)}
               className="w-10 h-10 rounded-lg flex items-center justify-center text-red-400 hover:text-red-600 hover:bg-red-50 transition-all nodrag flex-shrink-0"
               title="מחק אפשרות"
             >
               <X size={18} />
             </button>
-            {/* <DeletableHandle nodeId={props.id} handleId={`option-${i}`} style={{ top: '50%', right: -10 }} /> */}
             <div className="flex-1">
               <SearchableInput value={opt} onChange={(v: string) => updateOption(i, v)} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} placeholder="הזן ערך" />
             </div>
@@ -597,7 +626,7 @@ export const OutputMenuNode = (props: any) => {
               {optionImages[i] ? (
                 <div className="relative w-12 h-12 rounded-lg overflow-hidden border border-slate-200 group/thumb flex-shrink-0">
                   <img src={optionImages[i]} className="w-full h-full object-cover" alt="Option visual" />
-                  <div 
+                  <div
                     onClick={() => removeOptionImage(i)}
                     className="absolute inset-0 bg-red-500/80 opacity-0 group-hover/thumb:opacity-100 flex items-center justify-center cursor-pointer transition-opacity backdrop-blur-sm"
                   >
@@ -605,8 +634,8 @@ export const OutputMenuNode = (props: any) => {
                   </div>
                 </div>
               ) : (
-                <button 
-                  onClick={() => fileInputRefs.current[i]?.click()} 
+                <button
+                  onClick={() => fileInputRefs.current[i]?.click()}
                   className="w-12 h-12 rounded-lg bg-white border border-slate-100 flex items-center justify-center text-slate-300 hover:text-blue-500 hover:border-blue-200 transition-all flex-shrink-0"
                   title="הוסף תמונה"
                 >
@@ -614,12 +643,12 @@ export const OutputMenuNode = (props: any) => {
                 </button>
               )}
             </div>
-            <input 
-              type="file" 
-              className="hidden" 
-              ref={el => { fileInputRefs.current[i] = el; }} 
-              accept="image/*" 
-              onChange={(e) => handleOptionImageUpload(i, e)} 
+            <input
+              type="file"
+              className="hidden"
+              ref={el => { fileInputRefs.current[i] = el; }}
+              accept="image/*"
+              onChange={(e) => handleOptionImageUpload(i, e)}
             />
           </div>
         ))}
@@ -648,7 +677,7 @@ export const ActionWebServiceNode = (props: any) => {
   };
 
   const addBranch = () => {
-    props.data.onChange({ 
+    props.data.onChange({
       options: [...branches, branches.length === 0 ? "1" : "0"],
       optionOperators: [...operators, 'eq']
     });
@@ -666,7 +695,7 @@ export const ActionWebServiceNode = (props: any) => {
       <InputFieldWrapper label="כתובת Webhook">
         <SearchableInput value={props.data.url} onChange={(v: string) => props.data.onChange({ url: v })} placeholder="https://api.yourdomain.com" searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
       </InputFieldWrapper>
-      
+     
       <div className="space-y-3 mt-4 text-right">
         {/* Default exit - always present */}
         <div>
@@ -685,7 +714,7 @@ export const ActionWebServiceNode = (props: any) => {
           {branches.map((branch: string, i: number) => (
             <div key={i} className="flex flex-col gap-2 p-3 bg-slate-50 border border-slate-100 rounded-2xl group/branch relative transition-colors hover:bg-white hover:border-blue-100 mb-3">
               <DeletableHandle nodeId={props.id} handleId={`option-${i}`} style={{ top: '50%', right: -10 }} />
-              
+             
               <div className="flex items-center gap-2 flex-row-reverse">
                 <OperatorSelector value={operators[i]} onChange={(op) => updateOperator(i, op)} />
                 <div className="flex-1">
@@ -1222,7 +1251,7 @@ export const AutomaticResponsesNode = (props: any) => {
   };
 
   const addOption = () => {
-    props.data.onChange({ 
+    props.data.onChange({
       options: [...options, ''], // Empty string instead of "פתיח חדש"
       optionOperators: [...operators, 'eq']
     });
@@ -1256,8 +1285,8 @@ export const AutomaticResponsesNode = (props: any) => {
                 {!isDefault ? (
                   <>
                     <ResponseOperatorSelector value={operators[i]} onChange={(op) => updateOperator(i, op)} disabled={isDefault} />
-                    <button 
-                      onClick={() => removeOption(i)} 
+                    <button
+                      onClick={() => removeOption(i)}
                       className="w-10 h-10 rounded-lg flex items-center justify-center text-red-400 hover:text-red-600 hover:bg-red-50 transition-all nodrag flex-shrink-0"
                       title="מחק פתיח"
                     >

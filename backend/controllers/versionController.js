@@ -21,11 +21,12 @@ export const publishVersion = async (req, res) => {
       });
     }
 
-    // Get all existing versions for this flow/process combination
+    // Get all existing versions for this flow/process combination (exclude internal autobackups)
     const existingVersions = await Version.find({ 
       user_id: userId, 
       flow_id: flow_id, 
-      standard_process_id: normalizedProcessId 
+      standard_process_id: normalizedProcessId,
+      name: { $not: /^__autobackup__ / }
     }).sort({ created_at: -1 });
 
     // Count locked and unlocked versions
@@ -113,7 +114,7 @@ export const getVersions = async (req, res) => {
     const accountType = user.account_type || 'Basic';
     const limits = await getUserLimits(user)
     const normalizedProcessId = (standard_process_id === "null" || !standard_process_id) ? null : standard_process_id;
-    const query = { user_id: userId, flow_id: flow_id, standard_process_id: normalizedProcessId };
+    const query = { user_id: userId, flow_id: flow_id, standard_process_id: normalizedProcessId, name: { $not: /^__autobackup__ / } };
     
     // Fetch ALL versions to apply the visibility logic
     const allVersions = await Version.find(query).sort({ created_at: -1 });
@@ -187,7 +188,7 @@ export const getRestorableVersions = async (req, res) => {
     const accountType = user.account_type || 'Basic';
     const limits = await getUserLimits(user)
     const normalizedProcessId = (standard_process_id === "null" || !standard_process_id) ? null : standard_process_id;
-    const query = { user_id: userId, flow_id: flow_id, standard_process_id: normalizedProcessId };
+    const query = { user_id: userId, flow_id: flow_id, standard_process_id: normalizedProcessId, name: { $not: /^__autobackup__ / } };
     
     // Fetch ALL versions
     const allVersions = await Version.find(query).sort({ created_at: -1 });
