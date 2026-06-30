@@ -212,6 +212,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
   const [removalSaving, setRemovalSaving] = useState(false);
   const [removalSaved, setRemovalSaved] = useState(false);
   const [removalConfirmOpen, setRemovalConfirmOpen] = useState<null | 'save' | 'revert'>(null);
+  const [removalDisableConfirmOpen, setRemovalDisableConfirmOpen] = useState(false);
 
   const loadProfile = async () => {
     if (!token) return;
@@ -1056,7 +1057,13 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                         <div className="text-[11px] text-slate-500 font-medium">בעת ביטול — לא תתבצע הסרה אוטומטית בבוטים שלך, גם אם המילה הוגדרה.</div>
                       </div>
                       <button
-                        onClick={() => setRemovalDraft({ ...removalDraft, enabled: !removalDraft.enabled })}
+                        onClick={() => {
+                          if (removalDraft.enabled) {
+                            setRemovalDisableConfirmOpen(true);
+                          } else {
+                            setRemovalDraft({ ...removalDraft, enabled: true });
+                          }
+                        }}
                         className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-xs transition-all border ${
                           removalDraft.enabled
                             ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
@@ -1485,6 +1492,50 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
           </div>
         );
       })()}
+
+      {/* ── Legal warning: disabling auto-removal ── */}
+      {removalDisableConfirmOpen && removalDraft && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center p-6" dir="rtl">
+          <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl border border-slate-100 p-8">
+            <div className="flex items-start gap-4 mb-6">
+              <div className="w-12 h-12 bg-red-50 text-red-600 rounded-2xl flex items-center justify-center flex-shrink-0 shrink-0">
+                <AlertTriangle size={24} />
+              </div>
+              <div className="text-right">
+                <h4 className="text-lg font-black text-slate-900 mb-2">אזהרה חוקית — ביטול הסרה אוטומטית</h4>
+                <p className="text-sm text-slate-700 font-bold leading-relaxed mb-2">
+                  לפי חוק הספאם ותקנות הגנת הפרטיות, חובה לאפשר לנמענים להסיר את עצמם מרשימות תפוצה.
+                </p>
+                <p className="text-sm text-slate-500 font-medium leading-relaxed">
+                  השבתת ההסרה האוטומטית פוטרת את המערכת מאחריות — האחריות לטיפול בבקשות הסרה עוברת אליך באופן מלא ואישי.
+                </p>
+              </div>
+            </div>
+            <div className="bg-red-50 border border-red-200 rounded-2xl px-4 py-3 mb-6 text-right">
+              <p className="text-red-700 text-xs font-bold leading-relaxed">
+                בלחיצה על &quot;אני מודע/ת ומקבל/ת אחריות&quot; אתה מאשר/ת שקראת את האזהרה לעיל ומקבל/ת על עצמך את מלוא האחריות החוקית לניהול בקשות הסרה.
+              </p>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setRemovalDisableConfirmOpen(false)}
+                className="flex-1 py-3 border border-slate-200 text-slate-600 rounded-2xl font-bold text-xs hover:bg-slate-50 transition-all"
+              >
+                ביטול — השאר פעיל
+              </button>
+              <button
+                onClick={() => {
+                  setRemovalDraft({ ...removalDraft, enabled: false });
+                  setRemovalDisableConfirmOpen(false);
+                }}
+                className="flex-1 py-3 bg-red-600 text-white rounded-2xl font-bold text-xs hover:bg-red-700 transition-all shadow-lg shadow-red-200"
+              >
+                אני מודע/ת ומקבל/ת אחריות
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Confirm removal-config change ── */}
       {removalConfirmOpen && (
