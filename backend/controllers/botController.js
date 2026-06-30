@@ -839,10 +839,13 @@ document.addEventListener('DOMContentLoaded',function(){
         console.log(`${t2} ⬅️  debug_token HTTP ${r.status} body: ${txt}`);
         const j = JSON.parse(txt);
         const granular = j?.data?.granular_scopes || [];
-        const wabaScope = granular.find(s => s.scope === 'whatsapp_business_management');
+        // Prefer whatsapp_business_management scope; fall back to whatsapp_business_messaging
+        const wabaScope =
+          granular.find(s => s.scope === 'whatsapp_business_management') ||
+          granular.find(s => s.scope === 'whatsapp_business_messaging');
         if (wabaScope && Array.isArray(wabaScope.target_ids) && wabaScope.target_ids.length > 0) {
           waba_id = wabaScope.target_ids[0];
-          console.log(`${t2} ✅ Discovered waba_id=${waba_id} from debug_token`);
+          console.log(`${t2} ✅ Discovered waba_id=${waba_id} from debug_token (scope=${wabaScope.scope})`);
         }
       } catch (e) { console.log(`${t2} ⚠️ debug_token failed: ${e.message}`); }
     }
@@ -985,7 +988,7 @@ document.addEventListener('DOMContentLoaded',function(){
       name_status: name_status_final,
       messaging_limit_tier: messaging_limit_tier_final,
       wabaName,
-      wabaId: bot.waba_id,
+      wabaId: waba_id,
       businessId,
       registered: !!(regResult && regResult.success),
       register_status_code: regResult ? regResult.status : null,
