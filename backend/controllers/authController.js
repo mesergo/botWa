@@ -328,6 +328,7 @@ export const getProfile = async (req, res) => {
         max_versions: user.custom_limits?.max_versions ?? null,
         version_price: user.custom_limits?.version_price ?? null,
         bot_price: user.custom_limits?.bot_price ?? null,
+        max_connected_numbers: user.custom_limits?.max_connected_numbers ?? null,
       },
       limits_in_effect,
       active_bots_count,
@@ -376,6 +377,7 @@ export const updateProfile = async (req, res) => {
         max_versions: user.custom_limits?.max_versions ?? null,
         version_price: user.custom_limits?.version_price ?? null,
         bot_price: user.custom_limits?.bot_price ?? null,
+        max_connected_numbers: user.custom_limits?.max_connected_numbers ?? null,
       },
       limits_in_effect,
     });

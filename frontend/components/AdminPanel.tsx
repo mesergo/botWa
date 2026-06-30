@@ -35,6 +35,7 @@ interface User {
     max_versions: number | null;
     version_price: number | null;
     bot_price: number | null;
+    max_connected_numbers: number | null;
   };
   limits_in_effect?: {
     maxBots: number;
@@ -604,7 +605,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
         max_bots: limits.max_bots === '' ? null : limits.max_bots,
         max_versions: limits.max_versions === '' ? null : limits.max_versions,
         version_price: limits.version_price === '' ? null : limits.version_price,
-        bot_price: limits.bot_price === '' ? null : limits.bot_price
+        bot_price: limits.bot_price === '' ? null : limits.bot_price,
+        max_connected_numbers: limits.max_connected_numbers === '' ? null : limits.max_connected_numbers
       };
 
       const isRep = (editForm.role || selectedUser.role) === 'rep' || (editForm.role || selectedUser.role) === 'rep_manager';
@@ -708,7 +710,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
       if (!response.ok) throw new Error('Failed to fetch settings');
       const data = await response.json();
       // Ensure Trial plan exists in config (merge defaults if missing)
-      const defaultTrial = { maxBots: 1, maxVersions: 0, versionPrice: 0, botPrice: 0, canPublish: false, trialDays: 30 };
+      const defaultTrial = { maxBots: 1, maxVersions: 0, versionPrice: 0, botPrice: 0, canPublish: false, trialDays: 30, maxConnectedNumbers: 1 };
       setSystemConfig({ Trial: defaultTrial, ...data });
     } catch (err) {
       console.error(err);
@@ -2135,6 +2137,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                                       {[
                                         { k: 'max_bots', label: 'Max Bots', ph: 3 },
                                         { k: 'max_versions', label: 'Max Versions', ph: 5 },
+                                        { k: 'max_connected_numbers', label: 'Max Numbers', ph: 1 },
                                         { k: 'version_price', label: 'Version Cost', ph: 5 },
                                         { k: 'bot_price', label: 'Bot Cost', ph: 30 },
                                       ].map(field => (
@@ -2595,6 +2598,15 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                                 className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-black text-lg text-center focus:ring-2 focus:ring-sky-200 focus:border-sky-500 outline-none transition-all text-slate-800"
                                 value={systemConfig[plan]?.maxVersions ?? 0}
                                 onChange={e => handleConfigChange(plan, 'maxVersions', e.target.value)}
+                              />
+                           </div>
+                           <div className="col-span-2">
+                             <label className="block text-[10px] font-bold text-slate-500 mb-1">מקסימום מספרים מחוברים</label>
+                             <input 
+                                type="number" 
+                                className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-black text-lg text-center focus:ring-2 focus:ring-sky-200 focus:border-sky-500 outline-none transition-all text-slate-800"
+                                value={systemConfig[plan]?.maxConnectedNumbers ?? 1}
+                                onChange={e => handleConfigChange(plan, 'maxConnectedNumbers', e.target.value)}
                               />
                            </div>
                          </div>

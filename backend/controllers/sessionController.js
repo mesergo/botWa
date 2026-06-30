@@ -25,7 +25,7 @@ export const startSession = async (req, res) => {
   if (!widget_id) {
     console.log(`[startSession] ❌ Missing widget_id — rejected`);
     console.log(`${'─'.repeat(80)}\n`);
-    return res.status(400).json({ error: 'Missing widget_id' });
+    return res.status(400).json({ error: 'חסר מזהה ווידג\'ט' });
   }
 
   try {
@@ -33,7 +33,7 @@ export const startSession = async (req, res) => {
     if (!mongoose.connection || mongoose.connection.readyState !== 1) {
       console.log(`[startSession] ❌ DB not ready (state=${mongoose.connection?.readyState})`);
       console.log(`${'─'.repeat(80)}\n`);
-      return res.status(503).json({ error: 'Database connection not ready' });
+      return res.status(503).json({ error: 'החיבור למסד הנתונים אינו מוכן' });
     }
     
     const collection = mongoose.connection.collection('BotSession');
@@ -76,14 +76,14 @@ export const updateSessionParameters = async (req, res) => {
   
   if (!mongoose.Types.ObjectId.isValid(sessionId)) {
     console.error('[updateSessionParameters] Invalid sessionId format:', sessionId);
-    return res.status(400).json({ error: 'Invalid sessionId format' });
+    return res.status(400).json({ error: 'פורמט מזהה שיחה אינו תקין' });
   }
 
   try {
     // Ensure mongoose is connected
     if (!mongoose.connection || mongoose.connection.readyState !== 1) {
       console.error('[updateSessionParameters] Database not connected, readyState:', mongoose.connection?.readyState);
-      return res.status(503).json({ error: 'Database connection not ready' });
+      return res.status(503).json({ error: 'החיבור למסד הנתונים אינו מוכן' });
     }
     
     const collection = mongoose.connection.collection('BotSession');
@@ -496,7 +496,7 @@ export const getSessionsByPhone = async (req, res) => {
   const userId = getEffectiveUserId(req);
   const phone = req.query.phone || '';
   const botId = req.query.botId || ''; // optional: filter to a specific bot/flow
-  if (!phone) return res.status(400).json({ error: 'phone is required' });
+  if (!phone) return res.status(400).json({ error: 'מספר טלפון הוא שדה חובה' });
 
   try {
     const [userBots, userWidgets] = await Promise.all([
@@ -576,14 +576,14 @@ export const deactivateSession = async (req, res) => {
   try {
     const { id } = req.params;
     if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({ error: 'Invalid session ID' });
+      return res.status(400).json({ error: 'מזהה שיחה לא תקין' });
     }
     const collection = mongoose.connection.collection('BotSession');
     const result = await collection.updateOne(
       { _id: new mongoose.Types.ObjectId(id) },
       { $set: { is_active: false, ended_at: new Date() } }
     );
-    if (result.matchedCount === 0) return res.status(404).json({ error: 'Session not found' });
+    if (result.matchedCount === 0) return res.status(404).json({ error: 'השיחה לא נמצאה' });
     res.json({ success: true });
   } catch (err) {
     console.error('deactivateSession error:', err);
@@ -600,10 +600,10 @@ export const deactivateSession = async (req, res) => {
 // involved in the session — either explicitly assigned (rep_user_id === me),
 // or the session belongs to a rep group the rep is a member of.
 const getSessionWithOwnership = async (id, req) => {
-  if (!mongoose.Types.ObjectId.isValid(id)) return { error: 'Invalid session ID', status: 400 };
+  if (!mongoose.Types.ObjectId.isValid(id)) return { error: 'מזהה שיחה לא תקין', status: 400 };
   const collection = mongoose.connection.collection('BotSession');
   const session = await collection.findOne({ _id: new mongoose.Types.ObjectId(id) });
-  if (!session) return { error: 'Session not found', status: 404 };
+  if (!session) return { error: 'השיחה לא נמצאה', status: 404 };
 
   // Effective owner = manager id for reps, own id for everyone else.
   const ownerId = getEffectiveUserId(req);
@@ -618,7 +618,7 @@ const getSessionWithOwnership = async (id, req) => {
     session.user_id === String(ownerId) ||
     widgetIds.includes(session.widget_id);
 
-  if (!owned) return { error: 'Access denied', status: 403 };
+  if (!owned) return { error: 'גישה נדחית', status: 403 };
 
   // Additional rep involvement guard.
   if (req.user?.role === 'rep') {
@@ -746,7 +746,7 @@ export const transferConversation = async (req, res) => {
 
     const collection = mongoose.connection.collection('BotSession');
     const session = await collection.findOne({ _id: new mongoose.Types.ObjectId(id) });
-    if (!session) return res.status(404).json({ error: 'Session not found' });
+    if (!session) return res.status(404).json({ error: 'השיחה לא נמצאה' });
 
     // Ownership: resolve to the effective company-manager id and verify the
     // session belongs to that company (either by user_id or via a widget that
@@ -760,7 +760,7 @@ export const transferConversation = async (req, res) => {
       session.user_id === ownerId ||
       session.user_id === String(ownerId) ||
       widgetIds.includes(session.widget_id);
-    if (!owned) return res.status(403).json({ error: 'Access denied' });
+    if (!owned) return res.status(403).json({ error: 'גישה נדחית' });
 
     // Additional guard for reps: a rep may only transfer conversations they
     // are currently involved in (assigned via rep_user_id, or via one of
@@ -1005,7 +1005,7 @@ export const sendAgentMessage = async (req, res) => {
     const { message, isTemplate, templateData, mediaType, mediaUrl, mediaFilename } = req.body;
     const hasMedia = !!(mediaType && mediaUrl);
     if (!hasMedia && (!message || !String(message).trim())) {
-      return res.status(400).json({ error: 'message or media is required' });
+      return res.status(400).json({ error: 'הודעה או מדיה הם שדה חובה' });
     }
     const { session, collection, error, status } = await getSessionWithOwnership(id, req);
     if (error) return res.status(status).json({ error });
@@ -1046,7 +1046,7 @@ export const sendAgentMessage = async (req, res) => {
 
     if (!normalizedPhone || normalizedPhone === '972') {
       console.error(`[sendAgentMessage] ❌ Empty phone on session ${id}, aborting`);
-      return res.status(400).json({ error: 'Session has no phone number' });
+      return res.status(400).json({ error: 'לשיחה זו אין מספר טלפון' });
     }
 
     // Build WhatsApp body - different structure for template vs text
@@ -1172,7 +1172,7 @@ export const sendAgentMessage = async (req, res) => {
         waSent = await pushMessagesToWhatsApp(normalizedPhone, waMessages, user, bot);
         console.log(`[AGENT-SEND] ${waSent ? '✅ WhatsApp delivered' : '❌ WhatsApp delivery FAILED'}`);
         console.log(`${'─'.repeat(60)}\n`);
-        if (!waSent) waError = 'WhatsApp delivery failed';
+        if (!waSent) waError = 'משלוח ה-WhatsApp נכשל';
       } catch (waErr) {
         waError = waErr.message;
         console.error(`[AGENT-SEND] ❌ WhatsApp exception:`, waErr.message);
@@ -1271,17 +1271,17 @@ export const sendTemplateToPhone = async (req, res) => {
   try {
     const { phone, message, templateData } = req.body;
     if (!phone || !String(phone).trim()) {
-      return res.status(400).json({ error: 'phone is required' });
+      return res.status(400).json({ error: 'מספר טלפון הוא שדה חובה' });
     }
     if (!templateData) {
-      return res.status(400).json({ error: 'templateData is required' });
+      return res.status(400).json({ error: 'נתוני תבנית הם שדה חובה' });
     }
     if (!message || !String(message).trim()) {
-      return res.status(400).json({ error: 'message is required' });
+      return res.status(400).json({ error: 'הודעה היא שדה חובה' });
     }
 
     const user = await User.findById(getEffectiveUserId(req));
-    if (!user) return res.status(404).json({ error: 'User not found' });
+    if (!user) return res.status(404).json({ error: 'המשתמש לא נמצא' });
 
     // Normalize phone first so we can look up the last session
     let normalizedPhone = String(phone).replace(/[^0-9]/g, '');
@@ -1441,22 +1441,22 @@ export const sendAdminMessageToSession = async (req, res) => {
     const { sessionId, message, isTemplate, templateData } = req.body;
     
     if (!sessionId) {
-      return res.status(400).json({ error: 'sessionId is required' });
+      return res.status(400).json({ error: 'מזהה שיחה הוא שדה חובה' });
     }
     
     if (!message || !String(message).trim()) {
-      return res.status(400).json({ error: 'message is required' });
+      return res.status(400).json({ error: 'הודעה היא שדה חובה' });
     }
 
     if (!mongoose.Types.ObjectId.isValid(sessionId)) {
-      return res.status(400).json({ error: 'Invalid sessionId format' });
+      return res.status(400).json({ error: 'פורמט מזהה שיחה אינו תקין' });
     }
 
     const collection = mongoose.connection.collection('BotSession');
     const session = await collection.findOne({ _id: new mongoose.Types.ObjectId(sessionId) });
     
     if (!session) {
-      return res.status(404).json({ error: 'Session not found' });
+      return res.status(404).json({ error: 'השיחה לא נמצאה' });
     }
 
     const msgText = String(message).trim();
@@ -1466,7 +1466,7 @@ export const sendAdminMessageToSession = async (req, res) => {
     // Get user's Dialog360 credentials
     const user = await User.findById(session.user_id);
     if (!user) {
-      return res.status(404).json({ error: 'User not found' });
+      return res.status(404).json({ error: 'המשתמש לא נמצא' });
     }
 
     // Load the bot associated with this session for per-bot endpoint
@@ -1726,13 +1726,13 @@ export const sendExternalMessage = async (req, res) => {
   if (!sessionId) {
     console.log(`[sendExternalMessage] ❌ Missing sessionId`);
     console.log(`${'─'.repeat(80)}\n`);
-    return res.status(400).json({ error: 'Missing sessionId' });
+    return res.status(400).json({ error: 'חסר מזהה שיחה' });
   }
 
   if (!message || !message.content) {
     console.log(`[sendExternalMessage] ❌ Missing message content`);
     console.log(`${'─'.repeat(80)}\n`);
-    return res.status(400).json({ error: 'Missing message content' });
+    return res.status(400).json({ error: 'חסר תוכן הודעה' });
   }
 
   if (!mongoose.Types.ObjectId.isValid(sessionId)) {
@@ -1801,7 +1801,7 @@ export const getSessionMessages = async (req, res) => {
   const { since, simulator_id } = req.query; // ISO timestamp of last received message and simulator ID
 
   if (!sessionId || !mongoose.Types.ObjectId.isValid(sessionId)) {
-    return res.status(400).json({ error: 'Invalid sessionId' });
+    return res.status(400).json({ error: 'מזהה שיחה לא תקין' });
   }
 
   try {

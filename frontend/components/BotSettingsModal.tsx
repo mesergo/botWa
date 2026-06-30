@@ -38,7 +38,7 @@ const BotSettingsModal: React.FC<BotSettingsModalProps> = ({
   const [botEndpointError, setBotEndpointError] = useState<string | null>(null);
   const [botEndpointSuccess, setBotEndpointSuccess] = useState(false);
 
-  const isAdminImpersonating = !!currentUser?.isImpersonating;
+  const isAdminOrImpersonating = currentUser?.role === 'admin' || !!currentUser?.isImpersonating;
 
   useEffect(() => {
     setEditBotPublicId(bot.public_id);
@@ -146,14 +146,14 @@ const BotSettingsModal: React.FC<BotSettingsModalProps> = ({
             )}
           </div>
 
-          {/* Endpoint */}
+          {/* Endpoint — visible only to admin or when admin is impersonating */}
+          {isAdminOrImpersonating && (
           <div>
             <h4 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-1 flex items-center gap-2">
               <Settings size={12} /> Endpoint (מספר הבוט)
             </h4>
             <p className="text-xs text-slate-400 mb-3">הכנס רק את המזהה — המערכת תבנה אוטומטית את הקישור <code className="bg-slate-100 px-1 rounded">dialog360/{'{id}'}</code></p>
-            {isAdminImpersonating ? (
-              <>
+            <>
                 <div className="flex gap-2 items-center">
                   <button
                     onClick={handleSaveEndpoint}
@@ -189,19 +189,8 @@ const BotSettingsModal: React.FC<BotSettingsModalProps> = ({
                   </div>
                 )}
               </>
-            ) : (
-              <div className="space-y-1">
-                <div className="px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-mono text-slate-700 select-all" dir="ltr">
-                  {bot.endpoint || <span className="text-slate-400 italic font-sans">לא הוגדר</span>}
-                </div>
-                {bot.endpoint && (
-                  <div className="text-xs text-slate-400 font-mono px-1">
-                    URL: https://wa.message.co.il/api/{bot.endpoint}/send
-                  </div>
-                )}
-              </div>
-            )}
           </div>
+          )}
 
           {canShowFacebook && (
             <div>

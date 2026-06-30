@@ -49,6 +49,7 @@ interface UserProfile {
     max_versions: number | null;
     version_price: number | null;
     bot_price: number | null;
+    max_connected_numbers: number | null;
   };
   limits_in_effect?: {
     maxBots: number;
@@ -56,6 +57,7 @@ interface UserProfile {
     versionPrice: number;
     botPrice: number;
     canPublish?: boolean;
+    maxConnectedNumbers: number;
   };
   active_bots_count?: number;
   flows_count?: number;
@@ -151,6 +153,9 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
   const [facebookConfirmBot, setFacebookConfirmBot] = useState<BotFlow | null>(null);
   const [facebookSending, setFacebookSending] = useState(false);
   const [facebookDone, setFacebookDone] = useState(false);
+  const [fbConnectBot, setFbConnectBot] = useState<BotFlow | null>(null);
+  const [fbConnecting, setFbConnecting] = useState(false);
+  const [fbResult, setFbResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [activeTab, setActiveTab] = useState<'bots' | 'settings' | 'users'>(() => {
     const requested = initialTab ?? 'bots';
     if (requested === 'bots' && !can('bots.view_tab')) {
@@ -373,6 +378,152 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
     } finally {
       setAssigningPnid(null);
     }
+  };
+
+  const handleOpenFbOAuth = async (bot: BotFlow) => {
+    if (!token) return;
+    console.log(`[FB-OAuth] 🚀 Opening Facebook OAuth for bot: id=${bot.id} name=${bot.name}`);
+    setFbConnecting(true);
+    setFbResult(null);
+    try {
+      const stateRes = await fetch(`${API_BASE}/bots/${bot.id}/facebook-redirect-state`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      console.log(`[FB-OAuth] 🎟 facebook-redirect-state HTTP ${stateRes.status}`);
+      if (!stateRes.ok) {
+        console.warn('[FB-OAuth] ❌ Failed to get state token');
+        setFbResult({ ok: false, message: 'שגיאה בקבלת קוד אבטחה. נסה שוב.' });
+        setFbConnecting(false);
+        return;
+      }
+      const { state } = await stateRes.json();
+      console.log(`[FB-OAuth] ✅ state token received (${state?.length} chars)`);
+
+      const redirectUri = `${window.location.origin}/api/bots/facebook-redirect`;
+      console.log(`[FB-OAuth] 🔗 redirect_uri = ${redirectUri}`);
+      openFbOAuthPopup(state, redirectUri);
+    } catch (err: any) {
+      setFbResult({ ok: false, message: err.message || 'שגיאה בפתיחת חיבור פייסבוק' });
+      setFbConnecting(false);
+    }
+  };
+
+  /** Open Facebook OAuth WITHOUT tying it to a specific bot.
+   *  The number is saved tcted_numbers (unassigned) and can be
+   *  assigned to a bot later via the dropdown in the Numbers section. */
+  const handleOpenFbOAuthFree = async () => {
+    if (!token) return;
+    console.log('[FB-OAuth] 🚀 Opening Facebook OAuth in FREE mode (no bot)');
+    setFbConnecting(true);
+    setFbResult(null);
+    try {
+      const stateRes = await fetch(`${API_BASE}/bots/facebook-redirect-state-free`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      console.log(`[FB-OAuth] 🎟 facebook-redirect-state-free HTTP ${stateRes.status}`);
+      if (!stateRes.ok) {
+        const errBody = await stateRes.json().catch(() => ({}));
+        console.warn('[FB-OAuth] ❌ Failed to get free state token', errBody);
+        setFbResult({ ok: false, message: errBody.error || 'שגיאה בקבלת קוד אבטחה. נסה שוב.' });
+        setFbConnecting(false);
+        return;
+      }
+      const { state } = await stateRes.json();
+      console.log(`[FB-OAuth] ✅ free state token received (${state?.length} chars)`);
+
+      const redirectUri = `${window.location.origin}/api/bots/facebook-redirect`;
+      console.log(`[FB-OAuth] 🔗 redirect_uri = ${redirectUri}`);
+      openFbOAuthPopup(state, redirectUri);
+    } catch (err: any) {
+      setFbResult({ ok: false, message: err.message || 'שגיאה בפתיחת חיבור פייסבוק' });
+      setFbConnecting(false);
+    }
+  };
+
+  /** Shared: build the Facebook URL, open the popup and listen for postMessage. */
+  const openFbOAuthPopup = (state: string, redirectUri: string) => {
+      const extrasObj = { featureType: 'whatsapp_business_app_onboarding', sessionInfoVersion: '3', version: 'v4' };
+      const fbUrl =
+        `https://www.facebook.com/v25.0/dialog/oauth` +
+        `?display=popup` +
+        `&client_id=717787580246105` +
+        `&redirect_uri=${encodeURIComponent(redirectUri)}` +
+        `&config_id=333254912651363` +
+        `&response_type=code` +
+        `&fallback_redirect_uri=${encodeURIComponent(redirectUri)}` +
+        `&override_default_response_type=true` +
+        `&state=${encodeURIComponent(state)}` +
+        `&extras=${encodeURIComponent(JSON.stringify(extrasObj))}`;
+
+      const w = 600; const h = 700;
+      const left = window.screenX + (window.outerWidth - w) / 2;
+      const top = window.screenY + (window.outerHeight - h) / 2;
+      console.log(`[FB-OAuth] 🌐 Opening popup → ${fbUrl.replace(/&state=[^&]+/, '&state=***').replace(/&code=[^&]+/, '&code=***')}`);
+      const popup = window.open(fbUrl, 'facebookOAuth',
+        `width=${w},height=${h},left=${left},top=${top},resizable=yes,scrollbars=yes,status=yes`);
+
+      if (!popup) {
+        setFbResult({ ok: false, message: 'הדפדפן חסם את החלונית הקופצת. אנא אפשר חלונות קופצים ונסה שוב.' });
+        setFbConnecting(false);
+        return;
+      }
+      popup.focus();
+
+      let settled = false;
+      const msgHandler = (e: MessageEvent) => {
+        if (!e.data || e.data.event !== 'fb-redirect-done') return;
+        settled = true;
+        window.removeEventListener('message', msgHandler);
+        clearInterval(closeTimer);
+
+        console.group('[FB-OAuth] 📨 postMessage received from redirect_uri popup');
+        console.log('full payload:', e.data);
+        console.log('ok:', e.data.ok);
+        console.log('message:', e.data.message);
+        console.log('bot_id:', e.data.bot_id);
+        console.log('free_mode:', e.data.free_mode);
+        console.log('waba_id:', e.data.waba_id);
+        console.log('wabaName:', e.data.wabaName);
+        console.log('phone_number_id:', e.data.phone_number_id);
+        console.log('display_phone_number:', e.data.display_phone_number);
+        console.log('verified_name:', e.data.verified_name);
+        console.log('quality_rating:', e.data.quality_rating);
+        console.log('status:', e.data.status);
+        console.log('code_verification_status:', e.data.code_verification_status);
+        console.log('name_status:', e.data.name_status);
+        console.log('messaging_limit_tier:', e.data.messaging_limit_tier);
+        console.log('businessId:', e.data.businessId);
+        console.log('registered:', e.data.registered);
+        console.log('register_status_code:', e.data.register_status_code);
+        console.log('register_error:', e.data.register_error);
+        console.log('JSON.stringify(full):', JSON.stringify(e.data, null, 2));
+        console.groupEnd();
+
+        if (e.data.ok) {
+          const num = e.data.display_phone_number || '-';
+          const waba = e.data.wabaName ? ` (${e.data.wabaName})` : '';
+          const freeNote = e.data.free_mode ? ' — ניתן לשייך לבוט בהגדרות → מספרים מחוברים' : '';
+          console.log(`[FB-OAuth] ✅ Success — phone: ${num}${waba}${freeNote}`);
+          setFbResult({ ok: true, message: `החיבור הושלם בהצלחה! מספר: ${num}${waba}${freeNote}` });
+          setFbConnectBot(null);
+          loadConnectedNumbers();
+        } else {
+          const raw = e.data.register_error || e.data.message || 'שגיאה לא ידועה';
+          const errMsg = typeof raw === 'object' ? JSON.stringify(raw) : String(raw);
+          console.warn('[FB-OAuth] ❌ Failed:', errMsg);
+          setFbResult({ ok: false, message: `החיבור נכשל: ${errMsg}` });
+        }
+        setFbConnecting(false);
+      };
+      window.addEventListener('message', msgHandler);
+
+      const closeTimer = setInterval(() => {
+        if (popup.closed) {
+          clearInterval(closeTimer);
+          if (!settled) window.removeEventListener('message', msgHandler);
+          setFbConnecting(false);
+        }
+      }, 500);
   };
 
   // ── Auto-removal-from-group (per-user) ────────────────────────────────
@@ -783,6 +934,10 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                   </h2>
                   <div className="space-y-5">
                     <div className="flex items-center justify-between py-1">
+                      <span className="text-xs font-bold text-slate-400">מקסימום מספרים מחוברים</span>
+                      <span className="text-slate-700 font-bold text-sm">{profile.limits_in_effect?.maxConnectedNumbers ?? '-'}</span>
+                    </div>
+                    <div className="flex items-center justify-between py-1">
                       <span className="text-xs font-bold text-slate-400">מקסימום בוטים</span>
                       <span className="text-slate-700 font-bold text-sm">{profile.limits_in_effect?.maxBots ?? '-'}</span>
                     </div>
@@ -802,12 +957,56 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                 </div>
               )}
 
-              {/* ── מספרים מחוברים ── */}
               {settingsSection === 'numbers' && (
               <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-8">
-                <h2 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-6 flex items-center gap-2 border-b border-slate-100 pb-4">
-                  <Phone size={14} /> מספרים מחוברים
-                </h2>
+                <div className="flex items-center justify-between border-b border-slate-100 pb-4 mb-6">
+                  <h2 className="text-xs font-black text-slate-400 uppercase tracking-wider flex items-center gap-2">
+                    <Phone size={14} /> מספרים מחוברים
+                  </h2>
+                  {onConnectFacebook && (() => {
+                    const maxNums = profile?.limits_in_effect?.maxConnectedNumbers ?? 1;
+                    const atQuota = connectedNumbers.length >= maxNums;
+                    return atQuota ? (
+                      <div className="flex items-center gap-2 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-2xl text-amber-800 text-xs font-bold max-w-xs text-right">
+                        <AlertTriangle size={14} className="shrink-0 text-amber-500" />
+                        נגמרה המכסה ({connectedNumbers.length}/{maxNums}). להוספת מספר יש ליצור קשר עם המשרד לתשלום.
+                      </div>
+                    ) : (
+                      <button
+                        onClick={handleOpenFbOAuthFree}
+                        disabled={fbConnecting}
+                        className="flex items-center gap-2 px-5 py-2.5 bg-[#1877F2] text-white rounded-2xl font-bold text-sm hover:bg-[#166FE5] transition-all disabled:opacity-60 shadow-lg shadow-blue-600/20"
+                      >
+                        <FacebookIcon size={16} />
+                        {fbConnecting ? 'מתחבר...' : 'הוסף מספר חדש'}
+                      </button>
+                    );
+                  })()}
+                </div>
+
+                {fbConnectBot && (
+                  <div className="mb-5 p-4 bg-blue-50 border border-blue-200 rounded-2xl flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                      <FacebookIcon size={18} className="text-[#1877F2] shrink-0" />
+                      <div>
+                        <p className="text-sm font-bold text-slate-800">חיבור לפייסבוק עבור הבוט: <strong>{fbConnectBot.name}</strong></p>
+                        <p className="text-xs text-slate-500 mt-0.5">לחץ על "הוסף מספר חדש" להמשך תהליך הרישום.</p>
+                      </div>
+                    </div>
+                    <button onClick={() => { setFbConnectBot(null); setFbResult(null); }} className="text-slate-400 hover:text-slate-600 transition-colors shrink-0">
+                      <X size={16} />
+                    </button>
+                  </div>
+                )}
+
+                {fbResult && (
+                  <div className={`mb-5 p-4 rounded-2xl flex items-start gap-3 border ${fbResult.ok ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-red-50 border-red-200 text-red-800'}`}>
+                    <div className="shrink-0 mt-0.5">{fbResult.ok ? <CheckCircle size={16} /> : <AlertTriangle size={16} />}</div>
+                    <p className="text-sm font-bold flex-1">{fbResult.message}</p>
+                    <button onClick={() => setFbResult(null)} className="text-slate-400 hover:text-slate-600 transition-colors shrink-0"><X size={14} /></button>
+                  </div>
+                )}
+
                 {cnLoading ? (
                   <div className="flex items-center justify-center py-10">
                     <div className="animate-spin rounded-full h-7 w-7 border-b-2 border-blue-600"></div>
@@ -1282,31 +1481,9 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                     ביטול
                   </button>
                   <button
-                    onClick={() => {
-                      setFacebookSending(true);
-                      try {
-                        // ── פתיחת חלונית רישום/חיבור לפייסבוק (OAuth popup) ──
-                        const fbUrl = 'https://business.facebook.com/messaging/whatsapp/onboard/?app_id=717787580246105&config_id=333254912651363&extras=%7B%22sessionInfoVersion%22%3A%223%22%2C%22version%22%3A%22v4%22%7D';
-
-                        const width = 600;
-                        const height = 700;
-                        const left = window.screenX + (window.outerWidth - width) / 2;
-                        const top = window.screenY + (window.outerHeight - height) / 2;
-                        const popup = window.open(
-                          fbUrl,
-                          'facebookLogin',
-                          `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes,status=yes`
-                        );
-
-                        if (!popup) {
-                          alert('הדפדפן חסם את החלונית הקופצת. אנא אפשר חלונות קופצים ונסה שוב.');
-                          return;
-                        }
-                        popup.focus();
-                        setFacebookDone(true);
-                      } finally {
-                        setFacebookSending(false);
-                      }
+                    onClick={async () => {
+                      setFacebookDone(true);
+                      handleOpenFbOAuth(facebookConfirmBot!);
                     }}
                     className="flex-1 py-4 bg-blue-600 text-white rounded-2xl font-bold text-xs uppercase shadow-lg shadow-blue-600/20 hover:bg-blue-700 disabled:opacity-60"
                     disabled={facebookSending}
@@ -1334,10 +1511,12 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
             await onUpdateBotEndpoint(id, endpoint);
             setSettingsBot(prev => prev ? { ...prev, endpoint } : null);
           } : undefined}
-          onConnectFacebook={onConnectFacebook ? (bot) => {
+          onConnectFacebook={onConnectFacebook ? (_bot) => {
             setSettingsBot(null);
-            setFacebookConfirmBot(bot);
-            setFacebookDone(false);
+            setActiveTab('settings');
+            setSettingsSection('numbers');
+            setFbConnectBot(_bot);
+            setFbResult(null);
           } : undefined}
         />
       )}

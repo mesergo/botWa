@@ -23,6 +23,7 @@
 import fetch from 'node-fetch';
 import User from '../models/User.js';
 import BotFlow from '../models/BotFlow.js';
+import { getUserLimits } from '../utils/limits.js';
 
 const GRAPH_VERSION = () => process.env.FB_GRAPH_VERSION || 'v20.0';
 const PHP_CREATE_URL = () => process.env.PHP_CREATE_URL || 'https://wa.message.co.il/facebook-create.php';
@@ -110,6 +111,20 @@ export const activateNumber = async (req, res) => {
     const user = await User.findById(userId);
     if (!user) return res.status(404).json({ error: 'user_not_found' });
     const existingEntry = (user.connected_numbers || []).find(n => n.phone_number_id === phone_number_id);
+
+    // Quota check — only when adding a NEW number (not re-activating an existing one)
+    if (!existingEntry) {
+      const limits = await getUserLimits(user);
+      const currentCount = (user.connected_numbers || []).length;
+      if (currentCount >= limits.maxConnectedNumbers) {
+        return res.status(403).json({
+          error: 'quota_exceeded',
+          message: 'המכסה נגמרה. יש ליצור קשר עם המשרד לתשלום להוספת מספר.',
+          current: currentCount,
+          max: limits.maxConnectedNumbers
+        });
+      }
+    }
 
     const pin = resolvePin(b.pin, existingEntry?.pin || null);
     const result = await callMetaRegister({
@@ -213,6 +228,20 @@ export const linkNumber = async (req, res) => {
     const existing = (user.connected_numbers || []).find(
       n => n.phone_number_id === phone_number_id
     );
+
+    // Quota check — only when adding a NEW number
+    if (!existing) {
+      const limits = await getUserLimits(user);
+      const currentCount = (user.connected_numbers || []).length;
+      if (currentCount >= limits.maxConnectedNumbers) {
+        return res.status(403).json({
+          error: 'quota_exceeded',
+          message: 'המכסה נגמרה. יש ליצור קשר עם המשרד לתשלום להוספת מספר.',
+          current: currentCount,
+          max: limits.maxConnectedNumbers
+        });
+      }
+    }
 
     const payload = {
       phone_number_id,

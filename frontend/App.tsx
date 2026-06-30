@@ -2418,7 +2418,7 @@ const FlowBuilder: React.FC = () => {
             await handleUpdateBotPublicId(id, publicId);
             setSelectedBot(prev => prev ? { ...prev, public_id: publicId } : null);
           }}
-          onUpdateBotEndpoint={currentUser?.isImpersonating ? async (id, endpoint) => {
+          onUpdateBotEndpoint={(currentUser?.isImpersonating || currentUser?.role === 'admin') ? async (id, endpoint) => {
             await handleUpdateBotEndpoint(id, endpoint);
             setSelectedBot(prev => prev ? { ...prev, endpoint } : null);
           } : undefined}
