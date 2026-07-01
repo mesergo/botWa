@@ -1070,7 +1070,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
               { id: 'user-types', label: 'סוגי משתמשים', icon: Shield },
               { id: 'sessions', label: 'סשנים', icon: List },
               { id: 'dialog360', label: 'הודעות תבנית', icon: MessageSquare },
-              { id: 'templates', label: 'מאגר תבניות', icon: FileText },
+              { id: 'templates', label: 'מאגר תבניות בוט', icon: FileText },
               { id: 'settings', label: 'הגדרות מערכת', icon: Settings },
             ].map(item => (
               <button

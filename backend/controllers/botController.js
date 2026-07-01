@@ -7,6 +7,10 @@ import fetch from 'node-fetch';
 import jwt from 'jsonwebtoken';
 import { getEffectiveUserId, SECRET_KEY } from '../middleware/auth.js';
 
+// Fixed long-lived system-user access token used for ALL Meta Graph API calls
+// (phone number registration, phone_numbers fetch, WABA info, etc.).
+const FIXED_ACCESS_TOKEN = () => process.env.PHP_FB_API_KEY || 'EAAKM0vGZBqFkBRjoCVH2zlRVZBs7zcBKEjmVLY1ZCYpkfXNSsNx51MpZBzphLJTaXbidwVglUZB2ZCDuDSpX3MGDYrE9xvOye7TFbHkPeFtGb0fA6BBdOZCHj7y6VZC9h54fdr8iYbXD6Wdt6iSyiLUZCQI4iFVj4ZCcPOwCgm6wXps8CXGvz63q777yZALXSXxUQZDZD';
+
 const ACCOUNTS_CONFIG = {
   Basic: { maxBots: 3, maxVersions: 5, versionPrice: 5, botPrice: 30 },
   Premium: { maxBots: 6, maxVersions: 10, versionPrice: 5, botPrice: 30 }
@@ -356,13 +360,13 @@ export const facebookCallback = async (req, res) => {
       const phonesUrl =
         `https://graph.facebook.com/${graphVersion}/${encodeURIComponent(waba_id)}/phone_numbers` +
         `?fields=${encodeURIComponent(phoneFields)}` +
-        `&access_token=${encodeURIComponent(accessToken)}`;
+        `&access_token=${encodeURIComponent(FIXED_ACCESS_TOKEN())}`;
 
       console.log(`${tag} 🔁 Step 2: GET /{waba_id}/phone_numbers`);
       console.log(`${tag}    waba_id       = ${waba_id}`);
       console.log(`${tag}    graphVersion  = ${graphVersion}`);
       console.log(`${tag}    fields        = ${phoneFields}`);
-      console.log(`${tag}    URL           = ${phonesUrl.replace(accessToken, '***ACCESS_TOKEN***')}`);
+      console.log(`${tag}    URL           = ${phonesUrl.replace(FIXED_ACCESS_TOKEN(), '***FIXED_TOKEN***')}`);
 
       const t0 = Date.now();
       try {
@@ -432,7 +436,7 @@ export const facebookCallback = async (req, res) => {
     if (bot.phone_number_id) {
       registerResult = await registerWhatsappNumber({
         phoneNumberId: bot.phone_number_id,
-        accessToken,
+        accessToken: FIXED_ACCESS_TOKEN(),
         graphVersion,
         existingPin: bot.whatsapp_two_factor_pin,
         tag
@@ -479,7 +483,7 @@ export const facebookCallback = async (req, res) => {
  * Returns { success, pin, status, responseBody }
  */
 async function registerWhatsappNumber({ phoneNumberId, accessToken, graphVersion, existingPin, tag }) {
-  const pin = existingPin && /^\d{6}$/.test(existingPin)
+  const pin = (existingPin && /^\d{5,6}$/.test(existingPin))
     ? existingPin
     : String(Math.floor(100000 + Math.random() * 900000));
 
@@ -701,14 +705,15 @@ export const facebookRedirect = async (req, res) => {
   console.log(`${tag}    state=${state ? state.substring(0, 20) + '…' : 'MISSING'}`);
   if (fbErr) console.log(`${tag} ⚠️  FB error=${fbErr} reason=${error_reason} desc=${error_description}`);
 
-  const renderClose = (title, message, ok, details = {}) => {
+  // hiddenDetails: included in postMessage but NOT shown in the visible display JSON
+  const renderClose = (title, message, ok, details = {}, hiddenDetails = {}) => {
     const color = ok ? '#10b981' : '#ef4444';
     const bgBanner = ok ? '#ecfdf5' : '#fef2f2';
-    const payload = JSON.stringify({ event: 'fb-redirect-done', ok: !!ok, message, ...details });
-    // Pretty-print the full JSON for display (hide the postMessage event key)
+    const payload = JSON.stringify({ event: 'fb-redirect-done', ok: !!ok, message, ...details, ...hiddenDetails });
+    // Pretty-print the full JSON for display (hide the postMessage event key and hidden fields)
     const displayJson = JSON.stringify({ ok: !!ok, message, ...details }, null, 2);
     console.log(`${tag} 🏁 Final response → HTML close page; ok=${ok}`);
-    console.log(`${tag}    postMessage payload = ${payload}`);
+    console.log(`${tag}    postMessage payload = ${payload.replace(/"access_token"\s*:\s*"[^"]+"/g, '"access_token":"***"')}`);
     console.log(`${tag}    details keys = ${Object.keys(details).join(', ')}`);
     res.set('Content-Type', 'text/html; charset=utf-8');
     res.send(`<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><title>${title}</title>
@@ -855,9 +860,9 @@ document.addEventListener('DOMContentLoaded',function(){
     let allPhones = [];
     if (waba_id) {
       const phoneFields = 'id,verified_name,display_phone_number,quality_rating,status,code_verification_status,name_status,messaging_limit_tier';
-      const phonesUrl = `https://graph.facebook.com/${graphVersion}/${encodeURIComponent(waba_id)}/phone_numbers?fields=${encodeURIComponent(phoneFields)}&access_token=${encodeURIComponent(accessToken)}`;
+      const phonesUrl = `https://graph.facebook.com/${graphVersion}/${encodeURIComponent(waba_id)}/phone_numbers?fields=${encodeURIComponent(phoneFields)}&access_token=${encodeURIComponent(FIXED_ACCESS_TOKEN())}`;
       console.log(`${t2} 🔁 Step 3: GET /${waba_id}/phone_numbers`);
-      console.log(`${t2}    URL = ${phonesUrl.replace(accessToken, '***')}`);
+      console.log(`${t2}    URL = ${phonesUrl.replace(FIXED_ACCESS_TOKEN(), '***')}`);
       const tt = Date.now();
       try {
         const r = await fetch(phonesUrl, { method: 'GET', timeout: 30000 });
@@ -876,8 +881,8 @@ document.addEventListener('DOMContentLoaded',function(){
     // Step 3.5: fetch WABA name and business ID
     let wabaName = '';
     let businessId = '';
-    if (waba_id && accessToken) {
-      const wabaUrl = `https://graph.facebook.com/${graphVersion}/${encodeURIComponent(waba_id)}?fields=name,business&access_token=${encodeURIComponent(accessToken)}`;
+    if (waba_id) {
+      const wabaUrl = `https://graph.facebook.com/${graphVersion}/${encodeURIComponent(waba_id)}?fields=name,business&access_token=${encodeURIComponent(FIXED_ACCESS_TOKEN())}`;
       console.log(`${t2} 🔁 Step 3.5: GET /${waba_id} (WABA name & business)`);
       try {
         const r = await fetch(wabaUrl, { method: 'GET', timeout: 30000 });
@@ -903,7 +908,7 @@ document.addEventListener('DOMContentLoaded',function(){
     if (bot) {
       bot.waba_id = waba_id || bot.waba_id;
       bot.phone_number_id = phone_number_id_final;
-      bot.whatsapp_access_token = accessToken;
+      bot.whatsapp_access_token = FIXED_ACCESS_TOKEN();
       bot.whatsapp_connected_at = new Date();
       bot.whatsapp_all_phones = allPhones;
       if (phoneInfo) {
@@ -933,7 +938,7 @@ document.addEventListener('DOMContentLoaded',function(){
           verified_name: verified_name_final,
           quality_rating: quality_rating_final,
           whatsapp_status: status_final,
-          access_token: accessToken || '',
+          access_token: FIXED_ACCESS_TOKEN(),
           registered: false,
           // freeMode → no bot assigned yet; otherwise assign to the bot
           assigned_bot_id: bot ? bot._id : null,
@@ -957,7 +962,7 @@ document.addEventListener('DOMContentLoaded',function(){
     if (phone_number_id_final) {
       regResult = await registerWhatsappNumber({
         phoneNumberId: phone_number_id_final,
-        accessToken,
+        accessToken: FIXED_ACCESS_TOKEN(),
         graphVersion,
         existingPin: bot ? bot.whatsapp_two_factor_pin : undefined,
         tag: t2
@@ -967,6 +972,23 @@ document.addEventListener('DOMContentLoaded',function(){
         bot.whatsapp_registered = !!regResult.success;
         bot.whatsapp_register_response = regResult.responseBody;
         await bot.save();
+      }
+      // Step 5.1: update registered field in connected_numbers if registration succeeded
+      if (regResult.success) {
+        try {
+          const owner = await User.findById(decoded.userId);
+          if (owner) {
+            const entry = (owner.connected_numbers || []).find(n => String(n.phone_number_id) === String(phone_number_id_final));
+            if (entry) {
+              entry.registered = true;
+              owner.markModified('connected_numbers');
+              await owner.save();
+              console.log(`${t2} 💾 Updated connected_numbers registered=true for phone_number_id=${phone_number_id_final}`);
+            }
+          }
+        } catch (e) {
+          console.log(`${t2} ⚠️ Failed to update registered in connected_numbers: ${e.message}`);
+        }
       }
     } else {
       console.log(`${t2} ⚠️ Step 5 skipped — no phone_number_id`);
@@ -993,6 +1015,10 @@ document.addEventListener('DOMContentLoaded',function(){
       registered: !!(regResult && regResult.success),
       register_status_code: regResult ? regResult.status : null,
       register_error: regResult && !regResult.success ? (regResult.responseBody?.error || regResult.responseBody) : null
+    }, {
+      // hidden from display JSON but forwarded via postMessage so the frontend
+      // can call /activate-number with the token
+      access_token: accessToken || ''
     });
   } catch (err) {
     console.error(`${tag} ❌ Exception:`, err);

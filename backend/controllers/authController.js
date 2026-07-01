@@ -241,8 +241,25 @@ export const getTemplates = async (req, res) => {
     
     console.log('[Dialog360] User found:', user.email);
     console.log('[Dialog360] Bot ID from DB:', user.dialog360_bot_id);
-     
-    if (!user.dialog360_bot_id) {
+
+    let botId = user.dialog360_bot_id;
+
+    // Fallback: if user has no dialog360_bot_id, use the first bot's endpoint field
+    if (!botId) {
+      const firstBot = await BotFlow.findOne({
+        user_id: userId.toString(),
+        endpoint: { $exists: true, $ne: '' }
+      }).sort({ created_at: 1 });
+
+      if (firstBot && firstBot.endpoint) {
+        const raw = firstBot.endpoint;
+        // endpoint stored as bare ID or "dialog360/{id}"
+        botId = raw.includes('/') ? raw.split('/').pop() : raw;
+        console.log('[Dialog360] Fallback to first bot endpoint, botId:', botId);
+      }
+    }
+
+    if (!botId) {
       console.warn('[Dialog360] Bot ID not configured for user:', user.email);
       return res.status(400).json({ 
         error: 'Dialog360 Bot ID not configured. Please set Bot ID in user settings.',
@@ -251,7 +268,6 @@ export const getTemplates = async (req, res) => {
     }
     
     // Build endpoint URL and token from bot_id
-    const botId = user.dialog360_bot_id;
     const endpoint = `https://app.chatgo.live/api/dialog360/${botId}/message_templates`;
     
     // Generate SHA1 token: SHA1(bot_id + "moomoo")
