@@ -1,5 +1,6 @@
 
 import crypto from 'crypto';
+import jwt from 'jsonwebtoken';
 import { mongoose } from '../config/db.js';
 import BotFlow from '../models/BotFlow.js';
 import Widget from '../models/Widget.js';
@@ -8,6 +9,9 @@ import Contact from '../models/Contact.js';
 import fetch from 'node-fetch';
 import { getEffectiveUserId, resolvePermissions, hasPermission } from '../middleware/auth.js';
 import { pushMessagesToWhatsApp } from '../utils/whatsappSender.js';
+import eventBus from '../utils/eventBus.js';
+
+const SSE_SECRET_KEY = 'dfghjukiolp;[p0o9i8uytgbhnjmk,l.;p9876543t4rre2asd';
 
 export const startSession = async (req, res) => {
   // Safe extraction: explicitly check for req.user to avoid 'undefined' values in DB insert
@@ -661,6 +665,7 @@ export const setAgentMode = async (req, res) => {
       { _id: new mongoose.Types.ObjectId(id) },
       { $set: { is_agent: true, agent_since, status: newStatus } }
     );
+    eventBus.emit('session:update', { userId: String(req.userId), phone: String(session.sender || session.customer_phone || '') });
     res.json({ success: true, agent_since: agent_since.toISOString(), status: newStatus });
   } catch (err) {
     console.error('setAgentMode error:', err);
@@ -678,6 +683,7 @@ export const clearAgentMode = async (req, res) => {
       { _id: new mongoose.Types.ObjectId(id) },
       { $set: { is_agent: false, agent_since: null, status: 'bot' } }
     );
+    eventBus.emit('session:update', { userId: String(req.userId), phone: String(session.sender || session.customer_phone || '') });
     res.json({ success: true, status: 'bot' });
   } catch (err) {
     console.error('clearAgentMode error:', err);
@@ -711,6 +717,7 @@ export const closeConversation = async (req, res) => {
         $push: { process_history: historyEntry }
       }
     );
+    eventBus.emit('session:update', { userId: String(req.userId), phone: String(session.sender || session.customer_phone || '') });
     res.json({ success: true, status: 'closed', historyEntry });
   } catch (err) {
     console.error('closeConversation error:', err);
@@ -935,6 +942,7 @@ export const transferConversation = async (req, res) => {
       { _id: new mongoose.Types.ObjectId(id) },
       { $set: update, $push: { process_history: { $each: historyEntriesToAdd } } }
     );
+    eventBus.emit('session:update', { userId: String(ownerId), phone: String(session.sender || session.customer_phone || '') });
 
     res.json({
       success: true,
@@ -1258,6 +1266,7 @@ export const sendAgentMessage = async (req, res) => {
       { _id: new mongoose.Types.ObjectId(id) },
       update
     );
+    eventBus.emit('session:update', { userId: String(getEffectiveUserId(req)), phone: String(session.sender || session.customer_phone || '') });
 
     res.json({ success: true, waSent, waError, created, historyEntry, status: newStatus });
   } catch (err) {
@@ -1862,4 +1871,64 @@ export const getSessionMessages = async (req, res) => {
     console.error('getSessionMessages Error:', err);
     res.status(500).json({ error: err.message });
   }
+};
+
+// ── SSE: real-time session update stream ─────────────────────────────────────
+// GET /api/sessions/stream?token=<jwt>
+// Keeps the connection open and pushes a small JSON event whenever any session
+// belonging to this user changes. The browser (EventSource) auto-reconnects.
+export const streamEvents = (req, res) => {
+  const token = req.query.token;
+  if (!token) {
+    res.status(401).end();
+    return;
+  }
+
+  let userId;
+  let managerIdFromToken;
+  try {
+    const payload = jwt.verify(token, SSE_SECRET_KEY);
+    userId = String(payload.id || payload.userId || '');
+    managerIdFromToken = payload.manager_id ? String(payload.manager_id) : null;
+  } catch {
+    res.status(403).end();
+    return;
+  }
+
+  if (!userId) {
+    res.status(403).end();
+    return;
+  }
+
+  // SSE headers
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no'); // disable nginx buffering
+  res.flushHeaders();
+
+  console.log(`[SSE] client connected userId=${userId} managerIdFromToken=${managerIdFromToken || '(none)'}`);
+
+  // Keepalive comment every 30s to prevent proxy timeouts
+  const keepalive = setInterval(() => {
+    res.write(': ping\n\n');
+  }, 30000);
+
+  const handler = (event) => {
+    // Allow: own userId, or manager's userId (for reps/rep_managers working under a company)
+    const eventUserId = String(event.userId);
+    const matches = eventUserId === userId || (managerIdFromToken && eventUserId === managerIdFromToken);
+    if (!matches) return;
+    console.log(`[SSE] pushing session_update to userId=${userId} phone=${event.phone}`);
+    const data = JSON.stringify({ type: 'session_update', phone: event.phone });
+    res.write(`data: ${data}\n\n`);
+  };
+
+  eventBus.on('session:update', handler);
+
+  req.on('close', () => {
+    console.log(`[SSE] client disconnected userId=${userId}`);
+    clearInterval(keepalive);
+    eventBus.off('session:update', handler);
+  });
 };

@@ -47,7 +47,7 @@ const TrialExpiredScreen: React.FC<{ userName: string; onLogout: () => void }> =
         ))}
       </div>
       <button
-        onClick={() => { alert('ליצירת קשר לשדרוג: contact@mesergo.com'); }}
+        onClick={() => { alert('ליצירת קשר לשדרוג: go@mesergo.co.il'); }}
         className="w-full bg-blue-600 text-white py-4 rounded-xl font-bold text-lg shadow-lg shadow-blue-600/20 hover:bg-blue-700 transition-all mb-3"
       >
         שדרג עכשיו

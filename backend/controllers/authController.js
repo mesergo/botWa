@@ -11,6 +11,8 @@ import {
   getGlobalRemovalConfig,
   getEffectiveRemovalConfig
 } from '../utils/removalConfig.js';
+import AuditLog from '../models/AuditLog.js';
+import { buildRemovalConfigDiff } from './adminController.js';
 
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
@@ -493,7 +495,7 @@ export const getUserRemovalConfig = async (req, res) => {
 };
 
 // PUT /api/auth/removal-config
-// Body: { customized: boolean, enabled?: boolean, keywords?: string[], message?: string }
+// Body: { customized: boolean, enabled?: boolean, keywords_he?: string[], message_he?: string, keywords_en?: string[], message_en?: string }
 // When customized=false, the user reverts to the global default (override cleared).
 export const updateUserRemovalConfig = async (req, res) => {
   try {
@@ -501,29 +503,49 @@ export const updateUserRemovalConfig = async (req, res) => {
     if (!user) return res.status(404).json({ error: 'User not found' });
 
     const body = req.body || {};
+
+    // Snapshot current effective config for diffing
+    const previousEffective = await getEffectiveRemovalConfig(user);
+
     if (body.customized === false) {
       user.removal_config = {
         customized: false,
         enabled: true,
-        keywords: [],
-        message: ''
+        keywords_he: [],
+        message_he: '',
+        keywords_en: [],
+        message_en: ''
       };
     } else {
-      const keywords = Array.isArray(body.keywords)
-        ? body.keywords.map(k => String(k || '').trim()).filter(Boolean)
+      const keywords_he = Array.isArray(body.keywords_he)
+        ? body.keywords_he.map(k => String(k || '').trim()).filter(Boolean)
+        : [];
+      const keywords_en = Array.isArray(body.keywords_en)
+        ? body.keywords_en.map(k => String(k || '').trim()).filter(Boolean)
         : [];
       user.removal_config = {
         customized: true,
         enabled: typeof body.enabled === 'boolean' ? body.enabled : true,
-        keywords,
-        message: typeof body.message === 'string' ? body.message : ''
+        keywords_he,
+        message_he: typeof body.message_he === 'string' ? body.message_he : '',
+        keywords_en,
+        message_en: typeof body.message_en === 'string' ? body.message_en : ''
       };
     }
     user.markModified('removal_config');
     await user.save();
 
+    // Diff and write audit log entries
+    const actorId = req.userId;
+    const actorEmail = user.email || '';
+    const nextEffective = await getEffectiveRemovalConfig(user);
+    const logEntries = buildRemovalConfigDiff(previousEffective, nextEffective, actorId, actorEmail);
+    if (logEntries.length > 0) {
+      await AuditLog.insertMany(logEntries);
+    }
+
     const global = await getGlobalRemovalConfig();
-    const effective = await getEffectiveRemovalConfig(user);
+    const effective = nextEffective;
     res.json({
       message: 'Removal config saved',
       config: effective,

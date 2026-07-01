@@ -175,15 +175,24 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
       .finally(() => setPhoneSessionsLoading(false));
   }, [selectedPhone, token, activeBotFilter]);
 
-  // Real-time polling: every 4s re-fetch sessions for the selected phone so that
-  // incoming WhatsApp messages (saved server-side to process_history) show up
-  // for the agent without needing a manual refresh. Skip the update when the
-  // total message count hasn't changed to avoid unnecessary re-renders.
+  // ── Real-time updates: SSE (instant) + 4s polling fallback ─────────────────
+  //
+  // SSE handles contact-list updates and instant session refreshes.
+  // The 4s polling is a safety net for when the SSE connection drops or an
+  // event is missed (e.g. the connection was closed mid-emit).
+
+  // Refs so SSE handler always reads current values without causing reconnects
+  const selectedPhoneRef = useRef<string | null>(selectedPhone);
+  const activeBotFilterRef = useRef(activeBotFilter);
+  useEffect(() => { selectedPhoneRef.current = selectedPhone; }, [selectedPhone]);
+  useEffect(() => { activeBotFilterRef.current = activeBotFilter; }, [activeBotFilter]);
+
+  // Stable fetch helper for the open conversation (used by both SSE and polling)
+  const fetchPhoneSessionsRef = useRef<(phone: string, botFilter: typeof activeBotFilter) => void>(() => {});
   useEffect(() => {
-    if (!selectedPhone || !token) return;
-    const interval = setInterval(() => {
-      const botParam = activeBotFilter ? `&botId=${encodeURIComponent(activeBotFilter.id)}` : '';
-      fetch(`${API_BASE}/sessions/by-phone?phone=${encodeURIComponent(selectedPhone)}${botParam}`, {
+    fetchPhoneSessionsRef.current = (phone: string, botFilter: typeof activeBotFilter) => {
+      const botParam = botFilter ? `&botId=${encodeURIComponent(botFilter.id)}` : '';
+      fetch(`${API_BASE}/sessions/by-phone?phone=${encodeURIComponent(phone)}${botParam}`, {
         headers: { Authorization: `Bearer ${token}` }
       })
         .then(r => r.ok ? r.json() : Promise.reject(r))
@@ -196,17 +205,37 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
           });
         })
         .catch(() => { /* swallow polling errors */ });
+    };
+  }, [token]);
+
+  // SSE — opens once per token, never recreated on conversation switch
+  useEffect(() => {
+    if (!token) return;
+    const es = new EventSource(`${API_BASE}/sessions/stream?token=${encodeURIComponent(token)}`);
+    es.onmessage = (e) => {
+      try {
+        const eventData = JSON.parse(e.data);
+        if (eventData.type === 'session_update') {
+          fetchContacts();
+          const phone = selectedPhoneRef.current;
+          if (phone) {
+            fetchPhoneSessionsRef.current(phone, activeBotFilterRef.current);
+          }
+        }
+      } catch { /* ignore malformed events */ }
+    };
+    return () => es.close();
+  }, [token, fetchContacts]);
+
+  // 4s polling fallback — only for the currently open conversation.
+  // Cheap: one DB query per 4s. Catches cases where SSE dropped/missed an event.
+  useEffect(() => {
+    if (!selectedPhone || !token) return;
+    const interval = setInterval(() => {
+      fetchPhoneSessionsRef.current(selectedPhone, activeBotFilterRef.current);
     }, 4000);
     return () => clearInterval(interval);
   }, [selectedPhone, token]);
-
-  // Real-time polling: refresh contacts list every 15s so sidebar timestamps,
-  // statuses and unread indicators stay up-to-date.
-  useEffect(() => {
-    if (!token) return;
-    const interval = setInterval(() => { fetchContacts(); }, 15000);
-    return () => clearInterval(interval);
-  }, [token, fetchContacts]);
 
   // Auto-scroll to bottom only when new messages arrive AND the user is already
   // near the bottom (so we don't yank them away while they scroll up to read).
