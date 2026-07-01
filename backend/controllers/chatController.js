@@ -1605,7 +1605,6 @@ export const respondToMessage = async (req, res) => {
               session.markModified('parameters');
             }
 
-            addToHistory(session, { type: 'UserInput', text }, 'user');
             messages = await walkChain(interruptNextId, flowData.nodes, flowData.edges, session, session.flow_id, req);
             await session.save();
             const waPushedInterrupt1 = await pushMessagesToWhatsApp(sender, messages, user, tokenBot);
@@ -1644,7 +1643,6 @@ export const respondToMessage = async (req, res) => {
 
             const interruptNextId = findNextNode(autoNode.id, flowData.edges, `option-${interruptIdx}`);
             if (interruptNextId) {
-              addToHistory(session, { type: 'UserInput', text }, 'user');
               messages = await walkChain(interruptNextId, flowData.nodes, flowData.edges, session, session.flow_id, req);
               await session.save();
               const waPushedInterrupt2 = await pushMessagesToWhatsApp(sender, messages, user, tokenBot);
