@@ -47,11 +47,14 @@ const userSchema = new mongoose.Schema({
   allowed_bot_ids: [{ type: mongoose.Schema.Types.ObjectId, ref: 'BotFlow', default: [] }],
   // Per-user override for the auto-removal-from-group feature.
   // When `customized=true`, these values override the global SystemSetting('removal_config').
+  // Keywords and messages are split by language: Hebrew (he) and English (en).
   removal_config: {
     customized: { type: Boolean, default: false },
     enabled: { type: Boolean, default: true },
-    keywords: { type: [String], default: [] },
-    message: { type: String, default: '' }
+    keywords_he: { type: [String], default: [] },
+    message_he: { type: String, default: '' },
+    keywords_en: { type: [String], default: [] },
+    message_en: { type: String, default: '' }
   },
   user_type_id: { type: mongoose.Schema.Types.ObjectId, ref: 'UserType', default: null },
 }, { 

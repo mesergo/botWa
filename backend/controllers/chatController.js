@@ -15,8 +15,9 @@ import { fileURLToPath } from 'url';
 import crypto from 'crypto';
 import { handleWebService, findMatchingOption } from '../utils/webserviceHandler.js';
 import { normalizePhone } from '../utils/phone.js';
-import { getEffectiveRemovalConfig, matchRemovalKeyword, DEFAULT_REMOVAL_CONFIG } from '../utils/removalConfig.js';
+import { getEffectiveRemovalConfig, matchRemovalKeywordWithLang, DEFAULT_REMOVAL_CONFIG } from '../utils/removalConfig.js';
 import { pushMessagesToWhatsApp } from '../utils/whatsappSender.js';
+import eventBus from '../utils/eventBus.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -1130,8 +1131,9 @@ const performAutoRemoval = async (user, sender, phone, text, name = '') => {
     const removalCfg = await getEffectiveRemovalConfig(user);
     if (!removalCfg || removalCfg.enabled === false) return null;
 
-    const matched = matchRemovalKeyword(inboundText, removalCfg.keywords || []);
-    if (!matched) return null;
+    const removalMatch = matchRemovalKeywordWithLang(inboundText, removalCfg);
+    if (!removalMatch) return null;
+    const { matched, lang } = removalMatch;
 
     console.log(`[BOT] 🛑 removal keyword matched: "${matched}" | phone=${sender}`);
     const userId = String(user._id);
@@ -1176,9 +1178,9 @@ const performAutoRemoval = async (user, sender, phone, text, name = '') => {
       console.error('[BOT] failed to close sessions after removal:', sessErr.message);
     }
 
-    const confirmText = String(removalCfg.message || '').trim()
-      || String(DEFAULT_REMOVAL_CONFIG.message || '').trim()
-      || 'הוסרת בהצלחה מרשימת התפוצה. לא נשלח אליך יותר הודעות. תודה!';
+    const confirmText = lang === 'en'
+      ? (String(removalCfg.message_en || '').trim() || String(DEFAULT_REMOVAL_CONFIG.message_en || '').trim() || 'You have been successfully removed from our mailing list. Thank you!')
+      : (String(removalCfg.message_he || '').trim() || String(DEFAULT_REMOVAL_CONFIG.message_he || '').trim() || 'הוסרת בהצלחה מרשימת התפוצה. לא נשלח אליך יותר הודעות. תודה!');
     console.log(`[BOT] 📤 sending removal confirmation to ${sender}: "${confirmText.substring(0, 80)}"`);
     const outMessages = [{ type: 'Text', text: confirmText, created: new Date().toISOString() }];
     return { matched, outMessages };
@@ -1278,6 +1280,7 @@ export const respondToMessage = async (req, res) => {
         console.log(`[BOT-MEDIA] ✅ Saved to process_history as ${mediaType || 'UserInput'}`);
         agentCheckSession.markModified('process_history');
         await agentCheckSession.save();
+        eventBus.emit('session:update', { userId: String(user._id), phone: sender });
         console.log(`[BOT] 🙋 AGENT MODE active for sessionId=${agentCheckSession._id} phone=${phone} — bot suppressed, message recorded`);
         console.log(`${'═'.repeat(80)}\n`);
         return res.json({ StatusId: 1, StatusDescription: 'Agent mode active', sender, messages: [], agentMode: true });
@@ -1474,6 +1477,7 @@ export const respondToMessage = async (req, res) => {
         addToHistory(session, { type: mediaType, url: text }, 'user');
         session.markModified('process_history');
         await session.save();
+        eventBus.emit('session:update', { userId: String(user._id), phone: sender });
         console.log(`[BOT-MEDIA] ✅ Saved to process_history as ${mediaType} | bot flow NOT advanced`);
         console.log(`${'═'.repeat(60)}\n`);
         return res.json({ StatusId: 1, StatusDescription: 'Media recorded', sender, messages: [] });
@@ -1981,6 +1985,8 @@ export const respondToMessage = async (req, res) => {
     // Save session
     console.log(`[BOT] 💾 Saving session - sender: ${session.sender}, phone: ${session.customer_phone}`);
     await session.save();
+    eventBus.emit('session:update', { userId: String(user._id), phone: sender });
+    console.log(`[eventBus] emitted session:update userId=${String(user._id)} phone=${sender}`);
 
     // Build control object if needed
     // Reload the waiting node from the updated session.current_node_id (may have changed inside walkChain)

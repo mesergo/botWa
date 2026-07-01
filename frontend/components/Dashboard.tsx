@@ -206,13 +206,14 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
   const [assignSelection, setAssignSelection] = useState<Record<string, string>>({});
 
   // Auto-removal-from-group config (per-user override of admin default)
-  interface RemovalCfg { enabled: boolean; keywords: string[]; message: string; }
+  interface RemovalCfg { enabled: boolean; keywords_he: string[]; message_he: string; keywords_en: string[]; message_en: string; }
   const [removalEffective, setRemovalEffective] = useState<RemovalCfg | null>(null);
   const [removalGlobal, setRemovalGlobal] = useState<RemovalCfg | null>(null);
   const [removalDefaults, setRemovalDefaults] = useState<RemovalCfg | null>(null);
   const [removalCustomized, setRemovalCustomized] = useState(false);
   const [removalDraft, setRemovalDraft] = useState<RemovalCfg | null>(null);
-  const [removalKwInput, setRemovalKwInput] = useState('');
+  const [removalKwInputHe, setRemovalKwInputHe] = useState('');
+  const [removalKwInputEn, setRemovalKwInputEn] = useState('');
   const [removalLoading, setRemovalLoading] = useState(false);
   const [removalSaving, setRemovalSaving] = useState(false);
   const [removalSaved, setRemovalSaved] = useState(false);
@@ -530,8 +531,10 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
   // ── Auto-removal-from-group (per-user) ────────────────────────────────
   const normalizeCfg = (c: any): RemovalCfg => ({
     enabled: c?.enabled !== false,
-    keywords: Array.isArray(c?.keywords) ? c.keywords : [],
-    message: typeof c?.message === 'string' ? c.message : ''
+    keywords_he: Array.isArray(c?.keywords_he) ? c.keywords_he : [],
+    message_he: typeof c?.message_he === 'string' ? c.message_he : '',
+    keywords_en: Array.isArray(c?.keywords_en) ? c.keywords_en : [],
+    message_en: typeof c?.message_en === 'string' ? c.message_en : ''
   });
 
   const loadRemovalConfig = async () => {
@@ -567,8 +570,10 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
         body: JSON.stringify({
           customized: true,
           enabled: removalDraft.enabled,
-          keywords: removalDraft.keywords,
-          message: removalDraft.message
+          keywords_he: removalDraft.keywords_he,
+          message_he: removalDraft.message_he,
+          keywords_en: removalDraft.keywords_en,
+          message_en: removalDraft.message_en
         }),
       });
       if (!res.ok) throw new Error('Failed');
@@ -612,20 +617,36 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
     }
   };
 
-  const addRemovalDraftKeyword = () => {
-    const k = removalKwInput.trim();
+  const addRemovalDraftKeywordHe = () => {
+    const k = removalKwInputHe.trim();
     if (!k || !removalDraft) return;
-    if (removalDraft.keywords.some(x => x.trim().toLowerCase() === k.toLowerCase())) {
-      setRemovalKwInput('');
+    if (removalDraft.keywords_he.some(x => x.trim().toLowerCase() === k.toLowerCase())) {
+      setRemovalKwInputHe('');
       return;
     }
-    setRemovalDraft({ ...removalDraft, keywords: [...removalDraft.keywords, k] });
-    setRemovalKwInput('');
+    setRemovalDraft({ ...removalDraft, keywords_he: [...removalDraft.keywords_he, k] });
+    setRemovalKwInputHe('');
   };
 
-  const removeRemovalDraftKeyword = (idx: number) => {
+  const removeRemovalDraftKeywordHe = (idx: number) => {
     if (!removalDraft) return;
-    setRemovalDraft({ ...removalDraft, keywords: removalDraft.keywords.filter((_, i) => i !== idx) });
+    setRemovalDraft({ ...removalDraft, keywords_he: removalDraft.keywords_he.filter((_, i) => i !== idx) });
+  };
+
+  const addRemovalDraftKeywordEn = () => {
+    const k = removalKwInputEn.trim();
+    if (!k || !removalDraft) return;
+    if (removalDraft.keywords_en.some(x => x.trim().toLowerCase() === k.toLowerCase())) {
+      setRemovalKwInputEn('');
+      return;
+    }
+    setRemovalDraft({ ...removalDraft, keywords_en: [...removalDraft.keywords_en, k] });
+    setRemovalKwInputEn('');
+  };
+
+  const removeRemovalDraftKeywordEn = (idx: number) => {
+    if (!removalDraft) return;
+    setRemovalDraft({ ...removalDraft, keywords_en: removalDraft.keywords_en.filter((_, i) => i !== idx) });
   };
 
   const isRep = currentUser?.role === 'rep' || currentUser?.role === 'rep_manager';
@@ -1274,68 +1295,131 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                       </button>
                     </div>
 
-                    <div>
-                      <label className="block text-xs font-black text-slate-400 uppercase tracking-wider mb-3">מילות מפתח להסרה</label>
-                      <div className="flex gap-2 mb-4">
-                        <input
-                          type="text"
-                          value={removalKwInput}
-                          onChange={e => setRemovalKwInput(e.target.value)}
-                          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addRemovalDraftKeyword(); } }}
-                          placeholder="הוסף מילת מפתח (למשל: הסר, remove)"
-                          className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold outline-none focus:ring-2 focus:ring-rose-600/20 focus:border-rose-500 transition-all"
-                        />
-                        <button
-                          onClick={addRemovalDraftKeyword}
-                          className="flex items-center gap-2 px-5 py-3 bg-slate-800 text-white rounded-2xl font-bold text-sm hover:bg-slate-900 transition-all"
-                        >
-                          <Plus size={14} /> הוסף
-                        </button>
+                    {/* ── Hebrew block ── */}
+                    <div className="bg-blue-50 border border-blue-100 rounded-2xl p-5 space-y-4">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-base">🇮🇱</span>
+                        <span className="text-sm font-black text-blue-800">עברית</span>
                       </div>
-                      {removalDraft.keywords.length === 0 ? (
-                        <div className="text-center text-slate-400 text-sm py-8 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
-                          אין מילות מפתח. ללא מילות מפתח לא תתבצע הסרה אוטומטית.
+
+                      <div>
+                        <label className="block text-xs font-black text-blue-500 uppercase tracking-wider mb-3">מילות מפתח להסרה בעברית</label>
+                        <div className="flex gap-2 mb-3" dir="rtl">
+                          <input
+                            type="text"
+                            value={removalKwInputHe}
+                            onChange={e => setRemovalKwInputHe(e.target.value)}
+                            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addRemovalDraftKeywordHe(); } }}
+                            placeholder="למשל: הסר, הסרה, תסיר"
+                            className="flex-1 px-4 py-3 bg-white border border-blue-200 rounded-2xl text-sm font-bold outline-none focus:ring-2 focus:ring-blue-400/20 focus:border-blue-400 transition-all"
+                          />
+                          <button
+                            onClick={addRemovalDraftKeywordHe}
+                            className="flex items-center gap-2 px-5 py-3 bg-blue-700 text-white rounded-2xl font-bold text-sm hover:bg-blue-800 transition-all"
+                          >
+                            <Plus size={14} /> הוסף
+                          </button>
                         </div>
-                      ) : (
-                        <div className="flex flex-wrap gap-2">
-                          {removalDraft.keywords.map((kw, idx) => (
-                            <span
-                              key={`${kw}-${idx}`}
-                              className="inline-flex items-center gap-2 bg-rose-50 text-rose-700 border border-rose-200 px-3 py-1.5 rounded-xl text-sm font-bold"
-                            >
-                              <span dir="auto">{kw}</span>
-                              <button
-                                onClick={() => removeRemovalDraftKeyword(idx)}
-                                className="text-rose-400 hover:text-rose-700 transition-colors"
-                                title="הסר מילה"
-                              >
-                                <X size={14} />
-                              </button>
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                      {removalGlobal && (
-                        <p className="text-[11px] text-slate-400 font-medium mt-3">
-                          ברירת המחדל הכללית של המערכת מוגדרת כעת עם {removalGlobal.keywords.length} מילים בעברית ובאנגלית{removalCustomized ? '' : ' — והיא ההגדרה הפעילה אצלך כרגע'}.
-                        </p>
-                      )}
+                        {removalDraft.keywords_he.length === 0 ? (
+                          <div className="text-center text-blue-300 text-sm py-6 bg-white rounded-2xl border border-dashed border-blue-200">
+                            אין מילות מפתח בעברית.
+                          </div>
+                        ) : (
+                          <div className="flex flex-wrap gap-2">
+                            {removalDraft.keywords_he.map((kw, idx) => (
+                              <span key={`he-${kw}-${idx}`} className="inline-flex items-center gap-2 bg-white text-blue-700 border border-blue-200 px-3 py-1.5 rounded-xl text-sm font-bold">
+                                <span dir="rtl">{kw}</span>
+                                <button onClick={() => removeRemovalDraftKeywordHe(idx)} className="text-blue-300 hover:text-blue-700 transition-colors" title="הסר מילה"><X size={14} /></button>
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        {removalGlobal && (
+                          <p className="text-[11px] text-blue-400 font-medium mt-2">
+                            ברירת מחדל: {removalGlobal.keywords_he.length} מילים בעברית{removalCustomized ? '' : ' — פעילה כרגע'}.
+                          </p>
+                        )}
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-black text-blue-500 uppercase tracking-wider mb-2">הודעת אישור לאחר ההסרה — עברית</label>
+                        <textarea
+                          value={removalDraft.message_he}
+                          onChange={e => setRemovalDraft({ ...removalDraft, message_he: e.target.value })}
+                          rows={2}
+                          dir="rtl"
+                          placeholder="הודעה שתישלח לנמען שכתב מילת מפתח עברית"
+                          className="w-full px-5 py-3 bg-white border border-blue-200 rounded-2xl text-sm font-bold outline-none focus:ring-2 focus:ring-blue-400/20 focus:border-blue-400 transition-all resize-none"
+                        />
+                        {removalGlobal?.message_he && (
+                          <p className="text-[11px] text-blue-400 font-medium mt-1">
+                            ברירת מחדל: <span className="text-blue-500">"{removalGlobal.message_he}"</span>
+                          </p>
+                        )}
+                      </div>
                     </div>
 
-                    <div>
-                      <label className="block text-xs font-black text-slate-400 uppercase tracking-wider mb-3">הודעת אישור לאחר ההסרה</label>
-                      <textarea
-                        value={removalDraft.message}
-                        onChange={e => setRemovalDraft({ ...removalDraft, message: e.target.value })}
-                        rows={3}
-                        placeholder="הודעה שתישלח לנמען אחרי שהוסר אוטומטית"
-                        className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold outline-none focus:ring-2 focus:ring-rose-600/20 focus:border-rose-500 transition-all resize-none"
-                      />
-                      {removalGlobal && removalGlobal.message && (
-                        <p className="text-[11px] text-slate-400 font-medium mt-2">
-                          ברירת מחדל מערכתית: <span className="text-slate-500">"{removalGlobal.message}"</span>
-                        </p>
-                      )}
+                    {/* ── English block ── */}
+                    <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-5 space-y-4">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-base">🇺🇸</span>
+                        <span className="text-sm font-black text-emerald-800">English</span>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-black text-emerald-600 uppercase tracking-wider mb-3">English Removal Keywords</label>
+                        <div className="flex gap-2 mb-3">
+                          <input
+                            type="text"
+                            value={removalKwInputEn}
+                            onChange={e => setRemovalKwInputEn(e.target.value)}
+                            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addRemovalDraftKeywordEn(); } }}
+                            placeholder="e.g. stop, remove, unsubscribe"
+                            className="flex-1 px-4 py-3 bg-white border border-emerald-200 rounded-2xl text-sm font-bold outline-none focus:ring-2 focus:ring-emerald-400/20 focus:border-emerald-400 transition-all"
+                          />
+                          <button
+                            onClick={addRemovalDraftKeywordEn}
+                            className="flex items-center gap-2 px-5 py-3 bg-emerald-700 text-white rounded-2xl font-bold text-sm hover:bg-emerald-800 transition-all"
+                          >
+                            <Plus size={14} /> Add
+                          </button>
+                        </div>
+                        {removalDraft.keywords_en.length === 0 ? (
+                          <div className="text-center text-emerald-300 text-sm py-6 bg-white rounded-2xl border border-dashed border-emerald-200">
+                            No English keywords defined.
+                          </div>
+                        ) : (
+                          <div className="flex flex-wrap gap-2">
+                            {removalDraft.keywords_en.map((kw, idx) => (
+                              <span key={`en-${kw}-${idx}`} className="inline-flex items-center gap-2 bg-white text-emerald-700 border border-emerald-200 px-3 py-1.5 rounded-xl text-sm font-bold">
+                                <span>{kw}</span>
+                                <button onClick={() => removeRemovalDraftKeywordEn(idx)} className="text-emerald-300 hover:text-emerald-700 transition-colors" title="Remove keyword"><X size={14} /></button>
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        {removalGlobal && (
+                          <p className="text-[11px] text-emerald-500 font-medium mt-2">
+                            Default: {removalGlobal.keywords_en.length} English keywords{removalCustomized ? '' : ' — currently active'}.
+                          </p>
+                        )}
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-black text-emerald-600 uppercase tracking-wider mb-2">Confirmation message after removal — English</label>
+                        <textarea
+                          value={removalDraft.message_en}
+                          onChange={e => setRemovalDraft({ ...removalDraft, message_en: e.target.value })}
+                          rows={2}
+                          placeholder="Message sent to the contact after an English keyword match"
+                          className="w-full px-5 py-3 bg-white border border-emerald-200 rounded-2xl text-sm font-bold outline-none focus:ring-2 focus:ring-emerald-400/20 focus:border-emerald-400 transition-all resize-none"
+                        />
+                        {removalGlobal?.message_en && (
+                          <p className="text-[11px] text-emerald-500 font-medium mt-1">
+                            Default: <span className="text-emerald-600">"{removalGlobal.message_en}"</span>
+                          </p>
+                        )}
+                      </div>
                     </div>
 
                     {removalSaved && (

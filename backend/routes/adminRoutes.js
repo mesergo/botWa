@@ -13,6 +13,7 @@ import {
   updateSystemSettings,
   getRemovalConfig,
   updateRemovalConfig,
+  getRemovalConfigLog,
   createUser
 } from '../controllers/adminController.js';
 import {
@@ -34,6 +35,7 @@ router.put('/settings/limits', requireAdmin, updateSystemSettings);
 // Global default config for the auto-removal-from-group feature
 router.get('/settings/removal', requireAdmin, getRemovalConfig);
 router.put('/settings/removal', requireAdmin, updateRemovalConfig);
+router.get('/settings/removal/log', requireAdmin, getRemovalConfigLog);
 
 // Dashboard stats
 router.get('/stats', requireAdmin, getSystemStats);
