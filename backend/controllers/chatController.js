@@ -32,6 +32,7 @@ const detectMediaType = (text) => {
   if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) return 'Image';
   if (['mp4', 'mov', 'avi', 'mkv', 'webm'].includes(ext)) return 'Video';
   if (['pdf', 'doc', 'docx', 'xls', 'xlsx', 'txt', 'csv', 'zip'].includes(ext)) return 'Document';
+  if (['oga', 'ogg', 'mp3', 'wav', 'm4a', 'aac', 'opus'].includes(ext)) return 'Audio';
   console.log(`[detectMediaType] 🔍 URL has unknown extension: .${ext} — treating as text | url=${text.substring(0, 80)}`);
   return null;
 };

@@ -1117,6 +1117,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
       const isSystem = senderType === 'system';
       const text = item.text ?? item.content ?? '';
       const msgDate = item.created ? formatMessageDate(item.created) : '';
+      const isAudioUrl = /^https?:\/\/.+\.(oga|ogg|mp3|wav|m4a|aac|opus)(\?.*)?$/i.test(item.url || text);
 
       // System message — centered divider (e.g. "השיחה הסתיימה", "השיחה הועברה לנציג")
       if (isSystem) {
@@ -1206,8 +1207,14 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                   ? 'bg-white border border-slate-100 text-slate-900 rounded-tr-none'
                   : 'bg-sky-500 text-white rounded-tl-none'}`}
               >
-                {(item.type === 'Text' || item.type === 'UserInput' || !item.type || item.type.startsWith('input_')) && text && (
+                {(item.type === 'Text' || item.type === 'UserInput' || !item.type || item.type.startsWith('input_')) && text && !isAudioUrl && (
                   <p className="whitespace-pre-wrap leading-snug">{text}</p>
+                )}
+                {(item.type === 'Audio' || isAudioUrl) && (item.url || text) && (
+                  <>
+                    <p className="text-[10px] font-semibold mb-1 opacity-70">🎙️ הקלטה</p>
+                    <audio src={item.url || text} controls className="max-w-[220px] mb-1" />
+                  </>
                 )}
                 {item.type === 'Image' && item.url && (
                   <>

@@ -1472,6 +1472,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                         const isBot = sender === 'bot';
                         const text = item.text ?? item.content ?? '';
                         const msgDate = item.created ? fmtMsgDate(item.created) : '';
+                        const isAudioUrl = /^https?:\/\/.+\.(oga|ogg|mp3|wav|m4a|aac|opus)(\?.*)?$/i.test((item.url || text));
                         return (
                           <div key={idx} className={`flex w-full ${isBot ? 'justify-start' : 'justify-end'}`}>
                             <div className={`flex gap-1.5 max-w-[90%] ${isBot ? 'flex-row-reverse' : 'flex-row'}`}>
@@ -1486,7 +1487,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                                     ? 'bg-white border border-slate-100 text-slate-900 rounded-tr-none'
                                     : 'bg-sky-500 text-white rounded-tl-none'
                                 }`}>
-                                  {(item.type === 'Text' || item.type === 'UserInput' || !item.type || item.type.startsWith('input_')) && text && (
+                                  {(item.type === 'Text' || item.type === 'UserInput' || !item.type || item.type.startsWith('input_')) && text && !isAudioUrl && (
                                     <p className="whitespace-pre-wrap leading-relaxed">{text}</p>
                                   )}
                                   {item.type === 'Image' && item.url && (
@@ -1507,6 +1508,12 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                                         <ExternalLink size={10} /> פתח מסמך
                                       </a>
                                       {text && <p className="whitespace-pre-wrap leading-relaxed">{text}</p>}
+                                    </>
+                                  )}
+                                  {(item.type === 'Audio' || isAudioUrl) && (item.url || text) && (
+                                    <>
+                                      <p className="text-[10px] font-semibold mb-1 opacity-70">🎙️ הקלטה</p>
+                                      <audio src={item.url || text} controls className="max-w-[200px] mb-1" />
                                     </>
                                   )}
                                   {item.type === 'URL' && (
