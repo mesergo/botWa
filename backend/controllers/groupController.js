@@ -406,8 +406,25 @@ async function processBroadcast(broadcastId, userId, group, contacts, opts) {
               waBody.header = [{ type: mediaType, [mediaType]: { link: templateData.params.header.url } }];
             }
             if (Array.isArray(templateData.params.body)) {
-              waBody.params = templateData.params.body.filter(p => p && String(p).trim());
-            }
+              waBody.params = templateData.params.body
+                .filter(p => p && String(p).trim())
+                .map(p => {
+                  const s = String(p);
+                  if (s.startsWith('__field:')) {
+                    const ref = s.slice(8);
+                    if (ref === 'phone') return contact.phone || '';
+                    if (ref === 'full_name') return contact.full_name || '';
+                    if (ref === 'whatsapp_name') return contact.whatsapp_name || '';
+                    if (ref === 'email') return contact.email || '';
+                    if (ref.startsWith('custom:')) {
+                      const fieldId = ref.slice(7);
+                      return String((contact.custom_field_values && contact.custom_field_values[fieldId]) || '');
+                    }
+                    return '';
+                  }
+                  return s;
+                });
+            } 
           }
         } else if (media && media.url && media.type) {
           // Free-form media (image/video/document/audio) with optional caption (msgText)

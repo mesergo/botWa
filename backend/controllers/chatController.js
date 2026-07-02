@@ -1792,9 +1792,11 @@ export const respondToMessage = async (req, res) => {
       if (currentNode.data.saveToContact) {
         // contactFieldKey (field _id) takes precedence; fall back to varName for legacy flows
         const contactKey = currentNode.data.contactFieldKey || varName;
-        if (contactKey) {
+        // session.sender is the customer's phone; session.customer_phone is the bot's phone
+        const contactPhone = session.sender || session.customer_phone;
+        if (contactKey && contactPhone) {
           Contact.findOneAndUpdate(
-            { user_id: session.user_id, phone: session.customer_phone },
+            { user_id: session.user_id, phone: contactPhone },
             { $set: { [`custom_field_values.${contactKey}`]: text } },
             { upsert: true, new: true }
           ).catch(err => console.error('[BOT] Failed to save contact field:', err));
