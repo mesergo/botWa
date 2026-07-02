@@ -2,6 +2,7 @@
 import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { ReactFlowProvider, addEdge, Node, Edge, applyNodeChanges, applyEdgeChanges, OnNodesChange, OnEdgesChange, OnConnect, ReactFlowInstance, MarkerType } from 'reactflow';
 import { NodeType, NodeData, User, FixedProcess, Version, BotFlow, PredefinedTemplate, RestorableVersionsData } from './types';
+import { ContactFieldsProvider } from './context/ContactFieldsContext';
 import { usePermission } from './hooks/usePermission';
 import Dashboard from './components/Dashboard';
 import AuthScreen from './components/AuthScreen';
@@ -113,6 +114,7 @@ function clearStoredAuth() {
   localStorage.removeItem('flowbot_user');
   sessionStorage.removeItem('flowbot_token');
   sessionStorage.removeItem('flowbot_user');
+  window.dispatchEvent(new Event('flowbot-auth-change'));
 }
 
 function saveStoredAuth(token: string, user: any, rememberMe: boolean) {
@@ -120,6 +122,7 @@ function saveStoredAuth(token: string, user: any, rememberMe: boolean) {
   const storage = rememberMe ? localStorage : sessionStorage;
   storage.setItem('flowbot_token', token);
   storage.setItem('flowbot_user', JSON.stringify(user));
+  window.dispatchEvent(new Event('flowbot-auth-change'));
 }
 
 type ViewMode = 'home' | 'dashboard' | 'editor' | 'editing-process' | 'viewing-process' | 'simulator-only' | 'template-selection' | 'template-form' | 'admin-panel' | 'editing-template' | 'creating-template' | 'contacts' | 'sessions' | 'groups';
@@ -1345,6 +1348,16 @@ const FlowBuilder: React.FC = () => {
   const handlePublishVersion = async () => {
     if (!newVersionName.trim() || !selectedBot || !token) {
       if (!newVersionName.trim()) alert("נא להזין שם לגרסה");
+      return;
+    }
+
+    // Validate: any input_text node with saveToContact=true must have contactFieldKey set
+    const invalidNodes = nodes.filter(
+      n => n.type === 'input_text' && n.data?.saveToContact && !n.data?.contactFieldKey
+    );
+    if (invalidNodes.length > 0) {
+      const ids = invalidNodes.map(n => n.data?.serialId ?? n.id).join(', ');
+      alert(`⚠ יש צמתים עם "שמור בפרטי איש קשר" ללא שדה נבחר (${ids}).\nיש לבחור שדה לשמירה בכל צומת כזה לפני הפרסום.`);
       return;
     }
     
@@ -2594,4 +2607,36 @@ const FlowBuilder: React.FC = () => {
   );
 };
 
-export default function AppWrapper() { return <ReactFlowProvider><FlowBuilder /></ReactFlowProvider>; }
+export default function AppWrapper() {
+  return (
+    <ReactFlowProvider>
+      <ContactFieldsWrapper />
+    </ReactFlowProvider>
+  );
+}
+
+/** Inner wrapper so ContactFieldsProvider receives the reactive token from FlowBuilder's state */
+function ContactFieldsWrapper() {
+  const [token, setToken] = React.useState<string | null>(
+    localStorage.getItem('flowbot_token') || sessionStorage.getItem('flowbot_token')
+  );
+
+  React.useEffect(() => {
+    const onStorage = () => {
+      setToken(localStorage.getItem('flowbot_token') || sessionStorage.getItem('flowbot_token'));
+    };
+    window.addEventListener('storage', onStorage);
+    // Also listen to a custom event fired on login/logout within the same tab
+    window.addEventListener('flowbot-auth-change', onStorage);
+    return () => {
+      window.removeEventListener('storage', onStorage);
+      window.removeEventListener('flowbot-auth-change', onStorage);
+    };
+  }, []);
+
+  return (
+    <ContactFieldsProvider token={token}>
+      <FlowBuilder />
+    </ContactFieldsProvider>
+  );
+}

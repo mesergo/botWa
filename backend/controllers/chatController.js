@@ -1789,12 +1789,16 @@ export const respondToMessage = async (req, res) => {
       session.markModified('parameters');
 
       // Save to contact custom_field_values if flagged
-      if (varName && currentNode.data.saveToContact) {
-        Contact.findOneAndUpdate(
-          { user_id: session.user_id, phone: session.customer_phone },
-          { $set: { [`custom_field_values.${varName}`]: text } },
-          { upsert: true, new: true }
-        ).catch(err => console.error('[BOT] Failed to save contact field:', err));
+      if (currentNode.data.saveToContact) {
+        // contactFieldKey (field _id) takes precedence; fall back to varName for legacy flows
+        const contactKey = currentNode.data.contactFieldKey || varName;
+        if (contactKey) {
+          Contact.findOneAndUpdate(
+            { user_id: session.user_id, phone: session.customer_phone },
+            { $set: { [`custom_field_values.${contactKey}`]: text } },
+            { upsert: true, new: true }
+          ).catch(err => console.error('[BOT] Failed to save contact field:', err));
+        }
       }
 
       // Use sub-flow edges if the node lives inside a fixed_process

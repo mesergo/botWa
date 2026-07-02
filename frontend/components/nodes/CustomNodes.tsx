@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import BaseNode from './BaseNode';
 import { NodeType } from '../../types';
+import { useContactFields } from '../../context/ContactFieldsContext';
 
 const HighlightedText = ({ text, highlight, isCurrent }: { text: string; highlight: string; isCurrent: boolean }) => {
   if (!highlight.trim()) return <>{text}</>;
@@ -286,36 +287,77 @@ export const StartNode = (props: any) => (
   </div>
 );
 
-export const InputTextNode = (props: any) => (
-  <BaseNode id={props.id} title="קלט: טקסט" icon={<Type size={20} />} type={NodeType.INPUT_TEXT} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} isSearchMatch={props.data.isSearchMatch}>
-    <InputFieldWrapper label="שאלה מהבוט">
-      <SearchableInput value={props.data.label} onChange={(v: string) => props.data.onChange({ label: v })} placeholder="מה השם שלך?" searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
-    </InputFieldWrapper>
-    <InputFieldWrapper label="שם משתנה לאחסון">
-      <SearchableInput value={props.data.variableName} onChange={(v: string) => props.data.onChange({ variableName: v })} placeholder="user_name" searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
-    </InputFieldWrapper>
-    <div className="mb-3 p-1">
-      <div className="flex items-center justify-between">
-        <ValidationTypeSelector
-          value={props.data.validationType}
-          onChange={(v: string) => props.data.onChange({ validationType: v || undefined })}
-        />
-        <label className="text-[14px] font-bold text-slate-400 uppercase tracking-wider">סוג ולידציה</label>
+export const InputTextNode = (props: any) => {
+  const { fields: contactFields } = useContactFields();
+  const hasFields = contactFields.length > 0;
+
+  return (
+    <BaseNode id={props.id} title="קלט: טקסט" icon={<Type size={20} />} type={NodeType.INPUT_TEXT} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} isSearchMatch={props.data.isSearchMatch}>
+      <InputFieldWrapper label="שאלה מהבוט">
+        <SearchableInput value={props.data.label} onChange={(v: string) => props.data.onChange({ label: v })} placeholder="מה השם שלך?" searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
+      </InputFieldWrapper>
+      <InputFieldWrapper label="שם משתנה לאחסון">
+        <SearchableInput value={props.data.variableName} onChange={(v: string) => props.data.onChange({ variableName: v })} placeholder="user_name" searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
+      </InputFieldWrapper>
+      <div className="mb-3 p-1">
+        <div className="flex items-center justify-between">
+          <ValidationTypeSelector
+            value={props.data.validationType}
+            onChange={(v: string) => props.data.onChange({ validationType: v || undefined })}
+          />
+          <label className="text-[14px] font-bold text-slate-400 uppercase tracking-wider">סוג ולידציה</label>
+        </div>
       </div>
-    </div>
-    <div className="mb-2 p-1">
-      <div className="flex items-center justify-end gap-2">
-        <label className="text-[14px] font-bold text-slate-400 uppercase tracking-wider">שמור בפרטי איש קשר</label>
-        <input
-          type="checkbox"
-          className="w-4 h-4 cursor-pointer accent-blue-500"
-          checked={!!props.data.saveToContact}
-          onChange={(e) => props.data.onChange({ saveToContact: e.target.checked })}
-        />
+      <div className="mb-2 p-1">
+        <div className="flex items-center justify-end gap-2">
+          <label className="text-[14px] font-bold text-slate-400 uppercase tracking-wider">שמור בפרטי איש קשר</label>
+          <input
+            type="checkbox"
+            className="w-4 h-4 cursor-pointer accent-blue-500 disabled:opacity-40"
+            checked={!!props.data.saveToContact}
+            disabled={!hasFields}
+            title={!hasFields ? 'יש להגדיר שדות מוגדרים אישית בדף אנשי קשר תחילה' : undefined}
+            onChange={(e) => {
+              if (!e.target.checked) {
+                props.data.onChange({ saveToContact: false, contactFieldKey: undefined });
+              } else {
+                props.data.onChange({ saveToContact: true, contactFieldKey: undefined });
+              }
+            }}
+          />
+        </div>
+        {!hasFields && (
+          <p className="text-[11px] text-slate-400 text-right mt-1">
+            הגדר שדות בדף <strong>אנשי קשר</strong> → ניהול שדות
+          </p>
+        )}
+        {props.data.saveToContact && hasFields && (
+          <div className="mt-2 flex flex-col gap-1">
+            <label className="text-[12px] font-bold text-right" style={{ color: !props.data.contactFieldKey ? '#ef4444' : '#94a3b8' }}>
+              {!props.data.contactFieldKey ? '⚠ חובה לבחור שדה לשמירה' : 'בחר שדה לשמירה *'}
+            </label>
+            <select
+              className="w-full px-3 py-2 rounded-lg text-sm text-right outline-none focus:ring-2 bg-white font-semibold"
+              style={{
+                border: !props.data.contactFieldKey ? '2px solid #ef4444' : '1px solid #bfdbfe',
+                color: !props.data.contactFieldKey ? '#9ca3af' : '#334155',
+                boxShadow: !props.data.contactFieldKey ? '0 0 0 3px rgba(239,68,68,0.1)' : undefined,
+              }}
+              value={props.data.contactFieldKey ?? ''}
+              onChange={(e) => props.data.onChange({ contactFieldKey: e.target.value || undefined })}
+              dir="rtl"
+            >
+              <option value="" disabled>בחר שדה...</option>
+              {contactFields.map((f: any) => (
+                <option key={f._id} value={f._id}>{f.label}</option>
+              ))}
+            </select>
+          </div>
+        )}
       </div>
-    </div>
-  </BaseNode>
-);
+    </BaseNode>
+  );
+};
 
 export const InputDateNode = (props: any) => {
   const mode: 'date' | 'time' | 'datetime' = props.data.dateTimeMode || 'date';

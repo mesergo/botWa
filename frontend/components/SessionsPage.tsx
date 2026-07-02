@@ -4,6 +4,7 @@ import ImpersonationBanner from './ImpersonationBanner';
 import { FileUploader } from './FileUploader';
 import { usePermission } from '../hooks/usePermission';
 import AppNav from './AppNav';
+import { useContactFields } from '../context/ContactFieldsContext';
  
 interface Session {
   id: string;
@@ -84,6 +85,10 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
   // Template parameters modal
   const [showTemplateParamsModal, setShowTemplateParamsModal] = useState(false);
   const [templateParams, setTemplateParams] = useState<Record<string, any>>({});
+  // Full contact record (with custom_field_values) fetched when modal opens
+  const [contactRecord, setContactRecord] = useState<Record<string, any> | null>(null);
+
+  const { fields: contactFieldDefs } = useContactFields();
 
   // New conversation modal state
   const [showNewConvModal, setShowNewConvModal] = useState(false);
@@ -976,6 +981,18 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
       }
       setTemplateParams(initialParams);
       setShowTemplateParamsModal(true);
+      // Fetch full contact record so we can resolve contact-field values
+      if (selectedPhone && token) {
+        fetch(`${API_BASE}/contacts?search=${encodeURIComponent(selectedPhone)}&limit=1`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+          .then(r => r.ok ? r.json() : null)
+          .then(data => {
+            const rec = data?.contacts?.[0] ?? null;
+            setContactRecord(rec);
+          })
+          .catch(() => setContactRecord(null));
+      }
     }
   };
   
@@ -1152,7 +1169,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                   <p className="text-[9px] text-purple-400 font-black mb-0.5 uppercase tracking-widest">נציג</p>
                   {item.type === 'Image' && item.url && (
                     <img src={item.url} alt="תמונה" className="rounded-xl max-w-[200px] h-auto mb-2" />
-                  )}
+                  )} 
                   {item.type === 'Video' && item.url && (
                     <video src={item.url} controls className="rounded-xl max-w-[200px] mb-2" />
                   )}
@@ -1688,8 +1705,8 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 <div className="flex-1 flex flex-col items-center justify-center gap-3 text-slate-300">
                   <MessageSquare size={48} strokeWidth={1} />
                   <p className="text-base font-bold">אין שיחות לאיש קשר זה</p>
-                </div>
-              ) : (
+                </div> 
+              ) : ( 
                 /* Sessions ordered oldest (top) → newest (bottom) */
                 <div ref={chatScrollRef} className="flex-1 overflow-y-auto p-3" dir="rtl">
                   {phoneSessions.map(session => (
@@ -2061,22 +2078,78 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                         </div>
                         {matches.map((match: string, varIdx: number) => {
                           const varNum = match.match(/\d+/)?.[0];
+
+                          const baseFields = [
+                            { key: 'base:phone',        label: 'טלפון' },
+                            { key: 'base:full_name',     label: 'שם מלא' },
+                            { key: 'base:whatsapp_name', label: 'שם וואטסאפ' },
+                            { key: 'base:email',         label: 'כתובת מייל' },
+                          ];
+
+                          const resolveField = (optKey: string): string => {
+                            if (!contactRecord) return '';
+                            if (optKey.startsWith('base:')) return String(contactRecord[optKey.slice(5)] ?? '');
+                            if (optKey.startsWith('custom:')) return String(contactRecord.custom_field_values?.[optKey.slice(7)] ?? '');
+                            return '';
+                          };
+
+                          const hasContactFields = baseFields.length > 0 || contactFieldDefs.length > 0;
+
                           return (
                             <div key={varIdx}>
-                              <label className="block text-xs font-semibold text-slate-600 mb-1">
+                              <label className="block text-xs font-semibold text-slate-600 mb-1 text-right">
                                 {match} - משתנה מספר {varNum}
                               </label>
-                              <input
-                                type="text"
-                                value={templateParams.body?.[varIdx] || ''}
-                                onChange={(e) => {
-                                  const newBody = [...(templateParams.body || [])];
-                                  newBody[varIdx] = e.target.value;
-                                  setTemplateParams(prev => ({ ...prev, body: newBody }));
-                                }}
-                                placeholder={`הזן ערך ל-${match}`}
-                                className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-sky-500/20 focus:border-sky-400 outline-none"
-                              />
+                              <div className="flex items-center border border-slate-200 rounded-xl overflow-hidden focus-within:ring-2 focus-within:ring-sky-500/20 focus-within:border-sky-400 transition-all bg-white">
+                                <input
+                                  type="text"
+                                  dir="rtl"
+                                  value={templateParams.body?.[varIdx] || ''}
+                                  onChange={(e) => {
+                                    const newBody = [...(templateParams.body || [])];
+                                    newBody[varIdx] = e.target.value;
+                                    setTemplateParams(prev => ({ ...prev, body: newBody }));
+                                  }}
+                                  placeholder={`הזן ערך ל-${match}`}
+                                  className="flex-1 px-3 py-2 text-sm outline-none bg-transparent text-slate-800"
+                                />
+                                {hasContactFields && (
+                                  <div className="relative flex-shrink-0">
+                                    <select
+                                      dir="rtl"
+                                      className="appearance-none h-full px-2 py-2 bg-slate-50 border-r border-slate-200 text-slate-400 text-xs cursor-pointer hover:bg-indigo-50 hover:text-indigo-600 transition-colors outline-none pr-6 pl-1"
+                                      value=""
+                                      onChange={(e) => {
+                                        if (!e.target.value) return;
+                                        const resolved = resolveField(e.target.value);
+                                        const newBody = [...(templateParams.body || [])];
+                                        newBody[varIdx] = resolved;
+                                        setTemplateParams(prev => ({ ...prev, body: newBody }));
+                                        e.target.value = '';
+                                      }}
+                                      title="בחר שדה מאיש קשר"
+                                    >
+                                      <option value="">שדה מאיש קשר ▾</option>
+                                      <optgroup label="שדות בסיס">
+                                        {baseFields.map(f => (
+                                          <option key={f.key} value={f.key}>
+                                            {f.label}{contactRecord ? ` — ${resolveField(f.key) || '—'}` : ''}
+                                          </option>
+                                        ))}
+                                      </optgroup>
+                                      {contactFieldDefs.length > 0 && (
+                                        <optgroup label="שדות מוגדרים אישית">
+                                          {contactFieldDefs.map(f => (
+                                            <option key={f._id} value={`custom:${f._id}`}>
+                                              {f.label}{contactRecord ? ` — ${resolveField(`custom:${f._id}`) || '—'}` : ''}
+                                            </option>
+                                          ))}
+                                        </optgroup>
+                                      )}
+                                    </select>
+                                  </div>
+                                )}
+                              </div>
                             </div>
                           );
                         })}
