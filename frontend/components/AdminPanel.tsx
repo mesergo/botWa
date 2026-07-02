@@ -1989,7 +1989,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                         </div>
 
                          {/* Dialog360 Settings - Full Width */}
-                        <div className="col-span-12 bg-white p-8 rounded-3xl border border-slate-100 shadow-sm hover:shadow-md transition-shadow">
+                        {/* הוסר: שדה Bot ID לצורך שליחה לקבוצות - כעת הבוט נבחר אוטומטית לפי המספרים המחוברים לחשבון */}
+                        {/* <div className="col-span-12 bg-white p-8 rounded-3xl border border-slate-100 shadow-sm hover:shadow-md transition-shadow">
                             <h3 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-6 flex items-center gap-2 border-b border-slate-50 pb-4">
                                 <MessageSquare size={16} className="text-slate-400" /> הגדרות חיבור
                             </h3>
@@ -2013,7 +2014,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                                     </div>
                                 )}
                             </div>
-                        </div>
+                        </div> */}
 
                          {/* Right Column Layout */}
                         <div className="col-span-12 md:col-span-5 space-y-6 flex flex-col h-full">

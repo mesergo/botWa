@@ -4,6 +4,7 @@ import fetch from 'node-fetch';
 import Group from '../models/Group.js';
 import Contact from '../models/Contact.js';
 import User from '../models/User.js';
+import BotFlow from '../models/BotFlow.js';
 import GroupBroadcast from '../models/GroupBroadcast.js';
 import GroupRemovalLog from '../models/GroupRemovalLog.js';
 import { getEffectiveUserId } from '../middleware/auth.js';
@@ -299,12 +300,12 @@ const getBlockedPhones = async (userId) => {
 };
 
 // POST /api/groups/:id/send — enqueue a broadcast (returns immediately, processes in background)
-// Body: { message: string, isTemplate?: boolean, templateData?: {...} }
+// Body: { message: string, isTemplate?: boolean, templateData?: {...}, bot_id?: string }
 export const sendToGroup = async (req, res) => {
   try {
     const userId = getEffectiveUserId(req);
     const { id } = req.params;
-    const { message, isTemplate, templateData, media } = req.body || {};
+    const { message, isTemplate, templateData, media, bot_id } = req.body || {};
 
     const hasMedia = media && media.url && media.type;
     if (!isTemplate && !hasMedia && (!message || !String(message).trim())) {
@@ -349,7 +350,7 @@ export const sendToGroup = async (req, res) => {
     });
 
     // Fire & forget — process in background
-    processBroadcast(broadcast._id, userId, group, contacts, { isTemplate, templateData, msgText, media: hasMedia ? media : null })
+    processBroadcast(broadcast._id, userId, group, contacts, { isTemplate, templateData, msgText, media: hasMedia ? media : null, bot_id: bot_id || null })
       .catch(err => console.error('[groups.processBroadcast] background error:', err));
   } catch (err) {
     console.error('[groups.sendToGroup] error:', err);
@@ -359,20 +360,76 @@ export const sendToGroup = async (req, res) => {
 
 // Background worker: sends one-by-one and updates progress on the broadcast record
 async function processBroadcast(broadcastId, userId, group, contacts, opts) {
-  const { isTemplate, templateData, msgText, media } = opts;
+  const { isTemplate, templateData, msgText, media, bot_id } = opts;
+  const TAG = `[broadcast:${broadcastId}]`;
   try {
     await GroupBroadcast.findByIdAndUpdate(broadcastId, { status: 'running', started_at: new Date() });
+    console.log(`${TAG} ▶ Starting broadcast — group="${group.name}" contacts=${contacts.length} bot_id=${bot_id || '(auto)'}`);
 
     const blocked = await getBlockedPhones(userId);
-    const user = await User.findById(userId);
-    let endpoint, waToken;
-    if (user && user.dialog360_bot_id) {
-      endpoint = `dialog360/${user.dialog360_bot_id}`;
-      waToken = crypto.createHash('sha1').update(user.dialog360_bot_id + 'moomoo').digest('hex');
+    console.log(`${TAG} 🚫 Blocked phones count: ${blocked.size}`);
+
+    // ── Resolve endpoint from bot ────────────────────────────────────────
+    let endpoint = null;
+    let waToken = null;
+
+    if (bot_id) {
+      // Frontend passed a specific bot — use it directly
+      const bot = await BotFlow.findOne({ _id: bot_id, user_id: userId });
+      if (bot && bot.endpoint) {
+        // Normalize: if stored without prefix (e.g. bare ID), prepend dialog360/
+        endpoint = bot.endpoint.includes('/') ? bot.endpoint : `dialog360/${bot.endpoint}`;
+        const endpointId = endpoint.split('/').pop();
+        waToken = crypto.createHash('sha1').update(endpointId + 'moomoo').digest('hex');
+        console.log(`${TAG} ✅ Bot resolved by bot_id: name="${bot.name}" endpoint="${endpoint}" phone="${bot.display_phone_number}"`);
+      } else {
+        console.warn(`${TAG} ⚠️ bot_id=${bot_id} found in DB=${!!bot}, has endpoint=${!!(bot && bot.endpoint)}`);
+      }
     } else {
-      endpoint = null;
-      waToken = null;
+      // Auto-detect: find bots that have an endpoint set
+      const userBots = await BotFlow.find({ user_id: userId, endpoint: { $nin: ['', null] } });
+      console.log(`${TAG} 🔍 Auto-detect bots with endpoint: found ${userBots.length}`, userBots.map(b => ({ name: b.name, endpoint: b.endpoint, phone: b.display_phone_number })));
+      if (userBots.length === 1) {
+        const bot = userBots[0];
+        // Normalize: if stored without prefix, prepend dialog360/
+        endpoint = bot.endpoint.includes('/') ? bot.endpoint : `dialog360/${bot.endpoint}`;
+        const endpointId = endpoint.split('/').pop();
+        waToken = crypto.createHash('sha1').update(endpointId + 'moomoo').digest('hex');
+        console.log(`${TAG} ✅ Auto-selected bot: name="${bot.name}" endpoint="${endpoint}" phone="${bot.display_phone_number}"`);
+      } else if (userBots.length > 1) {
+        console.warn(`${TAG} ⚠️ Multiple bots with endpoints found for user ${userId}; no bot_id specified. Aborting.`);
+        await GroupBroadcast.findByIdAndUpdate(broadcastId, {
+          status: 'failed',
+          completed_at: new Date(),
+          errors: [{ error: 'Multiple bots found — please select a specific bot from the UI.' }],
+        });
+        return;
+      } else {
+        console.warn(`${TAG} ⚠️ No bots with endpoint found for user ${userId}. All bots:`, (await BotFlow.find({ user_id: userId }).select('name endpoint display_phone_number')));
+      }
+      // If 0 bots with endpoint: fall back to legacy dialog360_bot_id (kept for backward compat)
+      /* Legacy fallback - disabled: use bot endpoint instead
+      if (!endpoint) {
+        const user = await User.findById(userId);
+        if (user && user.dialog360_bot_id) {
+          endpoint = `dialog360/${user.dialog360_bot_id}`;
+          waToken = crypto.createHash('sha1').update(user.dialog360_bot_id + 'moomoo').digest('hex');
+        }
+      }
+      */
     }
+
+    if (!endpoint) {
+      console.error(`${TAG} ❌ No endpoint resolved — cannot send. Marking broadcast as failed.`);
+      await GroupBroadcast.findByIdAndUpdate(broadcastId, {
+        status: 'failed',
+        completed_at: new Date(),
+        errors: [{ error: 'No WhatsApp endpoint configured for this account. Set an endpoint on the bot.' }],
+      });
+      return;
+    }
+
+    console.log(`${TAG} 📡 Will send via: https://wa.message.co.il/api/${endpoint}/send`);
 
     let sent = 0;
     let failed = 0;
@@ -386,9 +443,11 @@ async function processBroadcast(broadcastId, userId, group, contacts, opts) {
       const contactName = contact.full_name || contact.whatsapp_name || '';
 
       if (!normalized) {
+        console.log(`${TAG} [${processed + 1}/${contacts.length}] ⏭ SKIP phone="${contact.phone}" reason=invalid_phone`);
         skipped++;
         recipients.push({ phone: contact.phone, name: contactName, status: 'skipped', reason: 'invalid_phone' });
       } else if (blocked.has(normalized)) {
+        console.log(`${TAG} [${processed + 1}/${contacts.length}] ⏭ SKIP phone="${normalized}" reason=blocklist`);
         skipped++;
         recipients.push({ phone: contact.phone, name: contactName, status: 'skipped', reason: 'blocklist' });
       } else {
@@ -441,8 +500,11 @@ async function processBroadcast(broadcastId, userId, group, contacts, opts) {
           waBody = { phone: normalized, text: msgText, fromMe: 1 };
         }
 
+        const sendUrl = `https://wa.message.co.il/api/${endpoint}/send`;
+        console.log(`${TAG} [${processed + 1}/${contacts.length}] 📤 POST ${sendUrl} → body=${JSON.stringify(waBody).substring(0, 300)}`);
+
         try {
-          const waRes = await fetch(`https://wa.message.co.il/api/${endpoint}/send`, {
+          const waRes = await fetch(sendUrl, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json; charset=utf-8',
@@ -451,16 +513,18 @@ async function processBroadcast(broadcastId, userId, group, contacts, opts) {
             },
             body: JSON.stringify(waBody),
           });
+          const responseText = await waRes.text().catch(() => '');
+          console.log(`${TAG} [${processed + 1}/${contacts.length}] ← HTTP ${waRes.status} body=${responseText.substring(0, 500)}`);
           if (waRes.ok) {
             sent++;
             recipients.push({ phone: contact.phone, name: contactName, status: 'sent' });
           } else {
             failed++;
-            const txt = await waRes.text().catch(() => '');
-            errors.push({ phone: contact.phone, status: waRes.status, error: txt.substring(0, 200) });
-            recipients.push({ phone: contact.phone, name: contactName, status: 'failed', error: txt.substring(0, 200) });
+            errors.push({ phone: contact.phone, status: waRes.status, error: responseText.substring(0, 200) });
+            recipients.push({ phone: contact.phone, name: contactName, status: 'failed', error: responseText.substring(0, 200) });
           }
         } catch (e) {
+          console.error(`${TAG} [${processed + 1}/${contacts.length}] ❌ fetch error: ${e.message}`);
           failed++;
           errors.push({ phone: contact.phone, error: e.message });
           recipients.push({ phone: contact.phone, name: contactName, status: 'failed', error: e.message });
@@ -480,6 +544,7 @@ async function processBroadcast(broadcastId, userId, group, contacts, opts) {
       }
     }
 
+    console.log(`${TAG} ✅ Broadcast complete — sent=${sent} failed=${failed} skipped=${skipped} total=${contacts.length}`);
     await GroupBroadcast.findByIdAndUpdate(broadcastId, {
       status: 'completed',
       processed,
@@ -491,7 +556,7 @@ async function processBroadcast(broadcastId, userId, group, contacts, opts) {
       completed_at: new Date(),
     });
   } catch (err) {
-    console.error('[groups.processBroadcast] error:', err);
+    console.error(`${TAG} 💥 Unexpected error:`, err);
     await GroupBroadcast.findByIdAndUpdate(broadcastId, {
       status: 'failed',
       completed_at: new Date(),

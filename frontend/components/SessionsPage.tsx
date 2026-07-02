@@ -70,6 +70,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
   const [agentSending, setAgentSending] = useState(false);
   const [agentWaFailed, setAgentWaFailed] = useState(false);
   const [agentWaError, setAgentWaError] = useState<string | null>(null);
+  const [agentWaRetryable, setAgentWaRetryable] = useState(false);
   const [attachedFile, setAttachedFile] = useState<{type: 'image'|'video'|'document'; url: string; name: string} | null>(null);
   const [fileUploadError, setFileUploadError] = useState<string | null>(null);
   const [fileUploading, setFileUploading] = useState(false);
@@ -659,7 +660,8 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
               if (!msgData.waSent) {
                 setAgentWaFailed(true);
                 setAgentWaError(msgData.waError || null);
-                setTimeout(() => { setAgentWaFailed(false); setAgentWaError(null); }, 8000);
+                setAgentWaRetryable(msgData.waRetryable === true);
+                setTimeout(() => { setAgentWaFailed(false); setAgentWaError(null); setAgentWaRetryable(false); }, 12000);
               }
             }
           } catch (msgError) {
@@ -808,7 +810,8 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
           } else {
             setAgentWaFailed(true);
             setAgentWaError(data.waError || null);
-            setTimeout(() => { setAgentWaFailed(false); setAgentWaError(null); }, 8000);
+            setAgentWaRetryable(data.waRetryable === true);
+            setTimeout(() => { setAgentWaFailed(false); setAgentWaError(null); setAgentWaRetryable(false); }, 12000);
           }
         }
       } catch (e) {
@@ -888,7 +891,8 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
         if (!data.waSent) {
           setAgentWaFailed(true);
           setAgentWaError(data.waError || null);
-          setTimeout(() => { setAgentWaFailed(false); setAgentWaError(null); }, 8000);
+          setAgentWaRetryable(data.waRetryable === true);
+          setTimeout(() => { setAgentWaFailed(false); setAgentWaError(null); setAgentWaRetryable(false); }, 12000);
         }
       }
     } catch (e) {
@@ -968,7 +972,14 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
       if (template.components && Array.isArray(template.components)) {
         template.components.forEach((comp: any) => {
           if (comp.type === 'HEADER' && ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(comp.format)) {
-            initialParams.header = { type: comp.format.toLowerCase(), url: '' };
+            // Pre-fill with the template's example image so it's sent automatically if the user doesn't upload a new one
+            const exampleUrl: string =
+              comp.example?.header_url?.[0] ||
+              comp.example?.header_url ||
+              (Array.isArray(comp.example?.header_handle) ? comp.example.header_handle[0] : undefined) ||
+              comp.example?.header_handle ||
+              '';
+            initialParams.header = { type: comp.format.toLowerCase(), url: exampleUrl };
           }
           if (comp.type === 'BODY' && comp.text) {
             // Extract {{1}}, {{2}} etc from body text
@@ -1687,12 +1698,13 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 <div className="flex-shrink-0 px-6 py-2.5 bg-red-50 border-b border-red-200 flex items-center gap-3" dir="rtl">
                   <div className="w-2 h-2 rounded-full bg-red-500 flex-shrink-0" />
                   <p className="text-xs font-black text-red-700 flex-1">
-                    ⚠️ ההודעה נשמרה בהיסטוריה אך <strong>לא נשלחה ללקוח</strong> — בעיה ב-WhatsApp API
-                    {agentWaError && (
-                      <span className="font-normal text-red-500 mr-1">({agentWaError.length > 80 ? agentWaError.slice(0, 80) + '…' : agentWaError})</span>
-                    )}
+                    ⚠️ ההודעה נשמרה בהיסטוריה אך <strong>לא נשלחה ללקוח</strong>
+                    {agentWaRetryable
+                      ? <span className="font-normal text-red-600"> — שגיאת שער (502): השרת עמוס זמנית. <span className="underline cursor-pointer" onClick={() => { setAgentWaFailed(false); setAgentWaError(null); setAgentWaRetryable(false); sendAgentMsg(); }}>נסה שוב</span></span>
+                      : <span className="font-normal text-red-500 mr-1"> — {agentWaError ? (agentWaError.length > 100 ? agentWaError.slice(0, 100) + '…' : agentWaError) : 'בעיה ב-WhatsApp API'}</span>
+                    }
                   </p>
-                  <button onClick={() => { setAgentWaFailed(false); setAgentWaError(null); }} className="text-red-400 hover:text-red-600">
+                  <button onClick={() => { setAgentWaFailed(false); setAgentWaError(null); setAgentWaRetryable(false); }} className="text-red-400 hover:text-red-600">
                     <X size={14} />
                   </button>
                 </div>

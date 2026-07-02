@@ -1601,7 +1601,7 @@ export const respondToMessage = async (req, res) => {
               if (menuNode.data.variableName && matchedMenuIdx !== -1) {
                 interruptParams[menuNode.data.variableName] = text.trim();
               }
-              interruptParams['open'] = text.trim();
+              interruptParams['waOpen'] = text.trim();
               session.parameters = interruptParams;
               session.markModified('parameters');
             }
@@ -1637,7 +1637,7 @@ export const respondToMessage = async (req, res) => {
             session.waiting_text_input = false;
             {
               const interruptParams = session.parameters || {};
-              interruptParams['open'] = text.trim();
+              interruptParams['waOpen'] = text.trim();
               session.parameters = interruptParams;
               session.markModified('parameters');
             }
@@ -1735,7 +1735,7 @@ export const respondToMessage = async (req, res) => {
 
       // Default to first option (כניסה) if no match
       const finalIdx = matchedIdx !== -1 ? matchedIdx : 0;
-      params['open'] = text.trim();
+      params['waOpen'] = text.trim();
       session.parameters = params;
       session.markModified('parameters');
       const nextNodeId = findNextNode(currentNode.id, flowData.edges, `option-${finalIdx}`);
@@ -1784,7 +1784,7 @@ export const respondToMessage = async (req, res) => {
       if (varName) {
         params[varName] = text;
       }
-      params['open'] = text;
+      params['waOpen'] = text;
       session.parameters = params;
       session.markModified('parameters');
 
@@ -1875,7 +1875,7 @@ export const respondToMessage = async (req, res) => {
         if (currentNode.data.variableName) {
           params[currentNode.data.variableName] = selectedValue;
         }
-        params['open'] = selectedValue;
+        params['waOpen'] = selectedValue;
         session.parameters = params;
         session.markModified('parameters');
 
@@ -1906,7 +1906,7 @@ export const respondToMessage = async (req, res) => {
         console.log(`[SUB-FLOW]   no match for "${selectedValue}" → defaultNextId=${defaultNextId || '(none)'}`);
         if (defaultNextId) {
           console.log(`[SUB-FLOW]   routing to option-default → ${defaultNextId}`);
-          params['open'] = selectedValue;
+          params['waOpen'] = selectedValue;
           session.parameters = params;
           session.markModified('parameters');
           messages = await walkChain(defaultNextId, menuActiveNodes, menuActiveEdges, session, session.flow_id, req);
@@ -1977,7 +1977,7 @@ export const respondToMessage = async (req, res) => {
         }
       }
 
-      params['open'] = text.trim();
+      params['waOpen'] = text.trim();
       session.parameters = params;
       session.markModified('parameters');
       const finalIdx = matchedIdx !== -1 ? matchedIdx : 0;

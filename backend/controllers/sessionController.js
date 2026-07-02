@@ -1094,21 +1094,13 @@ export const sendAgentMessage = async (req, res) => {
         if (templateData.components && Array.isArray(templateData.components)) {
           const headerComponent = templateData.components.find(c => c.type === 'HEADER');
           if (headerComponent) {
-            if (headerComponent.format === 'IMAGE' && headerComponent.example?.header_handle) {
-              waBody.header = [{
-                type: 'image',
-                image: { link: headerComponent.example.header_handle[0] || '' }
-              }];
-            } else if (headerComponent.format === 'VIDEO' && headerComponent.example?.header_handle) {
-              waBody.header = [{
-                type: 'video',
-                video: { link: headerComponent.example.header_handle[0] || '' }
-              }];
-            } else if (headerComponent.format === 'DOCUMENT' && headerComponent.example?.header_handle) {
-              waBody.header = [{
-                type: 'document',
-                document: { link: headerComponent.example.header_handle[0] || '' }
-              }];
+            const ex = headerComponent.example || {};
+            const exLink = (Array.isArray(ex.header_handle) ? ex.header_handle[0] : ex.header_handle)
+                        || (Array.isArray(ex.header_url)    ? ex.header_url[0]    : ex.header_url)
+                        || '';
+            if (['IMAGE', 'VIDEO', 'DOCUMENT'].includes(headerComponent.format) && exLink) {
+              const mediaType = headerComponent.format.toLowerCase();
+              waBody.header = [{ type: mediaType, [mediaType]: { link: exLink } }];
             }
           }
         }
@@ -1117,11 +1109,14 @@ export const sendAgentMessage = async (req, res) => {
       if (!waBody.header && templateData.components && Array.isArray(templateData.components)) {
         const headerComp = templateData.components.find(c => c.type === 'HEADER');
         if (headerComp && ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(headerComp.format)) {
-          const handles = headerComp.example?.header_handle;
-          if (handles && handles.length > 0) {
+          const ex = headerComp.example || {};
+          const exLink = (Array.isArray(ex.header_handle) ? ex.header_handle[0] : ex.header_handle)
+                      || (Array.isArray(ex.header_url)    ? ex.header_url[0]    : ex.header_url)
+                      || '';
+          if (exLink) {
             const mediaType = headerComp.format.toLowerCase();
-            waBody.header = [{ type: mediaType, [mediaType]: { link: handles[0] } }];
-            console.log(`[sendAgentMessage] ⚠️ No header URL in params — using template example: ${handles[0]}`);
+            waBody.header = [{ type: mediaType, [mediaType]: { link: exLink } }];
+            console.log(`[sendAgentMessage] ⚠️ No header URL in params — using template example: ${exLink}`);
           }
         }
       }
@@ -1130,33 +1125,57 @@ export const sendAgentMessage = async (req, res) => {
 
     let waSent = false;
     let waError = null;
+    let waRetryable = false;
 
     if (isTemplate && templateData) {
       // Templates use a different body structure — send directly
-      console.log(`[sendAgentMessage] 📤 Sending TEMPLATE | endpoint=${endpoint} | phone=${normalizedPhone}`);
-      console.log(`[sendAgentMessage] 📤 Body:`, JSON.stringify(waBody, null, 2));
-      try {
-        const waRes = await fetch(`https://wa.message.co.il/api/${endpoint}/send`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json; charset=utf-8',
-            'Accept': 'application/json',
-            token: waToken
-          },
-          body: JSON.stringify(waBody)
-        });
-        if (waRes.ok) {
-          waSent = true;
-          let responseBody = '';
-          try { responseBody = await waRes.text(); } catch (_) {}
-          console.log(`[sendAgentMessage] ✅ WhatsApp OK | phone=${normalizedPhone} | status=${waRes.status} | response=${responseBody}`);
-        } else {
-          waError = `HTTP ${waRes.status}: ${await waRes.text()}`;
-          console.error(`[sendAgentMessage] ❌ WhatsApp FAILED | phone=${normalizedPhone} | ${waError}`);
+      const WA_SEND_URL = `https://wa.message.co.il/api/${endpoint}/send`;
+      const MAX_TEMPLATE_RETRIES = 2;
+      const RETRY_DELAY_MS = 3000;
+      for (let attempt = 0; attempt <= MAX_TEMPLATE_RETRIES; attempt++) {
+        if (attempt > 0) {
+          console.log(`[sendAgentMessage] ⏳ Retry ${attempt}/${MAX_TEMPLATE_RETRIES} in ${RETRY_DELAY_MS / 1000}s...`);
+          await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
         }
-      } catch (waErr) {
-        waError = waErr.message;
-        console.error(`[sendAgentMessage] ❌ WhatsApp exception:`, waErr.message);
+        console.log(`\n${'─'.repeat(60)}`);
+        console.log(`[sendAgentMessage] 📤 ATTEMPT ${attempt + 1}/${MAX_TEMPLATE_RETRIES + 1}`);
+        console.log(`[sendAgentMessage] 📤 URL:     ${WA_SEND_URL}`);
+        console.log(`[sendAgentMessage] 📤 TOKEN:   ${waToken}`);
+        console.log(`[sendAgentMessage] 📤 PHONE:   ${normalizedPhone}`);
+        console.log(`[sendAgentMessage] 📤 PAYLOAD:\n${JSON.stringify(waBody, null, 2)}`);
+        console.log(`${'─'.repeat(60)}`);
+        try {
+          const waRes = await fetch(WA_SEND_URL, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json; charset=utf-8',
+              'Accept': 'application/json',
+              token: waToken
+            },
+            body: JSON.stringify(waBody)
+          });
+          const responseBody = await waRes.text().catch(() => '');
+          console.log(`[sendAgentMessage] ⬅️  RESPONSE HTTP ${waRes.status} | body: ${responseBody}`);
+          if (waRes.ok) {
+            waSent = true;
+            waError = null;
+            waRetryable = false;
+            console.log(`[sendAgentMessage] ✅ WhatsApp OK | attempt=${attempt + 1} | phone=${normalizedPhone}`);
+            break;
+          } else {
+            let errorData = null;
+            try { errorData = JSON.parse(responseBody); } catch (_) {}
+            waRetryable = errorData?.retryable === true || waRes.status === 502 || waRes.status === 503 || waRes.status === 504;
+            waError = `HTTP ${waRes.status}: ${responseBody}`;
+            console.error(`[sendAgentMessage] ❌ WhatsApp FAILED | attempt=${attempt + 1}/${MAX_TEMPLATE_RETRIES + 1} | phone=${normalizedPhone} | retryable=${waRetryable} | status=${waRes.status}`);
+            if (!waRetryable || attempt >= MAX_TEMPLATE_RETRIES) break;
+          }
+        } catch (waErr) {
+          waError = waErr.message;
+          waRetryable = false;
+          console.error(`[sendAgentMessage] ❌ WhatsApp exception | attempt=${attempt + 1}:`, waErr.message);
+          break; // Network-level errors — don't retry
+        }
       }
     } else {
       // Text or media: use shared whatsappSender utility
@@ -1268,7 +1287,7 @@ export const sendAgentMessage = async (req, res) => {
     );
     eventBus.emit('session:update', { userId: String(getEffectiveUserId(req)), phone: String(session.sender || session.customer_phone || '') });
 
-    res.json({ success: true, waSent, waError, created, historyEntry, status: newStatus });
+    res.json({ success: true, waSent, waError, waRetryable, created, historyEntry, status: newStatus });
   } catch (err) {
     console.error('sendAgentMessage error:', err);
     res.status(500).json({ error: err.message });
@@ -1347,11 +1366,14 @@ export const sendTemplateToPhone = async (req, res) => {
     if (!waBody.header && templateData.components && Array.isArray(templateData.components)) {
       const headerComp = templateData.components.find(c => c.type === 'HEADER');
       if (headerComp && ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(headerComp.format)) {
-        const handles = headerComp.example?.header_handle;
-        if (handles && handles.length > 0) {
+        const ex = headerComp.example || {};
+        const exLink = (Array.isArray(ex.header_handle) ? ex.header_handle[0] : ex.header_handle)
+                    || (Array.isArray(ex.header_url)    ? ex.header_url[0]    : ex.header_url)
+                    || '';
+        if (exLink) {
           const mediaType = headerComp.format.toLowerCase();
-          waBody.header = [{ type: mediaType, [mediaType]: { link: handles[0] } }];
-          console.log(`[sendTemplateToPhone] ⚠️ No header URL provided — using template example: ${handles[0]}`);
+          waBody.header = [{ type: mediaType, [mediaType]: { link: exLink } }];
+          console.log(`[sendTemplateToPhone] ⚠️ No header URL provided — using template example: ${exLink}`);
         } else {
           console.warn(`[sendTemplateToPhone] ⚠️ Template requires ${headerComp.format} header but no URL and no example available`);
         }
@@ -1542,21 +1564,13 @@ export const sendAdminMessageToSession = async (req, res) => {
         if (templateData.components && Array.isArray(templateData.components)) {
           const headerComponent = templateData.components.find(c => c.type === 'HEADER');
           if (headerComponent) {
-            if (headerComponent.format === 'IMAGE' && headerComponent.example?.header_handle) {
-              waBody.header = [{
-                type: 'image',
-                image: { link: headerComponent.example.header_handle[0] || '' }
-              }];
-            } else if (headerComponent.format === 'VIDEO' && headerComponent.example?.header_handle) {
-              waBody.header = [{
-                type: 'video',
-                video: { link: headerComponent.example.header_handle[0] || '' }
-              }];
-            } else if (headerComponent.format === 'DOCUMENT' && headerComponent.example?.header_handle) {
-              waBody.header = [{
-                type: 'document',
-                document: { link: headerComponent.example.header_handle[0] || '' }
-              }];
+            const ex = headerComponent.example || {};
+            const exLink = (Array.isArray(ex.header_handle) ? ex.header_handle[0] : ex.header_handle)
+                        || (Array.isArray(ex.header_url)    ? ex.header_url[0]    : ex.header_url)
+                        || '';
+            if (['IMAGE', 'VIDEO', 'DOCUMENT'].includes(headerComponent.format) && exLink) {
+              const mediaType = headerComponent.format.toLowerCase();
+              waBody.header = [{ type: mediaType, [mediaType]: { link: exLink } }];
             }
           }
         }
@@ -1565,11 +1579,14 @@ export const sendAdminMessageToSession = async (req, res) => {
       if (!waBody.header && templateData.components && Array.isArray(templateData.components)) {
         const headerComp = templateData.components.find(c => c.type === 'HEADER');
         if (headerComp && ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(headerComp.format)) {
-          const handles = headerComp.example?.header_handle;
-          if (handles && handles.length > 0) {
+          const ex = headerComp.example || {};
+          const exLink = (Array.isArray(ex.header_handle) ? ex.header_handle[0] : ex.header_handle)
+                      || (Array.isArray(ex.header_url)    ? ex.header_url[0]    : ex.header_url)
+                      || '';
+          if (exLink) {
             const mediaType = headerComp.format.toLowerCase();
-            waBody.header = [{ type: mediaType, [mediaType]: { link: handles[0] } }];
-            console.log(`[sendAdminMessageToSession] ⚠️ No header URL in params — using template example: ${handles[0]}`);
+            waBody.header = [{ type: mediaType, [mediaType]: { link: exLink } }];
+            console.log(`[sendAdminMessageToSession] ⚠️ No header URL in params — using template example: ${exLink}`);
           }
         }
       }

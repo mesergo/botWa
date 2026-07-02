@@ -115,6 +115,12 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
   const [templateSearch, setTemplateSearch] = useState('');
   const [showTemplatePicker, setShowTemplatePicker] = useState(false);
 
+  // Bot selector for broadcast
+  interface SendBot { id: string; name: string; display_phone_number: string; endpoint: string; }
+  const [sendBots, setSendBots] = useState<SendBot[]>([]);
+  const [sendBotsLoading, setSendBotsLoading] = useState(false);
+  const [selectedSendBotId, setSelectedSendBotId] = useState<string>('');
+
   // Broadcast history
   const [activeTab, setActiveTab] = useState<'members' | 'history' | 'removals'>('members');
   const [broadcasts, setBroadcasts] = useState<any[]>([]);
@@ -340,6 +346,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
     setSendResult(null);
     try {
       const body: any = { message };
+      if (selectedSendBotId) body.bot_id = selectedSendBotId;
       if (usingTemplate) {
         body.isTemplate = true;
         body.templateData = {
@@ -519,6 +526,18 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
     setTemplateParams({});
     setSendText('');
     if (templates.length === 0) fetchTemplates();
+    // Fetch bots with endpoints for number selection
+    setSendBotsLoading(true);
+    setSelectedSendBotId('');
+    fetch(`${API_BASE}/bots`, { headers: authHeader })
+      .then(r => r.ok ? r.json() : [])
+      .then((bots: any[]) => {
+        const eligible = (Array.isArray(bots) ? bots : []).filter((b: any) => b.endpoint && b.display_phone_number);
+        setSendBots(eligible);
+        if (eligible.length === 1) setSelectedSendBotId(eligible[0].id);
+      })
+      .catch(() => setSendBots([]))
+      .finally(() => setSendBotsLoading(false));
   };
 
   // ── Render helpers ──────────────────────────────────────────────────────
@@ -1037,6 +1056,52 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                 ההודעה תישלח אל {selectedGroup.contacts.length} אנשי קשר. אנשי קשר שנמצאים ברשימת ההסרה יסוננו אוטומטית.
               </p>
 
+              {/* Bot / phone number selector */}
+              {sendBotsLoading ? (
+                <div className="mb-4 flex items-center gap-2 text-xs font-semibold text-slate-400">
+                  <div className="animate-spin w-4 h-4 border-2 border-slate-200 border-t-blue-500 rounded-full" />
+                  טוען מספרים מחוברים...
+                </div>
+              ) : sendBots.length === 0 ? (
+                <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs font-bold text-amber-700">
+                  ⚠️ לא נמצאו מספרים מחוברים עם endpoint מוגדר. ודא שהבוט מחובר ויש לו endpoint.
+                </div>
+              ) : sendBots.length === 1 ? (
+                <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-xl text-xs font-bold text-green-700 flex items-center gap-2">
+                  <Phone size={14} /> ישלח מ: {sendBots[0].display_phone_number} ({sendBots[0].name})
+                </div>
+              ) : (
+                <div className="mb-4">
+                  <label className="text-xs font-black text-slate-500 mb-2 block">בחר מספר שממנו תישלח ההודעה:</label>
+                  <div className="space-y-2">
+                    {sendBots.map(bot => (
+                      <label
+                        key={bot.id}
+                        className={`flex items-center gap-3 px-4 py-3 rounded-xl border cursor-pointer transition-colors ${
+                          selectedSendBotId === bot.id
+                            ? 'bg-blue-50 border-blue-400'
+                            : 'bg-white border-slate-200 hover:bg-slate-50'
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="sendBot"
+                          value={bot.id}
+                          checked={selectedSendBotId === bot.id}
+                          onChange={() => setSelectedSendBotId(bot.id)}
+                          className="accent-blue-600"
+                        />
+                        <div className="flex items-center gap-2 min-w-0">
+                          <Phone size={15} className="text-green-600 flex-shrink-0" />
+                          <span className="text-sm font-bold text-slate-900">{bot.display_phone_number}</span>
+                          <span className="text-xs text-slate-400 truncate">— {bot.name}</span>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Template chooser */}
               <div className="mb-4">
                 <div className="flex items-center justify-between mb-2">
@@ -1205,7 +1270,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
               >סגור</button>
               <button
                 onClick={submitSend}
-                disabled={sending || (!selectedTemplate && !mediaUrl && !sendText.trim())}
+                disabled={sending || (!selectedTemplate && !mediaUrl && !sendText.trim()) || (sendBots.length > 1 && !selectedSendBotId)}
                 className="flex items-center gap-2 px-6 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-xl font-bold text-sm disabled:opacity-50"
               >
                 <Send size={15} />

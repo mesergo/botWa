@@ -91,19 +91,25 @@ export const pushMessagesToWhatsApp = async (phone, messages, user = null, bot =
   console.log(`[WA-PUSH] 📞 Sending to phone=${normalizedPhone} via endpoint=${endpoint}${bot?.endpoint ? ' (bot.endpoint)' : user?.dialog360_bot_id ? ' (user dialog360_bot_id)' : ' (fallback)'}`);
 
   const sendOne = async (body) => {
+    const fullPayload = { ...body, phone: normalizedPhone, fromMe: 1 };
+    const url = `https://wa.message.co.il/api/${endpoint}/send`;
+    console.log(`[WA-PUSH] 📤 REQUEST → ${url}`);
+    console.log(`[WA-PUSH] 📤 TOKEN: ${waToken}`);
+    console.log(`[WA-PUSH] 📤 PAYLOAD:\n${JSON.stringify(fullPayload, null, 2)}`);
     try {
-      const res = await fetch(`https://wa.message.co.il/api/${endpoint}/send`, {
+      const res = await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json; charset=utf-8',
           'Accept': 'application/json',
           'token': waToken,
         },
-        body: JSON.stringify({ ...body, phone: normalizedPhone, fromMe: 1 }),
+        body: JSON.stringify(fullPayload),
       });
+      const respText = await res.text().catch(() => '');
+      console.log(`[WA-PUSH] ⬅️  RESPONSE HTTP ${res.status} | body: ${respText}`);
       if (!res.ok) {
-        const errText = await res.text().catch(() => '');
-        console.error(`[WA-PUSH] ❌ HTTP ${res.status} | body: ${JSON.stringify(body).substring(0, 100)} | resp: ${errText.substring(0, 200)}`);
+        console.error(`[WA-PUSH] ❌ HTTP ${res.status} | resp: ${respText}`);
         return false;
       }
       const kind = body.image ? 'image' : body.video ? 'video' : body.file ? 'file' : body.buttons ? 'buttons' : 'text';
