@@ -2142,22 +2142,16 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                                       title="בחר שדה מאיש קשר"
                                     >
                                       <option value="">שדה מאיש קשר ▾</option>
-                                      <optgroup label="שדות בסיס">
-                                        {baseFields.map(f => (
-                                          <option key={f.key} value={f.key}>
-                                            {f.label}{contactRecord ? ` — ${resolveField(f.key) || '—'}` : ''}
-                                          </option>
-                                        ))}
-                                      </optgroup>
-                                      {contactFieldDefs.length > 0 && (
-                                        <optgroup label="שדות מוגדרים אישית">
-                                          {contactFieldDefs.map(f => (
-                                            <option key={f._id} value={`custom:${f._id}`}>
-                                              {f.label}{contactRecord ? ` — ${resolveField(`custom:${f._id}`) || '—'}` : ''}
-                                            </option>
-                                          ))}
-                                        </optgroup>
-                                      )}
+                                      {baseFields.map(f => (
+                                        <option key={f.key} value={f.key}>
+                                          {f.label}{contactRecord ? ` — ${resolveField(f.key) || '—'}` : ''}
+                                        </option>
+                                      ))}
+                                      {contactFieldDefs.map(f => (
+                                        <option key={f._id} value={`custom:${f._id}`}>
+                                          {f.label}{contactRecord ? ` — ${resolveField(`custom:${f._id}`) || '—'}` : ''}
+                                        </option>
+                                      ))}
                                     </select>
                                   </div>
                                 )}

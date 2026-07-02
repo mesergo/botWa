@@ -1430,7 +1430,7 @@ export const respondToMessage = async (req, res) => {
         sender,
         current_node_id: autoResponseNode.id,
         is_active: true,
-        parameters: { ...botParamsObj, waPhone: sender, ...(waSimulatorId ? { _simulatorId: waSimulatorId } : {}) },
+        parameters: { ...botParamsObj, waPhone: sender, waName: name || '', ...(waSimulatorId ? { _simulatorId: waSimulatorId } : {}) },
         process_history: []
       });
       

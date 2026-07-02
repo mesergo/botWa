@@ -248,9 +248,14 @@ const FlowBuilder: React.FC = () => {
   }, [viewMode]);
 
   // --- Edge Delete Listener ---
+  // Tracks whether a real user action occurred since the last save (ignores ReactFlow
+  // internal changes like node dimension measurements and selection state).
+  const dirtyRef = useRef(false);
+
   useEffect(() => {
     const handleEdgeDelete = (e: any) => {
       const edgeId = e.detail.id;
+      dirtyRef.current = true;
       setEdges(eds => eds.filter(edge => edge.id !== edgeId));
     };
     window.addEventListener('delete-edge', handleEdgeDelete);
@@ -502,10 +507,12 @@ const FlowBuilder: React.FC = () => {
   }, [searchQuery, fixedProcesses, activeProcessId, globalSearchTrigger]);
 
   const onNodeDataChange = useCallback((nodeId: string, data: Partial<NodeData>) => {
+    dirtyRef.current = true;
     setNodes((nds) => nds.map((n) => n.id === nodeId ? { ...n, data: { ...n.data, ...data } } : n));
   }, []);
 
   const onDeleteNode = useCallback((id: string) => {
+    dirtyRef.current = true;
     setNodes((nds) => nds.filter((node) => node.id !== id));
     setEdges((eds) => eds.filter((edge) => edge.source !== id && edge.target !== id));
   }, []);
@@ -514,6 +521,7 @@ const FlowBuilder: React.FC = () => {
   // 1. Delete any edge connected to that option's handle (option-<optionIndex>)
   // 2. Re-index handles of options that shifted down (indices > optionIndex)
   const onRemoveOption = useCallback((nodeId: string, optionIndex: number) => {
+    dirtyRef.current = true;
     setEdges((eds) =>
       eds
         .filter((e) => !(e.source === nodeId && e.sourceHandle === `option-${optionIndex}`))
@@ -944,10 +952,32 @@ const FlowBuilder: React.FC = () => {
   const syncFlowRef = useRef(syncFlow);
   useEffect(() => { syncFlowRef.current = syncFlow; });
 
+  // ── Save status indicator ──────────────────────────────────────────────────
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Persistent debounce timer ref — NOT cleaned up by useEffect so that
+  // ReactFlow internal re-renders (dimension measurements, hover state, etc.)
+  // don't cancel a pending save mid-flight.
+  const saveDebounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   useEffect(() => {
     if (viewMode !== 'dashboard' && viewMode !== 'template-selection' && viewMode !== 'template-form' && viewMode !== 'simulator-only' && viewMode !== 'admin-panel' && viewMode !== 'contacts' && viewMode !== 'sessions' && viewMode !== 'groups' && (selectedBot || activeProcessId || editingTemplateId)) {
-      const timer = setTimeout(() => syncFlowRef.current(), 1500);
-      return () => clearTimeout(timer);
+      // Skip ReactFlow internal changes (dimension measurements, selection state, etc.)
+      if (!dirtyRef.current) return;
+      dirtyRef.current = false;
+      setSaveStatus('saving');
+      // Cancel any previous pending debounce then start a fresh one.
+      // Using a ref (not useEffect cleanup) so that unrelated re-renders
+      // don't accidentally clear a timer that's still counting down.
+      if (saveDebounceTimerRef.current) clearTimeout(saveDebounceTimerRef.current);
+      saveDebounceTimerRef.current = setTimeout(() => {
+        saveDebounceTimerRef.current = null;
+        syncFlowRef.current().then(() => {
+          setSaveStatus('saved');
+          if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
+          savedTimerRef.current = setTimeout(() => setSaveStatus('idle'), 2500);
+        }).catch(() => setSaveStatus('idle'));
+      }, 1500);
     }
   }, [nodes, edges, viewMode, selectedBot, activeProcessId, editingTemplateId]);
 
@@ -1061,6 +1091,7 @@ const FlowBuilder: React.FC = () => {
 
     const currentZoom = reactFlowInstance.getZoom();
     const startPos = finalPositions[startNode.id] || { x: 100, y: 150 };
+    dirtyRef.current = true;
     setNodes(nds => nds.map(n => ({ ...n, position: finalPositions[n.id] || n.position })));
     setTimeout(() => {
       // מיקום הרכיב הראשון צמוד לצד שמאל (60px מהקצה) ו-80px מלמעלה, באותו זום
@@ -1897,9 +1928,21 @@ const FlowBuilder: React.FC = () => {
     await handleEditFixedProcess(processId);
   }, [handleEditFixedProcess]);
 
-  const onNodesChange: OnNodesChange = useCallback((changes) => setNodes((nds) => applyNodeChanges(changes, nds)), []);
-  const onEdgesChange: OnEdgesChange = useCallback((changes) => setEdges((eds) => applyEdgeChanges(changes, eds)), []);
-  const onConnect: OnConnect = useCallback((params) => setEdges((eds) => {
+  const onNodesChange: OnNodesChange = useCallback((changes) => {
+    // Only mark dirty for real structural changes, not ReactFlow internals
+    // (dimension measurements, hover selection, etc.)
+    if (changes.some(c => c.type === 'remove' || (c.type === 'position' && !c.dragging))) {
+      dirtyRef.current = true;
+    }
+    setNodes((nds) => applyNodeChanges(changes, nds));
+  }, []);
+  const onEdgesChange: OnEdgesChange = useCallback((changes) => {
+    if (changes.some(c => c.type === 'remove')) dirtyRef.current = true;
+    setEdges((eds) => applyEdgeChanges(changes, eds));
+  }, []);
+  const onConnect: OnConnect = useCallback((params) => {
+    dirtyRef.current = true;
+    return setEdges((eds) => {
     // Remove any existing edge from the same source-handle before adding the new connection.
     // Without this, old edges loaded from the DB coexist with the new one and the backend
     // finds the OLD edge first (via Array.find), saving the wrong target.
@@ -1907,7 +1950,8 @@ const FlowBuilder: React.FC = () => {
       ? eds.filter(e => !(e.source === params.source && e.sourceHandle === params.sourceHandle))
       : eds;
     return addEdge({ ...params, type: 'button', style: DEFAULT_EDGE_STYLE, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6' } }, withoutOld);
-  }), []);
+  });
+  }, []);
 
   const onDrop = useCallback((event: React.DragEvent) => {
     event.preventDefault();
@@ -1948,6 +1992,7 @@ const FlowBuilder: React.FC = () => {
         isStandardProcess: type === NodeType.FIXED_PROCESS
       },
     });
+    dirtyRef.current = true;
     setNodes((nds) => nds.concat(newNode));
   }, [reactFlowInstance, bindNodeCallbacks, nodes]);
 
@@ -2232,6 +2277,7 @@ const FlowBuilder: React.FC = () => {
           onSaveTemplate={viewMode === 'creating-template' ? handleSaveNewTemplate : handleUpdateExistingTemplate}
           existingTemplateData={editingTemplateData}
           onManageParams={viewMode === 'editing-template' ? openTemplateParamsModal : undefined}
+          saveStatus={saveStatus}
         />
 
         {/* Template Params Modal - accessible from within editor */}
@@ -2401,6 +2447,7 @@ const FlowBuilder: React.FC = () => {
         globalSearchResults={globalSearchResults}
         onNavigateToProcessResult={navigateToProcessResult}
         onOpenBotSettings={can('bots.settings') ? () => setIsBotSettingsOpen(true) : undefined}
+        saveStatus={saveStatus}
         sidebarProps={{
           fixedProcesses,
           versions,
