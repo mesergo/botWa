@@ -165,17 +165,20 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
   // ── Sample file download ──────────────────────────────────────────────────
 
   const downloadSample = () => {
-    const header = 'טלפון,שם מלא,שם וואטסאפ,מייל';
+    const customLabels = contactFieldDefs.map(f => f.label);
+    const header = ['טלפון', 'שם מלא', 'שם וואטסאפ', 'מייל', ...customLabels].join(',');
+    const customEmpty = customLabels.map(() => '').join(',');
+    const customSep = customLabels.length > 0 ? ',' : '';
     const rows = [
-      '972501234567,ישראל ישראלי,ישראל,israel@example.com',
-      '972529876543,שרה כהן,שרה\' כהן,sarah@example.com',
+      `972501234567,ישראל ישראלי,ישראל,israel@example.com${customSep}${customEmpty}`,
+      `972529876543,שרה כהן,שרה' כהן,sarah@example.com${customSep}${customEmpty}`,
     ];
     const csv = '\uFEFF' + [header, ...rows].join('\n'); // BOM for Excel Hebrew support
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url; a.download = 'contacts-sample.csv';
-    a.click();
+    a.click(); 
     URL.revokeObjectURL(url);
   };
 
