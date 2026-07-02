@@ -2,11 +2,13 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Phone, Clock, MessageSquare, Search, Users, LogOut, List, Shield,
   Settings, UserCog, ExternalLink, Plus, Edit2, Trash2, Mail, X, Check, Bot,
-  Upload, Download, Eye, ChevronRight, ChevronLeft, Layers
+  Upload, Download, Eye, ChevronRight, ChevronLeft, Layers, Sliders
 } from 'lucide-react';
 import ImpersonationBanner from './ImpersonationBanner';
 import AppNav from './AppNav';
 import { usePermission } from '../hooks/usePermission';
+import { useContactFields } from '../context/ContactFieldsContext';
+import { ContactFieldDef } from '../types';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -130,6 +132,12 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
   // Detail view
   const [detailContact, setDetailContact] = useState<MergedContact | null>(null);
   const [initialPhoneHandled, setInitialPhoneHandled] = useState(false);
+
+  // Fields management modal
+  const [fieldsModalOpen, setFieldsModalOpen] = useState(false);
+
+  // Contact custom fields context
+  const { fields: contactFieldDefs, reload: reloadFields } = useContactFields();
 
   // ── Auto-open detail for initialPhone ────────────────────────────────────
   useEffect(() => {
@@ -430,7 +438,7 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
               {can('contacts.add') && (
               <button
                 onClick={openAdd}
-                className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-bold text-sm transition-colors shadow-sm"
+                className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-bold text-sm transition-colors shadow-sm"
               >
                 <Plus size={16} /> הוסף איש קשר
               </button>
@@ -452,138 +460,174 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
               {total === 0 && can('contacts.add') && (
                 <button
                   onClick={openAdd}
-                  className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-bold text-sm transition-colors mt-2"
+                  className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-bold text-sm transition-colors mt-2"
                 >
                   <Plus size={16} /> הוסף איש קשר ראשון
                 </button>
               )}
             </div>
           ) : (
-            <div className="bg-white border border-slate-100 rounded-2xl overflow-hidden shadow-sm">
-              {/* Table header */}
-              <div className="grid grid-cols-[1.6fr_1.5fr_1.3fr_1.4fr_1.4fr_0.65fr_1.3fr_7rem] gap-3 px-6 py-3 bg-slate-50 border-b border-slate-100 text-xs font-bold text-slate-400 uppercase tracking-wide">
-                <span>טלפון</span>
-                <span>שם מלא</span>
-                <span>שם וואטסאפ</span>
-                <span>כתובת מייל</span>
-                <span>שוחח עם</span>
-                <span className="text-center">שיחות</span>
-                <span>פעיל לאחרונה</span>
-                <span></span>
-              </div>
+            <div className="bg-white border border-slate-100 rounded-2xl overflow-hidden shadow-sm overflow-x-auto">
+              {/* Build grid template dynamically */}
+              {(() => {
+                const baseColumns = '1.6fr 1.5fr 1.3fr 1.4fr 1.4fr 0.65fr 1.3fr';
+                const customColumns = contactFieldDefs.map(() => '1.2fr').join(' ');
+                const gridTemplateColumns = [baseColumns, customColumns, '7rem'].filter(Boolean).join(' ');
 
-              {contacts.map((contact, idx) => {
-                const sim = isSimulator(contact.phone);
                 return (
-                  <div
-                    key={contact.phone}
-                    onClick={() => setDetailContact(contact)}
-                    className={`grid grid-cols-[1.6fr_1.5fr_1.3fr_1.4fr_1.4fr_0.65fr_1.3fr_7rem] gap-3 px-6 py-3.5 items-center hover:bg-slate-50/70 transition-colors cursor-pointer ${idx !== contacts.length - 1 ? 'border-b border-slate-100' : ''}`}
-                  >
-                    {/* Phone */}
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 ${sim ? 'bg-purple-50 text-purple-500' : 'bg-blue-50 text-blue-500'}`}>
-                        {sim ? <MessageSquare size={15} /> : <Phone size={15} />}
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-sm font-bold text-slate-900 truncate">{sim ? 'סימולטור' : contact.phone}</p>
-                        {sim && <span className="text-xs bg-purple-100 text-purple-600 px-2 py-0.5 rounded-full font-bold">בדיקות</span>}
-                      </div>
-                    </div>
-
-                    {/* Full name */}
-                    <div className="text-sm font-semibold text-slate-700 truncate">
-                      {contact.full_name || <span className="text-slate-300 font-normal">—</span>}
-                    </div>
-
-                    {/* WhatsApp name */}
-                    <div className="text-sm font-semibold text-slate-700 truncate">
-                      {contact.whatsapp_name || <span className="text-slate-300 font-normal">—</span>}
-                    </div>
-
-                    {/* Email */}
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      {contact.email ? (
-                        <>
-                          <Mail size={12} className="text-slate-300 flex-shrink-0" />
-                          <span className="text-sm text-slate-500 font-medium truncate">{contact.email}</span>
-                        </>
-                      ) : (
-                        <span className="text-slate-300 text-sm">—</span>
-                      )}
-                    </div>
-
-                    {/* Bot phones */}
-                    <div className="flex items-center min-w-0" onClick={e => e.stopPropagation()}>
-                      <BotPhonesTags phones={contact.botPhones ?? []} />
-                    </div>
-
-                    {/* Session count */}
-                    <div className="flex items-center justify-center gap-1 text-sm font-semibold text-slate-600">
-                      {contact.sessionCount > 0
-                        ? <><MessageSquare size={13} className="text-blue-400" />{contact.sessionCount}</>
-                        : <span className="text-slate-300">0</span>
-                      }
-                    </div>
-
-                    {/* Last seen */}
-                    <div className="flex items-center gap-1.5 text-sm text-slate-400 font-medium">
-                      <Clock size={13} />
-                      {formatDate(contact.lastSeen)}
-                    </div>
-
-                    {/* Actions */}
-                    <div className="flex items-center justify-end gap-1" onClick={e => e.stopPropagation()}>
-                      {onOpenSessions && contact.sessionCount > 0 && (
+                  <>
+                    {/* Table header */}
+                    <div
+                      className="grid gap-3 px-6 py-3 bg-slate-50 border-b border-slate-100 text-xs font-bold text-slate-400 uppercase tracking-wide"
+                      style={{ gridTemplateColumns }}
+                    >
+                      <span>טלפון</span>
+                      <span>שם מלא</span>
+                      <span>שם וואטסאפ</span>
+                      <span>כתובת מייל</span>
+                      <span>שוחח עם</span>
+                      <span className="text-center">שיחות</span>
+                      <span>פעיל לאחרונה</span>
+                      {contactFieldDefs.map(f => (
+                        <span key={f._id} className="text-indigo-400 truncate" title={f.label}>{f.label}</span>
+                      ))}
+                      <div className="flex items-center justify-end">
                         <button
-                          onClick={() => onOpenSessions(contact.phone)}
-                          title="עבור לשיחות"
-                          className="p-1.5 text-blue-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                          onClick={() => setFieldsModalOpen(true)}
+                          title="ניהול שדות"
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold text-xs transition-colors shadow-sm whitespace-nowrap"
                         >
-                          <ExternalLink size={14} />
+                          <Sliders size={13} />
+                          ניהול שדות
                         </button>
-                      )}
-                      {can('contacts.edit') && (
-                      <button
-                        onClick={() => openEdit(contact)}
-                        title="ערוך"
-                        className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
-                      >
-                        <Edit2 size={14} />
-                      </button>
-                      )}
-                      {can('contacts.delete') && contact._id && (
-                        deletingId === contact._id ? (
-                          <div className="flex items-center gap-1">
-                            <button
-                              onClick={() => confirmDelete(contact._id!)}
-                              title="אשר מחיקה"
-                              className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                            >
-                              <Check size={14} />
-                            </button>
-                            <button
-                              onClick={() => setDeletingId(null)}
-                              title="ביטול"
-                              className="p-1.5 text-slate-400 hover:bg-slate-100 rounded-lg transition-colors"
-                            >
-                              <X size={14} />
-                            </button>
-                          </div>
-                        ) : (
-                          <button
-                            onClick={() => setDeletingId(contact._id!)}
-                            title="מחק"
-                            className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        )
-                      )}
+                      </div>
                     </div>
-                  </div>
+
+                    {contacts.map((contact, idx) => {
+                      const sim = isSimulator(contact.phone);
+                      return (
+                        <div
+                          key={contact.phone}
+                          onClick={() => setDetailContact(contact)}
+                          className={`grid gap-3 px-6 py-3.5 items-center hover:bg-slate-50/70 transition-colors cursor-pointer ${idx !== contacts.length - 1 ? 'border-b border-slate-100' : ''}`}
+                          style={{ gridTemplateColumns }}
+                        >
+                          {/* Phone */}
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 ${sim ? 'bg-purple-50 text-purple-500' : 'bg-blue-50 text-blue-500'}`}>
+                              {sim ? <MessageSquare size={15} /> : <Phone size={15} />}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-sm font-bold text-slate-900 truncate">{sim ? 'סימולטור' : contact.phone}</p>
+                              {sim && <span className="text-xs bg-purple-100 text-purple-600 px-2 py-0.5 rounded-full font-bold">בדיקות</span>}
+                            </div>
+                          </div>
+
+                          {/* Full name */}
+                          <div className="text-sm font-semibold text-slate-700 truncate">
+                            {contact.full_name || <span className="text-slate-300 font-normal">—</span>}
+                          </div>
+
+                          {/* WhatsApp name */}
+                          <div className="text-sm font-semibold text-slate-700 truncate">
+                            {contact.whatsapp_name || <span className="text-slate-300 font-normal">—</span>}
+                          </div>
+
+                          {/* Email */}
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            {contact.email ? (
+                              <>
+                                <Mail size={12} className="text-slate-300 flex-shrink-0" />
+                                <span className="text-sm text-slate-500 font-medium truncate">{contact.email}</span>
+                              </>
+                            ) : (
+                              <span className="text-slate-300 text-sm">—</span>
+                            )}
+                          </div>
+
+                          {/* Bot phones */}
+                          <div className="flex items-center min-w-0" onClick={e => e.stopPropagation()}>
+                            <BotPhonesTags phones={contact.botPhones ?? []} />
+                          </div>
+
+                          {/* Session count */}
+                          <div className="flex items-center justify-center gap-1 text-sm font-semibold text-slate-600">
+                            {contact.sessionCount > 0
+                              ? <><MessageSquare size={13} className="text-blue-400" />{contact.sessionCount}</>
+                              : <span className="text-slate-300">0</span>
+                            }
+                          </div>
+
+                          {/* Last seen */}
+                          <div className="flex items-center gap-1.5 text-sm text-slate-400 font-medium">
+                            <Clock size={13} />
+                            {formatDate(contact.lastSeen)}
+                          </div>
+
+                          {/* Custom field columns */}
+                          {contactFieldDefs.map(f => (
+                            <div key={f._id} className="text-sm font-semibold text-slate-700 truncate">
+                              {contact.custom_field_values?.[f._id]
+                                ? String(contact.custom_field_values[f._id])
+                                : <span className="text-slate-300 font-normal">—</span>}
+                            </div>
+                          ))}
+
+                          {/* Actions */}
+                          <div className="flex items-center justify-end gap-1" onClick={e => e.stopPropagation()}>
+                            {onOpenSessions && contact.sessionCount > 0 && (
+                              <button
+                                onClick={() => onOpenSessions(contact.phone)}
+                                title="עבור לשיחות"
+                                className="p-1.5 text-blue-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                              >
+                                <ExternalLink size={14} />
+                              </button>
+                            )}
+                            {can('contacts.edit') && (
+                            <button
+                              onClick={() => openEdit(contact)}
+                              title="ערוך"
+                              className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+                            >
+                              <Edit2 size={14} />
+                            </button>
+                            )}
+                            {can('contacts.delete') && contact._id && (
+                              deletingId === contact._id ? (
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    onClick={() => confirmDelete(contact._id!)}
+                                    title="אשר מחיקה"
+                                    className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                                  >
+                                    <Check size={14} />
+                                  </button>
+                                  <button
+                                    onClick={() => setDeletingId(null)}
+                                    title="ביטול"
+                                    className="p-1.5 text-slate-400 hover:bg-slate-100 rounded-lg transition-colors"
+                                  >
+                                    <X size={14} />
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  onClick={() => setDeletingId(contact._id!)}
+                                  title="מחק"
+                                  className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              )
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </>
                 );
-              })}
+              })()}
 
               {/* Pagination bar */}
               {totalPages > 1 && (
@@ -935,12 +979,17 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
                 <h3 className="text-xs font-bold text-blue-400 uppercase tracking-wider border-b border-blue-100 pb-2">פרטים שנשמרו מהשיחות</h3>
                 {detailContact.custom_field_values && Object.keys(detailContact.custom_field_values).length > 0 ? (
                   <div className="grid grid-cols-1 gap-2">
-                    {Object.entries(detailContact.custom_field_values).map(([key, value]) => (
-                      <div key={key} className="flex items-center justify-between px-5 py-3.5 bg-blue-50 rounded-2xl border border-blue-100">
-                        <span className="text-sm font-bold text-slate-800">{String(value) || '—'}</span>
-                        <span className="text-xs font-bold text-blue-400 capitalize">{key.replace(/_/g, ' ')}</span>
-                      </div>
-                    ))}
+                    {Object.entries(detailContact.custom_field_values).map(([key, value]) => {
+                      // Resolve field label: look up by _id, fall back to raw key
+                      const fieldDef = contactFieldDefs.find(f => f._id === key);
+                      const displayLabel = fieldDef ? fieldDef.label : key.replace(/_/g, ' ');
+                      return (
+                        <div key={key} className="flex items-center justify-between px-5 py-3.5 bg-blue-50 rounded-2xl border border-blue-100">
+                          <span className="text-sm font-bold text-slate-800">{String(value) || '—'}</span>
+                          <span className="text-xs font-bold text-blue-400 capitalize">{displayLabel}</span>
+                        </div>
+                      );
+                    })}
                   </div>
                 ) : (
                   <div className="flex flex-col items-center justify-center gap-3 py-8 text-slate-300 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
@@ -955,6 +1004,198 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
           </div>
         </div>
       )}
+
+      {/* ─── Contact Fields Management Modal ───────────────────────────────── */}
+      {fieldsModalOpen && (
+        <ContactFieldsModal
+          token={token}
+          fields={contactFieldDefs}
+          onClose={() => setFieldsModalOpen(false)}
+          onChanged={reloadFields}
+        />
+      )}
+    </div>
+  );
+};
+
+// ─── ContactFieldsModal ───────────────────────────────────────────────────────
+
+const BASE_FIELDS = [
+  { label: 'טלפון' },
+  { label: 'שם מלא' },
+  { label: 'שם וואטסאפ' },
+  { label: 'כתובת מייל' },
+];
+
+const ContactFieldsModal: React.FC<{
+  token: string | null;
+  fields: ContactFieldDef[];
+  onClose: () => void;
+  onChanged: () => void;
+}> = ({ token, fields, onClose, onChanged }) => {
+  const [newLabel, setNewLabel] = useState('');
+  const [adding, setAdding] = useState(false);
+  const [addError, setAddError] = useState('');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editLabel, setEditLabel] = useState('');
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const apiBase = window.location.hostname === 'localhost'
+    ? 'http://localhost:3001/api'
+    : `${window.location.origin}/api`;
+
+  const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+
+  const handleAdd = async () => {
+    if (!newLabel.trim()) { setAddError('שם השדה הוא שדה חובה'); return; }
+    setSaving(true); setAddError('');
+    try {
+      const res = await fetch(`${apiBase}/contact-fields`, { method: 'POST', headers, body: JSON.stringify({ label: newLabel.trim() }) });
+      if (!res.ok) { const e = await res.json(); setAddError(e.error ?? 'שגיאה'); return; }
+      setNewLabel(''); setAdding(false); onChanged();
+    } catch { setAddError('שגיאת רשת'); }
+    finally { setSaving(false); }
+  };
+
+  const handleUpdate = async (id: string) => {
+    if (!editLabel.trim()) return;
+    setSaving(true);
+    try {
+      await fetch(`${apiBase}/contact-fields/${id}`, { method: 'PUT', headers, body: JSON.stringify({ label: editLabel.trim() }) });
+      setEditingId(null); onChanged();
+    } catch { /* silent */ }
+    finally { setSaving(false); }
+  };
+
+  const handleDelete = async (id: string) => {
+    try {
+      await fetch(`${apiBase}/contact-fields/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
+      setDeletingId(null); onChanged();
+    } catch { /* silent */ }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-6" onClick={onClose}>
+      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[85vh]" dir="rtl" onClick={e => e.stopPropagation()}>
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-8 pt-7 pb-5 border-b border-slate-100 flex-shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center">
+              <Sliders size={20} />
+            </div>
+            <h2 className="text-xl font-black text-slate-900">ניהול שדות</h2>
+          </div>
+          <button onClick={onClose} className="p-2 text-slate-300 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-colors">
+            <X size={20} />
+          </button>
+        </div>
+
+        <div className="overflow-y-auto px-8 py-6 flex flex-col gap-6">
+
+          {/* Base fields (read-only) */}
+          <div className="flex flex-col gap-2">
+            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">שדות בסיס (קבועים)</h3>
+            {BASE_FIELDS.map(f => (
+              <div key={f.label} className="flex items-center justify-between px-4 py-3 bg-slate-50 rounded-xl border border-slate-100">
+                <span className="text-sm font-semibold text-slate-500">{f.label}</span>
+                <span className="text-xs text-slate-300 font-bold">קבוע</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Custom fields */}
+          <div className="flex flex-col gap-2">
+            <h3 className="text-xs font-bold text-indigo-400 uppercase tracking-wider mb-1">שדות מוגדרים אישית</h3>
+
+            {fields.length === 0 && !adding && (
+              <div className="py-6 text-center text-slate-300 bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                <p className="text-sm font-bold">אין שדות מוגדרים עדיין</p>
+                <p className="text-xs mt-1">לחץ על "הוסף שדה" כדי להתחיל</p>
+              </div>
+            )}
+
+            {fields.map(f => (
+              <div key={f._id} className="flex items-center gap-2 px-4 py-3 bg-indigo-50 rounded-xl border border-indigo-100">
+                {editingId === f._id ? (
+                  <>
+                    <input
+                      autoFocus
+                      className="flex-1 px-3 py-1.5 border border-indigo-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-400"
+                      value={editLabel}
+                      onChange={e => setEditLabel(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') handleUpdate(f._id); if (e.key === 'Escape') setEditingId(null); }}
+                    />
+                    <button onClick={() => handleUpdate(f._id)} disabled={saving} className="p-1.5 text-emerald-500 hover:bg-emerald-50 rounded-lg transition-colors">
+                      <Check size={15} />
+                    </button>
+                    <button onClick={() => setEditingId(null)} className="p-1.5 text-slate-400 hover:bg-slate-100 rounded-lg transition-colors">
+                      <X size={15} />
+                    </button>
+                  </>
+                ) : deletingId === f._id ? (
+                  <>
+                    <span className="flex-1 text-sm font-semibold text-red-600">למחוק את "{f.label}"?</span>
+                    <button onClick={() => handleDelete(f._id)} className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors">
+                      <Check size={15} />
+                    </button>
+                    <button onClick={() => setDeletingId(null)} className="p-1.5 text-slate-400 hover:bg-slate-100 rounded-lg transition-colors">
+                      <X size={15} />
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <span className="flex-1 text-sm font-bold text-indigo-800">{f.label}</span>
+                    <button onClick={() => { setEditingId(f._id); setEditLabel(f.label); }} className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-white rounded-lg transition-colors">
+                      <Edit2 size={14} />
+                    </button>
+                    <button onClick={() => setDeletingId(f._id)} className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors">
+                      <Trash2 size={14} />
+                    </button>
+                  </>
+                )}
+              </div>
+            ))}
+
+            {/* Add new field */}
+            {adding ? (
+              <div className="flex flex-col gap-2 mt-1">
+                <div className="flex items-center gap-2">
+                  <input
+                    autoFocus
+                    className="flex-1 px-4 py-2.5 border border-indigo-300 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-400"
+                    placeholder="שם השדה (לדוגמה: סוג לקוח)"
+                    value={newLabel}
+                    onChange={e => { setNewLabel(e.target.value); setAddError(''); }}
+                    onKeyDown={e => { if (e.key === 'Enter') handleAdd(); if (e.key === 'Escape') { setAdding(false); setNewLabel(''); } }}
+                  />
+                  <button onClick={handleAdd} disabled={saving} className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-sm transition-colors disabled:opacity-60">
+                    הוסף
+                  </button>
+                  <button onClick={() => { setAdding(false); setNewLabel(''); setAddError(''); }} className="px-3 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl font-bold text-sm transition-colors">
+                    ביטול
+                  </button>
+                </div>
+                {addError && <p className="text-xs text-red-500 font-semibold px-1">{addError}</p>}
+              </div>
+            ) : (
+              <button
+                onClick={() => setAdding(true)}
+                className="flex items-center gap-2 px-4 py-2.5 border-2 border-dashed border-indigo-200 text-indigo-500 hover:border-indigo-400 hover:bg-indigo-50 rounded-xl font-bold text-sm transition-colors mt-1"
+              >
+                <Plus size={15} /> הוסף שדה
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="px-8 py-5 border-t border-slate-100 flex-shrink-0">
+          <button onClick={onClose} className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-sm transition-colors">
+            סגור
+          </button>
+        </div>
+      </div>
     </div>
   );
 };

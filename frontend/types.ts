@@ -1,3 +1,17 @@
+export interface ContactFieldDef {
+  _id: string;
+  label: string;
+  order: number;
+  createdAt?: string;
+}
+
+export interface ContactFieldDef {
+  _id: string;
+  label: string;
+  order: number;
+  createdAt?: string;
+}
+
 export enum NodeType {
   // Inputs
   INPUT_TEXT = 'input_text',
@@ -64,6 +78,10 @@ export interface NodeData {
   outgoingNodes?: Array<{ id: string; serialId?: string; type: string; label?: string }>;
   /** Navigate the canvas to a node by id */
   onNavigateToNode?: (nodeId: string) => void;
+  /** Whether to save the captured value to the contact's custom_field_values */
+  saveToContact?: boolean;
+  /** The ContactFieldDef._id to store the value into; required when saveToContact is true */
+  contactFieldKey?: string;
 }
 
 export interface BotFlow {
