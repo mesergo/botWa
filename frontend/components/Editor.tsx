@@ -258,22 +258,18 @@ const Editor: React.FC<EditorProps> = ({
             <button onClick={onChangeTemplate} className="flex items-center gap-2 px-6 py-2.5 bg-white border border-orange-500 text-orange-500 rounded-full text-xs font-bold shadow-sm hover:bg-orange-50 transition-all"><AlertTriangle size={16} /> החלף תסריט</button>
           )}
           <button onClick={onTidy} className="flex items-center gap-2 px-6 py-2.5 bg-white border border-slate-200 rounded-full text-xs font-bold shadow-sm hover:border-blue-600 hover:text-blue-600 transition-all"><Wand2 size={16} /> סדר הכל</button>
-          {saveStatus === 'saving' ? (
-            <div className="flex items-center gap-2 px-4 py-2 bg-slate-50 border border-slate-200 rounded-full text-xs font-bold text-slate-400 select-none">
-              <svg className="animate-spin" width={13} height={13} viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeOpacity="0.3"/><path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round"/></svg>
-              שומר...
-            </div>
-          ) : saveStatus === 'saved' ? (
-            <div className="flex items-center gap-2 px-4 py-2 bg-green-50 border border-green-200 rounded-full text-xs font-bold text-green-600 select-none">
-              <svg width={13} height={13} viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
-              נשמר
-            </div>
-          ) : (
-            <div className="flex items-center gap-2 px-4 py-2 rounded-full text-xs font-bold text-slate-300 select-none">
-              <svg width={13} height={13} viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
-              שמירה אוטומטית
-            </div>
-          )}
+          <div className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs font-bold select-none border w-[130px] justify-center whitespace-nowrap transition-all duration-300 ${
+            saveStatus === 'saving' ? 'bg-slate-50 border-slate-200 text-slate-400' :
+            saveStatus === 'saved'  ? 'bg-green-50 border-green-200 text-green-600' :
+                                      'bg-white border-slate-200 text-slate-300'
+          }`}>
+            {saveStatus === 'saving' ? (
+              <svg className="animate-spin flex-shrink-0" width={13} height={13} viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeOpacity="0.3"/><path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round"/></svg>
+            ) : (
+              <svg className="flex-shrink-0" width={13} height={13} viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            )}
+            {saveStatus === 'saving' ? 'שומר...' : saveStatus === 'saved' ? 'נשמר' : 'שמירה אוטומטית'}
+          </div>
           <div className="h-8 w-px bg-slate-100 mx-1"></div>
           {/* User Avatar - navigates to bots page */}
           <button
