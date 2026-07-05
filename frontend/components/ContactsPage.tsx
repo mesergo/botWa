@@ -162,6 +162,31 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [importResult, setImportResult] = useState<{ imported: number; skipped: number; errors: { phone: string; error: string }[] } | null>(null);
 
+  // Import → group assignment
+  const [assignToGroups, setAssignToGroups] = useState(false);
+  const [availableGroups, setAvailableGroups] = useState<{ _id: string; name: string }[]>([]);
+  const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
+  const [loadingGroups, setLoadingGroups] = useState(false);
+
+  const openImportModal = async () => {
+    setAssignToGroups(false);
+    setSelectedGroupIds([]);
+    setImportModalOpen(true);
+    setLoadingGroups(true);
+    try {
+      const res = await fetch(`${API_BASE}/groups`, { headers: { Authorization: `Bearer ${token}` } });
+      if (res.ok) {
+        const data = await res.json();
+        setAvailableGroups((data.groups ?? []).filter((g: { _id: string; name: string; is_blocklist?: boolean }) => !g.is_blocklist));
+      }
+    } catch { /* silent */ }
+    finally { setLoadingGroups(false); }
+  };
+
+  const toggleGroupId = (id: string) => {
+    setSelectedGroupIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
+
   // ── Sample file download ──────────────────────────────────────────────────
 
   const downloadSample = () => {
@@ -194,6 +219,9 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
     try {
       const formData = new FormData();
       formData.append('file', file);
+      if (assignToGroups && selectedGroupIds.length > 0) {
+        formData.append('groupIds', JSON.stringify(selectedGroupIds));
+      }
       const res = await fetch(`${API_BASE}/contacts/import`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
@@ -418,7 +446,7 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
               {/* Import from Excel */}
               {can('contacts.import_excel') && (
               <button
-                onClick={() => setImportModalOpen(true)}
+                onClick={openImportModal}
                 disabled={importing}
                 title="ייבוא אנשי קשר מאקסל / CSV"
                 className="flex items-center gap-2 px-4 py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-2xl font-bold text-sm transition-colors disabled:opacity-60"
@@ -711,10 +739,49 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
                 </button>
               </div>
 
+              {/* Assign to groups */}
+              <div className="bg-indigo-50 border border-indigo-100 rounded-2xl px-5 py-4 flex flex-col gap-3">
+                <label className="flex items-center gap-3 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={assignToGroups}
+                    onChange={e => { setAssignToGroups(e.target.checked); if (!e.target.checked) setSelectedGroupIds([]); }}
+                    className="w-4 h-4 accent-indigo-600 cursor-pointer"
+                  />
+                  <span className="text-sm font-bold text-indigo-800">שייך לרשימת תפוצה</span>
+                </label>
+                {assignToGroups && (
+                  <div className="flex flex-col gap-2">
+                    {loadingGroups ? (
+                      <div className="flex items-center justify-center py-3">
+                        <div className="animate-spin w-5 h-5 border-2 border-indigo-200 border-t-indigo-500 rounded-full" />
+                      </div>
+                    ) : availableGroups.length === 0 ? (
+                      <p className="text-xs text-indigo-400 font-semibold px-1">אין רשימות תפוצה. צור קבוצה תחילה.</p>
+                    ) : (
+                      <div className="flex flex-col gap-1.5 max-h-36 overflow-y-auto pr-1">
+                        {availableGroups.map(g => (
+                          <label key={g._id} className="flex items-center gap-2.5 cursor-pointer select-none px-3 py-2 rounded-xl hover:bg-indigo-100 transition-colors">
+                            <input
+                              type="checkbox"
+                              checked={selectedGroupIds.includes(g._id)}
+                              onChange={() => toggleGroupId(g._id)}
+                              className="w-4 h-4 accent-indigo-600 cursor-pointer flex-shrink-0"
+                            />
+                            <span className="text-sm font-semibold text-indigo-800 truncate">{g.name}</span>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
               {/* Upload */}
               <button
                 onClick={() => fileInputRef.current?.click()}
-                disabled={importing}
+                disabled={importing || (assignToGroups && selectedGroupIds.length === 0 && availableGroups.length > 0)}
+                title={assignToGroups && selectedGroupIds.length === 0 && availableGroups.length > 0 ? 'בחר לפחות רשימת תפוצה אחת' : undefined}
                 className="flex items-center justify-center gap-2 w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-bold text-sm transition-colors disabled:opacity-60"
               >
                 <Upload size={16} />
