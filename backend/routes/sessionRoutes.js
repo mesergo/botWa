@@ -1,6 +1,6 @@
 
 import express from 'express';
-import { startSession, updateSessionParameters, addHistoryMessage, getContacts, getSessionsByPhone, getUserSessions, getAllSessions, toggleSessionActive, deactivateSession, setAgentMode, clearAgentMode, closeConversation, sendAgentMessage, sendAdminMessageToSession, sendExternalMessage, getSessionMessages, sendTemplateToPhone, transferConversation, getTransferTargets, streamEvents } from '../controllers/sessionController.js';
+import { startSession, updateSessionParameters, addHistoryMessage, getContacts, getSessionsByPhone, getUserSessions, getAllSessions, toggleSessionActive, deactivateSession, setAgentMode, clearAgentMode, closeConversation, markResolved, sendAgentMessage, sendAdminMessageToSession, sendExternalMessage, getSessionMessages, sendTemplateToPhone, transferConversation, getTransferTargets, streamEvents } from '../controllers/sessionController.js';
 import { authenticateToken, optionalAuthToken, requireAdmin } from '../middleware/auth.js';
 
 const router = express.Router();
@@ -27,6 +27,7 @@ router.patch('/:id/toggle-active', authenticateToken, requireAdmin, toggleSessio
 router.patch('/:id/set-agent', authenticateToken, setAgentMode);
 router.patch('/:id/clear-agent', authenticateToken, clearAgentMode);
 router.patch('/:id/close-conversation', authenticateToken, closeConversation);
+router.patch('/:id/mark-resolved', authenticateToken, markResolved);
 router.patch('/:id/transfer', authenticateToken, transferConversation);
 router.get('/transfer-targets', authenticateToken, getTransferTargets);
 router.post('/:id/send-agent-message', authenticateToken, sendAgentMessage);

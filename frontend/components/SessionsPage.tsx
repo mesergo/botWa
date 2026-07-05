@@ -18,7 +18,7 @@ interface Session {
   process_history: any[];
   is_agent?: boolean;
   agent_since?: string | null;
-  status?: 'bot' | 'waiting' | 'handling' | 'closed';
+  status?: 'bot' | 'waiting' | 'handling' | 'closed' | 'resolved';
 }
 
 interface Contact {
@@ -28,7 +28,7 @@ interface Contact {
   bots: { id: string; name: string }[];
   botPhones?: string[];
   assigned_to?: string[];
-  status?: 'bot' | 'waiting' | 'handling' | 'closed';
+  status?: 'bot' | 'waiting' | 'handling' | 'closed' | 'resolved';
 }
 
 interface SessionsPageProps {
@@ -337,18 +337,20 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
     phone === 'Simulated' || phone === 'simulator' || phone.toLowerCase() === 'simulated';
 
   // ── Conversation status helpers ───────────────────────────────────────────
-  type ConvStatus = 'bot' | 'waiting' | 'handling' | 'closed';
+  type ConvStatus = 'bot' | 'waiting' | 'handling' | 'closed' | 'resolved';
   const STATUS_LABELS: Record<ConvStatus, string> = {
     bot: 'בוט',
     waiting: 'ממתין למענה',
     handling: 'בטיפול',
-    closed: 'סיום שיחה'
+    closed: 'סיום שיחה',
+    resolved: 'טופל'
   };
   const STATUS_STYLES: Record<ConvStatus, string> = {
     bot: 'bg-sky-100 text-sky-700 border-sky-200',
     waiting: 'bg-amber-100 text-amber-700 border-amber-200',
     handling: 'bg-purple-100 text-purple-700 border-purple-200',
-    closed: 'bg-slate-200 text-slate-600 border-slate-300'
+    closed: 'bg-slate-200 text-slate-600 border-slate-300',
+    resolved: 'bg-emerald-100 text-emerald-700 border-emerald-200'
   };
   const renderStatusBadge = (status?: ConvStatus | string | null) => {
     const s = (status as ConvStatus) || 'bot';
@@ -364,6 +366,39 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
   const currentStatus: ConvStatus = (phoneSessions.length > 0
     ? ((phoneSessions[phoneSessions.length - 1].status as ConvStatus) || 'bot')
     : 'bot');
+
+  // ── Mark resolved handler ────────────────────────────────────────────────
+  const markResolved = async () => {
+    const sid = agentSessionId || (phoneSessions.length > 0 ? phoneSessions[phoneSessions.length - 1].id : null);
+    if (!sid) return;
+    try {
+      const r = await fetch(`${API_BASE}/sessions/${sid}/mark-resolved`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (r.ok) {
+        const data = await r.json().catch(() => ({}));
+        const sysEntry = data.historyEntry || {
+          type: 'System',
+          text: 'השיחה סומנה כטופלה',
+          sender: 'system',
+          name: 'מערכת',
+          event: 'conversation_resolved',
+          created: new Date().toISOString()
+        };
+        setPhoneSessions(prev => prev.map((s, i) =>
+          i === prev.length - 1
+            ? { ...s, status: 'resolved', process_history: [...s.process_history, sysEntry] }
+            : s
+        ));
+        setContacts(prev => prev.map(c =>
+          c.phone === selectedPhone ? { ...c, status: 'resolved' } : c
+        ));
+      }
+    } catch (e) {
+      console.error('Failed to mark resolved', e);
+    }
+  };
 
   const closeConversation = async () => {
     const sid = agentSessionId || (phoneSessions.length > 0 ? phoneSessions[phoneSessions.length - 1].id : null);
@@ -1069,8 +1104,11 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
     }
   };
 
+  const [statusFilter, setStatusFilter] = useState<ConvStatus | 'all'>('all');
+
   const filteredContacts = contacts.filter(c => {
     if (!c.phone.toLowerCase().includes(contactSearch.toLowerCase())) return false;
+    if (statusFilter !== 'all' && c.status !== statusFilter) return false;
     if (activeBotFilter) {
       // Match by bot flow id (widget-based sessions)
       if (c.bots.some(b => b.id === activeBotFilter.id)) return true;
@@ -1536,6 +1574,27 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 onChange={e => setContactSearch(e.target.value)}
               />
             </div>
+            {/* Status filter pills */}
+            <div className="flex gap-1 mt-2 flex-wrap">
+              {(['all', 'waiting', 'handling', 'resolved', 'bot', 'closed'] as const).map(s => (
+                <button
+                  key={s}
+                  onClick={() => setStatusFilter(s)}
+                  className={`text-[9px] font-black px-2 py-0.5 rounded-full border transition-colors ${
+                    statusFilter === s
+                      ? s === 'all' ? 'bg-slate-700 text-white border-slate-700'
+                        : s === 'waiting' ? 'bg-amber-500 text-white border-amber-500'
+                        : s === 'handling' ? 'bg-purple-500 text-white border-purple-500'
+                        : s === 'resolved' ? 'bg-emerald-500 text-white border-emerald-500'
+                        : s === 'bot' ? 'bg-sky-500 text-white border-sky-500'
+                        : 'bg-slate-500 text-white border-slate-500'
+                      : 'bg-white text-slate-500 border-slate-200 hover:border-slate-400'
+                  }`}
+                >
+                  {s === 'all' ? 'הכל' : s === 'waiting' ? 'ממתין' : s === 'handling' ? 'בטיפול' : s === 'resolved' ? 'טופל' : s === 'bot' ? 'בוט' : 'סיום'}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Scrollable contacts list */}
@@ -1633,8 +1692,18 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 {!isSimulator(selectedPhone) && phoneSessions.length > 0 && (
                   <div className="flex-shrink-0">{renderStatusBadge(currentStatus)}</div>
                 )}
-                {/* End conversation button — for rep when conversation is active with agent */}
+                {/* Mark resolved button — when rep has handled the conversation */}
                 {!isSimulator(selectedPhone) && (currentStatus === 'waiting' || currentStatus === 'handling') && (
+                  <button
+                    onClick={markResolved}
+                    className="flex items-center gap-2 px-4 py-2 rounded-2xl bg-emerald-500 text-white text-xs font-black hover:bg-emerald-600 transition-colors shadow-sm"
+                    title="סמן כטופל — השיחה תיפתח מחדש אם הלקוח יכתוב"
+                  >
+                    <Check size={14} /> טופל
+                  </button>
+                )}
+                {/* End conversation button — for rep when conversation is active with agent */}
+                {!isSimulator(selectedPhone) && (currentStatus === 'waiting' || currentStatus === 'handling' || currentStatus === 'resolved') && (
                   <button
                     onClick={closeConversation}
                     className="flex items-center gap-2 px-4 py-2 rounded-2xl bg-slate-600 text-white text-xs font-black hover:bg-slate-700 transition-colors shadow-sm"

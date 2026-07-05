@@ -1280,6 +1280,10 @@ export const respondToMessage = async (req, res) => {
         );
         console.log(`[BOT-MEDIA] ✅ Saved to process_history as ${mediaType || 'UserInput'}`);
         agentCheckSession.markModified('process_history');
+        // If the conversation was marked as resolved, reopen it so the rep sees it again
+        if (agentCheckSession.status === 'resolved') {
+          agentCheckSession.status = 'waiting';
+        }
         await agentCheckSession.save();
         eventBus.emit('session:update', { userId: String(user._id), phone: sender });
         console.log(`[BOT] 🙋 AGENT MODE active for sessionId=${agentCheckSession._id} phone=${phone} — bot suppressed, message recorded`);

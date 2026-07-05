@@ -725,6 +725,44 @@ export const closeConversation = async (req, res) => {
   }
 };
 
+// Mark a conversation as resolved by the representative (טופל).
+// The session stays active (is_agent=true, agent_since unchanged) so the
+// bot remains paused. If the customer sends a new message within the 30-min
+// window the status is automatically flipped back to 'waiting' (handled in
+// chatController). A system history entry is recorded for the audit trail.
+// PATCH /api/sessions/:id/mark-resolved
+export const markResolved = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { session, collection, error, status } = await getSessionWithOwnership(id, req);
+    if (error) return res.status(status).json({ error });
+
+    const now = new Date();
+    const historyEntry = {
+      type: 'System',
+      text: 'השיחה סומנה כטופלה',
+      sender: 'system',
+      name: 'מערכת',
+      node_id: 'system',
+      event: 'conversation_resolved',
+      created: now.toISOString()
+    };
+
+    await collection.updateOne(
+      { _id: new mongoose.Types.ObjectId(id) },
+      {
+        $set: { status: 'resolved' },
+        $push: { process_history: historyEntry }
+      }
+    );
+    eventBus.emit('session:update', { userId: String(req.userId), phone: String(session.sender || session.customer_phone || '') });
+    res.json({ success: true, status: 'resolved', historyEntry });
+  } catch (err) {
+    console.error('markResolved error:', err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
 // ── Transfer conversation to another group / specific rep / shift manager ───
 // PATCH /api/sessions/:id/transfer
 // body: { targetType: 'group' | 'rep' | 'shift_manager', targetId: string, groupId?: string }
