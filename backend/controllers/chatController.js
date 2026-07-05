@@ -2041,3 +2041,274 @@ export const respondToMessage = async (req, res) => {
     });
   }
 };
+
+/**
+ * GET/POST /api/360/:wa_id/send
+ *
+ * Steps performed:
+ *   1. Find bot by wa_id (endpoint match) → resolve user_id
+ *   2. Normalise phone
+ *   3. Flatten params[] + extract header media URL
+ *   4. Fetch template definition → substitute {{1}}…{{N}} with real values
+ *   5. Forward request as-is to https://wa.message.co.il/api/360/:wa_id/send
+ *   6. Ensure a Contact record exists for this phone (create if missing)
+ *   7. Append history entry to existing active BotSession or create a new one
+ */
+export const sendTemplateExternal = async (req, res) => {
+  try {
+    const { wa_id } = req.params;
+    const isGet = req.method === 'GET';
+    const source = isGet ? req.query : (req.body || {});
+    const { phone, template, token } = source;
+
+    console.log(`\n${'═'.repeat(80)}`);
+    console.log(`[360-TEMPLATE] 🚀 START | ${req.method} | wa_id=${wa_id}`);
+    console.log(`[360-TEMPLATE]    phone=${phone} | template=${template} | token=${token ? String(token).substring(0, 8) + '…' : '(missing)'}`);
+
+    if (!phone || !template || !token) {
+      console.log(`[360-TEMPLATE] ❌ Missing required params (phone / template / token)`);
+      return res.status(400).json({ success: false, error: 'phone, template and token are required' });
+    }
+
+    // ── Step 1: Find bot by wa_id ────────────────────────────────────────────
+    console.log(`[360-TEMPLATE] 🔍 STEP 1 — Looking up bot for wa_id=${wa_id}`);
+    const bot = await BotFlow.findOne({
+      $or: [{ endpoint: wa_id }, { endpoint: `dialog360/${wa_id}` }],
+    }).select('_id user_id endpoint name').lean();
+
+    let userId = null;
+    if (bot) {
+      userId = bot.user_id?.toString();
+      console.log(`[360-TEMPLATE]    ✅ Bot found: "${bot.name}" (${bot._id}) | user_id=${userId}`);
+    } else {
+      const userByBotId = await User.findOne({ dialog360_bot_id: wa_id }).lean();
+      if (userByBotId) {
+        userId = userByBotId._id.toString();
+        console.log(`[360-TEMPLATE]    ✅ User found by dialog360_bot_id | email=${userByBotId.email} | userId=${userId}`);
+      } else {
+        console.log(`[360-TEMPLATE]    ⚠️ No bot or user found for wa_id=${wa_id} — will proxy but skip history`);
+      }
+    }
+
+    // ── Step 2: Normalise phone ──────────────────────────────────────────────
+    console.log(`[360-TEMPLATE] 📞 STEP 2 — Normalising phone: ${phone}`);
+    let normalizedPhone = String(phone).replace(/[^0-9]/g, '');
+    normalizedPhone = normalizedPhone.replace(/^972972/, '972');
+    if (!normalizedPhone.startsWith('972')) {
+      normalizedPhone = normalizedPhone.replace(/^0+/, '');
+      normalizedPhone = '972' + normalizedPhone;
+    }
+    console.log(`[360-TEMPLATE]    → ${normalizedPhone}`);
+
+    // ── Step 3: Flatten params[] and extract header media ────────────────────
+    console.log(`[360-TEMPLATE] 🔢 STEP 3 — Parsing params and header`);
+    const rawParams = source.params || {};
+    let paramsArray;
+    if (Array.isArray(rawParams)) {
+      paramsArray = rawParams.map(String);
+    } else if (rawParams && typeof rawParams === 'object') {
+      paramsArray = Object.keys(rawParams)
+        .sort((a, b) => Number(a) - Number(b))
+        .map(k => String(rawParams[k]));
+    } else {
+      paramsArray = [];
+    }
+    console.log(`[360-TEMPLATE]    params (${paramsArray.length}): ${JSON.stringify(paramsArray)}`);
+
+    // Walk any nested structure to find media URL + type inside header[...]
+    let mediaUrl = null;
+    let mediaType = 'image';
+    const rawHeader = source.header;
+    if (rawHeader) {
+      const walkNode = (node) => {
+        if (!node) return;
+        if (typeof node === 'string' && /^https?:\/\//i.test(node)) {
+          mediaUrl = mediaUrl || node;
+        } else if (typeof node === 'object') {
+          if (node.link && typeof node.link === 'string') mediaUrl = mediaUrl || node.link;
+          for (const v of Object.values(node)) walkNode(v);
+        }
+      };
+      walkNode(rawHeader);
+      const typeStrings = [];
+      const collectStr = (node) => {
+        if (typeof node === 'string') typeStrings.push(node.toLowerCase());
+        else if (node && typeof node === 'object') Object.values(node).forEach(collectStr);
+      };
+      collectStr(rawHeader);
+      const found = ['image', 'video', 'document'].find(t => typeStrings.includes(t));
+      if (found) mediaType = found;
+    }
+    console.log(`[360-TEMPLATE]    header: mediaUrl=${mediaUrl || '(none)'} | mediaType=${mediaType}`);
+
+    // ── Step 4: Fetch template definition → resolve body text ────────────────
+    console.log(`[360-TEMPLATE] 📋 STEP 4 — Fetching template definition for "${template}"`);
+    let displayText = paramsArray.length > 0
+      ? `[${template}]: ${paramsArray.join(' | ')}`
+      : `[${template}]`;
+
+    try {
+      const apiToken = crypto.createHash('sha1').update(wa_id + 'moomoo').digest('hex');
+      const templatesUrl = `https://app.chatgo.live/api/dialog360/${wa_id}/message_templates`;
+      console.log(`[360-TEMPLATE]    GET ${templatesUrl}`);
+      const tplRes = await fetch(templatesUrl, { headers: { token: apiToken } });
+      console.log(`[360-TEMPLATE]    templates API status=${tplRes.status}`);
+
+      if (tplRes.ok) {
+        const tplData = await tplRes.json();
+        const allTemplates = tplData?.data || tplData?.waba_templates || [];
+        console.log(`[360-TEMPLATE]    total templates returned: ${allTemplates.length}`);
+        const tplDef = allTemplates.find(t => t.name === template || t.elementName === template);
+
+        if (tplDef) {
+          console.log(`[360-TEMPLATE]    ✅ Template matched: "${tplDef.name}" | status=${tplDef.status} | components: ${(tplDef.components || []).map(c => c.type).join(', ')}`);
+          const components = tplDef.components || [];
+          const bodyComp = components.find(c => c.type === 'BODY');
+          if (bodyComp?.text) {
+            let bodyText = bodyComp.text;
+            paramsArray.forEach((val, idx) => {
+              bodyText = bodyText.replace(new RegExp(`\\{\\{${idx + 1}\\}\\}`, 'g'), val);
+            });
+            const footerComp = components.find(c => c.type === 'FOOTER');
+            if (footerComp?.text) bodyText += `\n\n― ${footerComp.text}`;
+            displayText = bodyText;
+            console.log(`[360-TEMPLATE]    📝 Resolved text: "${displayText.substring(0, 120)}${displayText.length > 120 ? '…' : ''}"`);
+          }
+          // Fallback header URL from template example if not supplied in the request
+          if (!mediaUrl) {
+            const headerComp = components.find(c => c.type === 'HEADER');
+            if (headerComp && ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(headerComp.format)) {
+              const ex = headerComp.example || {};
+              const exLink = (Array.isArray(ex.header_handle) ? ex.header_handle[0] : ex.header_handle)
+                          || (Array.isArray(ex.header_url) ? ex.header_url[0] : ex.header_url) || '';
+              if (exLink) {
+                mediaUrl = exLink;
+                mediaType = headerComp.format.toLowerCase();
+                console.log(`[360-TEMPLATE]    📎 Header URL from template example: ${mediaUrl}`);
+              }
+            }
+          }
+        } else {
+          console.log(`[360-TEMPLATE]    ⚠️ Template "${template}" not found in list — using fallback display text`);
+        }
+      } else {
+        console.warn(`[360-TEMPLATE]    ⚠️ templates API returned ${tplRes.status} — using fallback display text`);
+      }
+    } catch (tplErr) {
+      console.warn(`[360-TEMPLATE]    ⚠️ Template fetch error: ${tplErr.message} — using fallback display text`);
+    }
+
+    // ── Step 5: Forward to wa.message.co.il ─────────────────────────────────
+    console.log(`[360-TEMPLATE] 📡 STEP 5 — Forwarding to wa.message.co.il`);
+    let waSent = false;
+    let waError = null;
+    try {
+      let waRes;
+      if (isGet) {
+        const rawQuery = req.originalUrl.split('?')[1] || '';
+        const waUrl = `https://wa.message.co.il/api/360/${wa_id}/send?${rawQuery}`;
+        console.log(`[360-TEMPLATE]    GET → ${waUrl}`);
+        waRes = await fetch(waUrl, { method: 'GET' });
+      } else {
+        const waUrl = `https://wa.message.co.il/api/360/${wa_id}/send`;
+        console.log(`[360-TEMPLATE]    POST → ${waUrl} | body=${JSON.stringify(source).substring(0, 200)}`);
+        waRes = await fetch(waUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json; charset=utf-8',
+            Accept: 'application/json',
+            token: String(token),
+          },
+          body: JSON.stringify(source),
+        });
+      }
+      if (waRes.ok) {
+        waSent = true;
+        console.log(`[360-TEMPLATE]    ✅ WA OK | status=${waRes.status}`);
+      } else {
+        waError = `HTTP ${waRes.status}: ${await waRes.text()}`;
+        console.error(`[360-TEMPLATE]    ❌ WA failed | ${waError}`);
+      }
+    } catch (waErr) {
+      waError = waErr.message;
+      console.error(`[360-TEMPLATE]    ❌ WA exception: ${waErr.message}`);
+    }
+
+    // ── Step 6: Ensure Contact record exists ─────────────────────────────────
+    if (userId) {
+      console.log(`[360-TEMPLATE] 👤 STEP 6 — Ensuring contact for phone=${normalizedPhone} user=${userId}`);
+      try {
+        const existing = await Contact.findOne({ user_id: userId, phone: normalizedPhone }).lean();
+        if (existing) {
+          console.log(`[360-TEMPLATE]    ✅ Contact already exists (_id=${existing._id})`);
+        } else {
+          const created = await Contact.create({ user_id: userId, phone: normalizedPhone, full_name: '', whatsapp_name: '', email: '', custom_field_values: {} });
+          console.log(`[360-TEMPLATE]    ✅ Contact created (_id=${created._id})`);
+        }
+      } catch (contactErr) {
+        console.warn(`[360-TEMPLATE]    ⚠️ Contact upsert error: ${contactErr.message}`);
+      }
+    } else {
+      console.log(`[360-TEMPLATE] ⏭ STEP 6 — Skipping contact (no userId)`);
+    }
+
+    // ── Step 7: Save history to BotSession ───────────────────────────────────
+    const now = new Date();
+    const historyEntry = {
+      type: mediaUrl ? (mediaType === 'video' ? 'Video' : mediaType === 'document' ? 'Document' : 'Image') : 'Text',
+      text: displayText,
+      ...(mediaUrl ? { url: mediaUrl } : {}),
+      sender: 'agent',
+      name: 'הודעה יוצאת',
+      node_id: 'outgoing_template',
+      template_name: String(template),
+      template_params: paramsArray,
+      wa_sent: waSent,
+      created: now.toISOString(),
+    };
+
+    if (userId) {
+      console.log(`[360-TEMPLATE] 💾 STEP 7 — Saving to BotSession | type=${historyEntry.type} | mediaUrl=${mediaUrl || '(none)'}`);
+      const collection = mongoose.connection.collection('BotSession');
+      const existingSession = await collection.findOne(
+        {
+          $or: [{ sender: normalizedPhone }, { customer_phone: normalizedPhone }],
+          user_id: userId,
+          is_active: { $ne: false },
+        },
+        { sort: { created_at: -1 } }
+      );
+
+      if (existingSession) {
+        await collection.updateOne(
+          { _id: existingSession._id },
+          { $push: { process_history: historyEntry } }
+        );
+        console.log(`[360-TEMPLATE]    ✅ Appended to existing session=${existingSession._id}`);
+      } else {
+        const result = await collection.insertOne({
+          sender: normalizedPhone,
+          customer_phone: normalizedPhone,
+          user_id: userId,
+          flow_id: bot?._id?.toString() || null,
+          is_agent: true,
+          agent_since: now,
+          status: 'waiting',
+          is_active: true,
+          created_at: now,
+          process_history: [historyEntry],
+        });
+        console.log(`[360-TEMPLATE]    ✅ Created new session=${result.insertedId}`);
+      }
+    } else {
+      console.log(`[360-TEMPLATE] ⏭ STEP 7 — Skipping history save (no userId)`);
+    }
+
+    console.log(`[360-TEMPLATE] ✅ DONE | waSent=${waSent} | phone=${normalizedPhone} | waError=${waError || 'none'}`);
+    console.log(`${'═'.repeat(80)}\n`);
+    res.json({ success: true, waSent, waError, phone: normalizedPhone });
+  } catch (err) {
+    console.error('[360-TEMPLATE] ❌ FATAL:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
