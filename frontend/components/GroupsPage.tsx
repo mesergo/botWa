@@ -83,11 +83,15 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
   const [addingMembers, setAddingMembers] = useState(false);
 
   // Send message modal
-  const [sendOpen, setSendOpen] = useState(false);
+  const [sendOpen, setSendOpen] = useState(false); 
   const [sendText, setSendText] = useState('');
-  const [sending, setSending] = useState(false);
+  const [sending, setSending] = useState(false); 
   const [sendResult, setSendResult] = useState<{ sent: number; failed: number; skipped: number; total: number } | null>(null);
 
+  // Scheduled send
+  const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
+  const [scheduleDateTime, setScheduleDateTime] = useState<string>('');
+ 
   // Background broadcast progress / toast
   const [activeBroadcast, setActiveBroadcast] = useState<{
     id: string;
@@ -337,7 +341,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
   }, [selectedGroup, authHeader]);
 
   // ── Send broadcast (enqueues; processes in background) ─────────────────
-  const submitSend = async () => {
+  const submitSend = async (scheduledAtMs?: number) => {
     if (!selectedGroup) return;
     const message = sendText.trim();
     const usingTemplate = !!selectedTemplate;
@@ -348,6 +352,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
     try {
       const body: any = { message };
       if (selectedSendBotId) body.bot_id = selectedSendBotId;
+      if (scheduledAtMs) body.scheduled_at = scheduledAtMs;
       if (usingTemplate) {
         body.isTemplate = true;
         body.templateData = {
@@ -388,8 +393,10 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
       } else {
         alert(data.error || 'שגיאה בשליחה');
       }
-    } catch (e) {
-      alert('שגיאת רשת');
+    } catch (e: any) {
+      console.error('[submitSend] caught error:', e);
+      const msg = e?.message || String(e) || 'שגיאה לא ידועה';
+      alert(`שגיאת רשת: ${msg}\n\nURL: ${API_BASE}/groups/${selectedGroup?._id}/send\n\nפרטים נוספים בקונסול (F12)`);
     } finally {
       setSending(false);
     }
@@ -1134,21 +1141,35 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                       </div>
                     ))}
 
-                    {/* Header media URL input */}
-                    {templateParams.header && (
-                      <div className="mt-3">
-                        <label className="text-xs font-bold text-slate-500 block mb-1">
-                          כתובת {templateParams.header.type === 'image' ? 'תמונה' : templateParams.header.type === 'video' ? 'וידאו' : 'מסמך'} (URL):
-                        </label>
-                        <input
-                          value={templateParams.header.url}
-                          onChange={e => setTemplateParams((p: any) => ({ ...p, header: { ...p.header, url: e.target.value } }))}
-                          placeholder="https://..."
-                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:border-purple-500"
-                          dir="ltr"
-                        />
-                      </div>
-                    )}
+                    {/* Header media uploader */}
+                    {templateParams.header && (() => {
+                      const headerComp = (selectedTemplate?.components || []).find((c: any) => c.type === 'HEADER');
+                      const sampleUrl: string | undefined =
+                        headerComp?.example?.header_url?.[0] ||
+                        headerComp?.example?.header_url ||
+                        (Array.isArray(headerComp?.example?.header_handle) ? headerComp.example.header_handle[0] : undefined) ||
+                        headerComp?.example?.header_handle ||
+                        undefined;
+                      return (
+                        <div className="mt-3">
+                          <label className="text-xs font-bold text-slate-500 block mb-1">
+                            {templateParams.header.type === 'image' ? '🖼️ תמונה' : templateParams.header.type === 'video' ? '🎥 וידאו' : '📄 מסמך'}
+                          </label>
+                          <FileUploader
+                            value={templateParams.header.url || ''}
+                            onChange={(url: string) => setTemplateParams((p: any) => ({ ...p, header: { ...p.header, url } }))}
+                            accept={
+                              templateParams.header.type === 'image' ? 'image/*' :
+                              templateParams.header.type === 'video' ? 'video/*' : '*/*'
+                            }
+                            label={templateParams.header.type === 'image' ? 'תמונה' : templateParams.header.type === 'video' ? 'וידאו' : 'מסמך'}
+                            mediaType={templateParams.header.type}
+                            token={token || ''}
+                            sampleUrl={sampleUrl}
+                          />
+                        </div>
+                      );
+                    })()}
 
                     {/* Body params */}
                     {Array.isArray(templateParams.body) && templateParams.body.length > 0 && (
@@ -1304,18 +1325,89 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
               )}
             </div>
 
-            <div className="flex items-center justify-end gap-3 p-6 border-t border-slate-100">
+            <div className="flex items-center justify-between gap-3 p-6 border-t border-slate-100">
               <button
                 onClick={() => setSendOpen(false)}
                 className="px-5 py-2.5 text-slate-500 hover:text-slate-700 rounded-xl font-bold text-sm"
               >סגור</button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    const defaultDt = new Date(Date.now() + 60 * 60 * 1000);
+                    const pad = (n: number) => String(n).padStart(2, '0');
+                    setScheduleDateTime(
+                      `${defaultDt.getFullYear()}-${pad(defaultDt.getMonth()+1)}-${pad(defaultDt.getDate())}T${pad(defaultDt.getHours())}:${pad(defaultDt.getMinutes())}`
+                    );
+                    setScheduleDialogOpen(true);
+                  }}
+                  disabled={sending || (!selectedTemplate && !mediaUrl && !sendText.trim()) || (sendBots.length > 1 && !selectedSendBotId)}
+                  className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-sm disabled:opacity-50"
+                >
+                  <Calendar size={15} /> שלח בתזמון
+                </button>
+                <button
+                  onClick={() => submitSend()}
+                  disabled={sending || (!selectedTemplate && !mediaUrl && !sendText.trim()) || (sendBots.length > 1 && !selectedSendBotId)}
+                  className="flex items-center gap-2 px-6 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-xl font-bold text-sm disabled:opacity-50"
+                >
+                  <Send size={15} />
+                  {sending ? 'מתחיל שליחה...' : 'שלח במיידי'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Schedule dialog */}
+      {scheduleDialogOpen && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[70] flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm" dir="rtl">
+            <div className="flex items-center justify-between p-6 border-b border-slate-100">
+              <h2 className="text-lg font-black text-slate-900 flex items-center gap-2"><Calendar size={18} /> שלח בתזמון</h2>
+              <button onClick={() => setScheduleDialogOpen(false)} className="p-2 text-slate-300 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-colors">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="p-6">
+              <label className="text-xs font-black text-slate-500 mb-2 block">בחר תאריך ושעה לשליחה:</label>
+              <input
+                type="datetime-local"
+                value={scheduleDateTime}
+                onChange={e => setScheduleDateTime(e.target.value)}
+                min={(() => {
+                  const now = new Date(Date.now() + 60000);
+                  const pad = (n: number) => String(n).padStart(2, '0');
+                  return `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
+                })()}
+                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm outline-none focus:ring-4 focus:ring-blue-600/10 focus:border-blue-600"
+              />
+              {scheduleDateTime && (
+                <p className="mt-2 text-xs font-semibold text-slate-500">
+                  ההודעה תישלח ב: {new Date(scheduleDateTime).toLocaleString('he-IL')}
+                </p>
+              )}
+            </div>
+            <div className="flex items-center justify-end gap-3 p-6 border-t border-slate-100">
               <button
-                onClick={submitSend}
-                disabled={sending || (!selectedTemplate && !mediaUrl && !sendText.trim()) || (sendBots.length > 1 && !selectedSendBotId)}
-                className="flex items-center gap-2 px-6 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-xl font-bold text-sm disabled:opacity-50"
+                onClick={() => setScheduleDialogOpen(false)}
+                className="px-5 py-2.5 text-slate-500 hover:text-slate-700 rounded-xl font-bold text-sm"
+              >ביטול</button>
+              <button
+                onClick={() => {
+                  if (!scheduleDateTime) return;
+                  const ms = new Date(scheduleDateTime).getTime();
+                  if (isNaN(ms) || ms <= Date.now()) {
+                    alert('יש לבחור תאריך ושעה עתידיים');
+                    return;
+                  }
+                  setScheduleDialogOpen(false);
+                  submitSend(ms);
+                }}
+                disabled={!scheduleDateTime || sending}
+                className="flex items-center gap-2 px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-sm disabled:opacity-50"
               >
-                <Send size={15} />
-                {sending ? 'מתחיל שליחה...' : 'שלח'}
+                <Calendar size={15} /> אישור — תזמן שליחה
               </button>
             </div>
           </div>

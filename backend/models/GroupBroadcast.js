@@ -14,9 +14,10 @@ const groupBroadcastSchema = new mongoose.Schema({
 
   // Free-form media attachment (when not using template) — { type: 'image'|'video'|'document', url, filename?, caption? }
   media: { type: mongoose.Schema.Types.Mixed },
- 
+  
   // Results  
-  status: { type: String, enum: ['queued', 'running', 'completed', 'failed'], default: 'queued', index: true },
+  status: { type: String, enum: ['queued', 'scheduled', 'running', 'completed', 'failed'], default: 'queued', index: true },
+  scheduled_at: { type: Date, default: null }, // null = immediate, set = scheduled
   total: { type: Number, default: 0 },
   processed: { type: Number, default: 0 }, // total processed so far (for progress)
   sent: { type: Number, default: 0 },

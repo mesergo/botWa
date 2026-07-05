@@ -305,7 +305,7 @@ export const sendToGroup = async (req, res) => {
   try {
     const userId = getEffectiveUserId(req);
     const { id } = req.params;
-    const { message, isTemplate, templateData, media, bot_id } = req.body || {};
+    const { message, isTemplate, templateData, media, bot_id, scheduled_at } = req.body || {};
 
     const hasMedia = media && media.url && media.type;
     if (!isTemplate && !hasMedia && (!message || !String(message).trim())) {
@@ -316,6 +316,12 @@ export const sendToGroup = async (req, res) => {
     if (!group) return res.status(404).json({ error: 'Group not found' });
     if (group.is_blocklist) {
       return res.status(400).json({ error: 'Cannot broadcast to the blocklist' });
+    }
+
+    // Validate scheduled_at if provided
+    const scheduledAt = scheduled_at ? Number(scheduled_at) : null;
+    if (scheduledAt && (isNaN(scheduledAt) || scheduledAt <= Date.now())) {
+      return res.status(400).json({ error: 'scheduled_at must be a future Unix timestamp in milliseconds' });
     }
 
     const contacts = await Contact.find({ _id: { $in: group.contact_ids }, user_id: userId });
@@ -337,7 +343,8 @@ export const sendToGroup = async (req, res) => {
       sent: 0,
       failed: 0,
       skipped: 0,
-      status: 'queued',
+      status: scheduledAt ? 'scheduled' : 'queued',
+      scheduled_at: scheduledAt ? new Date(scheduledAt) : undefined,
       sent_by: req.user?.email || req.user?.name || '',
     });
 
@@ -345,12 +352,13 @@ export const sendToGroup = async (req, res) => {
     res.json({
       success: true,
       broadcast_id: broadcast._id,
-      status: 'queued',
+      status: scheduledAt ? 'scheduled' : 'queued',
       total: contacts.length,
+      scheduled_at: scheduledAt || undefined,
     });
 
     // Fire & forget — process in background
-    processBroadcast(broadcast._id, userId, group, contacts, { isTemplate, templateData, msgText, media: hasMedia ? media : null, bot_id: bot_id || null })
+    processBroadcast(broadcast._id, userId, group, contacts, { isTemplate, templateData, msgText, media: hasMedia ? media : null, bot_id: bot_id || null, scheduled_at: scheduledAt })
       .catch(err => console.error('[groups.processBroadcast] background error:', err));
   } catch (err) {
     console.error('[groups.sendToGroup] error:', err);
@@ -360,11 +368,13 @@ export const sendToGroup = async (req, res) => {
 
 // Background worker: sends one-by-one and updates progress on the broadcast record
 async function processBroadcast(broadcastId, userId, group, contacts, opts) {
-  const { isTemplate, templateData, msgText, media, bot_id } = opts;
+  const { isTemplate, templateData, msgText, media, bot_id, scheduled_at } = opts;
   const TAG = `[broadcast:${broadcastId}]`;
   try {
+    // התזמון מנוהל על ידי dialog360 — שולחים את כל ההודעות מיד עם שדה `time`
+    // dialog360 שומר אותן ב-waitingMessages ומשלח בזמן המתאים, גם לאחר אתחול שרת
     await GroupBroadcast.findByIdAndUpdate(broadcastId, { status: 'running', started_at: new Date() });
-    console.log(`${TAG} ▶ Starting broadcast — group="${group.name}" contacts=${contacts.length} bot_id=${bot_id || '(auto)'}`);
+    console.log(`${TAG} ▶ Starting broadcast — group="${group.name}" contacts=${contacts.length} bot_id=${bot_id || '(auto)'}${scheduled_at ? ` scheduled_at=${new Date(scheduled_at).toISOString()} (dialog360 will schedule)` : ''}`);
 
     const blocked = await getBlockedPhones(userId);
     console.log(`${TAG} 🚫 Blocked phones count: ${blocked.size}`);
@@ -500,8 +510,25 @@ async function processBroadcast(broadcastId, userId, group, contacts, opts) {
           waBody = { phone: normalized, text: msgText, fromMe: 1 };
         }
 
+        // Add scheduled time if provided (dialog360 accepts Unix ms timestamp as `time`)
+        if (scheduled_at) {
+          waBody.time = scheduled_at;
+          const scheduledDate = new Date(scheduled_at);
+          const nowMs = Date.now();
+          const diffSec = Math.round((scheduled_at - nowMs) / 1000);
+          console.log(`${TAG} [${processed + 1}/${contacts.length}] ⏰ SCHEDULED SEND:`);
+          console.log(`${TAG}   → scheduled_at (ms):  ${scheduled_at}`);
+          console.log(`${TAG}   → scheduled_at (ISO): ${scheduledDate.toISOString()}`);
+          console.log(`${TAG}   → now (ms):           ${nowMs}`);
+          console.log(`${TAG}   → diff from now:      ${diffSec > 0 ? '+' : ''}${diffSec}s (${diffSec > 0 ? 'future ✅' : 'PAST ⚠️'})`);
+          console.log(`${TAG}   → waBody.time set to: ${waBody.time}`);
+        } else {
+          console.log(`${TAG} [${processed + 1}/${contacts.length}] ⚡ IMMEDIATE SEND (no scheduled_at)`);
+        }
+  
         const sendUrl = `https://wa.message.co.il/api/${endpoint}/send`;
-        console.log(`${TAG} [${processed + 1}/${contacts.length}] 📤 POST ${sendUrl} → body=${JSON.stringify(waBody).substring(0, 300)}`);
+        console.log(`${TAG} [${processed + 1}/${contacts.length}] 📤 POST ${sendUrl}`);
+        console.log(`${TAG}   → full waBody: ${JSON.stringify(waBody)}`);
 
         try {
           const waRes = await fetch(sendUrl, {
@@ -514,7 +541,21 @@ async function processBroadcast(broadcastId, userId, group, contacts, opts) {
             body: JSON.stringify(waBody),
           });
           const responseText = await waRes.text().catch(() => '');
-          console.log(`${TAG} [${processed + 1}/${contacts.length}] ← HTTP ${waRes.status} body=${responseText.substring(0, 500)}`);
+          console.log(`${TAG} [${processed + 1}/${contacts.length}] ← HTTP ${waRes.status}`);
+          console.log(`${TAG}   → response body: ${responseText.substring(0, 1000)}`);
+          if (scheduled_at) {
+            // dialog360 אמור להחזיר taskid אם קיבל תזמון
+            try {
+              const parsed = JSON.parse(responseText);
+              if (parsed.taskid) {
+                console.log(`${TAG}   → ✅ dialog360 accepted scheduled message — taskid: ${parsed.taskid}`);
+              } else {
+                console.log(`${TAG}   → ⚠️ dialog360 did NOT return taskid — scheduling may have failed. Full response: ${responseText}`);
+              }
+            } catch (_) {
+              console.log(`${TAG}   → ⚠️ could not parse dialog360 response as JSON`);
+            }
+          }
           if (waRes.ok) {
             sent++;
             recipients.push({ phone: contact.phone, name: contactName, status: 'sent' });
