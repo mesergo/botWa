@@ -34,6 +34,7 @@ interface MergedContact extends ContactRecord {
   lastSeen: string | null;
   bots: { id: string; name: string }[];
   botPhones: string[];
+  contactGroups: { _id: string; name: string }[];
 }
 
 interface ContactsPageProps {
@@ -57,6 +58,51 @@ const API_BASE = window.location.hostname === 'localhost'
   : `${window.location.origin}/api`;
 
 const EMPTY_FORM = { phone: '', full_name: '', whatsapp_name: '', email: '' };
+
+// ─── GroupNameTags ───────────────────────────────────────────────────────────
+
+const GroupNameTags: React.FC<{ groups: { _id: string; name: string }[] }> = ({ groups }) => {
+  const [showPopover, setShowPopover] = React.useState(false);
+  const MAX_VISIBLE = 2;
+
+  if (!groups || groups.length === 0) {
+    return <span className="text-slate-300 text-sm">—</span>;
+  }
+
+  const visible = groups.slice(0, MAX_VISIBLE);
+  const hidden = groups.slice(MAX_VISIBLE);
+
+  return (
+    <div className="flex items-center gap-1 flex-wrap">
+      {visible.map(g => (
+        <span key={g._id} className="text-xs bg-emerald-50 text-emerald-700 border border-emerald-100 px-2 py-0.5 rounded-full font-bold truncate max-w-[7rem]" title={g.name}>
+          {g.name}
+        </span>
+      ))}
+      {hidden.length > 0 && (
+        <div className="relative"
+          onMouseEnter={() => setShowPopover(true)}
+          onMouseLeave={() => setShowPopover(false)}
+        >
+          <button
+            className="text-xs bg-slate-100 text-slate-500 border border-slate-200 px-2 py-0.5 rounded-full font-bold hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-200 transition-colors"
+          >
+            +{hidden.length}
+          </button>
+          {showPopover && (
+            <div className="absolute bottom-full mb-1 right-0 bg-white border border-slate-200 rounded-xl shadow-lg p-2 z-50 flex flex-col gap-1 min-w-[10rem]">
+              {hidden.map(g => (
+                <span key={g._id} className="text-xs text-slate-700 font-semibold px-2 py-1 bg-slate-50 rounded-lg whitespace-nowrap">
+                  {g.name}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
 
 // ─── BotPhonesTags ────────────────────────────────────────────────────────────
 
@@ -255,19 +301,21 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
       const params = new URLSearchParams({ page: String(page), limit: '10' });
       if (debouncedSearch) params.set('search', debouncedSearch);
 
-      const [recordsRes, statsRes] = await Promise.all([
+      const [recordsRes, statsRes, groupsMapRes] = await Promise.all([
         fetch(`${API_BASE}/contacts?${params}`, { headers: { Authorization: `Bearer ${token}` } }),
         fetch(`${API_BASE}/sessions/contacts`, { headers: { Authorization: `Bearer ${token}` } }),
+        fetch(`${API_BASE}/contacts/groups-map`, { headers: { Authorization: `Bearer ${token}` } }),
       ]);
 
       const recordsData = recordsRes.ok ? await recordsRes.json() : { contacts: [], total: 0, totalPages: 1 };
       const records: ContactRecord[] = recordsData.contacts ?? [];
       const stats: SessionStats[] = statsRes.ok ? await statsRes.json() : [];
+      const groupsMap: Record<string, { _id: string; name: string }[]> = groupsMapRes.ok ? await groupsMapRes.json() : {};
 
       setTotal(recordsData.total ?? 0);
       setTotalPages(recordsData.totalPages ?? 1);
 
-      // Enrich each paginated contact with its session stats
+      // Enrich each paginated contact with its session stats and group membership
       const statsMap = new Map<string, SessionStats>(stats.map((s: SessionStats) => [s.phone, s]));
       const merged: MergedContact[] = records.map(r => {
         const s = statsMap.get(r.phone);
@@ -281,6 +329,7 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
           lastSeen: s?.lastSeen ?? null,
           bots: s?.bots ?? [],
           botPhones: s?.botPhones ?? [],
+          contactGroups: r._id ? (groupsMap[r._id] ?? []) : [],
         };
       });
 
@@ -501,9 +550,18 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
             <div className="bg-white border border-slate-100 rounded-2xl overflow-hidden shadow-sm overflow-x-auto">
               {/* Build grid template dynamically */}
               {(() => {
-                const baseColumns = '1.6fr 1.5fr 1.3fr 1.4fr 1.4fr 0.65fr 1.3fr';
-                const customColumns = contactFieldDefs.map(() => '1.2fr').join(' ');
-                const gridTemplateColumns = [baseColumns, customColumns, '7rem'].filter(Boolean).join(' ');
+                // When there are custom fields we switch to fixed rem widths so the grid
+                // can overflow the container and the parent overflow-x-auto kicks in.
+                // Without custom fields we use fr units to fill the available space.
+                const hasCustomCols = contactFieldDefs.length > 0;
+                let gridTemplateColumns: string;
+                if (hasCustomCols) {
+                  const fixedBase = '9rem 8.5rem 7.5rem 8.5rem 8.5rem 8.5rem 4rem 8rem';
+                  const customCols = contactFieldDefs.map(() => '8rem').join(' ');
+                  gridTemplateColumns = [fixedBase, customCols, '7rem'].join(' ');
+                } else {
+                  gridTemplateColumns = '1.6fr 1.5fr 1.3fr 1.4fr 1.4fr 1.4fr 0.65fr 1.3fr 7rem';
+                }
 
                 return (
                   <>
@@ -517,6 +575,7 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
                       <span>שם וואטסאפ</span>
                       <span>כתובת מייל</span>
                       <span>שוחח עם</span>
+                      <span>רשימות תפוצה</span>
                       <span className="text-center">שיחות</span>
                       <span>פעיל לאחרונה</span>
                       {contactFieldDefs.map(f => (
@@ -579,6 +638,11 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
                           {/* Bot phones */}
                           <div className="flex items-center min-w-0" onClick={e => e.stopPropagation()}>
                             <BotPhonesTags phones={contact.botPhones ?? []} />
+                          </div>
+
+                          {/* Distribution groups */}
+                          <div className="flex items-center min-w-0" onClick={e => e.stopPropagation()}>
+                            <GroupNameTags groups={contact.contactGroups ?? []} />
                           </div>
 
                           {/* Session count */}
