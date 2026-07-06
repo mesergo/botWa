@@ -9,6 +9,63 @@ import GroupBroadcast from '../models/GroupBroadcast.js';
 import GroupRemovalLog from '../models/GroupRemovalLog.js';
 import { getEffectiveUserId } from '../middleware/auth.js';
 
+// ── Broadcast Queue (per-user) ────────────────────────────────────────────────
+// Ensures broadcasts for the same user run one at a time, never in parallel.
+const broadcastQueues = new Map(); // userId -> { running: boolean, queue: Array }
+
+function _getOrCreateQueue(userId) {
+  if (!broadcastQueues.has(userId)) {
+    broadcastQueues.set(userId, { running: false, queue: [] });
+  }
+  return broadcastQueues.get(userId);
+}
+
+async function _runBroadcastItem(userId, item) {
+  const { broadcastId, group, contacts, opts } = item;
+  try {
+    await processBroadcast(broadcastId, userId, group, contacts, opts);
+  } catch (err) {
+    console.error(`[broadcastQueue:${broadcastId}] runner error:`, err);
+  } finally {
+    const userQueue = broadcastQueues.get(userId);
+    if (userQueue) {
+      if (userQueue.queue.length > 0) {
+        const next = userQueue.queue.shift();
+        console.log(`[broadcastQueue] ▶ Starting next queued broadcast: ${next.broadcastId} (${next.group.name})`);
+        _runBroadcastItem(userId, next).catch(err =>
+          console.error(`[broadcastQueue:${next.broadcastId}] runner error:`, err)
+        );
+      } else {
+        userQueue.running = false;
+        console.log(`[broadcastQueue] ✅ Queue empty for user ${userId}`);
+      }
+    }
+  }
+}
+
+async function enqueueBroadcast(userId, broadcastId, group, contacts, opts) {
+  const userQueue = _getOrCreateQueue(userId);
+  if (!userQueue.running) {
+    userQueue.running = true;
+    _runBroadcastItem(userId, { broadcastId, group, contacts, opts }).catch(err =>
+      console.error(`[broadcastQueue:${broadcastId}] runner error:`, err)
+    );
+  } else {
+    const position = userQueue.queue.length + 1;
+    userQueue.queue.push({ broadcastId, group, contacts, opts });
+    console.log(`[broadcastQueue:${broadcastId}] ⏳ Queued at position ${position} — waiting for current broadcast to finish`);
+    // Keep status as 'queued' in DB (already is, just log it)
+    await GroupBroadcast.findByIdAndUpdate(broadcastId, { status: 'queued' }).catch(() => {});
+  }
+}
+
+// Returns current queue status for a user (for API/UI feedback)
+function getBroadcastQueueStatus(userId) {
+  const userQueue = broadcastQueues.get(userId);
+  if (!userQueue) return { running: false, queued: 0 };
+  return { running: userQueue.running, queued: userQueue.queue.length };
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
     
 const normalizePhone = (raw = '') => {
@@ -305,7 +362,7 @@ export const sendToGroup = async (req, res) => {
   try {
     const userId = getEffectiveUserId(req);
     const { id } = req.params;
-    const { message, isTemplate, templateData, media, bot_id, scheduled_at } = req.body || {};
+    const { message, isTemplate, templateData, media, bot_id, scheduled_at, exclude_group_id } = req.body || {};
 
     const hasMedia = media && media.url && media.type;
     if (!isTemplate && !hasMedia && (!message || !String(message).trim())) {
@@ -324,7 +381,17 @@ export const sendToGroup = async (req, res) => {
       return res.status(400).json({ error: 'scheduled_at must be a future Unix timestamp in milliseconds' });
     }
 
-    const contacts = await Contact.find({ _id: { $in: group.contact_ids }, user_id: userId });
+    let contacts = await Contact.find({ _id: { $in: group.contact_ids }, user_id: userId });
+
+    // Exclude contacts that belong to a specific group
+    if (exclude_group_id) {
+      const excludeGroup = await Group.findOne({ _id: exclude_group_id, user_id: userId });
+      if (excludeGroup && excludeGroup.contact_ids?.length) {
+        const excludeSet = new Set(excludeGroup.contact_ids.map(cid => String(cid)));
+        contacts = contacts.filter(c => !excludeSet.has(String(c._id)));
+        console.log(`[groups.sendToGroup] Excluding group "${excludeGroup.name}" — removed ${group.contact_ids.length - contacts.length} contacts`);
+      }
+    }
     const msgText = String(message || '').trim();
 
     // Create broadcast record up-front in 'queued' state
@@ -349,17 +416,26 @@ export const sendToGroup = async (req, res) => {
     });
 
     // Return immediately — the actual sending runs in the background
+    // Check queue BEFORE enqueuing so we can tell the client its position
+    const queueStatusBefore = getBroadcastQueueStatus(userId);
+    const willBeQueued = queueStatusBefore.running;
+    const queuePosition = willBeQueued ? queueStatusBefore.queued + 1 : 0;
+
     res.json({
       success: true,
       broadcast_id: broadcast._id,
       status: scheduledAt ? 'scheduled' : 'queued',
       total: contacts.length,
       scheduled_at: scheduledAt || undefined,
+      // Queue info for UI feedback
+      queued_behind: willBeQueued,          // true = waiting for another broadcast to finish
+      queue_position: queuePosition,         // 1 = next, 2 = after that, etc.
     });
 
-    // Fire & forget — process in background
-    processBroadcast(broadcast._id, userId, group, contacts, { isTemplate, templateData, msgText, media: hasMedia ? media : null, bot_id: bot_id || null, scheduled_at: scheduledAt })
-      .catch(err => console.error('[groups.processBroadcast] background error:', err));
+    // Enqueue — will run immediately if no broadcast is currently running for this user,
+    // otherwise waits in queue until the current one finishes.
+    enqueueBroadcast(userId, broadcast._id, group, contacts, { isTemplate, templateData, msgText, media: hasMedia ? media : null, bot_id: bot_id || null, scheduled_at: scheduledAt })
+      .catch(err => console.error('[groups.processBroadcast] queue error:', err));
   } catch (err) {
     console.error('[groups.sendToGroup] error:', err);
     if (!res.headersSent) res.status(500).json({ error: err.message });
@@ -368,7 +444,7 @@ export const sendToGroup = async (req, res) => {
 
 // Background worker: sends one-by-one and updates progress on the broadcast record
 async function processBroadcast(broadcastId, userId, group, contacts, opts) {
-  const { isTemplate, templateData, msgText, media, bot_id, scheduled_at } = opts;
+  const { isTemplate, templateData, msgText, media, bot_id, scheduled_at, resumeFrom } = opts;
   const TAG = `[broadcast:${broadcastId}]`;
   try {
     // התזמון מנוהל על ידי dialog360 — שולחים את כל ההודעות מיד עם שדה `time`
@@ -441,12 +517,19 @@ async function processBroadcast(broadcastId, userId, group, contacts, opts) {
 
     console.log(`${TAG} 📡 Will send via: https://wa.message.co.il/api/${endpoint}/send`);
 
-    let sent = 0;
-    let failed = 0;
-    let skipped = 0;
-    let processed = 0;
-    const errors = [];
-    const recipients = [];
+    // Support resume: start counters from previous run's totals
+    let sent = resumeFrom?.sent || 0;
+    let failed = resumeFrom?.failed || 0;
+    let skipped = resumeFrom?.skipped || 0;
+    let processed = resumeFrom?.processed || 0;
+    const errors = [...(resumeFrom?.errors || [])];
+    const recipients = [...(resumeFrom?.recipients || [])];
+
+    const totalContacts = (resumeFrom?.totalOriginal || contacts.length) + (resumeFrom?.processed || 0);
+    const TAG2 = resumeFrom ? `${TAG}[resume]` : TAG;
+    if (resumeFrom) {
+      console.log(`${TAG2} ♻️ Resuming from offset — already processed=${resumeFrom.processed} sent=${resumeFrom.sent} remaining=${contacts.length}`);
+    }
 
     for (const contact of contacts) {
       const normalized = normalizePhone(contact.phone);
@@ -585,7 +668,7 @@ async function processBroadcast(broadcastId, userId, group, contacts, opts) {
       }
     }
 
-    console.log(`${TAG} ✅ Broadcast complete — sent=${sent} failed=${failed} skipped=${skipped} total=${contacts.length}`);
+    console.log(`${TAG} ✅ Broadcast complete — sent=${sent} failed=${failed} skipped=${skipped} total=${totalContacts}`);
     await GroupBroadcast.findByIdAndUpdate(broadcastId, {
       status: 'completed',
       processed,
@@ -642,6 +725,98 @@ export const getBroadcast = async (req, res) => {
   } catch (err) {
     console.error('[groups.getBroadcast] error:', err);
     res.status(500).json({ error: err.message });
+  }
+};
+
+// POST /api/groups/broadcasts/:id/resume — continue a stopped/failed broadcast from where it left off
+export const resumeBroadcast = async (req, res) => {
+  try {
+    const userId = getEffectiveUserId(req);
+    const { id } = req.params;
+
+    const broadcast = await GroupBroadcast.findOne({ _id: id, user_id: userId });
+    if (!broadcast) return res.status(404).json({ error: 'Broadcast not found' });
+
+    if (broadcast.status === 'running') {
+      // Allow resume if the broadcast is "orphaned" (server restarted, lost in-memory process)
+      // Detect by checking if updatedAt is more than 3 minutes ago (no live updates = dead process)
+      const threeMinutesAgo = new Date(Date.now() - 3 * 60 * 1000);
+      const isOrphaned = !broadcast.updatedAt || broadcast.updatedAt < threeMinutesAgo;
+      if (!isOrphaned) {
+        return res.status(400).json({ error: 'Broadcast is currently running — try again in a few minutes if it appears stuck' });
+      }
+      console.log(`[groups.resumeBroadcast] Broadcast ${id} has status=running but updatedAt=${broadcast.updatedAt?.toISOString()} — orphaned after server restart, allowing resume`);
+    }
+    if (broadcast.status === 'completed') {
+      return res.status(400).json({ error: 'Broadcast already completed successfully' });
+    }
+
+    const queueStatus = getBroadcastQueueStatus(userId);
+    const group = await Group.findOne({ _id: broadcast.group_id, user_id: userId });
+    if (!group) return res.status(404).json({ error: 'Group not found' });
+
+    // Build set of phones already successfully sent (from previous run's recipients)
+    const alreadySentPhones = new Set(
+      (broadcast.recipients || [])
+        .filter(r => r.status === 'sent')
+        .map(r => normalizePhone(r.phone))
+        .filter(Boolean)
+    );
+
+    // Get current group contacts and filter to only those not yet sent
+    const allContacts = await Contact.find({ _id: { $in: group.contact_ids }, user_id: userId });
+    const remainingContacts = allContacts.filter(c => {
+      const np = normalizePhone(c.phone);
+      return !np || !alreadySentPhones.has(np);
+    });
+
+    console.log(`[groups.resumeBroadcast] broadcast=${id} group="${group.name}" already_sent=${alreadySentPhones.size} remaining=${remainingContacts.length}`);
+
+    if (remainingContacts.length === 0) {
+      await GroupBroadcast.findByIdAndUpdate(id, { status: 'completed', completed_at: new Date() });
+      return res.json({ success: true, message: 'All contacts already sent — marked as completed', remaining: 0 });
+    }
+
+    // Reset broadcast to queued state
+    await GroupBroadcast.findByIdAndUpdate(id, {
+      status: 'queued',
+      completed_at: null,
+    });
+
+    const opts = {
+      isTemplate: broadcast.is_template,
+      templateData: broadcast.template_data,
+      msgText: broadcast.message,
+      media: broadcast.media || null,
+      bot_id: null, // auto-detect
+      scheduled_at: broadcast.scheduled_at ? new Date(broadcast.scheduled_at).getTime() : null,
+      // Carry forward existing stats so totals accumulate correctly
+      resumeFrom: {
+        sent: broadcast.sent || 0,
+        failed: broadcast.failed || 0,
+        skipped: broadcast.skipped || 0,
+        processed: broadcast.processed || 0,
+        totalOriginal: broadcast.total || 0,
+        recipients: broadcast.recipients || [],
+        errors: broadcast.errors || [],
+      },
+    };
+
+    res.json({
+      success: true,
+      broadcast_id: broadcast._id,
+      status: queueStatus.running ? 'queued' : 'starting',
+      already_sent: alreadySentPhones.size,
+      remaining: remainingContacts.length,
+      total: broadcast.total,
+      queue_position: queueStatus.running ? queueStatus.queued + 1 : 0,
+    });
+
+    enqueueBroadcast(userId, broadcast._id, group, remainingContacts, opts)
+      .catch(err => console.error('[groups.resumeBroadcast] queue error:', err));
+  } catch (err) {
+    console.error('[groups.resumeBroadcast] error:', err);
+    if (!res.headersSent) res.status(500).json({ error: err.message });
   }
 };
 

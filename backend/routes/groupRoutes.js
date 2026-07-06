@@ -12,6 +12,7 @@ import {
   sendToGroup,
   listBroadcasts,
   getBroadcast,
+  resumeBroadcast,
   listRemovals,
 } from '../controllers/groupController.js';
  
@@ -22,6 +23,7 @@ router.use(authenticateToken);
 router.post('/blocklist/add', addToBlocklist);
 router.get('/broadcasts', listBroadcasts);
 router.get('/broadcasts/:id', getBroadcast);
+router.post('/broadcasts/:id/resume', resumeBroadcast);
 router.get('/removals/log', listRemovals);
 
 router.get('/', listGroups);

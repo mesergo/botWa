@@ -2202,6 +2202,7 @@ export const sendTemplateExternal = async (req, res) => {
     console.log(`[360-TEMPLATE] 📡 STEP 5 — Forwarding to wa.message.co.il`);
     let waSent = false;
     let waError = null;
+    let waResponseBody = null;
     try {
       let waRes;
       if (isGet) {
@@ -2222,11 +2223,13 @@ export const sendTemplateExternal = async (req, res) => {
           body: JSON.stringify(source),
         });
       }
+      const rawText = await waRes.text();
+      try { waResponseBody = JSON.parse(rawText); } catch { waResponseBody = rawText; }
       if (waRes.ok) {
         waSent = true;
         console.log(`[360-TEMPLATE]    ✅ WA OK | status=${waRes.status}`);
       } else {
-        waError = `HTTP ${waRes.status}: ${await waRes.text()}`;
+        waError = `HTTP ${waRes.status}: ${rawText}`;
         console.error(`[360-TEMPLATE]    ❌ WA failed | ${waError}`);
       }
     } catch (waErr) {
@@ -2306,7 +2309,11 @@ export const sendTemplateExternal = async (req, res) => {
 
     console.log(`[360-TEMPLATE] ✅ DONE | waSent=${waSent} | phone=${normalizedPhone} | waError=${waError || 'none'}`);
     console.log(`${'═'.repeat(80)}\n`);
-    res.json({ success: true, waSent, waError, phone: normalizedPhone });
+    if (waResponseBody !== null) {
+      res.json(waResponseBody);
+    } else {
+      res.json({ success: true, waSent, waError, phone: normalizedPhone });
+    }
   } catch (err) {
     console.error('[360-TEMPLATE] ❌ FATAL:', err);
     res.status(500).json({ success: false, error: err.message });
