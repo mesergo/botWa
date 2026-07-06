@@ -696,7 +696,7 @@ export const clearAgentMode = async (req, res) => {
 export const closeConversation = async (req, res) => {
   try {
     const { id } = req.params;
-    const { collection, error, status } = await getSessionWithOwnership(id, req);
+    const { session, collection, error, status } = await getSessionWithOwnership(id, req);
     if (error) return res.status(status).json({ error });
 
     const now = new Date();

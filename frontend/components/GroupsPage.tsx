@@ -3,7 +3,7 @@ import {
   Phone, Search, Users, LogOut, List, Shield, Settings, UserCog, Plus,
   Edit2, Trash2, X, Check, Bot, Send, UserPlus, UserMinus, Ban, Layers,
   ChevronRight, ChevronLeft, ArrowRight, MessageSquare, FileText, History,
-  Calendar, Eye, AlertTriangle, CheckCircle2, Clock, Paperclip, Image as ImageIcon, Video, File as FileLucide
+  Calendar, Eye, AlertTriangle, CheckCircle2, Clock, Paperclip, Image as ImageIcon, Video, File as FileLucide, RotateCcw
 } from 'lucide-react';
 import ImpersonationBanner from './ImpersonationBanner';
 import { FileUploader } from './FileUploader';
@@ -87,13 +87,14 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
   const [sendText, setSendText] = useState('');
   const [sending, setSending] = useState(false); 
   const [sendResult, setSendResult] = useState<{ sent: number; failed: number; skipped: number; total: number } | null>(null);
+  const [excludeGroupId, setExcludeGroupId] = useState<string>('');
 
   // Scheduled send
   const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
   const [scheduleDateTime, setScheduleDateTime] = useState<string>('');
  
-  // Background broadcast progress / toast
-  const [activeBroadcast, setActiveBroadcast] = useState<{
+  // Background broadcast progress / toast — supports multiple concurrent monitors
+  interface ActiveBroadcastEntry {
     id: string;
     total: number;
     processed: number;
@@ -102,10 +103,13 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
     skipped: number;
     status: 'queued' | 'running' | 'completed' | 'failed';
     groupName: string;
-  } | null>(null);
-  const [completionToast, setCompletionToast] = useState<{
-    sent: number; failed: number; skipped: number; total: number; groupName: string;
-  } | null>(null);
+    queuedBehind: boolean; // true = waiting for another broadcast
+    queuePosition: number;
+  }
+  const [activeBroadcasts, setActiveBroadcasts] = useState<ActiveBroadcastEntry[]>([]);
+  const [completionToasts, setCompletionToasts] = useState<{
+    id: string; sent: number; failed: number; skipped: number; total: number; groupName: string;
+  }[]>([]);
 
   // Templates
   const [templates, setTemplates] = useState<any[]>([]);
@@ -353,6 +357,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
       const body: any = { message };
       if (selectedSendBotId) body.bot_id = selectedSendBotId;
       if (scheduledAtMs) body.scheduled_at = scheduledAtMs;
+      if (excludeGroupId) body.exclude_group_id = excludeGroupId;
       if (usingTemplate) {
         body.isTemplate = true;
         body.templateData = {
@@ -372,8 +377,8 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
       });
       const data = await res.json();
       if (res.ok && data.broadcast_id) {
-        // Track in background, close modal, show floating progress toast
-        setActiveBroadcast({
+        // Add to active broadcast trackers (supports multiple concurrent)
+        setActiveBroadcasts(prev => [...prev, {
           id: data.broadcast_id,
           total: data.total || selectedGroup.contacts.length,
           processed: 0,
@@ -382,7 +387,9 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
           skipped: 0,
           status: 'queued',
           groupName: selectedGroup.name,
-        });
+          queuedBehind: data.queued_behind || false,
+          queuePosition: data.queue_position || 0,
+        }]);
         setSendOpen(false);
         setSendText('');
         setSelectedTemplate(null);
@@ -390,6 +397,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
         setMediaType(null);
         setMediaUrl('');
         setMediaFilename('');
+        setExcludeGroupId('');
       } else {
         alert(data.error || 'שגיאה בשליחה');
       }
@@ -402,49 +410,65 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
     }
   };
 
-  // Poll active broadcast every 2 seconds until completed/failed
+  // Poll all active broadcasts every 2 seconds until each is completed/failed
   useEffect(() => {
-    if (!activeBroadcast || activeBroadcast.status === 'completed' || activeBroadcast.status === 'failed') return;
+    const pendingIds = activeBroadcasts
+      .filter(b => b.status !== 'completed' && b.status !== 'failed')
+      .map(b => b.id);
+    if (pendingIds.length === 0) return;
+
     const interval = setInterval(async () => {
-      try {
-        const res = await fetch(`${API_BASE}/groups/broadcasts/${activeBroadcast.id}`, { headers: authHeader });
-        if (!res.ok) return;
-        const data = await res.json();
-        setActiveBroadcast(prev => prev ? {
-          ...prev,
-          processed: data.processed ?? prev.processed,
-          sent: data.sent ?? prev.sent,
-          failed: data.failed ?? prev.failed,
-          skipped: data.skipped ?? prev.skipped,
-          status: data.status || prev.status,
-        } : null);
-        if (data.status === 'completed' || data.status === 'failed') {
-          setCompletionToast({
-            sent: data.sent || 0,
-            failed: data.failed || 0,
-            skipped: data.skipped || 0,
-            total: data.total || 0,
-            groupName: activeBroadcast.groupName,
-          });
-          // refresh history list if user is viewing it
-          if (activeTab === 'history' && selectedGroup?._id === data.group_id) {
-            fetchBroadcasts();
+      for (const bid of pendingIds) {
+        try {
+          const res = await fetch(`${API_BASE}/groups/broadcasts/${bid}`, { headers: authHeader });
+          if (!res.ok) continue;
+          const data = await res.json();
+
+          setActiveBroadcasts(prev => prev.map(b => b.id !== bid ? b : {
+            ...b,
+            processed: data.processed ?? b.processed,
+            sent: data.sent ?? b.sent,
+            failed: data.failed ?? b.failed,
+            skipped: data.skipped ?? b.skipped,
+            status: data.status || b.status,
+            // Clear queue indicators once it starts running
+            queuedBehind: data.status === 'running' ? false : b.queuedBehind,
+            queuePosition: data.status === 'running' ? 0 : b.queuePosition,
+          }));
+
+          if (data.status === 'completed' || data.status === 'failed') {
+            const entry = activeBroadcasts.find(b => b.id === bid);
+            setCompletionToasts(prev => [...prev, {
+              id: bid,
+              sent: data.sent || 0,
+              failed: data.failed || 0,
+              skipped: data.skipped || 0,
+              total: data.total || 0,
+              groupName: entry?.groupName || '',
+            }]);
+            if (activeTab === 'history' && selectedGroup?._id === String(data.group_id)) {
+              fetchBroadcasts();
+            }
           }
+        } catch (e) {
+          console.error('Poll broadcast failed', e);
         }
-      } catch (e) {
-        console.error('Poll broadcast failed', e);
       }
     }, 2000);
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeBroadcast?.id, activeBroadcast?.status, authHeader, activeTab, selectedGroup?._id]);
+  }, [activeBroadcasts.map(b => b.id + b.status).join(','), authHeader, activeTab, selectedGroup?._id]);
 
-  // Auto-dismiss the completion toast after 8 seconds
+  // Auto-dismiss each completion toast after 8 seconds
   useEffect(() => {
-    if (!completionToast) return;
-    const t = setTimeout(() => { setCompletionToast(null); setActiveBroadcast(null); }, 8000);
+    if (completionToasts.length === 0) return;
+    const t = setTimeout(() => {
+      const doneIds = new Set(completionToasts.map(t => t.id));
+      setActiveBroadcasts(prev => prev.filter(b => !doneIds.has(b.id)));
+      setCompletionToasts([]);
+    }, 8000);
     return () => clearTimeout(t);
-  }, [completionToast]);
+  }, [completionToasts.length]);
 
   // ── Templates ───────────────────────────────────────────────────────────
   const fetchTemplates = useCallback(async () => {
@@ -515,6 +539,38 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
     } catch (e) { console.error(e); }
   };
 
+  const resumeBroadcastById = async (broadcastId: string, broadcastGroupName: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      const res = await fetch(`${API_BASE}/groups/broadcasts/${broadcastId}/resume`, {
+        method: 'POST',
+        headers: authHeader,
+      });
+      const data = await res.json();
+      if (!res.ok) { alert(data.error || 'שגיאה בהמשך שליחה'); return; }
+      // Add to active broadcast trackers
+      setActiveBroadcasts(prev => [
+        ...prev.filter(b => b.id !== broadcastId),
+        {
+          id: broadcastId,
+          total: data.total || 0,
+          processed: data.already_sent || 0,
+          sent: data.already_sent || 0,
+          failed: 0,
+          skipped: 0,
+          status: 'queued',
+          groupName: broadcastGroupName,
+          queuedBehind: data.queue_position > 0,
+          queuePosition: data.queue_position || 0,
+        },
+      ]);
+      // Refresh history
+      fetchBroadcasts();
+    } catch (e: any) {
+      alert('שגיאת רשת: ' + (e?.message || String(e)));
+    }
+  };
+
   // Reset to members tab when switching group; auto-load history when tab=history
   useEffect(() => {
     setActiveTab('members');
@@ -533,6 +589,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
     setSelectedTemplate(null);
     setTemplateParams({});
     setSendText('');
+    setExcludeGroupId('');
     if (templates.length === 0) fetchTemplates();
     // Fetch bots with endpoints for number selection
     setSendBotsLoading(true);
@@ -881,20 +938,24 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                   </div>
                 ) : (
                   <div className="bg-white border border-slate-100 rounded-2xl overflow-hidden shadow-sm">
-                    <div className="grid grid-cols-[10rem_1fr_5rem_5rem_5rem_5rem_3rem] gap-3 px-6 py-3 bg-slate-50 border-b border-slate-100 text-xs font-bold text-slate-400 uppercase tracking-wide">
+                    <div className="grid grid-cols-[10rem_1fr_4rem_4rem_4rem_4rem_5rem_6rem_3rem] gap-3 px-6 py-3 bg-slate-50 border-b border-slate-100 text-xs font-bold text-slate-400 uppercase tracking-wide">
                       <span>תאריך</span>
                       <span>תוכן</span>
                       <span>סה"כ</span>
                       <span>נשלחו</span>
                       <span>נכשלו</span>
                       <span>דולגו</span>
+                      <span>תזמון</span>
+                      <span>סטטוס</span>
                       <span></span>
                     </div>
-                    {broadcasts.map((b, idx) => (
+                    {broadcasts.map((b, idx) => {
+                      const isStopped = (b.status === 'failed' || (b.status === 'queued' && b.processed > 0)) && b.processed < b.total;
+                      return (
                       <div
                         key={b._id}
                         onClick={() => fetchBroadcastDetail(b._id)}
-                        className={`grid grid-cols-[10rem_1fr_5rem_5rem_5rem_5rem_3rem] gap-3 px-6 py-3.5 items-center hover:bg-slate-50/70 transition-colors cursor-pointer ${idx !== broadcasts.length - 1 ? 'border-b border-slate-100' : ''}`}
+                        className={`grid grid-cols-[10rem_1fr_4rem_4rem_4rem_4rem_5rem_6rem_3rem] gap-3 px-6 py-3.5 items-center hover:bg-slate-50/70 transition-colors cursor-pointer ${idx !== broadcasts.length - 1 ? 'border-b border-slate-100' : ''}`}
                       >
                         <div className="flex items-center gap-2 text-xs font-bold text-slate-600">
                           <Calendar size={13} className="text-slate-400" />
@@ -914,9 +975,34 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                         <span className="text-sm font-black text-green-600">{b.sent}</span>
                         <span className="text-sm font-black text-red-500">{b.failed}</span>
                         <span className="text-sm font-black text-amber-500">{b.skipped}</span>
-                        <Eye size={16} className="text-slate-300" />
+                        <span>
+                          {b.scheduled_at
+                            ? <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-md text-xs font-black">מתוזמן</span>
+                            : <span className="px-2 py-0.5 bg-slate-100 text-slate-500 rounded-md text-xs font-semibold">מיידי</span>
+                          }
+                        </span>
+                        <span>
+                          {b.status === 'completed' && <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded-md text-xs font-black">הושלם</span>}
+                          {b.status === 'running'   && <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-md text-xs font-black animate-pulse">רץ</span>}
+                          {b.status === 'queued'    && b.processed === 0 && <span className="px-2 py-0.5 bg-slate-100 text-slate-500 rounded-md text-xs font-black">בתור</span>}
+                          {isStopped                && <span className="px-2 py-0.5 bg-orange-100 text-orange-700 rounded-md text-xs font-black">הופסק ({b.processed}/{b.total})</span>}
+                          {b.status === 'failed' && !isStopped && <span className="px-2 py-0.5 bg-red-100 text-red-700 rounded-md text-xs font-black">נכשל</span>}
+                        </span>
+                        {isStopped ? (
+                          <button
+                            onClick={(e) => resumeBroadcastById(b._id, b.group_name || selectedGroup.name, e)}
+                            title="המשך שליחה מהנקודה שנעצרה"
+                            className="flex items-center gap-1 px-2 py-1 bg-orange-500 hover:bg-orange-600 text-white rounded-lg text-xs font-black transition-colors"
+                          >
+                            <RotateCcw size={12} />
+                            המשך
+                          </button>
+                        ) : (
+                          <Eye size={16} className="text-slate-300" />
+                        )}
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )
               )}
@@ -1064,6 +1150,28 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
               <p className="text-sm font-semibold text-slate-500 mb-4">
                 ההודעה תישלח אל {selectedGroup.contacts.length} אנשי קשר. אנשי קשר שנמצאים ברשימת ההסרה יסוננו אוטומטית.
               </p>
+
+              {/* Exclude group selector */}
+              {regularGroups.filter(g => g._id !== selectedGroup._id).length > 0 && (
+                <div className="mb-4 p-4 bg-orange-50 border border-orange-200 rounded-2xl">
+                  <label className="text-xs font-black text-orange-700 mb-2 block">החרגת קבוצה (אופציונלי):</label>
+                  <select
+                    value={excludeGroupId}
+                    onChange={e => setExcludeGroupId(e.target.value)}
+                    className="w-full px-3 py-2 bg-white border border-orange-200 rounded-xl text-sm outline-none focus:border-orange-500"
+                  >
+                    <option value="">ללא החרגה — שלח לכולם</option>
+                    {regularGroups.filter(g => g._id !== selectedGroup._id).map(g => (
+                      <option key={g._id} value={g._id}>{g.name} ({g.contact_count} אנשי קשר)</option>
+                    ))}
+                  </select>
+                  {excludeGroupId && (
+                    <p className="text-xs text-orange-600 font-semibold mt-2">
+                      ⛔ אנשי קשר שנמצאים ב-&quot;{regularGroups.find(g => g._id === excludeGroupId)?.name}&quot; לא יקבלו את ההודעה.
+                    </p>
+                  )}
+                </div>
+              )}
 
               {/* Bot / phone number selector */}
               {sendBotsLoading ? (
@@ -1597,7 +1705,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                     {selectedGroup.is_blocklist ? ' מרשימת ההסרה' : ` מהקבוצה "${selectedGroup.name}"`}
                   </p>
                 </div>
-              </div>
+              </div> 
             </div>
             <div className="p-6">
               {selectedGroup.is_blocklist ? (
@@ -1641,16 +1749,26 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
         </div>
       )}
 
-      {activeBroadcast && !completionToast && (
-        <div className="fixed bottom-6 left-6 z-[70] bg-white border border-slate-200 shadow-2xl rounded-2xl p-4 w-80" dir="rtl">
+      {/* Active broadcast progress toasts (one per active send) */}
+      {activeBroadcasts.filter(b => b.status !== 'completed' && b.status !== 'failed').map((b, idx) => (
+        <div
+          key={b.id}
+          className="fixed left-6 z-[70] bg-white border border-slate-200 shadow-2xl rounded-2xl p-4 w-80"
+          style={{ bottom: `${1.5 + idx * 9}rem` }}
+          dir="rtl"
+        >
           <div className="flex items-center gap-3 mb-3">
             <div className="w-10 h-10 rounded-2xl bg-blue-100 text-blue-600 flex items-center justify-center flex-shrink-0">
               <Send size={18} />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-black text-slate-900 truncate">שולח ל-{activeBroadcast.groupName}</p>
+              <p className="text-sm font-black text-slate-900 truncate">שולח ל-{b.groupName}</p>
               <p className="text-xs font-bold text-slate-400">
-                {activeBroadcast.status === 'queued' ? 'בהמתנה...' : `${activeBroadcast.processed} מתוך ${activeBroadcast.total}`}
+                {b.status === 'queued' && b.queuedBehind
+                  ? `⏳ ממתין בתור (מיקום ${b.queuePosition})`
+                  : b.status === 'queued'
+                  ? 'מתחיל...'
+                  : `${b.processed} מתוך ${b.total}`}
               </p>
             </div>
             <div className="animate-spin w-5 h-5 border-2 border-blue-200 border-t-blue-500 rounded-full flex-shrink-0" />
@@ -1658,42 +1776,50 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
           <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
             <div
               className="h-full bg-blue-500 transition-all duration-300"
-              style={{ width: `${activeBroadcast.total > 0 ? (activeBroadcast.processed / activeBroadcast.total) * 100 : 0}%` }}
+              style={{ width: `${b.total > 0 ? (b.processed / b.total) * 100 : 0}%` }}
             />
           </div>
           <div className="flex items-center justify-between mt-2 text-xs font-bold">
-            <span className="text-green-600">✓ {activeBroadcast.sent}</span>
-            <span className="text-red-500">✗ {activeBroadcast.failed}</span>
-            <span className="text-amber-500">⊘ {activeBroadcast.skipped}</span>
+            <span className="text-green-600">✓ {b.sent}</span>
+            <span className="text-red-500">✗ {b.failed}</span>
+            <span className="text-amber-500">⊘ {b.skipped}</span>
           </div>
         </div>
-      )}
+      ))}
 
-      {/* Completion toast */}
-      {completionToast && (
-        <div className="fixed bottom-6 left-6 z-[70] bg-white border border-green-200 shadow-2xl rounded-2xl p-4 w-80" dir="rtl">
+      {/* Completion toasts (one per finished broadcast) */}
+      {completionToasts.map((ct, idx) => (
+        <div
+          key={ct.id}
+          className="fixed left-6 z-[70] bg-white border border-green-200 shadow-2xl rounded-2xl p-4 w-80"
+          style={{ bottom: `${1.5 + idx * 9}rem` }}
+          dir="rtl"
+        >
           <div className="flex items-start gap-3">
             <div className="w-10 h-10 rounded-2xl bg-green-100 text-green-600 flex items-center justify-center flex-shrink-0">
               <CheckCircle2 size={20} />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-black text-slate-900">השליחה ל-{completionToast.groupName} הושלמה</p>
+              <p className="text-sm font-black text-slate-900">השליחה ל-{ct.groupName} הושלמה</p>
               <p className="text-xs font-semibold text-slate-500 mt-1">
-                נשלחו בהצלחה: <span className="text-green-600 font-black">{completionToast.sent}</span>
-                {completionToast.failed > 0 && <> · נכשלו: <span className="text-red-500 font-black">{completionToast.failed}</span></>}
-                {completionToast.skipped > 0 && <> · דולגו: <span className="text-amber-500 font-black">{completionToast.skipped}</span></>}
+                נשלחו בהצלחה: <span className="text-green-600 font-black">{ct.sent}</span>
+                {ct.failed > 0 && <> · נכשלו: <span className="text-red-500 font-black">{ct.failed}</span></>}
+                {ct.skipped > 0 && <> · דולגו: <span className="text-amber-500 font-black">{ct.skipped}</span></>}
               </p>
-              <p className="text-xs font-bold text-slate-400 mt-0.5">סה"כ {completionToast.total} אנשי קשר</p>
+              <p className="text-xs font-bold text-slate-400 mt-0.5">סה"כ {ct.total} אנשי קשר</p>
             </div>
             <button
-              onClick={() => { setCompletionToast(null); setActiveBroadcast(null); }}
+              onClick={() => {
+                setCompletionToasts(prev => prev.filter(t => t.id !== ct.id));
+                setActiveBroadcasts(prev => prev.filter(b => b.id !== ct.id));
+              }}
               className="p-1 text-slate-300 hover:text-slate-600 rounded-lg flex-shrink-0"
             >
               <X size={16} />
             </button>
           </div>
         </div>
-      )}
+      ))}
     </div>
   );
 };
