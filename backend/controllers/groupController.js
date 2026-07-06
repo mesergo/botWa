@@ -738,7 +738,14 @@ export const resumeBroadcast = async (req, res) => {
     if (!broadcast) return res.status(404).json({ error: 'Broadcast not found' });
 
     if (broadcast.status === 'running') {
-      return res.status(400).json({ error: 'Broadcast is already running' });
+      // Allow resume if the broadcast is "orphaned" (server restarted, lost in-memory process)
+      // Detect by checking if updatedAt is more than 3 minutes ago (no live updates = dead process)
+      const threeMinutesAgo = new Date(Date.now() - 3 * 60 * 1000);
+      const isOrphaned = !broadcast.updatedAt || broadcast.updatedAt < threeMinutesAgo;
+      if (!isOrphaned) {
+        return res.status(400).json({ error: 'Broadcast is currently running — try again in a few minutes if it appears stuck' });
+      }
+      console.log(`[groups.resumeBroadcast] Broadcast ${id} has status=running but updatedAt=${broadcast.updatedAt?.toISOString()} — orphaned after server restart, allowing resume`);
     }
     if (broadcast.status === 'completed') {
       return res.status(400).json({ error: 'Broadcast already completed successfully' });

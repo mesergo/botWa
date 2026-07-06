@@ -950,7 +950,10 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                       <span></span>
                     </div>
                     {broadcasts.map((b, idx) => {
-                      const isStopped = (b.status === 'failed' || (b.status === 'queued' && b.processed > 0)) && b.processed < b.total;
+                      // isStopped: any non-completed broadcast that has sent some but not all
+                      // Includes status='running' — covers server-restart orphan (stuck in DB as running)
+                      const isPartial = b.processed > 0 && b.processed < b.total;
+                      const isStopped = (b.status === 'failed' || b.status === 'running' || (b.status === 'queued' && b.processed > 0)) && isPartial;
                       return (
                       <div
                         key={b._id}
@@ -983,10 +986,10 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                         </span>
                         <span>
                           {b.status === 'completed' && <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded-md text-xs font-black">הושלם</span>}
-                          {b.status === 'running'   && <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-md text-xs font-black animate-pulse">רץ</span>}
-                          {b.status === 'queued'    && b.processed === 0 && <span className="px-2 py-0.5 bg-slate-100 text-slate-500 rounded-md text-xs font-black">בתור</span>}
                           {isStopped                && <span className="px-2 py-0.5 bg-orange-100 text-orange-700 rounded-md text-xs font-black">הופסק ({b.processed}/{b.total})</span>}
-                          {b.status === 'failed' && !isStopped && <span className="px-2 py-0.5 bg-red-100 text-red-700 rounded-md text-xs font-black">נכשל</span>}
+                          {!isStopped && b.status === 'running'   && <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-md text-xs font-black animate-pulse">רץ</span>}
+                          {!isStopped && b.status === 'queued' && b.processed === 0 && <span className="px-2 py-0.5 bg-slate-100 text-slate-500 rounded-md text-xs font-black">בתור</span>}
+                          {!isStopped && b.status === 'failed' && <span className="px-2 py-0.5 bg-red-100 text-red-700 rounded-md text-xs font-black">נכשל</span>}
                         </span>
                         {isStopped ? (
                           <button
