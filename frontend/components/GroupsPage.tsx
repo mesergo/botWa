@@ -881,20 +881,21 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                   </div>
                 ) : (
                   <div className="bg-white border border-slate-100 rounded-2xl overflow-hidden shadow-sm">
-                    <div className="grid grid-cols-[10rem_1fr_5rem_5rem_5rem_5rem_3rem] gap-3 px-6 py-3 bg-slate-50 border-b border-slate-100 text-xs font-bold text-slate-400 uppercase tracking-wide">
+                    <div className="grid grid-cols-[10rem_1fr_5rem_5rem_5rem_5rem_6rem_3rem] gap-3 px-6 py-3 bg-slate-50 border-b border-slate-100 text-xs font-bold text-slate-400 uppercase tracking-wide">
                       <span>תאריך</span>
                       <span>תוכן</span>
                       <span>סה"כ</span>
                       <span>נשלחו</span>
                       <span>נכשלו</span>
                       <span>דולגו</span>
+                      <span>תזמון</span>
                       <span></span>
                     </div>
                     {broadcasts.map((b, idx) => (
                       <div
                         key={b._id}
                         onClick={() => fetchBroadcastDetail(b._id)}
-                        className={`grid grid-cols-[10rem_1fr_5rem_5rem_5rem_5rem_3rem] gap-3 px-6 py-3.5 items-center hover:bg-slate-50/70 transition-colors cursor-pointer ${idx !== broadcasts.length - 1 ? 'border-b border-slate-100' : ''}`}
+                        className={`grid grid-cols-[10rem_1fr_5rem_5rem_5rem_5rem_6rem_3rem] gap-3 px-6 py-3.5 items-center hover:bg-slate-50/70 transition-colors cursor-pointer ${idx !== broadcasts.length - 1 ? 'border-b border-slate-100' : ''}`}
                       >
                         <div className="flex items-center gap-2 text-xs font-bold text-slate-600">
                           <Calendar size={13} className="text-slate-400" />
@@ -914,6 +915,12 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                         <span className="text-sm font-black text-green-600">{b.sent}</span>
                         <span className="text-sm font-black text-red-500">{b.failed}</span>
                         <span className="text-sm font-black text-amber-500">{b.skipped}</span>
+                        <span>
+                          {b.scheduled_at
+                            ? <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-md text-xs font-black">מתוזמן</span>
+                            : <span className="px-2 py-0.5 bg-slate-100 text-slate-500 rounded-md text-xs font-semibold">מיידי</span>
+                          }
+                        </span>
                         <Eye size={16} className="text-slate-300" />
                       </div>
                     ))}
@@ -1597,7 +1604,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                     {selectedGroup.is_blocklist ? ' מרשימת ההסרה' : ` מהקבוצה "${selectedGroup.name}"`}
                   </p>
                 </div>
-              </div>
+              </div> 
             </div>
             <div className="p-6">
               {selectedGroup.is_blocklist ? (
