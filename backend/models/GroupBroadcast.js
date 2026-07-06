@@ -16,8 +16,11 @@ const groupBroadcastSchema = new mongoose.Schema({
   media: { type: mongoose.Schema.Types.Mixed },
   
   // Results  
-  status: { type: String, enum: ['queued', 'scheduled', 'running', 'completed', 'failed'], default: 'queued', index: true },
+  status: { type: String, enum: ['queued', 'scheduled', 'running', 'completed', 'failed', 'cancelled'], default: 'queued', index: true },
   scheduled_at: { type: Date, default: null }, // null = immediate, set = scheduled
+  cancelled_at: { type: Date, default: null },
+  // taskids saved from dialog360 responses — used to cancel scheduled messages via /unsend
+  taskids: { type: Array, default: [] }, // [{ contact_phone: String, taskid: String }]
   total: { type: Number, default: 0 },
   processed: { type: Number, default: 0 }, // total processed so far (for progress)
   sent: { type: Number, default: 0 },

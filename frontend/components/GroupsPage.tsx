@@ -135,6 +135,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
   const [broadcasts, setBroadcasts] = useState<any[]>([]);
   const [broadcastsLoading, setBroadcastsLoading] = useState(false);
   const [selectedBroadcast, setSelectedBroadcast] = useState<any | null>(null);
+  const [cancellingBroadcastId, setCancellingBroadcastId] = useState<string | null>(null);
 
   // Remove-member confirmation + removals report
   const [removeTarget, setRemoveTarget] = useState<ContactRecord | null>(null);
@@ -568,6 +569,28 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
       fetchBroadcasts();
     } catch (e: any) {
       alert('שגיאת רשת: ' + (e?.message || String(e)));
+       }
+  };
+
+  const cancelBroadcastHandler = async (e: React.MouseEvent, broadcastId: string) => {
+    e.stopPropagation(); // don't open the detail panel
+    if (!window.confirm('לבטל את השידור המתוזמן? הודעות שטרם נשלחו לא יגיעו לנמענים.')) return;
+    setCancellingBroadcastId(broadcastId);
+    try {
+      const res = await fetch(`${API_BASE}/groups/broadcasts/${broadcastId}/cancel`, {
+        method: 'DELETE',
+        headers: authHeader,
+      });
+      if (res.ok) {
+        setBroadcasts(prev => prev.map(b => b._id === broadcastId ? { ...b, status: 'cancelled' } : b));
+      } else {
+        const data = await res.json().catch(() => ({}));
+        alert(`שגיאה בביטול: ${data.error || res.status}`);
+      }
+    } catch (e) {
+      alert('שגיאת רשת — נסה שוב');
+    } finally {
+      setCancellingBroadcastId(null);
     }
   };
 
@@ -938,7 +961,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                   </div>
                 ) : (
                   <div className="bg-white border border-slate-100 rounded-2xl overflow-hidden shadow-sm">
-                    <div className="grid grid-cols-[10rem_1fr_4rem_4rem_4rem_4rem_5rem_6rem_3rem] gap-3 px-6 py-3 bg-slate-50 border-b border-slate-100 text-xs font-bold text-slate-400 uppercase tracking-wide">
+                    <div className="grid grid-cols-[10rem_1fr_5rem_5rem_5rem_5rem_6rem_5rem_3rem] gap-3 px-6 py-3 bg-slate-50 border-b border-slate-100 text-xs font-bold text-slate-400 uppercase tracking-wide">
                       <span>תאריך</span>
                       <span>תוכן</span>
                       <span>סה"כ</span>
@@ -958,7 +981,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                       <div
                         key={b._id}
                         onClick={() => fetchBroadcastDetail(b._id)}
-                        className={`grid grid-cols-[10rem_1fr_4rem_4rem_4rem_4rem_5rem_6rem_3rem] gap-3 px-6 py-3.5 items-center hover:bg-slate-50/70 transition-colors cursor-pointer ${idx !== broadcasts.length - 1 ? 'border-b border-slate-100' : ''}`}
+                        className={`grid grid-cols-[10rem_1fr_5rem_5rem_5rem_5rem_6rem_5rem_3rem] gap-3 px-6 py-3.5 items-center hover:bg-slate-50/70 transition-colors cursor-pointer ${idx !== broadcasts.length - 1 ? 'border-b border-slate-100' : ''}`}
                       >
                         <div className="flex items-center gap-2 text-xs font-bold text-slate-600">
                           <Calendar size={13} className="text-slate-400" />
@@ -980,16 +1003,26 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                         <span className="text-sm font-black text-amber-500">{b.skipped}</span>
                         <span>
                           {b.scheduled_at
-                            ? <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-md text-xs font-black">מתוזמן</span>
+                            ? (
+                              <div className="flex flex-col gap-0.5">
+                                <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-md text-xs font-black w-fit">מתוזמן</span>
+                                <span className="text-xs font-semibold text-blue-600 whitespace-nowrap">
+                                  {new Date(b.scheduled_at).toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' })}
+                                </span>
+                              </div>
+                            )
                             : <span className="px-2 py-0.5 bg-slate-100 text-slate-500 rounded-md text-xs font-semibold">מיידי</span>
                           }
                         </span>
                         <span>
+
+                                                  {b.status === 'cancelled' && <span className="px-2 py-0.5 bg-red-100 text-red-600 rounded-md text-xs font-black">בוטל</span>}
                           {b.status === 'completed' && <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded-md text-xs font-black">הושלם</span>}
-                          {isStopped                && <span className="px-2 py-0.5 bg-orange-100 text-orange-700 rounded-md text-xs font-black">הופסק ({b.processed}/{b.total})</span>}
-                          {!isStopped && b.status === 'running'   && <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-md text-xs font-black animate-pulse">רץ</span>}
+                          {isStopped && <span className="px-2 py-0.5 bg-orange-100 text-orange-700 rounded-md text-xs font-black">הופסק ({b.processed}/{b.total})</span>}
+                          {!isStopped && b.status === 'running' && <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-md text-xs font-black animate-pulse">רץ</span>}
                           {!isStopped && b.status === 'queued' && b.processed === 0 && <span className="px-2 py-0.5 bg-slate-100 text-slate-500 rounded-md text-xs font-black">בתור</span>}
                           {!isStopped && b.status === 'failed' && <span className="px-2 py-0.5 bg-red-100 text-red-700 rounded-md text-xs font-black">נכשל</span>}
+                          {b.status === 'scheduled' && <span className="px-2 py-0.5 bg-blue-50 text-blue-500 rounded-md text-xs font-semibold">ממתין</span>}
                         </span>
                         {isStopped ? (
                           <button
@@ -999,6 +1032,18 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                           >
                             <RotateCcw size={12} />
                             המשך
+                          </button>
+                        ) : b.status === 'scheduled' ? (
+                          <button
+                            onClick={(e) => cancelBroadcastHandler(e, b._id)}
+                            disabled={cancellingBroadcastId === b._id}
+                            title="בטל שידור מתוזמן"
+                            className="p-1.5 rounded-lg text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors disabled:opacity-40"
+                          >
+                            {cancellingBroadcastId === b._id
+                              ? <div className="w-4 h-4 border-2 border-red-300 border-t-red-500 rounded-full animate-spin" />
+                              : <X size={16} />
+                            }
                           </button>
                         ) : (
                           <Eye size={16} className="text-slate-300" />

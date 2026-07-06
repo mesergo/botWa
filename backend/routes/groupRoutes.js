@@ -13,6 +13,7 @@ import {
   listBroadcasts,
   getBroadcast,
   resumeBroadcast,
+  cancelBroadcast,
   listRemovals,
 } from '../controllers/groupController.js';
  
@@ -24,6 +25,7 @@ router.post('/blocklist/add', addToBlocklist);
 router.get('/broadcasts', listBroadcasts);
 router.get('/broadcasts/:id', getBroadcast);
 router.post('/broadcasts/:id/resume', resumeBroadcast);
+router.delete('/broadcasts/:id/cancel', cancelBroadcast);
 router.get('/removals/log', listRemovals);
 
 router.get('/', listGroups);

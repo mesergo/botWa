@@ -524,13 +524,15 @@ async function processBroadcast(broadcastId, userId, group, contacts, opts) {
     let processed = resumeFrom?.processed || 0;
     const errors = [...(resumeFrom?.errors || [])];
     const recipients = [...(resumeFrom?.recipients || [])];
+    const collectedTaskids = []; // { contact_phone, taskid } — for scheduled cancellation
+
 
     const totalContacts = (resumeFrom?.totalOriginal || contacts.length) + (resumeFrom?.processed || 0);
     const TAG2 = resumeFrom ? `${TAG}[resume]` : TAG;
     if (resumeFrom) {
       console.log(`${TAG2} ♻️ Resuming from offset — already processed=${resumeFrom.processed} sent=${resumeFrom.sent} remaining=${contacts.length}`);
     }
-
+  
     for (const contact of contacts) {
       const normalized = normalizePhone(contact.phone);
       const contactName = contact.full_name || contact.whatsapp_name || '';
@@ -632,6 +634,7 @@ async function processBroadcast(broadcastId, userId, group, contacts, opts) {
               const parsed = JSON.parse(responseText);
               if (parsed.taskid) {
                 console.log(`${TAG}   → ✅ dialog360 accepted scheduled message — taskid: ${parsed.taskid}`);
+                collectedTaskids.push({ contact_phone: normalized, taskid: String(parsed.taskid) });
               } else {
                 console.log(`${TAG}   → ⚠️ dialog360 did NOT return taskid — scheduling may have failed. Full response: ${responseText}`);
               }
@@ -678,6 +681,7 @@ async function processBroadcast(broadcastId, userId, group, contacts, opts) {
       errors: errors.slice(0, 50),
       recipients,
       completed_at: new Date(),
+      ...(collectedTaskids.length ? { taskids: collectedTaskids } : {}),
     });
   } catch (err) {
     console.error(`${TAG} 💥 Unexpected error:`, err);
@@ -690,6 +694,78 @@ async function processBroadcast(broadcastId, userId, group, contacts, opts) {
 }
 
 // ── Broadcast history ────────────────────────────────────────────────────────
+
+// DELETE /api/groups/broadcasts/:id/cancel — cancel a scheduled broadcast
+export const cancelBroadcast = async (req, res) => {
+  try {
+    const userId = getEffectiveUserId(req);
+    const { id } = req.params;
+
+    const broadcast = await GroupBroadcast.findOne({ _id: id, user_id: userId });
+    if (!broadcast) return res.status(404).json({ error: 'Broadcast not found' });
+    if (broadcast.status !== 'scheduled') {
+      return res.status(400).json({ error: `Cannot cancel a broadcast with status "${broadcast.status}". Only scheduled broadcasts can be cancelled.` });
+    }
+
+    const taskids = broadcast.taskids || [];
+    console.log(`[cancelBroadcast:${id}] Cancelling ${taskids.length} scheduled message(s) via dialog360`);
+
+    // Resolve the endpoint + token (same logic as processBroadcast)
+    let endpoint = null;
+    let waToken = null;
+    const userBots = await BotFlow.find({ user_id: userId, endpoint: { $nin: ['', null] } });
+    if (userBots.length === 1) {
+      const bot = userBots[0];
+      endpoint = bot.endpoint.includes('/') ? bot.endpoint : `dialog360/${bot.endpoint}`;
+      const endpointId = endpoint.split('/').pop();
+      waToken = crypto.createHash('sha1').update(endpointId + 'moomoo').digest('hex');
+    } else if (userBots.length > 1) {
+      // Try to find bot from broadcast's group info — fall back to first bot
+      const bot = userBots[0];
+      endpoint = bot.endpoint.includes('/') ? bot.endpoint : `dialog360/${bot.endpoint}`;
+      const endpointId = endpoint.split('/').pop();
+      waToken = crypto.createHash('sha1').update(endpointId + 'moomoo').digest('hex');
+    }
+
+    let cancelled = 0;
+    let cancelErrors = 0;
+
+    if (endpoint && taskids.length > 0) {
+      const unsendUrl = `https://wa.message.co.il/api/${endpoint}/unsend`;
+      for (const { taskid, contact_phone } of taskids) {
+        try {
+          const r = await fetch(unsendUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', token: waToken },
+            body: JSON.stringify({ id: taskid }),
+          });
+          if (r.ok) {
+            cancelled++;
+            console.log(`[cancelBroadcast:${id}] ✅ Unsent taskid=${taskid} phone=${contact_phone}`);
+          } else {
+            cancelErrors++;
+            console.warn(`[cancelBroadcast:${id}] ⚠️ Unsend failed for taskid=${taskid}: HTTP ${r.status}`);
+          }
+        } catch (e) {
+          cancelErrors++;
+          console.error(`[cancelBroadcast:${id}] ❌ Unsend error for taskid=${taskid}:`, e.message);
+        }
+      }
+    } else {
+      console.warn(`[cancelBroadcast:${id}] No endpoint or no taskids — marking cancelled without calling dialog360`);
+    }
+
+    await GroupBroadcast.findByIdAndUpdate(id, {
+      status: 'cancelled',
+      cancelled_at: new Date(),
+    });
+
+    res.json({ success: true, cancelled, cancelErrors, total: taskids.length });
+  } catch (err) {
+    console.error('[groups.cancelBroadcast] error:', err);
+    res.status(500).json({ error: err.message });
+  }
+};
 
 // GET /api/groups/broadcasts — list all broadcasts for the user (optionally filter by group)
 // Query: ?group_id=...&limit=50

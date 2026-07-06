@@ -97,6 +97,25 @@ export const updateContact = async (req, res) => {
   }
 };
 
+// GET /api/contacts/groups-map — returns a map of contactId -> [{_id, name}] for all non-blocklist groups
+export const getContactGroupsMap = async (req, res) => {
+  const userId = getEffectiveUserId(req);
+  try {
+    const groups = await Group.find({ user_id: userId, is_blocklist: false }).select('_id name contact_ids');
+    const map = {};
+    for (const g of groups) {
+      for (const cid of g.contact_ids) {
+        const key = cid.toString();
+        if (!map[key]) map[key] = [];
+        map[key].push({ _id: g._id, name: g.name });
+      }
+    }
+    res.json(map);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
 // DELETE /api/contacts/:id
 export const deleteContact = async (req, res) => {
   const userId = getEffectiveUserId(req);
