@@ -24,7 +24,9 @@ const botSessionSchema = new mongoose.Schema({
   //   'waiting'  — transferred to a representative, waiting for response
   //   'handling' — a representative has replied with a free-text message
   //   'closed'   — representative marked the conversation as ended
-  status: { type: String, enum: ['bot', 'waiting', 'handling', 'closed'], default: 'bot' }
+  status: { type: String, enum: ['bot', 'waiting', 'handling', 'closed'], default: 'bot' },
+  // Whether the customer requested a phone callback when transferred to an agent
+  wants_phone: { type: Boolean, default: false }
 }, {
   timestamps: true,
   collection: 'BotSession'

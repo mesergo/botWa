@@ -29,6 +29,8 @@ export enum NodeType {
   ACTION_ADD_TO_GROUP = 'action_add_to_group',
   ACTION_REMOVE_FROM_GROUP = 'action_remove_from_group',
   ACTION_TRANSFER_TO_AGENT = 'action_transfer_to_agent',
+  // Actions (continued)
+  ACTION_SET_PARAMETER = 'action_set_parameter',
   // Special
   START = 'start',
   FIXED_PROCESS = 'fixed_process',
@@ -66,6 +68,10 @@ export interface NodeData {
   repUserId?: string;
   /** Unified add/remove group component: which action to perform */
   groupActionMode?: 'add' | 'remove';
+  /** For action_set_parameter: the parameter name to set */
+  parameterName?: string;
+  /** For action_set_parameter: the value to assign (supports --varName-- syntax) */
+  parameterValue?: string;
   processId?: string;
   onChange?: (data: Partial<NodeData>) => void;
   onDelete?: () => void;

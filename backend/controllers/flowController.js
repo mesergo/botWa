@@ -3,7 +3,7 @@ import Version from '../models/Version.js';
 import Widget from '../models/Widget.js';
 import Option from '../models/Option.js';
 import AuditLog from '../models/AuditLog.js';
-import { mongoose } from '../config/db.js';
+import mongoose from 'mongoose';
 import { getEffectiveUserId } from '../middleware/auth.js';
 
 // Records a rejected/forced sync attempt so we always have a paper trail when

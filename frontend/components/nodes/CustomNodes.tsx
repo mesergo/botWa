@@ -784,6 +784,18 @@ export const ActionWaitNode = (props: any) => (
   </BaseNode>
 );
 
+export const ActionSetParameterNode = (props: any) => (
+  <BaseNode id={props.id} title="הגדרת פרמטר" icon={<Zap size={20} />} type={NodeType.ACTION_SET_PARAMETER} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} isSearchMatch={props.data.isSearchMatch}>
+    <InputFieldWrapper label="שם הפרמטר">
+      <SearchableInput value={props.data.parameterName} onChange={(v: string) => props.data.onChange({ parameterName: v })} placeholder="למשל: user_status" searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
+    </InputFieldWrapper>
+    <InputFieldWrapper label="ערך">
+      <SearchableInput value={props.data.parameterValue} onChange={(v: string) => props.data.onChange({ parameterValue: v })} placeholder="ערך קבוע או --שם_משתנה--" searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
+    </InputFieldWrapper>
+    <p className="text-[11px] text-slate-400 text-right px-1 -mt-2 mb-1">ניתן לכתוב ערך קבוע או לשלב --שם_פרמטר-- כדי להעתיק ערך של פרמטר אחר</p>
+  </BaseNode>
+);
+
 export const FixedProcessNode = (props: any) => (
   <BaseNode id={props.id} title={`תת תזרים ${props.data.label}`} icon={<Layers size={20} />} type={NodeType.FIXED_PROCESS} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} isSearchMatch={props.data.isSearchMatch}>
     <div className="bg-slate-50 p-5 rounded-2xl border border-slate-100 text-[14px] text-slate-500 font-bold uppercase tracking-widest flex items-center justify-end gap-3 text-right">תת תזרים {props.data.label} <Layers size={20} className="text-slate-400" /></div>
@@ -1252,6 +1264,19 @@ export const ActionTransferToAgentNode = (props: any) => {
         הרכיב יעביר את השיחה לנציג מהקבוצה שנבחרה.<br />
         הבוט יפסיק להגיב למשך 30 דקות (כמו בשיחה עם נציג).
       </p>
+
+      <label className="flex items-center gap-2 mt-2 cursor-pointer nodrag select-none">
+        <input
+          type="checkbox"
+          className="nodrag accent-green-600 w-3.5 h-3.5 cursor-pointer"
+          checked={!!props.data.wantsPhone}
+          onChange={e => props.data.onChange({ wantsPhone: e.target.checked })}
+        />
+        <span className="flex items-center gap-1 text-[12px] font-bold text-slate-700">
+          <Phone size={11} className="text-green-600" />
+          לקוח מעוניין בחזרת טלפון
+        </span>
+      </label>
     </BaseNode>
   );
 };

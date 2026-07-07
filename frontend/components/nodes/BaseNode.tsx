@@ -18,6 +18,7 @@ const NODE_TYPE_LABELS: Record<string, string> = {
   [NodeType.ACTION_ADD_TO_GROUP]:      'ניהול קבוצה',
   [NodeType.ACTION_REMOVE_FROM_GROUP]: 'הסרה מקבוצה',
   [NodeType.ACTION_TRANSFER_TO_AGENT]: 'העברה לנציג',
+  [NodeType.ACTION_SET_PARAMETER]:     'הגדרת פרמטר',
   [NodeType.FIXED_PROCESS]:            'תת-תזרים',
   [NodeType.AUTOMATIC_RESPONSES]:      'תגובות אוטומטיות',
   [NodeType.START]:                    'התחלה',

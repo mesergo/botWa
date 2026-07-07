@@ -499,6 +499,19 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
         break;
       }
 
+      case 'action_set_parameter': {
+        const paramName = String(nodeData.parameterName || '').trim();
+        const paramValue = replaceParameters(String(nodeData.parameterValue ?? ''), params);
+        if (paramName) {
+          session.parameters = session.parameters || {};
+          session.parameters[paramName] = paramValue;
+          params[paramName] = paramValue;
+          console.log(`[BOT] action_set_parameter: set "${paramName}" = "${paramValue}"`);
+        }
+        currentNodeId = findNextNode(currentNodeId, edges);
+        break;
+      }
+
       case 'action_add_to_group': {
         // Unified add/remove from group node. If groupActionMode === 'remove',
         // delegate to the same logic used by action_remove_from_group.
@@ -761,6 +774,7 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
         session.is_agent = true;
         session.agent_since = new Date();
         session.status = 'waiting';
+        session.wants_phone = !!nodeData.wantsPhone;
         // If a specific rep was chosen, only that rep should see the conversation —
         // store rep_user_id and null out rep_group_id. Otherwise keep rep_group_id so
         // all reps in the selected group can pick it up.

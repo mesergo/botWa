@@ -1,11 +1,12 @@
 
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
-import { mongoose } from '../config/db.js';
+import mongoose from 'mongoose';
 import BotFlow from '../models/BotFlow.js';
 import Widget from '../models/Widget.js';
 import User from '../models/User.js';
 import Contact from '../models/Contact.js';
+import Notification from '../models/Notification.js';
 import fetch from 'node-fetch';
 import { getEffectiveUserId, resolvePermissions, hasPermission } from '../middleware/auth.js';
 import { pushMessagesToWhatsApp } from '../utils/whatsappSender.js';
@@ -206,6 +207,7 @@ export const getContacts = async (req, res) => {
           customerPhones: { $addToSet: '$customer_phone' },
           // Status of the most recent session for this contact
           latestStatus: { $first: '$status' },
+          latestWantsPhone: { $first: '$wants_phone' },
           latestSessionDate: { $first: '$_date' }
         }
       }, 
@@ -233,7 +235,8 @@ export const getContacts = async (req, res) => {
         botPhones: (c.customerPhones || []).filter(p => p && p !== 'Simulated' && p !== 'simulated'),
         repGroupIds: (c.repGroupIds || []).filter(Boolean).map(String),
         repUserIds: (c.repUserIds || []).filter(Boolean).map(String),
-        status: c.latestStatus || 'bot'
+        status: c.latestStatus || 'bot',
+        wants_phone: !!c.latestWantsPhone
       };
     });
 
@@ -777,7 +780,7 @@ export const markResolved = async (req, res) => {
 export const transferConversation = async (req, res) => {
   try {
     const { id } = req.params;
-    const { targetType, targetId, groupId, note } = req.body || {};
+    const { targetType, targetId, groupId, note, wantsPhone } = req.body || {};
 
     if (!['group', 'rep', 'shift_manager'].includes(targetType)) {
       return res.status(400).json({ error: 'targetType חייב להיות group / rep / shift_manager' });
@@ -821,7 +824,7 @@ export const transferConversation = async (req, res) => {
 
     // Validate target belongs to the same company.
     let targetLabel = '';
-    const update = { is_agent: true, agent_since: new Date(), status: 'waiting' };
+    const update = { is_agent: true, agent_since: new Date(), status: 'waiting', wants_phone: !!wantsPhone };
     let groupUnavailableMessage = ''; // group's message when no one is available
 
     if (targetType === 'group') {
@@ -981,6 +984,64 @@ export const transferConversation = async (req, res) => {
       { $set: update, $push: { process_history: { $each: historyEntriesToAdd } } }
     );
     eventBus.emit('session:update', { userId: String(ownerId), phone: String(session.sender || session.customer_phone || '') });
+
+    // ── Create persistent notifications for the target user(s) ────────────
+    // Run in background — don't block the HTTP response.
+    const sessionPhone = String(session.sender || session.customer_phone || '');
+    const isSimulator = !!session.simulator_id;
+    (async () => {
+      try {
+        const recipientUserIds = new Set();
+        if (targetType === 'group') {
+          // Notify all reps who belong to this group
+          const groupReps = await User.find({ rep_group_ids: String(targetId) }).select('_id').lean();
+          groupReps.forEach(r => recipientUserIds.add(String(r._id)));
+          // Also notify rep_managers (shift managers) of this group
+          const RepGroup = (await import('../models/RepGroup.js')).default;
+          const grp = await RepGroup.findById(targetId).select('manager_id').lean();
+          // We notify all rep_managers under the company manager too
+          const shiftMgrs = await User.find({ manager_id: ownerId, role: 'rep_manager' }).select('_id').lean();
+          shiftMgrs.forEach(m => recipientUserIds.add(String(m._id)));
+        } else if (targetType === 'rep' || targetType === 'shift_manager') {
+          recipientUserIds.add(String(targetId));
+        }
+        // Remove the sender themselves from the list (no self-notification)
+        recipientUserIds.delete(String(req.userId || ''));
+
+        const notifDocs = Array.from(recipientUserIds).map(uid => ({
+          user_id: uid,
+          session_id: id,
+          session_phone: sessionPhone,
+          from_user_name: fromName,
+          target_label: targetLabel,
+          is_simulator: isSimulator,
+          wants_phone: !!wantsPhone,
+          dismissed: false,
+        }));
+        if (notifDocs.length > 0) {
+          const created = await Notification.insertMany(notifDocs);
+          // Push SSE events to connected clients
+          created.forEach(notif => {
+            eventBus.emit('notification:new', {
+              userId: notif.user_id,
+              notification: {
+                _id: notif._id.toString(),
+                session_id: notif.session_id,
+                session_phone: notif.session_phone,
+                from_user_name: notif.from_user_name,
+                target_label: notif.target_label,
+                is_simulator: notif.is_simulator,
+                wants_phone: notif.wants_phone,
+                createdAt: notif.createdAt,
+              }
+            });
+          });
+          console.log(`[transferConversation] 🔔 Created ${created.length} notification(s) for transfer to ${targetLabel}`);
+        }
+      } catch (notifErr) {
+        console.error('[transferConversation] Failed to create notifications:', notifErr.message);
+      }
+    })();
 
     res.json({
       success: true,
@@ -1979,11 +2040,20 @@ export const streamEvents = (req, res) => {
     res.write(`data: ${data}\n\n`);
   };
 
+  const notifHandler = (event) => {
+    if (String(event.userId) !== userId) return;
+    console.log(`[SSE] pushing notification to userId=${userId} session=${event.notification?.session_id}`);
+    const data = JSON.stringify({ type: 'notification', notification: event.notification });
+    res.write(`data: ${data}\n\n`);
+  };
+
   eventBus.on('session:update', handler);
+  eventBus.on('notification:new', notifHandler);
 
   req.on('close', () => {
     console.log(`[SSE] client disconnected userId=${userId}`);
     clearInterval(keepalive);
     eventBus.off('session:update', handler);
+    eventBus.off('notification:new', notifHandler);
   });
 };
