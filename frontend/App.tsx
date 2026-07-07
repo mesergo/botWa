@@ -13,7 +13,7 @@ import TemplateForm from './components/TemplateForm';
 import ContactsPage from './components/ContactsPage';
 import SessionsPage from './components/SessionsPage';
 import GroupsPage from './components/GroupsPage';
-import { StartNode, InputTextNode, InputDateNode, InputFileNode, OutputTextNode, OutputImageNode, OutputLinkNode, OutputMenuNode, ActionWebServiceNode, ActionWaitNode, ActionTimeRoutingNode, ActionAddToGroupNode, ActionRemoveFromGroupNode, ActionTransferToAgentNode, FixedProcessNode, AutomaticResponsesNode } from './components/nodes/CustomNodes';
+import { StartNode, InputTextNode, InputDateNode, InputFileNode, OutputTextNode, OutputImageNode, OutputLinkNode, OutputMenuNode, ActionWebServiceNode, ActionWaitNode, ActionTimeRoutingNode, ActionAddToGroupNode, ActionRemoveFromGroupNode, ActionTransferToAgentNode, ActionSetParameterNode, FixedProcessNode, AutomaticResponsesNode } from './components/nodes/CustomNodes';
 import ButtonEdge from './components/edges/ButtonEdge';
 import { CloudUpload, RotateCcw, Plus, AlertTriangle, Copy, X, Lock, Wallet, Sliders, Save } from 'lucide-react';
 import Simulator from './components/Simulator';
@@ -81,6 +81,7 @@ const nodeTypes = {
   [NodeType.ACTION_ADD_TO_GROUP]: ActionAddToGroupNode,
   [NodeType.ACTION_REMOVE_FROM_GROUP]: ActionRemoveFromGroupNode,
   [NodeType.ACTION_TRANSFER_TO_AGENT]: ActionTransferToAgentNode,
+  [NodeType.ACTION_SET_PARAMETER]: ActionSetParameterNode,
   [NodeType.FIXED_PROCESS]: FixedProcessNode,
   [NodeType.AUTOMATIC_RESPONSES]: AutomaticResponsesNode,
 };

@@ -1,5 +1,5 @@
 ﻿import React, { useState, useEffect, useRef } from 'react';
-import { Clock, MessageSquare, Search, Bot, LogOut, User, Phone, List, Users, ExternalLink, X, Headphones, RefreshCw, Shield, Settings, UserCog, Layers, Plus, UserPlus, Check, Paperclip, ChevronRight } from 'lucide-react';
+import { Clock, MessageSquare, Search, Bot, LogOut, User, Phone, List, Users, ExternalLink, X, Headphones, RefreshCw, Shield, Settings, UserCog, Layers, Plus, UserPlus, Check, Paperclip, ChevronRight, Bell } from 'lucide-react';
 import ImpersonationBanner from './ImpersonationBanner';
 import { FileUploader } from './FileUploader';
 import { usePermission } from '../hooks/usePermission';
@@ -29,6 +29,7 @@ interface Contact {
   botPhones?: string[];
   assigned_to?: string[];
   status?: 'bot' | 'waiting' | 'handling' | 'closed' | 'resolved';
+  wants_phone?: boolean;
 }
 
 interface SessionsPageProps {
@@ -112,6 +113,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
   // For admin/rep_manager: an optional specific rep within the chosen group
   // ('' = "כל נציג זמין" / any available rep in the group).
   const [transferGroupRepId, setTransferGroupRepId] = useState('');
+  const [transferWantsPhone, setTransferWantsPhone] = useState(false);
   const [transferLoading, setTransferLoading] = useState(false);
   const [transferError, setTransferError] = useState<string | null>(null);
   const [transferTargets, setTransferTargets] = useState<{
@@ -120,6 +122,19 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
     shiftManagers: { id: string; name: string; email?: string }[];
     myGroupIds: string[] | null;
   }>({ groups: [], reps: [], shiftManagers: [], myGroupIds: null });
+
+  // ── Pending transfer notifications ──────────────────────────────────────────
+  interface PendingNotification {
+    _id: string;
+    session_id: string;
+    session_phone: string;
+    from_user_name: string;
+    target_label: string;
+    is_simulator: boolean;
+    wants_phone?: boolean;
+    createdAt: string;
+  }
+  const [pendingNotifications, setPendingNotifications] = useState<PendingNotification[]>([]);
 
   // Bot picker state
   interface BotEntry { id: string; name: string; display_phone_number: string; }
@@ -227,11 +242,71 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
           if (phone) {
             fetchPhoneSessionsRef.current(phone, activeBotFilterRef.current);
           }
+        } else if (eventData.type === 'notification' && eventData.notification) {
+          setPendingNotifications(prev => {
+            // Avoid duplicates
+            if (prev.some(n => n._id === eventData.notification._id)) return prev;
+            return [eventData.notification, ...prev];
+          });
         }
       } catch { /* ignore malformed events */ }
     };
     return () => es.close();
   }, [token, fetchContacts]);
+
+  // Fetch pending notifications once on mount
+  useEffect(() => {
+    if (!token) return;
+    fetch(`${API_BASE}/notifications`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.ok ? r.json() : Promise.reject())
+      .then(data => setPendingNotifications(data.notifications || []))
+      .catch(() => {});
+  }, [token]);
+
+  const dismissNotification = (id: string) => {
+    fetch(`${API_BASE}/notifications/${id}/dismiss`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${token}` }
+    }).catch(() => {});
+    setPendingNotifications(prev => prev.filter(n => n._id !== id));
+  };
+
+  const dismissAllNotifications = () => {
+    fetch(`${API_BASE}/notifications/dismiss-all`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${token}` }
+    }).catch(() => {});
+    setPendingNotifications([]);
+  };
+
+  // Mark a phone-request session as resolved directly from the notification
+  const markNotifPhoneHandled = async (notif: PendingNotification) => {
+    if (notif.session_id) {
+      try {
+        const r = await fetch(`${API_BASE}/sessions/${notif.session_id}/mark-resolved`, {
+          method: 'PATCH',
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (r.ok) {
+          // Update contacts list — clear wants_phone flag and set resolved status
+          setContacts(prev => prev.map(c =>
+            c.phone === notif.session_phone
+              ? { ...c, status: 'resolved' as const, wants_phone: false }
+              : c
+          ));
+          // If this contact is currently open, update its sessions too
+          if (selectedPhone === notif.session_phone) {
+            setPhoneSessions(prev => prev.map((s, i) =>
+              i === prev.length - 1 ? { ...s, status: 'resolved' as const } : s
+            ));
+          }
+        }
+      } catch (e) {
+        console.error('Failed to mark phone call handled', e);
+      }
+    }
+    dismissNotification(notif._id);
+  };
 
   // 4s polling fallback — only for the currently open conversation.
   // Cheap: one DB query per 4s. Catches cases where SSE dropped/missed an event.
@@ -441,6 +516,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
     setTransferTargetId('');
     setTransferGroupRepId('');
     setTransferTargetType('group');
+    setTransferWantsPhone(false);
     setShowTransferModal(true);
     try {
       const r = await fetch(`${API_BASE}/sessions/transfer-targets`, {
@@ -473,9 +549,10 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
     // targetType='rep' + groupId so the backend pins both fields.
     const role = currentUser?.role;
     const isManagerSide = role === 'user' || role === 'admin' || role === 'rep_manager';
-    const payload: { targetType: 'group' | 'rep' | 'shift_manager'; targetId: string; groupId?: string } = {
+    const payload: { targetType: 'group' | 'rep' | 'shift_manager'; targetId: string; groupId?: string; wantsPhone?: boolean } = {
       targetType: transferTargetType,
-      targetId: transferTargetId
+      targetId: transferTargetId,
+      wantsPhone: transferWantsPhone
     };
     if (isManagerSide && transferTargetType === 'group' && transferGroupRepId) {
       payload.targetType = 'rep';
@@ -1661,6 +1738,11 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                             {contact.sessionCount} שיחות
                           </span>
                           {!sim && renderStatusBadge(contact.status)}
+                          {contact.wants_phone && (
+                            <span className="flex items-center gap-0.5 text-[9px] font-black px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 ring-1 ring-green-400/60 animate-pulse">
+                              <Phone size={9} />טלפוני
+                            </span>
+                          )}
                         </div>
                       </div>
                       <span className="text-[11px] text-slate-400 font-semibold flex-shrink-0">
@@ -1716,6 +1798,40 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 {!isSimulator(selectedPhone) && phoneSessions.length > 0 && (
                   <div className="flex-shrink-0">{renderStatusBadge(currentStatus)}</div>
                 )}
+                {/* Phone callback tag + handled button */}
+                {selectedContact?.wants_phone && (
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    <span className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-green-100 text-green-700 text-[11px] font-black ring-1 ring-green-400/50">
+                      <Phone size={11} /> טלפוני
+                    </span>
+                    {(currentStatus === 'waiting' || currentStatus === 'handling' || currentStatus === 'resolved') && (
+                      <button
+                        onClick={async () => {
+                          const sid = agentSessionId || (phoneSessions.length > 0 ? phoneSessions[phoneSessions.length - 1].id : null);
+                          if (!sid) return;
+                          try {
+                            const r = await fetch(`${API_BASE}/sessions/${sid}/mark-resolved`, {
+                              method: 'PATCH',
+                              headers: { Authorization: `Bearer ${token}` }
+                            });
+                            if (r.ok) {
+                              setContacts(prev => prev.map(c =>
+                                c.phone === selectedPhone ? { ...c, status: 'resolved' as const, wants_phone: false } : c
+                              ));
+                              setPhoneSessions(prev => prev.map((s, i) =>
+                                i === prev.length - 1 ? { ...s, status: 'resolved' as const } : s
+                              ));
+                            }
+                          } catch (e) { console.error(e); }
+                        }}
+                        className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-green-600 text-white text-[11px] font-black hover:bg-green-700 transition-colors"
+                        title="סמן שיחת טלפון כטופלה"
+                      >
+                        <Check size={11} /> טופל
+                      </button>
+                    )}
+                  </div>
+                )}
                 {/* Mark resolved button — when rep has handled the conversation */}
                 {!isSimulator(selectedPhone) && phoneSessions.length > 0 && (currentStatus === 'bot' || currentStatus === 'waiting' || currentStatus === 'handling') && (
                   <button
@@ -1737,13 +1853,13 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                   </button>
                 )}
                 {/* Transfer conversation button — available on any active (non-closed) conversation */}
-                {!isSimulator(selectedPhone) && phoneSessions.length > 0 && currentStatus !== 'closed' && (
+                {phoneSessions.length > 0 && currentStatus !== 'closed' && (
                   <button
                     onClick={openTransferModal}
                     className="flex items-center gap-2 px-4 py-2 rounded-2xl bg-indigo-500 text-white text-xs font-black hover:bg-indigo-600 transition-colors shadow-sm"
                     title="העברת שיחה לקבוצה / מנהל משמרת / נציג אחר"
                   >
-                    <Headphones size={14} /> העברת שיחה
+                    <Headphones size={14} /> העברת שיחה{isSimulator(selectedPhone!) ? ' (סימולטור)' : ''}
                   </button>
                 )}
                 {!isSimulator(selectedPhone) && isAgentMode && (
@@ -2508,7 +2624,9 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
               </button>
             </div>
             <p className="text-xs text-slate-500 mb-4">
-              שיחה: <span className="font-bold text-slate-700">{selectedPhone}</span>
+              שיחה: <span className="font-bold text-slate-700">
+                {selectedPhone && isSimulator(selectedPhone) ? '📱 סימולטור (לבדיקות)' : selectedPhone}
+              </span>
             </p>
 
             {/* Target type tabs */}
@@ -2578,6 +2696,20 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
               </div>
             )}
 
+            {/* Wants phone checkbox */}
+            <label className="flex items-center gap-2.5 mb-4 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={transferWantsPhone}
+                onChange={e => setTransferWantsPhone(e.target.checked)}
+                className="w-4 h-4 accent-green-600 cursor-pointer"
+              />
+              <span className="flex items-center gap-1.5 text-sm font-bold text-slate-700">
+                <Phone size={14} className="text-green-600" />
+                לקוח מעוניין בחזרת טלפון
+              </span>
+            </label>
+
             <div className="flex gap-2 justify-end">
               <button
                 onClick={() => setShowTransferModal(false)}
@@ -2595,6 +2727,96 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ── Transfer notifications toast stack ─────────────────────────────── */}
+      {pendingNotifications.length > 0 && (
+        <div
+          className="fixed bottom-5 left-5 z-[100] flex flex-col gap-2 max-w-xs w-full"
+          dir="rtl"
+          style={{ maxHeight: '80vh', overflowY: 'auto' }}
+        >
+          {/* Dismiss-all button when more than one */}
+          {pendingNotifications.length > 1 && (
+            <button
+              onClick={dismissAllNotifications}
+              className="self-end text-xs text-slate-400 hover:text-slate-600 font-bold px-2 py-1 bg-white/90 rounded-lg shadow border border-slate-100 mb-1 transition-colors"
+            >
+              נקה הכל ({pendingNotifications.length})
+            </button>
+          )}
+          {pendingNotifications.map(notif => (
+            <div
+              key={notif._id}
+              className={`rounded-2xl shadow-lg px-4 py-3 flex gap-3 items-start animate-fade-in border ${
+                notif.wants_phone
+                  ? 'bg-green-50 border-green-200'
+                  : 'bg-white border-indigo-100'
+              }`}
+            >
+              <div className={`mt-0.5 flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
+                notif.wants_phone ? 'bg-green-100' : 'bg-indigo-50'
+              }`}>
+                {notif.wants_phone
+                  ? <Phone size={16} className="text-green-600" />
+                  : <Bell size={16} className="text-indigo-500" />
+                }
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className={`text-xs font-black leading-snug ${notif.wants_phone ? 'text-green-900' : 'text-slate-800'}`}>
+                  {notif.wants_phone ? '📞 בקשת שיחה טלפונית!' : 'שיחה חדשה הועברה אליך'}
+                </p>
+                <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">
+                  {notif.from_user_name && <span>מאת <span className="font-bold">{notif.from_user_name}</span> · </span>}
+                  {notif.target_label}
+                </p>
+                {(notif.session_phone || notif.is_simulator) && (
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    {notif.is_simulator ? '📱 סימולטור' : notif.session_phone}
+                  </p>
+                )}
+                {notif.wants_phone && (
+                  <span className="inline-flex items-center gap-1 mt-1 text-[10px] font-black px-2 py-0.5 rounded-full bg-green-200 text-green-800 ring-1 ring-green-400/50">
+                    <Phone size={10} /> טלפוני
+                  </span>
+                )}
+                <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                  {!notif.is_simulator && notif.session_phone && (
+                    <button
+                      onClick={() => {
+                        setSelectedPhone(notif.session_phone);
+                        dismissNotification(notif._id);
+                      }}
+                      className={`text-[11px] font-black underline underline-offset-2 transition-colors ${
+                        notif.wants_phone
+                          ? 'text-green-700 hover:text-green-900'
+                          : 'text-indigo-600 hover:text-indigo-800'
+                      }`}
+                    >
+                      פתח שיחה ←
+                    </button>
+                  )}
+                  {notif.wants_phone && (
+                    <button
+                      onClick={() => markNotifPhoneHandled(notif)}
+                      className="flex items-center gap-1 text-[11px] font-black px-2 py-0.5 rounded-full bg-green-600 text-white hover:bg-green-700 transition-colors"
+                      title="סמן שיחה טלפונית כטופלה"
+                    >
+                      <Check size={10} /> טופל
+                    </button>
+                  )}
+                </div>
+              </div>
+              <button
+                onClick={() => dismissNotification(notif._id)}
+                className="flex-shrink-0 p-1 hover:bg-slate-100 rounded-lg text-slate-300 hover:text-slate-500 transition-colors mt-0.5"
+                title="הסתר"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          ))}
         </div>
       )}
     </div>

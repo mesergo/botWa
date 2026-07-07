@@ -783,6 +783,16 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
       case NodeType.INPUT_TEXT: case NodeType.INPUT_FILE: setIsBotTyping(true); await new Promise(r => setTimeout(r, 300)); if (cancelled()) return; if (node.data.label) { addMessage({ sender: 'bot', type: node.type as any, content: node.data.label }); } setIsBotTyping(false); break;
       case NodeType.INPUT_DATE: setIsBotTyping(true); await new Promise(r => setTimeout(r, 300)); if (cancelled()) return; if (node.data.label) { addMessage({ sender: 'bot', type: 'input_date', content: node.data.label, dateTimeMode: node.data.dateTimeMode || 'date' }); } setIsBotTyping(false); break;
       case NodeType.ACTION_WAIT: await new Promise(r => setTimeout(r, (node.data.waitTime || 1) * 1000)); return processNext(findNextNodeId(nodeId, instance), instance, depth + 1, stack);
+      case NodeType.ACTION_SET_PARAMETER: {
+        const paramName = String(node.data.parameterName || '').trim();
+        const rawValue = String(node.data.parameterValue ?? '');
+        const resolvedValue = rawValue.replace(/--([^-]+)--/g, (_: string, name: string) => sessionParamsRef.current[name] ?? '');
+        if (paramName) {
+          sessionParamsRef.current = { ...sessionParamsRef.current, [paramName]: resolvedValue };
+          setSessionParameters({ ...sessionParamsRef.current });
+        }
+        return processNext(findNextNodeId(nodeId, instance), instance, depth + 1, stack);
+      }
       case NodeType.ACTION_TIME_ROUTING: {
         // Get current date/time in Israel timezone
         const now = new Date();
@@ -920,7 +930,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
     }
 
     if (node && node.data.variableName) updateParam(node.data.variableName, text);
-    updateParam('open', text);
+    updateParam('openWa', text);
     
     if (node.type === NodeType.AUTOMATIC_RESPONSES) {
        await processNext(currentNodeId, currentInstance, 0, executionStack, newValue, null);
@@ -962,7 +972,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
     setDateInput('');
     if (node && node.data.variableName) updateParam(node.data.variableName, formattedValue);
     addMessage({ sender: 'user', type: 'text', content: formattedValue });
-    updateParam('open', formattedValue);
+    updateParam('openWa', formattedValue);
     await processNext(findNextNodeId(currentNodeId, currentInstance), currentInstance, 0, executionStack);
   };
 
@@ -972,7 +982,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
     
     const fileName = file.name;
     addMessage({ sender: 'user', type: 'text', content: `קובץ הועלה: ${fileName}` });
-    updateParam('open', fileName);
+    updateParam('openWa', fileName);
     
     const nodesList = currentInstance.getNodes() || [];
     const node = nodesList.find((n: any) => n.id === currentNodeId);
@@ -992,7 +1002,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
         // Show a visual separator so the user understands the context switched
         addMessage({ sender: 'bot', type: 'separator', content: '↩ חזרת לתפריט' });
         addMessage({ sender: 'user', type: 'text', content: option });
-        updateParam('open', option);
+        updateParam('openWa', option);
         setLastUserValue({ string: option, number: null });
         setIsWaitingForWebserviceResponse(false);
         // Save the newly selected option to session parameters
@@ -1024,7 +1034,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
     console.log('[Simulator] 🔘 Current node:', { id: node?.id, type: node?.type });
     
     addMessage({ sender: 'user', type: 'text', content: option });
-    updateParam('open', option);
+    updateParam('openWa', option);
     if (isWaitingForWebserviceResponse && node.type === NodeType.ACTION_WEB_SERVICE) {
       console.log('[Simulator] 🔘 Responding to webservice with option');
       const cmd = optionValue || option; setCurrentCommand(cmd);
