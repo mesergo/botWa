@@ -12,12 +12,17 @@ import {
   sendToGroup,
   listBroadcasts,
   getBroadcast,
+  completeBroadcast,
   resumeBroadcast,
   cancelBroadcast,
   listRemovals,
 } from '../controllers/groupController.js';
  
 const router = express.Router();
+
+// Public route — no auth required (called externally by webhook/service)
+router.get('/broadcasts/:id/complete', completeBroadcast);
+
 router.use(authenticateToken);
 
 // Specific routes first

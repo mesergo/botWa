@@ -25,7 +25,6 @@ import groupRoutes from './routes/groupRoutes.js';
 import whatsappWebhookRoutes from './routes/whatsappWebhookRoutes.js';
 import whatsappRegistrationRoutes from './routes/whatsappRegistrationRoutes.js';
 import api360Routes from './routes/api360Routes.js';
-import notificationRoutes from './routes/notificationRoutes.js';
 import { seedTemplates } from './controllers/templateController.js';
 import { seedUserTypes } from './scripts/seed-user-types.js';
 
@@ -90,7 +89,6 @@ async function startServer() {
     app.use('/api/whatsapp-registration', whatsappRegistrationRoutes);  // Stage 2/3 of FB onboarding + connected-numbers settings
     app.use('/api', uploadRoutes);  // Upload route
     app.use('/api/360', api360Routes);  // External template-send endpoint (mirrors WA API URL)
-    app.use('/api/notifications', notificationRoutes);  // Transfer notifications
 
     // ── Global error handler ─────────────────────────────────────────────────
     // Catches body-parser JSON parse failures (and any other errors) and

@@ -3,7 +3,7 @@ import {
   Phone, Search, Users, LogOut, List, Shield, Settings, UserCog, Plus,
   Edit2, Trash2, X, Check, Bot, Send, UserPlus, UserMinus, Ban, Layers,
   ChevronRight, ChevronLeft, ArrowRight, MessageSquare, FileText, History,
-  Calendar, Eye, AlertTriangle, CheckCircle2, Clock, Paperclip, Image as ImageIcon, Video, File as FileLucide, RotateCcw
+  Calendar, Eye, AlertTriangle, CheckCircle2, Clock, Paperclip, Image as ImageIcon, Video, File as FileLucide, RotateCcw, Copy
 } from 'lucide-react';
 import ImpersonationBanner from './ImpersonationBanner';
 import { FileUploader } from './FileUploader';
@@ -136,6 +136,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
   const [broadcastsLoading, setBroadcastsLoading] = useState(false);
   const [selectedBroadcast, setSelectedBroadcast] = useState<any | null>(null);
   const [cancellingBroadcastId, setCancellingBroadcastId] = useState<string | null>(null);
+  const [copiedBroadcastId, setCopiedBroadcastId] = useState<string | null>(null);
 
   // Remove-member confirmation + removals report
   const [removeTarget, setRemoveTarget] = useState<ContactRecord | null>(null);
@@ -678,7 +679,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
           onUsers={onOpenSubUsers && can('users.view') ? onOpenSubUsers : undefined}
         />
         {/* Sidebar — list of groups */}
-        <aside className="w-96 border-l border-slate-100 bg-white flex flex-col flex-shrink-0">
+        <aside className="w-72 border-l border-slate-100 bg-white flex flex-col flex-shrink-0">
           <div className="p-6 border-b border-slate-100">
             <div className="flex items-center gap-3 mb-4">
               <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center">
@@ -961,8 +962,9 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                   </div>
                 ) : (
                   <div className="bg-white border border-slate-100 rounded-2xl overflow-hidden shadow-sm">
-                    <div className="grid grid-cols-[10rem_1fr_5rem_5rem_5rem_5rem_6rem_5rem_3rem] gap-3 px-6 py-3 bg-slate-50 border-b border-slate-100 text-xs font-bold text-slate-400 uppercase tracking-wide">
+                    <div className="grid grid-cols-[9rem_6rem_1fr_4rem_4rem_4rem_4rem_6rem_5rem_3rem] gap-2 px-6 py-3 bg-slate-50 border-b border-slate-100 text-xs font-bold text-slate-400 uppercase tracking-wide">
                       <span>תאריך</span>
+                      <span>ID</span>
                       <span>תוכן</span>
                       <span>סה"כ</span>
                       <span>נשלחו</span>
@@ -981,11 +983,25 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                       <div
                         key={b._id}
                         onClick={() => fetchBroadcastDetail(b._id)}
-                        className={`grid grid-cols-[10rem_1fr_5rem_5rem_5rem_5rem_6rem_5rem_3rem] gap-3 px-6 py-3.5 items-start hover:bg-slate-50/70 transition-colors cursor-pointer ${idx !== broadcasts.length - 1 ? 'border-b border-slate-100' : ''}`}
+                        className={`grid grid-cols-[9rem_6rem_1fr_4rem_4rem_4rem_4rem_6rem_5rem_3rem] gap-2 px-6 py-3.5 items-start hover:bg-slate-50/70 transition-colors cursor-pointer ${idx !== broadcasts.length - 1 ? 'border-b border-slate-100' : ''}`}
                       >
                         <div className="flex items-center gap-2 text-xs font-bold text-slate-600">
                           <Calendar size={13} className="text-slate-400" />
                           {new Date(b.createdAt).toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' })}
+                        </div>
+                        <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+                          <span className="text-xs font-mono text-slate-400 truncate" title={b._id}>{b._id?.slice(-8)}</span>
+                          <button
+                            onClick={() => {
+                              navigator.clipboard.writeText(b._id);
+                              setCopiedBroadcastId(b._id);
+                              setTimeout(() => setCopiedBroadcastId(null), 2000);
+                            }}
+                            className="p-0.5 text-slate-300 hover:text-blue-500 transition-colors flex-shrink-0"
+                            title="העתק ID מלא"
+                          >
+                            {copiedBroadcastId === b._id ? <Check size={11} className="text-emerald-500" /> : <Copy size={11} />}
+                          </button>
                         </div>
                         <div className="min-w-0">
                           {b.is_template ? (

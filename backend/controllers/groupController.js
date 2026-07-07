@@ -839,6 +839,22 @@ export const getBroadcast = async (req, res) => {
   }
 };
 
+// GET /api/groups/broadcasts/:id/complete — mark a broadcast as completed
+export const completeBroadcast = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const broadcast = await GroupBroadcast.findById(id);
+    if (!broadcast) return res.status(404).json({ error: 'Broadcast not found' });
+    broadcast.status = 'completed';
+    broadcast.completed_at = new Date();
+    await broadcast.save();
+    res.json({ success: true, broadcast });
+  } catch (err) {
+    console.error('[groups.completeBroadcast] error:', err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
 // POST /api/groups/broadcasts/:id/resume — continue a stopped/failed broadcast from where it left off
 export const resumeBroadcast = async (req, res) => {
   try {
