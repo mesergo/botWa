@@ -371,7 +371,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
       } else if (usingMedia) {
         body.media = { type: mediaType, url: mediaUrl, filename: mediaFilename || undefined };
       }
-      const res = await fetch(`${API_BASE}/groups/${selectedGroup._id}/send`, {
+      const res = await fetch(`${API_BASE}/groups/${selectedGroup._id}/broadcast`, {
         method: 'POST',
         headers: { ...authHeader, 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -405,7 +405,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
     } catch (e: any) {
       console.error('[submitSend] caught error:', e);
       const msg = e?.message || String(e) || 'שגיאה לא ידועה';
-      alert(`שגיאת רשת: ${msg}\n\nURL: ${API_BASE}/groups/${selectedGroup?._id}/send\n\nפרטים נוספים בקונסול (F12)`);
+      alert(`שגיאת רשת: ${msg}\n\nURL: ${API_BASE}/groups/${selectedGroup?._id}/broadcast\n\nפרטים נוספים בקונסול (F12)`);
     } finally {
       setSending(false);
     }
@@ -981,7 +981,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                       <div
                         key={b._id}
                         onClick={() => fetchBroadcastDetail(b._id)}
-                        className={`grid grid-cols-[10rem_1fr_5rem_5rem_5rem_5rem_6rem_5rem_3rem] gap-3 px-6 py-3.5 items-center hover:bg-slate-50/70 transition-colors cursor-pointer ${idx !== broadcasts.length - 1 ? 'border-b border-slate-100' : ''}`}
+                        className={`grid grid-cols-[10rem_1fr_5rem_5rem_5rem_5rem_6rem_5rem_3rem] gap-3 px-6 py-3.5 items-start hover:bg-slate-50/70 transition-colors cursor-pointer ${idx !== broadcasts.length - 1 ? 'border-b border-slate-100' : ''}`}
                       >
                         <div className="flex items-center gap-2 text-xs font-bold text-slate-600">
                           <Calendar size={13} className="text-slate-400" />
@@ -989,12 +989,12 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                         </div>
                         <div className="min-w-0">
                           {b.is_template ? (
-                            <div className="flex items-center gap-2">
-                              <span className="px-2 py-0.5 bg-purple-100 text-purple-700 rounded-md text-xs font-black">תבנית</span>
-                              <span className="text-sm font-bold text-slate-800 truncate">{b.template_name}</span>
+                            <div className="flex items-start gap-2 flex-wrap">
+                              <span className="px-2 py-0.5 bg-purple-100 text-purple-700 rounded-md text-xs font-black flex-shrink-0">תבנית</span>
+                              <span className="text-sm font-bold text-slate-800 break-words">{b.template_name}</span>
                             </div>
                           ) : (
-                            <p className="text-sm text-slate-700 truncate" title={b.message}>{b.message}</p>
+                            <p className="text-sm text-slate-700 break-words whitespace-pre-wrap">{b.message}</p>
                           )}
                         </div>
                         <span className="text-sm font-black text-slate-700">{b.total}</span>

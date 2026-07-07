@@ -204,7 +204,7 @@ export const importContacts = async (req, res) => {
       try {
         const contact = await Contact.findOneAndUpdate(
           { user_id: userId, phone },
-          { $set: { full_name, whatsapp_name, email } },
+          { $set: { full_name, email } },
           { upsert: true, new: true }
         );
         importedContactIds.push(contact._id);

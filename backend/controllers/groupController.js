@@ -13,6 +13,22 @@ import { getEffectiveUserId } from '../middleware/auth.js';
 // Ensures broadcasts for the same user run one at a time, never in parallel.
 const broadcastQueues = new Map(); // userId -> { running: boolean, queue: Array }
 
+// ── Scheduled→Completed ticker ────────────────────────────────────────────────
+// Every 60s, flip any 'scheduled' broadcast whose scheduled_at has passed to 'completed'.
+setInterval(async () => {
+  try {
+    const result = await GroupBroadcast.updateMany(
+      { status: 'scheduled', scheduled_at: { $lte: new Date() } },
+      { $set: { status: 'completed', completed_at: new Date() } }
+    );
+    if (result.modifiedCount > 0) {
+      console.log(`[scheduledTicker] Marked ${result.modifiedCount} broadcast(s) as completed`);
+    }
+  } catch (err) {
+    console.error('[scheduledTicker] error:', err);
+  }
+}, 60_000);
+
 function _getOrCreateQueue(userId) {
   if (!broadcastQueues.has(userId)) {
     broadcastQueues.set(userId, { running: false, queue: [] });
@@ -560,24 +576,38 @@ async function processBroadcast(broadcastId, userId, group, contacts, opts) {
               waBody.header = [{ type: mediaType, [mediaType]: { link: templateData.params.header.url } }];
             }
             if (Array.isArray(templateData.params.body)) {
-              waBody.params = templateData.params.body
-                .filter(p => p && String(p).trim())
-                .map(p => {
-                  const s = String(p);
-                  if (s.startsWith('__field:')) {
-                    const ref = s.slice(8);
-                    if (ref === 'phone') return contact.phone || '';
-                    if (ref === 'full_name') return contact.full_name || '';
-                    if (ref === 'whatsapp_name') return contact.whatsapp_name || '';
-                    if (ref === 'email') return contact.email || '';
-                    if (ref.startsWith('custom:')) {
-                      const fieldId = ref.slice(7);
-                      return String((contact.custom_field_values && contact.custom_field_values[fieldId]) || '');
-                    }
-                    return '';
+              // Resolve field references BEFORE filtering, so we filter on the
+              // actual value that will be sent (not the raw "__field:..." token).
+              const resolvedParams = templateData.params.body.map(p => {
+                const s = String(p || '');
+                if (s.startsWith('__field:')) {
+                  const ref = s.slice(8);
+                  if (ref === 'phone') return contact.phone || '';
+                  if (ref === 'full_name') return contact.full_name || '';
+                  if (ref === 'whatsapp_name') return contact.whatsapp_name || '';
+                  if (ref === 'email') return contact.email || '';
+                  if (ref.startsWith('custom:')) {
+                    const fieldId = ref.slice(7);
+                    return String((contact.custom_field_values && contact.custom_field_values[fieldId]) || '');
                   }
-                  return s;
-                });
+                  return '';
+                }
+                return s;
+              });
+
+              // If any resolved value is empty, skip this contact — sending a
+              // template with a blank parameter causes the WhatsApp API to reject.
+              const hasEmptyParam = resolvedParams.some(v => !v.trim());
+              if (hasEmptyParam) {
+                console.warn(`${TAG} [${processed + 1}/${contacts.length}] ⏭ SKIP phone="${normalized}" reason=empty_template_param params=${JSON.stringify(resolvedParams)}`);
+                skipped++;
+                processed++;
+                recipients.push({ phone: contact.phone, name: contactName, status: 'skipped', reason: 'empty_template_param' });
+                await GroupBroadcast.findByIdAndUpdate(broadcastId, { processed, sent, failed, skipped, recipients }).catch(() => {});
+                continue;
+              }
+
+              waBody.params = resolvedParams;
             } 
           }
         } else if (media && media.url && media.type) {
@@ -672,17 +702,22 @@ async function processBroadcast(broadcastId, userId, group, contacts, opts) {
     }
 
     console.log(`${TAG} ✅ Broadcast complete — sent=${sent} failed=${failed} skipped=${skipped} total=${totalContacts}`);
-    await GroupBroadcast.findByIdAndUpdate(broadcastId, {
-      status: 'completed',
+    // If this was a scheduled broadcast and the scheduled time hasn't passed yet,
+    // keep status as 'scheduled' so the cancel button remains visible in the UI.
+    // The setInterval below will flip it to 'completed' once the time passes.
+    const finalStatus = (scheduled_at && scheduled_at > Date.now()) ? 'scheduled' : 'completed';
+    const finalUpdate = {
+      status: finalStatus,
       processed,
       sent,
       failed,
       skipped,
       errors: errors.slice(0, 50),
       recipients,
-      completed_at: new Date(),
       ...(collectedTaskids.length ? { taskids: collectedTaskids } : {}),
-    });
+    };
+    if (finalStatus === 'completed') finalUpdate.completed_at = new Date();
+    await GroupBroadcast.findByIdAndUpdate(broadcastId, finalUpdate);
   } catch (err) {
     console.error(`${TAG} 💥 Unexpected error:`, err);
     await GroupBroadcast.findByIdAndUpdate(broadcastId, {

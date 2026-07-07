@@ -528,11 +528,35 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
 
   // ── New conversation handler ────────────────────────────────────────────────
 
+  const validatePhoneInput = (phone: string): string | null => {
+    if (!phone.trim()) return 'יש להזין מספר טלפון';
+    const stripped = phone.replace(/[\s\-\(\)]/g, '');
+    const hasPlus = stripped.startsWith('+');
+    const withoutPlus = hasPlus ? stripped.slice(1) : stripped;
+    if (!/^\d+$/.test(withoutPlus)) return 'מספר טלפון יכול להכיל ספרות, +, מקף, רווחים וסוגריים בלבד';
+    if (withoutPlus.length < 10) return 'מספר טלפון קצר מדי (מינימום 10 ספרות, לדוגמה: 0501234567)';
+    if (withoutPlus.length > 15) return 'מספר טלפון ארוך מדי (מקסימום 15 ספרות)';
+    // מספר בן 10 ספרות חייב להתחיל ב-0 (פורמט מקומי, לדוגמה 0501234567)
+    // מספר בינלאומי (11+ ספרות) מתחיל בקידומת מדינה — חייב להתחיל בספרה 1-9 שאינה 0
+    if (withoutPlus.length === 10 && !withoutPlus.startsWith('0')) {
+      return 'מספר בן 10 ספרות חייב להתחיל ב-0 (לדוגמה: 0501234567)';
+    }
+    if (withoutPlus.length > 10 && withoutPlus.startsWith('0')) {
+      return 'מספר בינלאומי לא מתחיל ב-0 — הזן קידומת מדינה (לדוגמה: 972501234567)';
+    }
+    return null;
+  };
+
   const handleNewConvConfirm = async () => {
+    const validationError = validatePhoneInput(newConvPhone);
+    if (validationError) {
+      setNewConvError(validationError);
+      return;
+    }
     const sanitized = newConvPhone.replace(/[+\-\s()]/g, '');
     const digits = sanitized.replace(/\D/g, '');
-    if (digits.length < 7) {
-      setNewConvError('מספר טלפון לא תקין');
+    if (digits.length < 10) {
+      setNewConvError('מספר טלפון קצר מדי (מינימום 10 ספרות)');
       return;
     }
     const exists = contacts.some(c => c.phone.replace(/[+\-\s()]/g, '') === sanitized);
@@ -1693,7 +1717,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                   <div className="flex-shrink-0">{renderStatusBadge(currentStatus)}</div>
                 )}
                 {/* Mark resolved button — when rep has handled the conversation */}
-                {!isSimulator(selectedPhone) && (currentStatus === 'waiting' || currentStatus === 'handling') && (
+                {!isSimulator(selectedPhone) && phoneSessions.length > 0 && (currentStatus === 'bot' || currentStatus === 'waiting' || currentStatus === 'handling') && (
                   <button
                     onClick={markResolved}
                     className="flex items-center gap-2 px-4 py-2 rounded-2xl bg-emerald-500 text-white text-xs font-black hover:bg-emerald-600 transition-colors shadow-sm"
@@ -2019,14 +2043,19 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
               <input
                 type="tel"
                 dir="ltr"
-                placeholder="הזן מספר טלפון..."
+                placeholder="לדוגמה: 972501234567 או 0501234567"
                 value={newConvPhone}
                 onChange={e => {
-                  setNewConvPhone(e.target.value);
-                  setNewConvError(null);
+                  const val = e.target.value.replace(/[^\d+\-\s()]/g, '');
+                  setNewConvPhone(val);
+                  setNewConvError(val ? validatePhoneInput(val) : null);
                 }}
                 onKeyDown={e => e.key === 'Enter' && !newConvLoading && handleNewConvConfirm()}
-                className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-400 transition-all"
+                className={`w-full px-4 py-2.5 border rounded-xl text-sm outline-none focus:ring-2 transition-all ${
+                  newConvError && newConvPhone
+                    ? 'border-red-400 focus:ring-red-500/20 focus:border-red-400'
+                    : 'border-slate-200 focus:ring-sky-500/20 focus:border-sky-400'
+                }`}
                 autoFocus
               />
               {newConvError && (
@@ -2042,7 +2071,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
               </button>
               <button
                 onClick={handleNewConvConfirm}
-                disabled={newConvLoading || newConvError === 'איש קשר קיים במערכת'}
+                disabled={newConvLoading || (!!newConvPhone && !!validatePhoneInput(newConvPhone)) || newConvError === 'איש קשר קיים במערכת'}
                 className="px-5 py-2.5 rounded-2xl bg-sky-500 text-white text-sm font-bold hover:bg-sky-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {newConvLoading ? '...' : 'אישור'}

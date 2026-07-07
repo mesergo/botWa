@@ -37,6 +37,6 @@ router.delete('/:id', deleteGroup);
 router.post('/:id/members', addMembers);
 router.delete('/:id/members/:contactId', removeMember);
 
-router.post('/:id/send', sendToGroup);
+router.post('/:id/broadcast', sendToGroup);
 
 export default router;

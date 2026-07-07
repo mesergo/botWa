@@ -264,28 +264,54 @@ const OperatorSelector = ({ value, onChange }: { value: string, onChange: (op: s
   );
 };
 
-export const StartNode = (props: any) => (
-  <div className={`bg-white border-2 border-slate-200 rounded-2xl shadow-xl overflow-hidden transition-all duration-400 w-[160px] ${
-    props.selected ? 'ring-8 ring-slate-900/10 !border-slate-400 scale-[1.01]' : ''
-  }`}>
-    <div className="h-1.5 w-full bg-slate-900" />
-    <div className="flex items-center justify-end gap-2 px-3 py-2 bg-white text-slate-900 border-b border-slate-100">
-      <span className="text-[12px] font-black px-1.5 py-0.5 rounded-md bg-slate-50 border border-slate-100 text-slate-900">
-        {props.data.serialId}
-      </span>
-      <span className="text-[16px] font-bold uppercase tracking-tight">התחלה</span>
-      <PlayCircle size={16} className="text-blue-600" />
+export const StartNode = (props: any) => {
+  const [isSourceHovered, setIsSourceHovered] = useState(false);
+  const { setEdges } = useReactFlow();
+  const edges = useEdges();
+  const hasSourceEdge = edges.some(e => e.source === props.id);
+
+  const handleDeleteSourceEdge = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEdges(eds => eds.filter(edge => edge.source !== props.id));
+    setIsSourceHovered(false);
+  };
+
+  return (
+    <div className={`relative bg-white border-2 border-slate-200 rounded-2xl shadow-xl overflow-visible transition-all duration-400 w-[160px] ${
+      props.selected ? 'ring-8 ring-slate-900/10 !border-slate-400 scale-[1.01]' : ''
+    }`}>
+      <div className="h-1.5 w-full bg-slate-900" />
+      <div className="flex items-center justify-end gap-2 px-3 py-2 bg-white text-slate-900 border-b border-slate-100">
+        <span className="text-[12px] font-black px-1.5 py-0.5 rounded-md bg-slate-50 border border-slate-100 text-slate-900">
+          {props.data.serialId}
+        </span>
+        <span className="text-[16px] font-bold uppercase tracking-tight">התחלה</span>
+        <PlayCircle size={16} className="text-blue-600" />
+      </div>
+      <div className="p-3 text-center">
+        <p className="text-[12px] text-slate-400 font-bold">תחילת שיחה</p>
+      </div>
+      <Handle
+        type="source"
+        position={Position.Right}
+        className={`w-5 h-5 border-2 border-white rounded-full -right-[10px] shadow-lg transition-colors duration-200 ${isSourceHovered ? 'bg-red-500' : 'bg-slate-400'}`}
+      />
+      {hasSourceEdge && (
+        <div
+          className="absolute -right-[10px] top-1/2 -translate-y-1/2 w-5 h-5 flex items-center justify-center cursor-pointer rounded-full"
+          style={{ zIndex: 1000 }}
+          onMouseEnter={() => setIsSourceHovered(true)}
+          onMouseLeave={() => setIsSourceHovered(false)}
+          onClick={handleDeleteSourceEdge}
+        >
+          {isSourceHovered && (
+            <X size={12} className="text-white pointer-events-none" strokeWidth={3} />
+          )}
+        </div>
+      )}
     </div>
-    <div className="p-3 text-center">
-      <p className="text-[12px] text-slate-400 font-bold">תחילת שיחה</p>
-    </div>
-    <Handle
-      type="source"
-      position={Position.Right}
-      className="w-3 h-3 bg-slate-400 border-2 border-white rounded-full -right-[6px] shadow-md"
-    />
-  </div>
-);
+  );
+};
 
 export const InputTextNode = (props: any) => {
   const { fields: contactFields } = useContactFields();
@@ -298,6 +324,9 @@ export const InputTextNode = (props: any) => {
       </InputFieldWrapper>
       <InputFieldWrapper label="שם משתנה לאחסון">
         <SearchableInput value={props.data.variableName} onChange={(v: string) => props.data.onChange({ variableName: v })} placeholder="user_name" searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
+        {['waPhone', 'waOpen', 'waName'].includes(props.data.variableName) && (
+          <p className="text-[11px] text-red-500 text-right mt-1">⚠ "{props.data.variableName}" הוא שם שמור במערכת ולא ניתן להשתמש בו</p>
+        )}
       </InputFieldWrapper>
       <div className="mb-3 p-1">
         <div className="flex items-center justify-between">
@@ -395,6 +424,9 @@ export const InputDateNode = (props: any) => {
       </InputFieldWrapper>
       <InputFieldWrapper label="שם משתנה לאחסון">
         <SearchableInput value={props.data.variableName} onChange={(v: string) => props.data.onChange({ variableName: v })} placeholder={modeVarPH} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
+        {['waPhone', 'waOpen', 'waName'].includes(props.data.variableName) && (
+          <p className="text-[11px] text-red-500 text-right mt-1">⚠ "{props.data.variableName}" הוא שם שמור במערכת ולא ניתן להשתמש בו</p>
+        )}
       </InputFieldWrapper>
     </BaseNode>
   );
@@ -643,6 +675,9 @@ export const OutputMenuNode = (props: any) => {
       </InputFieldWrapper>
       <InputFieldWrapper label="שמור בחירה במשתנה (אופציונלי)">
         <SearchableInput value={props.data.variableName} onChange={(v: string) => props.data.onChange({ variableName: v })} placeholder="למשל: selected_option" searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
+        {['waPhone', 'waOpen', 'waName'].includes(props.data.variableName) && (
+          <p className="text-[11px] text-red-500 text-right mt-1">⚠ "{props.data.variableName}" הוא שם שמור במערכת ולא ניתן להשתמש בו</p>
+        )}
       </InputFieldWrapper>
       <div className="space-y-4 relative text-right">
         <label className="block text-[14px] font-bold text-slate-400 uppercase tracking-widest">רשימת אפשרויות</label>

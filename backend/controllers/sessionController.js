@@ -676,7 +676,7 @@ export const setAgentMode = async (req, res) => {
 export const clearAgentMode = async (req, res) => {
   try {
     const { id } = req.params;
-    const { collection, error, status } = await getSessionWithOwnership(id, req);
+    const { session, collection, error, status } = await getSessionWithOwnership(id, req);
     if (error) return res.status(status).json({ error });
 
     await collection.updateOne(
@@ -1924,6 +1924,92 @@ export const getSessionMessages = async (req, res) => {
     });
   } catch (err) {
     console.error('getSessionMessages Error:', err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// ── User Dashboard Stats ──────────────────────────────────────────────────────
+// GET /api/sessions/stats
+// Returns sessions and message statistics for the current user.
+export const getUserStats = async (req, res) => {
+  const userId = getEffectiveUserId(req);
+  try {
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const startOfWeek = new Date(startOfToday);
+    startOfWeek.setDate(startOfToday.getDate() - startOfToday.getDay());
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    // Build user's bots/widgets (same pattern as getUserSessions)
+    const [userBots, userWidgets] = await Promise.all([
+      BotFlow.find({ user_id: userId }).lean(),
+      Widget.find({ $or: [{ user_id: userId }, { user_id: userId.toString() }] }).select('id flow_id').lean()
+    ]);
+
+    const botIds = userBots.map(b => b._id.toString());
+    const botWidgets = await Widget.find({ flow_id: { $in: botIds } }).select('id flow_id').lean();
+    const widgetIds = [...new Set([...userWidgets, ...botWidgets].map(w => w.id).filter(Boolean))];
+
+    const matchStage = {
+      $or: [
+        { user_id: userId },
+        { user_id: userId.toString() },
+        { widget_id: { $in: widgetIds } },
+        { flow_id: { $in: botIds } }
+      ]
+    };
+
+    const collection = mongoose.connection.collection('BotSession');
+
+    // Sessions stats (one aggregate pass)
+    const [sessionResult] = await collection.aggregate([
+      { $match: matchStage },
+      { $addFields: { _date: { $ifNull: ['$created_at', '$createdAt'] } } },
+      { $facet: {
+        today: [{ $match: { _date: { $gte: startOfToday } } }, { $count: 'n' }],
+        month: [{ $match: { _date: { $gte: startOfMonth } } }, { $count: 'n' }],
+        active: [{ $match: { is_active: true } }, { $count: 'n' }],
+        total: [{ $count: 'n' }]
+      }}
+    ]).toArray();
+
+    // Bot-sent messages stats (unwind process_history)
+    const [msgResult] = await collection.aggregate([
+      { $match: matchStage },
+      { $unwind: '$process_history' },
+      { $match: { 'process_history.sender': 'bot' } },
+      { $addFields: { _msgDate: { $cond: {
+        if: { $eq: [{ $type: '$process_history.created' }, 'string'] },
+        then: { $dateFromString: { dateString: '$process_history.created', onError: null } },
+        else: '$process_history.created'
+      }}}},
+      { $match: { _msgDate: { $ne: null } } },
+      { $facet: {
+        today: [{ $match: { _msgDate: { $gte: startOfToday } } }, { $count: 'n' }],
+        week:  [{ $match: { _msgDate: { $gte: startOfWeek } } },  { $count: 'n' }],
+        month: [{ $match: { _msgDate: { $gte: startOfMonth } } }, { $count: 'n' }]
+      }}
+    ]).toArray();
+
+    const totalContacts = await Contact.countDocuments({ user_id: userId });
+
+    res.json({
+      sessions: {
+        today: sessionResult?.today?.[0]?.n ?? 0,
+        month: sessionResult?.month?.[0]?.n ?? 0,
+        active: sessionResult?.active?.[0]?.n ?? 0,
+        total: sessionResult?.total?.[0]?.n ?? 0
+      },
+      messages: {
+        today: msgResult?.today?.[0]?.n ?? 0,
+        week:  msgResult?.week?.[0]?.n ?? 0,
+        month: msgResult?.month?.[0]?.n ?? 0
+      },
+      bots: botIds.length,
+      contacts: totalContacts
+    });
+  } catch (err) {
+    console.error('getUserStats error:', err);
     res.status(500).json({ error: err.message });
   }
 };
