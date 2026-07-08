@@ -8,7 +8,7 @@ import BotFlow from '../models/BotFlow.js';
 import GroupBroadcast from '../models/GroupBroadcast.js';
 import GroupRemovalLog from '../models/GroupRemovalLog.js';
 import { getEffectiveUserId } from '../middleware/auth.js';
-
+ 
 // ── Broadcast Queue (per-user) ────────────────────────────────────────────────
 // Ensures broadcasts for the same user run one at a time, never in parallel.
 const broadcastQueues = new Map(); // userId -> { running: boolean, queue: Array }
@@ -769,17 +769,21 @@ export const cancelBroadcast = async (req, res) => {
       const unsendUrl = `https://wa.message.co.il/api/${endpoint}/unsend`;
       for (const { taskid, contact_phone } of taskids) {
         try {
+          const unsendBody = JSON.stringify({ id: taskid });
+          console.log(`[cancelBroadcast:${id}] → POST ${unsendUrl} body=${unsendBody}`);
           const r = await fetch(unsendUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', token: waToken },
-            body: JSON.stringify({ id: taskid }),
+            body: unsendBody,
           });
+          const rText = await r.text().catch(() => '');
+          console.log(`[cancelBroadcast:${id}] ← HTTP ${r.status} body="${rText}"`);
           if (r.ok) {
             cancelled++;
             console.log(`[cancelBroadcast:${id}] ✅ Unsent taskid=${taskid} phone=${contact_phone}`);
           } else {
             cancelErrors++;
-            console.warn(`[cancelBroadcast:${id}] ⚠️ Unsend failed for taskid=${taskid}: HTTP ${r.status}`);
+            console.warn(`[cancelBroadcast:${id}] ⚠️ Unsend failed for taskid=${taskid}: HTTP ${r.status} — ${rText}`);
           }
         } catch (e) {
           cancelErrors++;
@@ -835,22 +839,6 @@ export const getBroadcast = async (req, res) => {
     res.json(item);
   } catch (err) {
     console.error('[groups.getBroadcast] error:', err);
-    res.status(500).json({ error: err.message });
-  }
-};
-
-// GET /api/groups/broadcasts/:id/complete — mark a broadcast as completed
-export const completeBroadcast = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const broadcast = await GroupBroadcast.findById(id);
-    if (!broadcast) return res.status(404).json({ error: 'Broadcast not found' });
-    broadcast.status = 'completed';
-    broadcast.completed_at = new Date();
-    await broadcast.save();
-    res.json({ success: true, broadcast });
-  } catch (err) {
-    console.error('[groups.completeBroadcast] error:', err);
     res.status(500).json({ error: err.message });
   }
 };
@@ -947,3 +935,19 @@ export const resumeBroadcast = async (req, res) => {
   }
 };
 
+
+// GET /api/groups/broadcasts/:id/complete — mark a broadcast as completed
+export const completeBroadcast = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const broadcast = await GroupBroadcast.findById(id);
+    if (!broadcast) return res.status(404).json({ error: 'Broadcast not found' });
+    broadcast.status = 'completed';
+    broadcast.completed_at = new Date();
+    await broadcast.save();
+    res.json({ success: true, broadcast });
+  } catch (err) {
+    console.error('[groups.completeBroadcast] error:', err);
+    res.status(500).json({ error: err.message });
+  }
+};

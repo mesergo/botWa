@@ -940,9 +940,27 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
       // Find matching option; fall back to option-default if none match
       const menuOpts = (node.data.options || []).filter((o: any) => o !== 'default');
       const matchedIdx = menuOpts.findIndex((o: any) => String(o).trim().toLowerCase() === text.trim().toLowerCase());
-      const handle = matchedIdx !== -1 ? `option-${matchedIdx}` : 'option-default';
-      if (node.data.variableName && matchedIdx !== -1) updateParam(node.data.variableName, text);
-      await processNext(findNextNodeId(currentNodeId, currentInstance, handle), currentInstance, 0, executionStack);
+      if (matchedIdx !== -1) {
+        if (node.data.variableName) updateParam(node.data.variableName, text);
+        await processNext(findNextNodeId(currentNodeId, currentInstance, `option-${matchedIdx}`), currentInstance, 0, executionStack);
+      } else {
+        const defaultNextId = findNextNodeId(currentNodeId, currentInstance, 'option-default');
+        if (defaultNextId) {
+          await processNext(defaultNextId, currentInstance, 0, executionStack);
+        } else {
+          // No default edge — show validation message and re-display the menu
+          setIsBotTyping(true);
+          await new Promise(r => setTimeout(r, 350));
+          setIsBotTyping(false);
+          addMessage({ sender: 'bot', type: 'text', content: 'בחר רק מהאפשרויות' });
+          const menuImgs = (node.data.optionImages || []).filter((_: any, i: number) => (node.data.options || [])[i] !== 'default');
+          setIsBotTyping(true);
+          await new Promise(r => setTimeout(r, 400));
+          setIsBotTyping(false);
+          addMessage({ sender: 'bot', type: 'menu', content: node.data.content, options: menuOpts, optionImages: menuImgs, sourceNodeId: currentNodeId });
+          // Stay on the same node — currentNodeId remains unchanged
+        }
+      }
     } else if (isInputNode && !nextNodeId) {
       // Last node in this (sub-)flow is an input — param already saved above.
       // processNext(null) will pop executionStack and continue in parent flow if any,

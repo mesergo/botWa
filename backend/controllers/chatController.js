@@ -1930,11 +1930,21 @@ export const respondToMessage = async (req, res) => {
             console.log(`[SUB-FLOW]   ⏸ sub-flow menu default still waiting — not returning to parent yet`);
           }
         } else {
+          // No default edge — tell the user to pick from the menu and re-display it
           messages.push({
             type: 'Text',
-            text: '⚠️ לא נמצאה אפשרות תואמת לתשובה שלך.',
+            text: 'בחר רק מהאפשרויות',
             created: new Date().toISOString()
           });
+          const menuOptions = (currentNode.data.options || []).filter(opt => opt !== 'default');
+          messages.push({
+            type: 'Options',
+            text: replaceParameters(currentNode.data.content || '', params),
+            options: menuOptions,
+            created: new Date().toISOString()
+          });
+          // Keep session.current_node_id pointing to this menu node so the next
+          // incoming message is handled by the output_menu branch again.
         }
       }
     } else if (currentNode.type === 'automatic_responses' && !isNewSession) {
