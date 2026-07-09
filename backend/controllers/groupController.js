@@ -468,8 +468,26 @@ async function processBroadcast(broadcastId, userId, group, contacts, opts) {
     await GroupBroadcast.findByIdAndUpdate(broadcastId, { status: 'running', started_at: new Date() });
     console.log(`${TAG} ▶ Starting broadcast — group="${group.name}" contacts=${contacts.length} bot_id=${bot_id || '(auto)'}${scheduled_at ? ` scheduled_at=${new Date(scheduled_at).toISOString()} (dialog360 will schedule)` : ''}`);
 
-    const SHEET_URL = 'https://wa.message.co.il/api/sheet/15xZeZ7kgS3aNx47Yy3d5flDYtV9Dxw-sij9Wcnio4mQ/test/6a43b391c38eb048df16d641/send';
-    const SHEET_TOKEN = '1501ddd51f6ea39b85bc0270b4bc3d759393215f';
+    // Resolve endpoint ID dynamically from the user's first connected bot (without dialog360/ prefix)
+    let sheetEndpointId = null;
+    {
+      const query = bot_id
+        ? { _id: bot_id, user_id: userId, endpoint: { $nin: ['', null] } }
+        : { user_id: userId, endpoint: { $nin: ['', null] } };
+      const bot = await BotFlow.findOne(query);
+      if (bot?.endpoint) {
+        const ep = bot.endpoint.includes('/') ? bot.endpoint.split('/').pop() : bot.endpoint;
+        sheetEndpointId = ep;
+      }
+    }
+    if (!sheetEndpointId) {
+      console.error(`${TAG} ❌ No connected bot endpoint found for userId=${userId} — aborting broadcast`);
+      await GroupBroadcast.findByIdAndUpdate(broadcastId, { status: 'failed', completed_at: new Date() });
+      return;
+    }
+    const SHEET_URL = `https://wa.message.co.il/api/sheet/15xZeZ7kgS3aNx47Yy3d5flDYtV9Dxw-sij9Wcnio4mQ/test/${sheetEndpointId}/send`;
+    const SHEET_TOKEN = crypto.createHash('sha1').update(sheetEndpointId + 'moomoo').digest('hex');
+    console.log(`${TAG} 🔌 Resolved endpoint: ${sheetEndpointId}`);
 
     const blocked = await getBlockedPhones(userId);
     console.log(`${TAG} 🚫 Blocked phones count: ${blocked.size}`);
@@ -504,48 +522,50 @@ async function processBroadcast(broadcastId, userId, group, contacts, opts) {
       return;
     }
 
-    // ── בנה body לפי סוג ההודעה ──────────────────────────────────────
-    const body = {
-      phones: phonesArr,
-      token: SHEET_TOKEN,
-      force: 1,
-      reportId: String(broadcastId),
-    };
+    // ── Build URL query params (everything except phones goes in URL) ────
+    const queryParts = [];
+    queryParts.push(`token=${encodeURIComponent(SHEET_TOKEN)}`);
+    queryParts.push('force=1');
+    queryParts.push(`reportId=${encodeURIComponent(String(broadcastId))}`);
 
     if (isTemplate && templateData) {
       // סוג 3/4/5/6 — תבנית
-      body.template = templateData.name;
+      queryParts.push(`template=${encodeURIComponent(templateData.name)}`);
       if (templateData.params?.header?.url) {
-        body.header = {
-          type: templateData.params.header.type || 'image',
-          url: templateData.params.header.url,
-        };
+        const headerType = templateData.params.header.type || 'image';
+        queryParts.push(`header[0][0][link]=${encodeURIComponent(templateData.params.header.url)}`);
+        queryParts.push(`header[0][1]=${encodeURIComponent(headerType)}`);
       }
       if (Array.isArray(templateData.params?.body) && templateData.params.body.length > 0) {
-        body.params = templateData.params.body.map(p => {
+        templateData.params.body.forEach((p, i) => {
           const s = String(p || '');
           // __field:full_name / whatsapp_name → $name$ (מוחלף אוטומטית לכל נמען ע"י ה-API)
-          if (s === '__field:full_name' || s === '__field:whatsapp_name') return '$name$';
-          if (s.startsWith('__field:')) return '';
-          return s;
+          let val = s;
+          if (s === '__field:full_name' || s === '__field:whatsapp_name') val = '$name$';
+          else if (s.startsWith('__field:')) val = '';
+          queryParts.push(`params[${i}]=${encodeURIComponent(val)}`);
         });
       }
     } else if (media?.url && media?.type) {
-      // מדיה חופשית — שלח את ה-URL כטקסט (ה-API החיצוני אינו תומך במדיה חופשית)
-      body.text = msgText || media.url;
+      // מדיה חופשית — שלח את ה-URL כטקסט
+      queryParts.push(`text=${encodeURIComponent(msgText || media.url)}`);
     } else {
-      // סוג 1/2 — טקסט פשוט (עם $name$ אם יש שם בפון אובייקטים)
-      body.text = msgText;
+      // סוג 1/2 — טקסט פשוט
+      queryParts.push(`text=${encodeURIComponent(msgText)}`);
     }
 
-    if (scheduled_at) body.time = scheduled_at;
+    if (scheduled_at) queryParts.push(`time=${scheduled_at}`);
 
-    console.log(`${TAG} 📤 POST ${SHEET_URL}`);
-    console.log(`${TAG}   → phones: ${phonesArr.length} | template: ${body.template || 'N/A'} | text: ${body.text ? String(body.text).substring(0, 50) : 'N/A'} | reportId: ${broadcastId}`);
+    const fullUrl = `${SHEET_URL}?${queryParts.join('&')}`;
 
-    console.log(`${TAG} 📦 Full request body: ${JSON.stringify({ ...body, phones: `[${phonesArr.length} items]` })}`);
+    // Body: only phones as flat array of strings
+    const body = { phones: phonesArr.map(p => p.phone) };
 
-    const waRes = await fetch(SHEET_URL, {
+    console.log(`${TAG} 📤 POST ${fullUrl}`);
+    console.log(`${TAG}   → phones: ${phonesArr.length} | template: ${isTemplate ? (templateData?.name || 'N/A') : 'N/A'} | text: ${!isTemplate ? String(msgText || '').substring(0, 50) : 'N/A'} | reportId: ${broadcastId}`);
+    console.log(`${TAG} 📦 Full request body: ${JSON.stringify(body)}`);
+
+    const waRes = await fetch(fullUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json; charset=utf-8' },
       body: JSON.stringify(body),
