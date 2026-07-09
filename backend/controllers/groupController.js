@@ -743,29 +743,39 @@ export const cancelBroadcast = async (req, res) => {
     }
 
     const taskids = broadcast.taskids || [];
-    console.log(`[cancelBroadcast:${id}] Cancelling ${taskids.length} scheduled message(s) via dialog360`);
+    console.log(`[cancelBroadcast:${id}] broadcast.status=${broadcast.status} taskids.length=${taskids.length}`);
+    console.log(`[cancelBroadcast:${id}] taskids content: ${JSON.stringify(taskids)}`);
+    if (taskids.length === 0) {
+      console.warn(`[cancelBroadcast:${id}] ⚠️ No taskids saved — dialog360 may not have returned taskid during send, or send is still in progress. Messages may NOT be cancelled in dialog360.`);
+    }
 
     // Resolve the endpoint + token (same logic as processBroadcast)
     let endpoint = null;
     let waToken = null;
     const userBots = await BotFlow.find({ user_id: userId, endpoint: { $nin: ['', null] } });
+    console.log(`[cancelBroadcast:${id}] found ${userBots.length} bot(s) with endpoint`);
     if (userBots.length === 1) {
       const bot = userBots[0];
       endpoint = bot.endpoint.includes('/') ? bot.endpoint : `dialog360/${bot.endpoint}`;
       const endpointId = endpoint.split('/').pop();
       waToken = crypto.createHash('sha1').update(endpointId + 'moomoo').digest('hex');
+      console.log(`[cancelBroadcast:${id}] ✅ endpoint resolved: ${endpoint} (bot: ${bot.name})`);
     } else if (userBots.length > 1) {
       // Try to find bot from broadcast's group info — fall back to first bot
       const bot = userBots[0];
       endpoint = bot.endpoint.includes('/') ? bot.endpoint : `dialog360/${bot.endpoint}`;
       const endpointId = endpoint.split('/').pop();
       waToken = crypto.createHash('sha1').update(endpointId + 'moomoo').digest('hex');
+      console.log(`[cancelBroadcast:${id}] ✅ multiple bots — using first: ${endpoint} (bot: ${bot.name})`);
+    } else {
+      console.error(`[cancelBroadcast:${id}] ❌ No bots with endpoint found — cannot call dialog360 /unsend`);
     }
 
     let cancelled = 0;
     let cancelErrors = 0;
 
     if (endpoint && taskids.length > 0) {
+      console.log(`[cancelBroadcast:${id}] Starting /unsend loop for ${taskids.length} taskid(s)...`);
       const unsendUrl = `https://wa.message.co.il/api/${endpoint}/unsend`;
       for (const { taskid, contact_phone } of taskids) {
         try {
@@ -791,13 +801,16 @@ export const cancelBroadcast = async (req, res) => {
         }
       }
     } else {
-      console.warn(`[cancelBroadcast:${id}] No endpoint or no taskids — marking cancelled without calling dialog360`);
+      if (!endpoint) console.warn(`[cancelBroadcast:${id}] ⚠️ Skipping dialog360 unsend — no endpoint resolved`);
+      if (taskids.length === 0) console.warn(`[cancelBroadcast:${id}] ⚠️ Skipping dialog360 unsend — taskids array is empty`);
     }
+    console.log(`[cancelBroadcast:${id}] Summary: cancelled=${cancelled} cancelErrors=${cancelErrors} total=${taskids.length}`);
 
     await GroupBroadcast.findByIdAndUpdate(id, {
       status: 'cancelled',
       cancelled_at: new Date(),
     });
+    console.log(`[cancelBroadcast:${id}] ✅ Broadcast marked as cancelled in DB`);
 
     res.json({ success: true, cancelled, cancelErrors, total: taskids.length });
   } catch (err) {

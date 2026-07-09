@@ -3,7 +3,7 @@ import {
   Phone, Search, Users, LogOut, List, Shield, Settings, UserCog, Plus,
   Edit2, Trash2, X, Check, Bot, Send, UserPlus, UserMinus, Ban, Layers,
   ChevronRight, ChevronLeft, ArrowRight, MessageSquare, FileText, History,
-  Calendar, Eye, AlertTriangle, CheckCircle2, Clock, Paperclip, Image as ImageIcon, Video, File as FileLucide, RotateCcw, Copy
+  Calendar, Eye, AlertTriangle, CheckCircle2, Clock, Paperclip, Image as ImageIcon, Video, File as FileLucide, RotateCcw, Copy, Download
 } from 'lucide-react';
 import ImpersonationBanner from './ImpersonationBanner';
 import { FileUploader } from './FileUploader';
@@ -26,6 +26,7 @@ interface ContactRecord {
   full_name?: string;
   whatsapp_name?: string;
   email?: string;
+  custom_field_values?: Record<string, string>;
 }
 
 interface GroupDetail {
@@ -47,6 +48,7 @@ interface GroupsPageProps {
   onOpenSettings?: () => void;
   onOpenSubUsers?: () => void;
   onStopImpersonation?: () => void;
+  onGoHome?: () => void;
 }
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -59,7 +61,7 @@ const API_BASE = window.location.hostname === 'localhost'
 
 const GroupsPage: React.FC<GroupsPageProps> = ({
   token, currentUser, onBack, onLogout, onOpenContacts, onOpenSessions,
-  onOpenAdminPanel, onOpenSettings, onOpenSubUsers, onStopImpersonation,
+  onOpenAdminPanel, onOpenSettings, onOpenSubUsers, onStopImpersonation, onGoHome,
 }) => {
   const [groups, setGroups] = useState<GroupSummary[]>([]);
   const [selectedGroup, setSelectedGroup] = useState<GroupDetail | null>(null);
@@ -146,6 +148,53 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
   const [removalsLoading, setRemovalsLoading] = useState(false);
 
   const authHeader = useMemo(() => ({ Authorization: `Bearer ${token}` }), [token]);
+
+  // ── Export group to Excel (CSV with BOM) ─────────────────────────────────
+  const exportGroupToExcel = () => {
+    if (!selectedGroup || selectedGroup.contacts.length === 0) return;
+
+    const baseHeaders = ['טלפון', 'שם מלא', 'שם וואטסאפ', 'מייל'];
+    const customHeaders = contactFields.map(f => f.label);
+    const headers = [...baseHeaders, ...customHeaders];
+
+    const escapeCell = (val: string): string => {
+      if (val.includes(',') || val.includes('"') || val.includes('\n')) {
+        return `"${val.replace(/"/g, '""')}"`;
+      }
+      return val;
+    };
+
+    const rows = selectedGroup.contacts.map(c => {
+      const base = [
+        `="${c.phone}"`,
+        c.full_name || '',
+        c.whatsapp_name || '',
+        c.email || '',
+      ];
+      const custom = contactFields.map(f => {
+        const val = c.custom_field_values?.[f._id];
+        return val != null ? String(val) : '';
+      });
+      return [...base, ...custom];
+    });
+
+    const BOM = '\uFEFF';
+    const csvContent =
+      BOM +
+      [headers, ...rows]
+        .map(row => row.map(escapeCell).join(','))
+        .join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${selectedGroup.name}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
 
   // ── Fetch groups list ────────────────────────────────────────────────────
   const fetchGroups = useCallback(async () => {
@@ -672,6 +721,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
         <AppNav
           mode="sidebar"
           activePage="groups"
+          onGoHome={onGoHome}
           onBots={can('bots.view_tab') ? onBack : undefined}
           onSessions={onOpenSessions ? () => onOpenSessions() : undefined}
           onContacts={onOpenContacts ? () => onOpenContacts() : undefined}
@@ -839,6 +889,14 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                 </div>
 
                 <div className="flex items-center gap-2">
+                  <button
+                    onClick={exportGroupToExcel}
+                    disabled={selectedGroup.contacts.length === 0}
+                    title="יצא לאקסל"
+                    className="flex items-center gap-2 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200 rounded-2xl font-bold text-sm transition-colors disabled:opacity-40"
+                  >
+                    <Download size={16} /> יצוא לאקסל
+                  </button>
                   {can('groups.add_contact') && (
                   <button
                     onClick={openAddMembers}
