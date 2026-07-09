@@ -2283,11 +2283,13 @@ export const sendTemplateExternal = async (req, res) => {
     if (userId) {
       console.log(`[360-TEMPLATE] 💾 STEP 7 — Saving to BotSession | type=${historyEntry.type} | mediaUrl=${mediaUrl || '(none)'}`);
       const collection = mongoose.connection.collection('BotSession');
+      const twentyMinutesAgo = new Date(Date.now() - 20 * 60 * 1000);
       const existingSession = await collection.findOne(
         {
           $or: [{ sender: normalizedPhone }, { customer_phone: normalizedPhone }],
           user_id: userId,
           is_active: { $ne: false },
+          created_at: { $gte: twentyMinutesAgo },
         },
         { sort: { created_at: -1 } }
       );

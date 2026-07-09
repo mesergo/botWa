@@ -1,5 +1,5 @@
 ﻿import React, { useState, useEffect, useRef } from 'react';
-import { Clock, MessageSquare, Search, Bot, LogOut, User, Phone, List, Users, ExternalLink, X, Headphones, RefreshCw, Shield, Settings, UserCog, Layers, Plus, UserPlus, Check, Paperclip, ChevronRight, Bell, ChevronDown, Ban } from 'lucide-react';
+import { Clock, MessageSquare, Search, Bot, LogOut, User, Phone, List, Users, ExternalLink, X, Headphones, RefreshCw, Shield, Settings, UserCog, Layers, Plus, UserPlus, Check, Paperclip, ChevronRight, Bell, MoreVertical, Ban } from 'lucide-react';
 import ImpersonationBanner from './ImpersonationBanner';
 import { FileUploader } from './FileUploader';
 import { usePermission } from '../hooks/usePermission';
@@ -1928,40 +1928,47 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                     )}
                   </div>
                 )}
-                {/* Mark resolved button — when rep has handled the conversation */}
-                {!isSimulator(selectedPhone) && phoneSessions.length > 0 && (currentStatus === 'bot' || currentStatus === 'waiting' || currentStatus === 'handling') && (
-                  <button
-                    onClick={markResolved}
-                    className="flex items-center gap-2 px-4 py-2 rounded-2xl bg-emerald-500 text-white text-xs font-black hover:bg-emerald-600 transition-colors shadow-sm"
-                    title="סמן כטופל — השיחה תיפתח מחדש אם הלקוח יכתוב"
-                  >
-                    <Check size={14} /> טופל
-                  </button>
-                )}
-                {/* End conversation button — for rep when conversation is active with agent */}
-                {!isSimulator(selectedPhone) && (currentStatus === 'waiting' || currentStatus === 'handling' || currentStatus === 'resolved') && (
-                  <button
-                    onClick={closeConversation}
-                    className="flex items-center gap-2 px-4 py-2 rounded-2xl bg-slate-600 text-white text-xs font-black hover:bg-slate-700 transition-colors shadow-sm"
-                    title="סמן שיחה כסיומה"
-                  >
-                    <X size={14} /> סיום שיחה
-                  </button>
-                )}
-                {/* Actions dropdown — transfer + add to blocklist */}
+                {/* Actions dropdown — all conversation actions */}
                 {phoneSessions.length > 0 && currentStatus !== 'closed' && (
                   <div className="relative flex-shrink-0" ref={actionsMenuRef}>
                     <button
                       onClick={() => setShowActionsMenu(v => !v)}
-                      className="flex items-center gap-2 px-4 py-2 rounded-2xl bg-indigo-500 text-white text-xs font-black hover:bg-indigo-600 transition-colors shadow-sm"
+                      className="w-9 h-9 flex items-center justify-center rounded-2xl text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition-colors"
                       title="פעולות שיחה"
                     >
-                      <Headphones size={14} />
-                      פעולות
-                      <ChevronDown size={12} className={`transition-transform ${showActionsMenu ? 'rotate-180' : ''}`} />
+                      <MoreVertical size={18} />
                     </button>
                     {showActionsMenu && (
-                      <div className="absolute top-full mt-1 left-0 bg-white rounded-2xl shadow-xl border border-slate-100 py-1.5 z-50 min-w-[190px]">
+                      <div className="absolute top-full mt-1 left-0 bg-white rounded-2xl shadow-xl border border-slate-100 py-1.5 z-50 min-w-[200px]">
+                        {!isSimulator(selectedPhone!) && (currentStatus === 'bot' || currentStatus === 'waiting' || currentStatus === 'handling') && (
+                          <button
+                            onClick={() => { setShowActionsMenu(false); markResolved(); }}
+                            className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-emerald-50 hover:text-emerald-700 transition-colors text-right"
+                            title="סמן כטופל — השיחה תיפתח מחדש אם הלקוח יכתוב"
+                          >
+                            <Check size={15} />
+                            טופל
+                          </button>
+                        )}
+                        {!isSimulator(selectedPhone!) && isAgentMode && (
+                          <button
+                            onClick={() => { setShowActionsMenu(false); deactivateAgent(); }}
+                            className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-emerald-50 hover:text-emerald-700 transition-colors text-right"
+                          >
+                            <RefreshCw size={15} />
+                            החזרת השיחה לבוט
+                          </button>
+                        )}
+                        {!isSimulator(selectedPhone!) && (currentStatus === 'waiting' || currentStatus === 'handling' || currentStatus === 'resolved') && (
+                          <button
+                            onClick={() => { setShowActionsMenu(false); closeConversation(); }}
+                            className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-100 hover:text-slate-800 transition-colors text-right"
+                            title="סמן שיחה כסיומה"
+                          >
+                            <X size={15} />
+                            סיום שיחה
+                          </button>
+                        )}
                         <button
                           onClick={() => { setShowActionsMenu(false); openTransferModal(); }}
                           className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 transition-colors text-right"
@@ -1988,14 +1995,6 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                   <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-black flex-shrink-0">
                     <Check size={13} /> נוסף לרשימת הסרה
                   </span>
-                )}
-                {!isSimulator(selectedPhone) && isAgentMode && (
-                  <button
-                    onClick={deactivateAgent}
-                    className="flex items-center gap-2 px-4 py-2 rounded-2xl bg-emerald-500 text-white text-xs font-black hover:bg-emerald-600 transition-colors shadow-sm"
-                  >
-                    <RefreshCw size={14} /> החזרת השיחה לבוט
-                  </button>
                 )}
                 {/* {currentUser?.role !== 'rep' && !isSimulator(selectedPhone) && (
                   <button
