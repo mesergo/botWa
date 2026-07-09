@@ -206,7 +206,8 @@ export const getContacts = async (req, res) => {
           customerPhones: { $addToSet: '$customer_phone' },
           // Status of the most recent session for this contact
           latestStatus: { $first: '$status' },
-          latestSessionDate: { $first: '$_date' }
+          latestSessionDate: { $first: '$_date' },
+          latestWantsPhone: { $first: '$wants_phone' }
         }
       }, 
       { $sort: { lastSeen: -1 } }
@@ -233,7 +234,8 @@ export const getContacts = async (req, res) => {
         botPhones: (c.customerPhones || []).filter(p => p && p !== 'Simulated' && p !== 'simulated'),
         repGroupIds: (c.repGroupIds || []).filter(Boolean).map(String),
         repUserIds: (c.repUserIds || []).filter(Boolean).map(String),
-        status: c.latestStatus || 'bot'
+        status: c.latestStatus || 'bot',
+        wants_phone: !!c.latestWantsPhone
       };
     });
 
@@ -681,7 +683,7 @@ export const clearAgentMode = async (req, res) => {
 
     await collection.updateOne(
       { _id: new mongoose.Types.ObjectId(id) },
-      { $set: { is_agent: false, agent_since: null, status: 'bot' } }
+      { $set: { is_agent: false, agent_since: null, status: 'bot', wants_phone: false } }
     );
     eventBus.emit('session:update', { userId: String(req.userId), phone: String(session.sender || session.customer_phone || '') });
     res.json({ success: true, status: 'bot' });
@@ -751,7 +753,7 @@ export const markResolved = async (req, res) => {
     await collection.updateOne(
       { _id: new mongoose.Types.ObjectId(id) },
       {
-        $set: { status: 'resolved' },
+        $set: { status: 'resolved', wants_phone: false },
         $push: { process_history: historyEntry }
       }
     );
@@ -777,7 +779,7 @@ export const markResolved = async (req, res) => {
 export const transferConversation = async (req, res) => {
   try {
     const { id } = req.params;
-    const { targetType, targetId, groupId, note } = req.body || {};
+    const { targetType, targetId, groupId, note, wantsPhone } = req.body || {};
 
     if (!['group', 'rep', 'shift_manager'].includes(targetType)) {
       return res.status(400).json({ error: 'targetType חייב להיות group / rep / shift_manager' });
@@ -821,7 +823,7 @@ export const transferConversation = async (req, res) => {
 
     // Validate target belongs to the same company.
     let targetLabel = '';
-    const update = { is_agent: true, agent_since: new Date(), status: 'waiting' };
+    const update = { is_agent: true, agent_since: new Date(), status: 'waiting', wants_phone: !!wantsPhone };
     let groupUnavailableMessage = ''; // group's message when no one is available
 
     if (targetType === 'group') {
@@ -961,9 +963,11 @@ export const transferConversation = async (req, res) => {
     const now = new Date();
     const fromName = req.user?.name || req.user?.email || 'נציג';
     const noteText = typeof note === 'string' && note.trim() ? ` — ${note.trim()}` : '';
+    const phoneText = wantsPhone ? ' 📞 (טלפוני)' : '';
     const historyEntry = {
       type: 'System',
-      text: `השיחה הועברה ע"י ${fromName} ל${targetLabel}${noteText}`,
+      text: `השיחה הועברה ע"י ${fromName} ל${targetLabel}${phoneText}${noteText}`,
+      wants_phone: !!wantsPhone,
       sender: 'system',
       name: 'מערכת',
       node_id: 'system',
@@ -981,6 +985,39 @@ export const transferConversation = async (req, res) => {
       { $set: update, $push: { process_history: { $each: historyEntriesToAdd } } }
     );
     eventBus.emit('session:update', { userId: String(ownerId), phone: String(session.sender || session.customer_phone || '') });
+
+    // ── Create notifications for target reps and emit SSE notification events ──
+    try {
+      const Notification = (await import('../models/Notification.js')).default;
+      const sessionPhone = String(session.sender || session.customer_phone || '');
+      const isSimulatorSession = sessionPhone === 'Simulated' || sessionPhone === 'simulator' || sessionPhone.toLowerCase() === 'simulated';
+
+      // Determine which user IDs should receive a notification
+      let targetUserIds = [];
+      if (targetType === 'group') {
+        const groupReps = await User.find({ rep_group_ids: String(targetId) }).select('_id').lean();
+        targetUserIds = groupReps.map(r => r._id.toString());
+      } else {
+        // rep or shift_manager — notify that specific user
+        targetUserIds = [String(targetId)];
+      }
+
+      for (const repId of targetUserIds) {
+        const notif = await Notification.create({
+          user_id: repId,
+          session_id: String(session._id),
+          session_phone: sessionPhone,
+          from_user_name: fromName,
+          target_label: targetLabel,
+          is_simulator: isSimulatorSession,
+          wants_phone: !!wantsPhone
+        });
+        eventBus.emit('notification:new', { userId: repId, notification: notif.toObject() });
+      }
+    } catch (notifErr) {
+      console.error('[transferConversation] failed to create notifications:', notifErr.message);
+    }
+    // ────────────────────────────────────────────────────────────────────────
 
     res.json({
       success: true,
@@ -2065,11 +2102,21 @@ export const streamEvents = (req, res) => {
     res.write(`data: ${data}\n\n`);
   };
 
+  // Deliver notification events directly to the target rep
+  const notifHandler = (event) => {
+    if (String(event.userId) !== userId) return;
+    console.log(`[SSE] pushing notification to userId=${userId}`);
+    const data = JSON.stringify({ type: 'notification', notification: event.notification });
+    res.write(`data: ${data}\n\n`);
+  };
+
   eventBus.on('session:update', handler);
+  eventBus.on('notification:new', notifHandler);
 
   req.on('close', () => {
     console.log(`[SSE] client disconnected userId=${userId}`);
     clearInterval(keepalive);
     eventBus.off('session:update', handler);
+    eventBus.off('notification:new', notifHandler);
   });
 };
