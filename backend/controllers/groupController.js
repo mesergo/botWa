@@ -468,256 +468,110 @@ async function processBroadcast(broadcastId, userId, group, contacts, opts) {
     await GroupBroadcast.findByIdAndUpdate(broadcastId, { status: 'running', started_at: new Date() });
     console.log(`${TAG} ▶ Starting broadcast — group="${group.name}" contacts=${contacts.length} bot_id=${bot_id || '(auto)'}${scheduled_at ? ` scheduled_at=${new Date(scheduled_at).toISOString()} (dialog360 will schedule)` : ''}`);
 
+    const SHEET_URL = 'https://wa.message.co.il/api/sheet/15xZeZ7kgS3aNx47Yy3d5flDYtV9Dxw-sij9Wcnio4mQ/test/6a43b391c38eb048df16d641/send';
+    const SHEET_TOKEN = '1501ddd51f6ea39b85bc0270b4bc3d759393215f';
+
     const blocked = await getBlockedPhones(userId);
     console.log(`${TAG} 🚫 Blocked phones count: ${blocked.size}`);
 
-    // ── Resolve endpoint from bot ────────────────────────────────────────
-    let endpoint = null;
-    let waToken = null;
+    // ── בנה מערך טלפונים (סנן חסומים/לא תקינים) ─────────────────────
+    const phonesArr = [];
+    let skipped = 0;
+    const recipients = [];
 
-    if (bot_id) {
-      // Frontend passed a specific bot — use it directly
-      const bot = await BotFlow.findOne({ _id: bot_id, user_id: userId });
-      if (bot && bot.endpoint) {
-        // Normalize: if stored without prefix (e.g. bare ID), prepend dialog360/
-        endpoint = bot.endpoint.includes('/') ? bot.endpoint : `dialog360/${bot.endpoint}`;
-        const endpointId = endpoint.split('/').pop();
-        waToken = crypto.createHash('sha1').update(endpointId + 'moomoo').digest('hex');
-        console.log(`${TAG} ✅ Bot resolved by bot_id: name="${bot.name}" endpoint="${endpoint}" phone="${bot.display_phone_number}"`);
+    for (const contact of contacts) {
+      const normalized = normalizePhone(contact.phone);
+      const contactName = contact.full_name || contact.whatsapp_name || '';
+      if (!normalized) {
+        skipped++;
+        recipients.push({ phone: contact.phone, name: contactName, status: 'skipped', reason: 'invalid_phone' });
+      } else if (blocked.has(normalized)) {
+        skipped++;
+        recipients.push({ phone: contact.phone, name: contactName, status: 'skipped', reason: 'blocklist' });
       } else {
-        console.warn(`${TAG} ⚠️ bot_id=${bot_id} found in DB=${!!bot}, has endpoint=${!!(bot && bot.endpoint)}`);
+        phonesArr.push({ phone: normalized, name: contactName });
       }
-    } else {
-      // Auto-detect: find bots that have an endpoint set
-      const userBots = await BotFlow.find({ user_id: userId, endpoint: { $nin: ['', null] } });
-      console.log(`${TAG} 🔍 Auto-detect bots with endpoint: found ${userBots.length}`, userBots.map(b => ({ name: b.name, endpoint: b.endpoint, phone: b.display_phone_number })));
-      if (userBots.length === 1) {
-        const bot = userBots[0];
-        // Normalize: if stored without prefix, prepend dialog360/
-        endpoint = bot.endpoint.includes('/') ? bot.endpoint : `dialog360/${bot.endpoint}`;
-        const endpointId = endpoint.split('/').pop();
-        waToken = crypto.createHash('sha1').update(endpointId + 'moomoo').digest('hex');
-        console.log(`${TAG} ✅ Auto-selected bot: name="${bot.name}" endpoint="${endpoint}" phone="${bot.display_phone_number}"`);
-      } else if (userBots.length > 1) {
-        console.warn(`${TAG} ⚠️ Multiple bots with endpoints found for user ${userId}; no bot_id specified. Aborting.`);
-        await GroupBroadcast.findByIdAndUpdate(broadcastId, {
-          status: 'failed',
-          completed_at: new Date(),
-          errors: [{ error: 'Multiple bots found — please select a specific bot from the UI.' }],
-        });
-        return;
-      } else {
-        console.warn(`${TAG} ⚠️ No bots with endpoint found for user ${userId}. All bots:`, (await BotFlow.find({ user_id: userId }).select('name endpoint display_phone_number')));
-      }
-      // If 0 bots with endpoint: fall back to legacy dialog360_bot_id (kept for backward compat)
-      /* Legacy fallback - disabled: use bot endpoint instead
-      if (!endpoint) {
-        const user = await User.findById(userId);
-        if (user && user.dialog360_bot_id) {
-          endpoint = `dialog360/${user.dialog360_bot_id}`;
-          waToken = crypto.createHash('sha1').update(user.dialog360_bot_id + 'moomoo').digest('hex');
-        }
-      }
-      */
     }
 
-    if (!endpoint) {
-      console.error(`${TAG} ❌ No endpoint resolved — cannot send. Marking broadcast as failed.`);
+    console.log(`${TAG} 📋 Valid phones: ${phonesArr.length} | Skipped: ${skipped}`);
+
+    if (phonesArr.length === 0) {
+      console.warn(`${TAG} ⚠️ No valid phones to send to — marking completed`);
       await GroupBroadcast.findByIdAndUpdate(broadcastId, {
-        status: 'failed',
-        completed_at: new Date(),
-        errors: [{ error: 'No WhatsApp endpoint configured for this account. Set an endpoint on the bot.' }],
+        status: 'completed', completed_at: new Date(),
+        processed: contacts.length, sent: 0, failed: 0, skipped, recipients,
       });
       return;
     }
 
-    console.log(`${TAG} 📡 Will send via: https://wa.message.co.il/api/${endpoint}/send`);
-
-    // Support resume: start counters from previous run's totals
-    let sent = resumeFrom?.sent || 0;
-    let failed = resumeFrom?.failed || 0;
-    let skipped = resumeFrom?.skipped || 0;
-    let processed = resumeFrom?.processed || 0;
-    const errors = [...(resumeFrom?.errors || [])];
-    const recipients = [...(resumeFrom?.recipients || [])];
-    const collectedTaskids = []; // { contact_phone, taskid } — for scheduled cancellation
-
-
-    const totalContacts = (resumeFrom?.totalOriginal || contacts.length) + (resumeFrom?.processed || 0);
-    const TAG2 = resumeFrom ? `${TAG}[resume]` : TAG;
-    if (resumeFrom) {
-      console.log(`${TAG2} ♻️ Resuming from offset — already processed=${resumeFrom.processed} sent=${resumeFrom.sent} remaining=${contacts.length}`);
-    }
-  
-    for (const contact of contacts) {
-      const normalized = normalizePhone(contact.phone);
-      const contactName = contact.full_name || contact.whatsapp_name || '';
-
-      if (!normalized) {
-        console.log(`${TAG} [${processed + 1}/${contacts.length}] ⏭ SKIP phone="${contact.phone}" reason=invalid_phone`);
-        skipped++;
-        recipients.push({ phone: contact.phone, name: contactName, status: 'skipped', reason: 'invalid_phone' });
-      } else if (blocked.has(normalized)) {
-        console.log(`${TAG} [${processed + 1}/${contacts.length}] ⏭ SKIP phone="${normalized}" reason=blocklist`);
-        skipped++;
-        recipients.push({ phone: contact.phone, name: contactName, status: 'skipped', reason: 'blocklist' });
-      } else {
-        let waBody;
-        if (isTemplate && templateData) {
-          waBody = {
-            chat: normalized,
-            template: templateData.name,
-            language: templateData.language || 'he',
-            fromMe: 1,
-          };
-          if (templateData.params) {
-            if (templateData.params.header && templateData.params.header.url) {
-              const mediaType = templateData.params.header.type || 'image';
-              waBody.header = [{ type: mediaType, [mediaType]: { link: templateData.params.header.url } }];
-            }
-            if (Array.isArray(templateData.params.body)) {
-              // Resolve field references BEFORE filtering, so we filter on the
-              // actual value that will be sent (not the raw "__field:..." token).
-              const resolvedParams = templateData.params.body.map(p => {
-                const s = String(p || '');
-                if (s.startsWith('__field:')) {
-                  const ref = s.slice(8);
-                  if (ref === 'phone') return contact.phone || '';
-                  if (ref === 'full_name') return contact.full_name || '';
-                  if (ref === 'whatsapp_name') return contact.whatsapp_name || '';
-                  if (ref === 'email') return contact.email || '';
-                  if (ref.startsWith('custom:')) {
-                    const fieldId = ref.slice(7);
-                    return String((contact.custom_field_values && contact.custom_field_values[fieldId]) || '');
-                  }
-                  return '';
-                }
-                return s;
-              });
-
-              // If any resolved value is empty, skip this contact — sending a
-              // template with a blank parameter causes the WhatsApp API to reject.
-              const hasEmptyParam = resolvedParams.some(v => !v.trim());
-              if (hasEmptyParam) {
-                console.warn(`${TAG} [${processed + 1}/${contacts.length}] ⏭ SKIP phone="${normalized}" reason=empty_template_param params=${JSON.stringify(resolvedParams)}`);
-                skipped++;
-                processed++;
-                recipients.push({ phone: contact.phone, name: contactName, status: 'skipped', reason: 'empty_template_param' });
-                await GroupBroadcast.findByIdAndUpdate(broadcastId, { processed, sent, failed, skipped, recipients }).catch(() => {});
-                continue;
-              }
-
-              waBody.params = resolvedParams;
-            } 
-          }
-        } else if (media && media.url && media.type) {
-          // Free-form media (image/video/document/audio) with optional caption (msgText)
-          const mediaType = String(media.type).toLowerCase();
-          const mediaPayload = { link: media.url };
-          if (msgText && (mediaType === 'image' || mediaType === 'video' || mediaType === 'document')) {
-            mediaPayload.caption = msgText;
-          }
-          if (mediaType === 'document' && media.filename) {
-            mediaPayload.filename = media.filename;
-          }
-          waBody = { phone: normalized, [mediaType]: mediaPayload, fromMe: 1 };
-        } else {
-          waBody = { phone: normalized, text: msgText, fromMe: 1 };
-        }
-
-        // Add scheduled time if provided (dialog360 accepts Unix ms timestamp as `time`)
-        if (scheduled_at) {
-          waBody.time = scheduled_at;
-          const scheduledDate = new Date(scheduled_at);
-          const nowMs = Date.now();
-          const diffSec = Math.round((scheduled_at - nowMs) / 1000);
-          console.log(`${TAG} [${processed + 1}/${contacts.length}] ⏰ SCHEDULED SEND:`);
-          console.log(`${TAG}   → scheduled_at (ms):  ${scheduled_at}`);
-          console.log(`${TAG}   → scheduled_at (ISO): ${scheduledDate.toISOString()}`);
-          console.log(`${TAG}   → now (ms):           ${nowMs}`);
-          console.log(`${TAG}   → diff from now:      ${diffSec > 0 ? '+' : ''}${diffSec}s (${diffSec > 0 ? 'future ✅' : 'PAST ⚠️'})`);
-          console.log(`${TAG}   → waBody.time set to: ${waBody.time}`);
-        } else {
-          console.log(`${TAG} [${processed + 1}/${contacts.length}] ⚡ IMMEDIATE SEND (no scheduled_at)`);
-        }
-  
-        const sendUrl = `https://wa.message.co.il/api/${endpoint}/send`;
-        console.log(`${TAG} [${processed + 1}/${contacts.length}] 📤 POST ${sendUrl}`);
-        console.log(`${TAG}   → full waBody: ${JSON.stringify(waBody)}`);
-
-        try {
-          const waRes = await fetch(sendUrl, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json; charset=utf-8',
-              Accept: 'application/json',
-              token: waToken,
-            },
-            body: JSON.stringify(waBody),
-          });
-          const responseText = await waRes.text().catch(() => '');
-          console.log(`${TAG} [${processed + 1}/${contacts.length}] ← HTTP ${waRes.status}`);
-          console.log(`${TAG}   → response body: ${responseText.substring(0, 1000)}`);
-          if (scheduled_at) {
-            // dialog360 אמור להחזיר taskid אם קיבל תזמון
-            try {
-              const parsed = JSON.parse(responseText);
-              if (parsed.taskid) {
-                console.log(`${TAG}   → ✅ dialog360 accepted scheduled message — taskid: ${parsed.taskid}`);
-                collectedTaskids.push({ contact_phone: normalized, taskid: String(parsed.taskid) });
-              } else {
-                console.log(`${TAG}   → ⚠️ dialog360 did NOT return taskid — scheduling may have failed. Full response: ${responseText}`);
-              }
-            } catch (_) {
-              console.log(`${TAG}   → ⚠️ could not parse dialog360 response as JSON`);
-            }
-          }
-          if (waRes.ok) {
-            sent++;
-            recipients.push({ phone: contact.phone, name: contactName, status: 'sent' });
-          } else {
-            failed++;
-            errors.push({ phone: contact.phone, status: waRes.status, error: responseText.substring(0, 200) });
-            recipients.push({ phone: contact.phone, name: contactName, status: 'failed', error: responseText.substring(0, 200) });
-          }
-        } catch (e) {
-          console.error(`${TAG} [${processed + 1}/${contacts.length}] ❌ fetch error: ${e.message}`);
-          failed++;
-          errors.push({ phone: contact.phone, error: e.message });
-          recipients.push({ phone: contact.phone, name: contactName, status: 'failed', error: e.message });
-        }
-
-        // Small throttle to avoid hammering the API (200ms between sends)
-        await new Promise(r => setTimeout(r, 200));
-      }
-
-      processed++;
-
-      // Update progress every 5 messages (or on the last)
-      if (processed % 5 === 0 || processed === contacts.length) {
-        await GroupBroadcast.findByIdAndUpdate(broadcastId, {
-          processed, sent, failed, skipped,
-        }).catch(() => {});
-      }
-    }
-
-    console.log(`${TAG} ✅ Broadcast complete — sent=${sent} failed=${failed} skipped=${skipped} total=${totalContacts}`);
-    // If this was a scheduled broadcast and the scheduled time hasn't passed yet,
-    // keep status as 'scheduled' so the cancel button remains visible in the UI.
-    // The setInterval below will flip it to 'completed' once the time passes.
-    const finalStatus = (scheduled_at && scheduled_at > Date.now()) ? 'scheduled' : 'completed';
-    const finalUpdate = {
-      status: finalStatus,
-      processed,
-      sent,
-      failed,
-      skipped,
-      errors: errors.slice(0, 50),
-      recipients,
-      ...(collectedTaskids.length ? { taskids: collectedTaskids } : {}),
+    // ── בנה body לפי סוג ההודעה ──────────────────────────────────────
+    const body = {
+      phones: phonesArr,
+      token: SHEET_TOKEN,
+      force: 1,
+      reportId: String(broadcastId),
     };
-    if (finalStatus === 'completed') finalUpdate.completed_at = new Date();
-    await GroupBroadcast.findByIdAndUpdate(broadcastId, finalUpdate);
+
+    if (isTemplate && templateData) {
+      // סוג 3/4/5/6 — תבנית
+      body.template = templateData.name;
+      if (templateData.params?.header?.url) {
+        body.header = {
+          type: templateData.params.header.type || 'image',
+          url: templateData.params.header.url,
+        };
+      }
+      if (Array.isArray(templateData.params?.body) && templateData.params.body.length > 0) {
+        body.params = templateData.params.body.map(p => {
+          const s = String(p || '');
+          // __field:full_name / whatsapp_name → $name$ (מוחלף אוטומטית לכל נמען ע"י ה-API)
+          if (s === '__field:full_name' || s === '__field:whatsapp_name') return '$name$';
+          if (s.startsWith('__field:')) return '';
+          return s;
+        });
+      }
+    } else if (media?.url && media?.type) {
+      // מדיה חופשית — שלח את ה-URL כטקסט (ה-API החיצוני אינו תומך במדיה חופשית)
+      body.text = msgText || media.url;
+    } else {
+      // סוג 1/2 — טקסט פשוט (עם $name$ אם יש שם בפון אובייקטים)
+      body.text = msgText;
+    }
+
+    if (scheduled_at) body.time = scheduled_at;
+
+    console.log(`${TAG} 📤 POST ${SHEET_URL}`);
+    console.log(`${TAG}   → phones: ${phonesArr.length} | template: ${body.template || 'N/A'} | text: ${body.text ? String(body.text).substring(0, 50) : 'N/A'} | reportId: ${broadcastId}`);
+
+    console.log(`${TAG} 📦 Full request body: ${JSON.stringify({ ...body, phones: `[${phonesArr.length} items]` })}`);
+
+    const waRes = await fetch(SHEET_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json; charset=utf-8' },
+      body: JSON.stringify(body),
+    });
+    const responseText = await waRes.text().catch(() => '');
+    console.log(`${TAG} ← HTTP ${waRes.status}`);
+    console.log(`${TAG} ← Response body: ${responseText.substring(0, 1000)}`);
+
+    if (waRes.ok) {
+      console.log(`${TAG} ✅ Batch sent to ${phonesArr.length} numbers — waiting for /complete callback`);
+      // status נשאר 'running' — completeBroadcast callback יעדכן ל-'completed'
+      await GroupBroadcast.findByIdAndUpdate(broadcastId, {
+        processed: phonesArr.length + skipped,
+        sent: phonesArr.length,
+        skipped,
+        recipients,
+      });
+    } else {
+      console.error(`${TAG} ❌ Sheet API error: HTTP ${waRes.status} — ${responseText}`);
+      await GroupBroadcast.findByIdAndUpdate(broadcastId, {
+        status: 'failed', completed_at: new Date(),
+        processed: contacts.length, sent: 0, failed: phonesArr.length, skipped,
+        errors: [{ error: `Sheet API HTTP ${waRes.status}: ${responseText.substring(0, 200)}` }],
+        recipients,
+      });
+    }
   } catch (err) {
     console.error(`${TAG} 💥 Unexpected error:`, err);
     await GroupBroadcast.findByIdAndUpdate(broadcastId, {
@@ -940,12 +794,18 @@ export const resumeBroadcast = async (req, res) => {
 export const completeBroadcast = async (req, res) => {
   try {
     const { id } = req.params;
+    console.log(`[completeBroadcast] ✅ Callback received for broadcast id=${id} method=${req.method} query=${JSON.stringify(req.query)} body=${JSON.stringify(req.body)}`);
     const broadcast = await GroupBroadcast.findById(id);
-    if (!broadcast) return res.status(404).json({ error: 'Broadcast not found' });
+    if (!broadcast) {
+      console.warn(`[completeBroadcast] ⚠️ Broadcast ${id} not found`);
+      return res.status(404).json({ error: 'Broadcast not found' });
+    }
+    console.log(`[completeBroadcast] Broadcast ${id} — current status: ${broadcast.status} → setting to completed`);
     broadcast.status = 'completed';
     broadcast.completed_at = new Date();
     await broadcast.save();
-    res.json({ success: true, broadcast });
+    console.log(`[completeBroadcast] ✅ Broadcast ${id} marked as completed`);
+    res.json({ success: true });
   } catch (err) {
     console.error('[groups.completeBroadcast] error:', err);
     res.status(500).json({ error: err.message });

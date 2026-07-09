@@ -20,8 +20,9 @@ import {
  
 const router = express.Router();
 
-// Public route — no auth required (called externally by webhook/service)
+// Public routes — no auth required (called externally by webhook/service)
 router.get('/broadcasts/:id/complete', completeBroadcast);
+router.post('/broadcasts/:id/complete', completeBroadcast);
 
 router.use(authenticateToken);
 

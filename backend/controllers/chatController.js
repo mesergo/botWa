@@ -2295,18 +2295,21 @@ export const sendTemplateExternal = async (req, res) => {
       if (existingSession) {
         await collection.updateOne(
           { _id: existingSession._id },
-          { $push: { process_history: historyEntry } }
+          {
+            $push: { process_history: historyEntry },
+            $set: { status: 'bot', is_agent: false, agent_since: null },
+          }
         );
-        console.log(`[360-TEMPLATE]    ✅ Appended to existing session=${existingSession._id}`);
+        console.log(`[360-TEMPLATE]    ✅ Appended to existing session=${existingSession._id} (status→bot)`);
       } else {
         const result = await collection.insertOne({
           sender: normalizedPhone,
           customer_phone: normalizedPhone,
           user_id: userId,
           flow_id: bot?._id?.toString() || null,
-          is_agent: true,
-          agent_since: now,
-          status: 'waiting',
+          is_agent: false,
+          agent_since: null,
+          status: 'bot',
           is_active: true,
           created_at: now,
           process_history: [historyEntry],

@@ -3,7 +3,7 @@ import {
   Phone, Search, Users, LogOut, List, Shield, Settings, UserCog, Plus,
   Edit2, Trash2, X, Check, Bot, Send, UserPlus, UserMinus, Ban, Layers,
   ChevronRight, ChevronLeft, ArrowRight, MessageSquare, FileText, History,
-  Calendar, Eye, AlertTriangle, CheckCircle2, Clock, Paperclip, Image as ImageIcon, Video, File as FileLucide, RotateCcw, Copy
+  Calendar, Eye, AlertTriangle, CheckCircle2, Clock, Paperclip, Image as ImageIcon, Video, File as FileLucide, RotateCcw, Copy, Download
 } from 'lucide-react';
 import ImpersonationBanner from './ImpersonationBanner';
 import { FileUploader } from './FileUploader';
@@ -88,6 +88,12 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
   const [sending, setSending] = useState(false); 
   const [sendResult, setSendResult] = useState<{ sent: number; failed: number; skipped: number; total: number } | null>(null);
   const [excludeGroupId, setExcludeGroupId] = useState<string>('');
+
+  // Recipients preview (export before send)
+  const [recipientsPreviewOpen, setRecipientsPreviewOpen] = useState(false);
+  const [recipientsPreviewList, setRecipientsPreviewList] = useState<ContactRecord[]>([]);
+  const [recipientsLoading, setRecipientsLoading] = useState(false);
+  const [copiedRecipients, setCopiedRecipients] = useState(false);
 
   // Scheduled send
   const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
@@ -606,6 +612,72 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
     if (activeTab === 'history' && selectedGroup) fetchBroadcasts();
     if (activeTab === 'removals' && selectedGroup) fetchRemovals();
   }, [activeTab, selectedGroup, fetchBroadcasts, fetchRemovals]);
+
+  // ── Recipients preview (export list before sending) ─────────────────────
+  const openRecipientsPreview = async () => {
+    if (!selectedGroup) return;
+    setRecipientsPreviewOpen(true);
+    setRecipientsLoading(true);
+    const excludedPhones = new Set<string>();
+
+    // Fetch blocklist contacts
+    const blocklistGroup = groups.find(g => g.is_blocklist);
+    if (blocklistGroup) {
+      try {
+        const res = await fetch(`${API_BASE}/groups/${blocklistGroup._id}`, { headers: authHeader });
+        const data = await res.json();
+        if (res.ok && data.contacts) {
+          (data.contacts as ContactRecord[]).forEach(c => excludedPhones.add(c.phone));
+        }
+      } catch (e) { console.error('Failed to load blocklist for preview', e); }
+    }
+
+    // Fetch excluded group contacts if one is selected
+    if (excludeGroupId) {
+      try {
+        const res = await fetch(`${API_BASE}/groups/${excludeGroupId}`, { headers: authHeader });
+        const data = await res.json();
+        if (res.ok && data.contacts) {
+          (data.contacts as ContactRecord[]).forEach(c => excludedPhones.add(c.phone));
+        }
+      } catch (e) { console.error('Failed to load excluded group for preview', e); }
+    }
+
+    const effectiveList = selectedGroup.contacts.filter(c => !excludedPhones.has(c.phone));
+    setRecipientsPreviewList(effectiveList);
+    setRecipientsLoading(false);
+  };
+
+  const copyRecipientsToExcel = () => {
+    const header = 'טלפון\tשם מלא\tשם וואטסאפ\tמייל';
+    const rows = recipientsPreviewList.map(c =>
+      `${c.phone}\t${c.full_name ?? ''}\t${c.whatsapp_name ?? ''}\t${c.email ?? ''}`
+    );
+    const tsv = [header, ...rows].join('\n');
+    navigator.clipboard.writeText(tsv).then(() => {
+      setCopiedRecipients(true);
+      setTimeout(() => setCopiedRecipients(false), 3000);
+    });
+  };
+
+  const downloadRecipientsAsExcel = () => {
+    const escape = (v: string) => `"${(v ?? '').replace(/"/g, '""')}"`;
+    const header = [escape('טלפון'), escape('שם מלא'), escape('שם וואטסאפ'), escape('מייל')].join(',');
+    const rows = recipientsPreviewList.map(c =>
+      [escape(c.phone), escape(c.full_name ?? ''), escape(c.whatsapp_name ?? ''), escape(c.email ?? '')].join(',')
+    );
+    // UTF-8 BOM so Excel opens Hebrew correctly
+    const csv = '\uFEFF' + [header, ...rows].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${selectedGroup?.name ?? 'recipients'}_${new Date().toISOString().slice(0,10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
 
   const openSendModal = () => {
     setSendOpen(true);
@@ -1498,10 +1570,20 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
             </div>
 
             <div className="flex items-center justify-between gap-3 p-6 border-t border-slate-100">
-              <button
-                onClick={() => setSendOpen(false)}
-                className="px-5 py-2.5 text-slate-500 hover:text-slate-700 rounded-xl font-bold text-sm"
-              >סגור</button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setSendOpen(false)}
+                  className="px-5 py-2.5 text-slate-500 hover:text-slate-700 rounded-xl font-bold text-sm"
+                >סגור</button>
+                <button
+                  onClick={openRecipientsPreview}
+                  disabled={selectedGroup.contacts.length === 0}
+                  className="flex items-center gap-2 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-sm transition-colors disabled:opacity-50"
+                  title="יצוא רשימת נמענים לפני שליחה"
+                >
+                  <List size={15} /> יצוא רשימה
+                </button>
+              </div>
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => {
@@ -1524,6 +1606,105 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                 >
                   <Send size={15} />
                   {sending ? 'מתחיל שליחה...' : 'שלח במיידי'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Recipients preview modal */}
+      {recipientsPreviewOpen && selectedGroup && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[80] flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col" dir="rtl">
+            <div className="flex items-center justify-between p-6 border-b border-slate-100">
+              <div>
+                <h2 className="text-xl font-black text-slate-900 flex items-center gap-2">
+                  <List size={20} className="text-slate-500" />
+                  רשימת נמענים — {selectedGroup.name}
+                </h2>
+                {!recipientsLoading && (
+                  <p className="text-sm font-semibold text-slate-400 mt-0.5">
+                    {recipientsPreviewList.length} אנשי קשר יקבלו את ההודעה
+                    {selectedGroup.contacts.length - recipientsPreviewList.length > 0 && (
+                      <span className="text-red-400"> · {selectedGroup.contacts.length - recipientsPreviewList.length} יוחרגו (חסימה / קבוצת החרגה)</span>
+                    )}
+                  </p>
+                )}
+              </div>
+              <button
+                onClick={() => setRecipientsPreviewOpen(false)}
+                className="p-2 text-slate-300 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto">
+              {recipientsLoading ? (
+                <div className="flex items-center justify-center py-20 text-slate-300">
+                  <div className="animate-spin w-10 h-10 border-4 border-slate-200 border-t-blue-500 rounded-full" />
+                </div>
+              ) : recipientsPreviewList.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-20 text-slate-300">
+                  <Users size={48} strokeWidth={1} />
+                  <p className="text-lg font-bold mt-4">אין נמענים — כולם הוחרגו</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-slate-50 border-b border-slate-100 sticky top-0">
+                      <tr>
+                        <th className="px-5 py-3 text-right text-xs font-bold text-slate-400 uppercase tracking-wide">#</th>
+                        <th className="px-5 py-3 text-right text-xs font-bold text-slate-400 uppercase tracking-wide">טלפון</th>
+                        <th className="px-5 py-3 text-right text-xs font-bold text-slate-400 uppercase tracking-wide">שם מלא</th>
+                        <th className="px-5 py-3 text-right text-xs font-bold text-slate-400 uppercase tracking-wide">שם וואטסאפ</th>
+                        <th className="px-5 py-3 text-right text-xs font-bold text-slate-400 uppercase tracking-wide">מייל</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {recipientsPreviewList.map((c, idx) => (
+                        <tr key={c._id} className={`border-b border-slate-100 hover:bg-slate-50/70 ${idx % 2 === 0 ? '' : 'bg-slate-50/30'}`}>
+                          <td className="px-5 py-3 text-slate-300 text-xs font-semibold">{idx + 1}</td>
+                          <td className="px-5 py-3 font-bold text-slate-900 font-mono">{c.phone}</td>
+                          <td className="px-5 py-3 text-slate-700 font-semibold">{c.full_name || <span className="text-slate-300">—</span>}</td>
+                          <td className="px-5 py-3 text-slate-600">{c.whatsapp_name || <span className="text-slate-300">—</span>}</td>
+                          <td className="px-5 py-3 text-slate-500">{c.email || <span className="text-slate-300">—</span>}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-between gap-3 p-6 border-t border-slate-100">
+              <p className="text-xs font-semibold text-slate-400">
+                הרשימה כוללת החרגת חסומים{excludeGroupId ? ` ו-"${regularGroups.find(g => g._id === excludeGroupId)?.name}"` : ''}.
+                ניתן להדביק ישירות ל-Excel.
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setRecipientsPreviewOpen(false)}
+                  className="px-5 py-2.5 text-slate-500 hover:text-slate-700 rounded-xl font-bold text-sm"
+                >סגור</button>
+                <button
+                  onClick={copyRecipientsToExcel}
+                  disabled={recipientsPreviewList.length === 0}
+                  className="flex items-center gap-2 px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-sm transition-colors disabled:opacity-50"
+                  title="העתק לאקסל (TSV)"
+                >
+                  {copiedRecipients
+                    ? <><Check size={15} className="text-emerald-600" /> הועתק!</>
+                    : <><Copy size={15} /> העתק</>}
+                </button>
+                <button
+                  onClick={downloadRecipientsAsExcel}
+                  disabled={recipientsPreviewList.length === 0}
+                  className="flex items-center gap-2 px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-sm transition-colors disabled:opacity-50"
+                  title="הורד קובץ CSV לאקסל"
+                >
+                  <Download size={15} /> הורד Excel ({recipientsPreviewList.length})
                 </button>
               </div>
             </div>

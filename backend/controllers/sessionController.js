@@ -546,7 +546,7 @@ export const getSessionsByPhone = async (req, res) => {
 
     const sessions = await collection.aggregate([
       { $match: { $and: matchConditions } },
-      { $addFields: { _sortDate: { $ifNull: ['$created_at', '$createdAt'] } } },
+      { $addFields: { _sortDate: { $ifNull: ['$created_at', '$createdAt', { $toDate: '$_id' }] } } },
       { $sort: { _sortDate: 1 } }
     ]).toArray();
 

@@ -191,7 +191,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
       headers: { Authorization: `Bearer ${token}` }
     })
       .then(r => r.ok ? r.json() : Promise.reject(r))
-      .then(data => setPhoneSessions(data))
+      .then(data => setPhoneSessions(sortSessionsAsc(data)))
       .catch(e => console.error('Failed to load sessions for phone', e))
       .finally(() => setPhoneSessionsLoading(false));
   }, [selectedPhone, token, activeBotFilter]);
@@ -222,7 +222,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
             const prevMsgs = prev.reduce((acc, s) => acc + (s.process_history?.length || 0), 0);
             const newMsgs = data.reduce((acc, s) => acc + (s.process_history?.length || 0), 0);
             if (prev.length === data.length && prevMsgs === newMsgs) return prev;
-            return data;
+            return sortSessionsAsc(data);
           });
         })
         .catch(() => { /* swallow polling errors */ });
@@ -378,6 +378,24 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
     if (isNaN(d.getTime())) return 'לא ידוע';
     return d.toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
   };
+
+  // Extract millisecond timestamp from a session — uses created_at if available,
+  // otherwise falls back to the MongoDB ObjectId embedded timestamp.
+  const getSessionTimestamp = (s: Session): number => {
+    if (s.created_at) {
+      const t = new Date(s.created_at).getTime();
+      if (!isNaN(t)) return t;
+    }
+    // ObjectId: first 8 hex chars = Unix seconds
+    if (s.id && s.id.length >= 8) {
+      const ts = parseInt(s.id.substring(0, 8), 16);
+      if (!isNaN(ts)) return ts * 1000;
+    }
+    return 0;
+  };
+
+  const sortSessionsAsc = (arr: Session[]): Session[] =>
+    [...arr].sort((a, b) => getSessionTimestamp(a) - getSessionTimestamp(b));
 
   const formatContactTime = (dateStr: string | null): string => {
     if (!dateStr) return '';
@@ -1254,16 +1272,22 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
   const renderSessionMessages = (session: Session) => {
     if (!session.process_history.length) return null;
 
+    const sortedHistory = [...session.process_history].sort((a, b) => {
+      if (!a.created) return -1;
+      if (!b.created) return 1;
+      return new Date(a.created).getTime() - new Date(b.created).getTime();
+    });
+
     const grouped: any[] = [];
     let hi = 0;
-    while (hi < session.process_history.length) {
-      const cur = session.process_history[hi];
+    while (hi < sortedHistory.length) {
+      const cur = sortedHistory[hi];
       if (cur.type === 'waitingwebservice') { hi++; continue; }
       if (cur.type === 'SendItem') {
         const cards: any[] = [];
         const created = cur.created;
-        while (hi < session.process_history.length && session.process_history[hi].type === 'SendItem') {
-          cards.push(session.process_history[hi]); hi++;
+        while (hi < sortedHistory.length && sortedHistory[hi].type === 'SendItem') {
+          cards.push(sortedHistory[hi]); hi++;
         }
         grouped.push({ type: '_carousel', carouselItems: cards, created });
       } else {
