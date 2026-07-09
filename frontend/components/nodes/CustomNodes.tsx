@@ -4,11 +4,12 @@ import { Handle, Position, useReactFlow, useEdges } from 'reactflow';
 import {
   Type, Calendar, Upload, MessageSquare,
   Image as ImageIcon, ExternalLink, List, Globe, Clock, PlayCircle, Plus, Layers, X, GitBranch, Trash2, ChevronDown, Zap,
-  Mail, Phone, CreditCard, Link, Users, UserMinus, UserCheck
+  Mail, Phone, CreditCard, Link, Users, UserMinus, UserCheck, Settings
 } from 'lucide-react';
 import BaseNode from './BaseNode';
 import { NodeType } from '../../types';
 import { useContactFields } from '../../context/ContactFieldsContext';
+import ApiNodeSettingsModal from '../ApiNodeSettingsModal';
 
 const HighlightedText = ({ text, highlight, isCurrent }: { text: string; highlight: string; isCurrent: boolean }) => {
   if (!highlight.trim()) return <>{text}</>;
@@ -378,7 +379,7 @@ export const InputTextNode = (props: any) => {
             >
               <option value="" disabled>בחר שדה...</option>
               {contactFields.map((f: any) => (
-                <option key={f._id} value={f._id}>{f.label}</option>
+                <option key={f._id} value={f.key}>{f.label}</option>
               ))}
             </select>
           </div>
@@ -737,9 +738,21 @@ export const OutputMenuNode = (props: any) => {
   );
 };
 
+const METHOD_BADGE: Record<string, string> = {
+  GET:    'bg-emerald-50 text-emerald-700 border-emerald-200',
+  POST:   'bg-blue-50 text-blue-700 border-blue-200',
+  PUT:    'bg-amber-50 text-amber-700 border-amber-200',
+  PATCH:  'bg-violet-50 text-violet-700 border-violet-200',
+  DELETE: 'bg-red-50 text-red-700 border-red-200',
+};
+
 export const ActionWebServiceNode = (props: any) => {
   const branches = props.data.options || [];
   const operators = props.data.optionOperators || Array(branches.length).fill('eq');
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
+  const method: string = props.data.apiMethod || 'POST';
+  const badgeClass = METHOD_BADGE[method] || METHOD_BADGE['POST'];
 
   const updateBranch = (index: number, value: string) => {
     const newBranches = [...branches];
@@ -768,7 +781,28 @@ export const ActionWebServiceNode = (props: any) => {
   };
 
   return (
+    <>
+    {settingsOpen && (
+      <ApiNodeSettingsModal
+        nodeId={props.id}
+        data={props.data}
+        onChange={props.data.onChange}
+        onClose={() => setSettingsOpen(false)}
+      />
+    )}
     <BaseNode id={props.id} title="חיבור API" icon={<Globe size={20} />} type={NodeType.ACTION_WEB_SERVICE} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} isSearchMatch={props.data.isSearchMatch}>
+      {/* Settings button + method badge */}
+      <div className="flex items-center justify-between mb-3">
+        <button
+          onClick={() => setSettingsOpen(true)}
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-600 hover:border-blue-400 hover:text-blue-600 hover:bg-blue-50 transition-all nodrag"
+          title="פתח הגדרות"
+        >
+          <Settings size={13} />
+          הגדרות
+        </button>
+        <span className={`px-2.5 py-1 rounded-lg border text-[11px] font-black tracking-wide ${badgeClass}`}>{method}</span>
+      </div>
       <InputFieldWrapper label="כתובת Webhook">
         <SearchableInput value={props.data.url} onChange={(v: string) => props.data.onChange({ url: v })} placeholder="https://api.yourdomain.com" searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
       </InputFieldWrapper>
@@ -808,6 +842,7 @@ export const ActionWebServiceNode = (props: any) => {
         </div>
       </div>
     </BaseNode>
+    </>
   );
 };
 

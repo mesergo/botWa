@@ -48,6 +48,7 @@ interface ContactsPageProps {
   onOpenSettings?: () => void;
   onOpenSubUsers?: () => void;
   onStopImpersonation?: () => void;
+  onGoHome?: () => void;
   initialPhone?: string | null;
 }
 
@@ -153,7 +154,7 @@ const BotPhonesTags: React.FC<{ phones: string[] }> = ({ phones }) => {
 
 const ContactsPage: React.FC<ContactsPageProps> = ({
   token, currentUser, onBack, onLogout, onOpenSessions, onOpenGroups,
-  onOpenAdminPanel, onOpenSettings, onOpenSubUsers, onStopImpersonation, initialPhone
+  onOpenAdminPanel, onOpenSettings, onOpenSubUsers, onStopImpersonation, onGoHome, initialPhone,
 }) => {
   const [contacts, setContacts] = useState<MergedContact[]>([]);
   const [loading, setLoading] = useState(true);
@@ -459,6 +460,7 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
         <AppNav
           mode="sidebar"
           activePage="contacts"
+          onGoHome={onGoHome}
           onBots={can('bots.view_tab') ? onBack : undefined}
           onSessions={onOpenSessions ? () => onOpenSessions() : undefined}
           onGroups={onOpenGroups}
@@ -662,8 +664,8 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
                           {/* Custom field columns */}
                           {contactFieldDefs.map(f => (
                             <div key={f._id} className="text-sm font-semibold text-slate-700 truncate">
-                              {contact.custom_field_values?.[f._id]
-                                ? String(contact.custom_field_values[f._id])
+                              {contact.custom_field_values?.[f.key]
+                                ? String(contact.custom_field_values[f.key])
                                 : <span className="text-slate-300 font-normal">—</span>}
                             </div>
                           ))}
@@ -1114,9 +1116,9 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
                 {detailContact.custom_field_values && Object.keys(detailContact.custom_field_values).length > 0 ? (
                   <div className="grid grid-cols-1 gap-2">
                     {Object.entries(detailContact.custom_field_values).map(([key, value]) => {
-                      // Resolve field label: look up by _id, fall back to raw key
-                      const fieldDef = contactFieldDefs.find(f => f._id === key);
-                      const displayLabel = fieldDef ? fieldDef.label : key.replace(/_/g, ' ');
+                      // Resolve display label: look up by slug key, fall back to raw key
+                      const fieldDef = contactFieldDefs.find(f => f.key === key);
+                      const displayLabel = fieldDef ? fieldDef.label : key;
                       return (
                         <div key={key} className="flex items-center justify-between px-5 py-3.5 bg-blue-50 rounded-2xl border border-blue-100">
                           <span className="text-sm font-bold text-slate-800">{String(value) || '—'}</span>

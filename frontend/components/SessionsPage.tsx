@@ -1,5 +1,5 @@
 ﻿import React, { useState, useEffect, useRef } from 'react';
-import { Clock, MessageSquare, Search, Bot, LogOut, User, Phone, List, Users, ExternalLink, X, Headphones, RefreshCw, Shield, Settings, UserCog, Layers, Plus, UserPlus, Check, Paperclip, ChevronRight, Bell } from 'lucide-react';
+import { Clock, MessageSquare, Search, Bot, LogOut, User, Phone, List, Users, ExternalLink, X, Headphones, RefreshCw, Shield, Settings, UserCog, Layers, Plus, UserPlus, Check, Paperclip, ChevronRight, Bell, ChevronDown, Ban } from 'lucide-react';
 import ImpersonationBanner from './ImpersonationBanner';
 import { FileUploader } from './FileUploader';
 import { usePermission } from '../hooks/usePermission';
@@ -30,6 +30,8 @@ interface Contact {
   assigned_to?: string[];
   status?: 'bot' | 'waiting' | 'handling' | 'closed' | 'resolved';
   wants_phone?: boolean;
+  whatsapp_name?: string;
+  full_name?: string;
 }
 
 interface SessionsPageProps {
@@ -44,6 +46,7 @@ interface SessionsPageProps {
   onOpenSubUsers?: () => void;
   onStopImpersonation?: () => void;
   onUpdateAvailability?: (status: 'available' | 'unavailable' | 'on_break') => Promise<void>;
+  onGoHome?: () => void;
   ownOnly?: boolean;
   initialPhone?: string | null;
 }
@@ -52,7 +55,7 @@ const API_BASE = window.location.hostname === 'localhost'
   ? 'http://localhost:3001/api'
   : `${window.location.origin}/api`;
 
-const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack, onLogout, onOpenContacts, onOpenGroups, onOpenAdminPanel, onOpenSettings, onOpenSubUsers, onStopImpersonation, onUpdateAvailability, initialPhone }) => {
+const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack, onLogout, onOpenContacts, onOpenGroups, onOpenAdminPanel, onOpenSettings, onOpenSubUsers, onStopImpersonation, onUpdateAvailability, onGoHome, initialPhone }) => {
   // Contacts panel state
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [contactsLoading, setContactsLoading] = useState(true);
@@ -105,6 +108,12 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
   const [assignNewRepId, setAssignNewRepId] = useState('');
   const [assignLoading, setAssignLoading] = useState(false);
   const [subUsers, setSubUsers] = useState<{ id: string; name: string }[]>([]);
+
+  // Actions dropdown (transfer + blocklist)
+  const [showActionsMenu, setShowActionsMenu] = useState(false);
+  const [addingToBlocklist, setAddingToBlocklist] = useState(false);
+  const [blocklistSuccess, setBlocklistSuccess] = useState(false);
+  const actionsMenuRef = useRef<HTMLDivElement>(null);
 
   // Transfer conversation modal state
   const [showTransferModal, setShowTransferModal] = useState(false);
@@ -1211,6 +1220,46 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
     return () => document.removeEventListener('mousedown', handler);
   }, [availabilityOpen]);
 
+  useEffect(() => {
+    if (!showActionsMenu) return;
+    const handler = (e: MouseEvent) => {
+      if (actionsMenuRef.current && !actionsMenuRef.current.contains(e.target as Node)) setShowActionsMenu(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showActionsMenu]);
+
+  const addContactToBlocklist = async () => {
+    if (!selectedPhone || addingToBlocklist) return;
+    setShowActionsMenu(false);
+    setAddingToBlocklist(true);
+    try {
+      const groupsRes = await fetch(`${API_BASE}/groups`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!groupsRes.ok) throw new Error('שגיאה בטעינת הקבוצות');
+      const groupsData = await groupsRes.json();
+      const blocklist = (groupsData.groups || []).find((g: any) => g.is_blocklist);
+      if (!blocklist) throw new Error('לא נמצאה רשימת הסרה במערכת');
+      const addRes = await fetch(`${API_BASE}/groups/${blocklist._id}/members`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phones: [selectedPhone] })
+      });
+      if (!addRes.ok) {
+        const err = await addRes.json().catch(() => ({}));
+        throw new Error(err.error || 'שגיאה בהוספה לרשימת הסרה');
+      }
+      setBlocklistSuccess(true);
+      setTimeout(() => setBlocklistSuccess(false), 4000);
+    } catch (e: any) {
+      console.error('Failed to add to blocklist', e);
+      alert(e.message || 'שגיאה בהוספה לרשימת הסרה');
+    } finally {
+      setAddingToBlocklist(false);
+    }
+  };
+
   const handleAvailabilitySelect = async (s: 'available' | 'unavailable' | 'on_break') => {
     if (!onUpdateAvailability) return;
     if (s === (currentUser?.availability_status || 'available')) { setAvailabilityOpen(false); return; }
@@ -1577,6 +1626,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
             <AppNav
               mode="sidebar"
               activePage="sessions"
+              onGoHome={onGoHome}
               onBots={onBack && can('bots.view_tab') ? onBack : undefined}
               onContacts={onOpenContacts ? () => onOpenContacts() : undefined}
               onGroups={onOpenGroups}
@@ -1645,6 +1695,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
           <AppNav
             mode="sidebar"
             activePage="sessions"
+            onGoHome={onGoHome}
             onBots={onBack && can('bots.view_tab') ? onBack : undefined}
             onSessions={botList.length > 1 ? () => { setActiveBotFilter(null); setSelectedPhone(null); setShowBotPicker(true); } : undefined}
             onContacts={onOpenContacts ? () => onOpenContacts() : undefined}
@@ -1749,13 +1800,23 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                     )}
                     <div className={`w-10 h-10 rounded-2xl flex-shrink-0 flex items-center justify-center text-sm font-black
                       ${isSelected ? 'bg-sky-500 text-white' : sim ? 'bg-blue-50 text-blue-400' : 'bg-slate-100 text-slate-500'}`}>
-                      {sim ? <MessageSquare size={16} /> : contact.phone.charAt(0)}
+                      {sim ? <MessageSquare size={16} /> : (contact.whatsapp_name || contact.full_name || contact.phone).charAt(0).toUpperCase()}
                     </div>
                     <div className="flex-1 min-w-0 flex items-center justify-between gap-2">
                       <div className="min-w-0">
                         <p className={`text-sm font-black truncate ${isSelected ? 'text-sky-700' : 'text-slate-800'}`}>
                           {sim ? 'סימולטור' : contact.phone}
+                          {!sim && contact.whatsapp_name && (
+                            <span className={`text-sm font-semibold mr-1.5 ${isSelected ? 'text-sky-600' : 'text-slate-500'}`}>
+                              · {contact.whatsapp_name}
+                            </span>
+                          )}
                         </p>
+                        {!sim && contact.full_name && (
+                          <p className="text-[10px] font-medium truncate text-slate-400">
+                            {contact.full_name}
+                          </p>
+                        )}
                         <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                           <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-full
                             ${isSelected ? 'bg-sky-200 text-sky-700' : 'bg-slate-100 text-slate-500'}`}>
@@ -1769,9 +1830,20 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                           )}
                         </div>
                       </div>
-                      <span className="text-[11px] text-slate-400 font-semibold flex-shrink-0">
-                        {formatContactTime(contact.lastSeen)}
-                      </span>
+                      <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                        <span className="text-[11px] text-slate-400 font-semibold">
+                          {formatContactTime(contact.lastSeen)}
+                        </span>
+                        {!sim && onOpenContacts && (
+                          <button
+                            onClick={e => { e.stopPropagation(); onOpenContacts(contact.phone); }}
+                            title="פתח פרטי איש קשר"
+                            className="p-1 text-slate-300 hover:text-sky-500 hover:bg-sky-50 rounded-lg transition-colors"
+                          >
+                            <User size={13} />
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </button>
                 );
@@ -1807,7 +1879,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                         title="פתח פרטי איש קשר"
                         className="p-1 text-slate-400 hover:text-sky-500 transition-colors rounded-lg hover:bg-sky-50"
                       >
-                        <ExternalLink size={14} />
+                        <User size={14} />
                       </button>
                     )}
                   </div>
@@ -1876,15 +1948,46 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                     <X size={14} /> סיום שיחה
                   </button>
                 )}
-                {/* Transfer conversation button — available on any active (non-closed) conversation */}
+                {/* Actions dropdown — transfer + add to blocklist */}
                 {phoneSessions.length > 0 && currentStatus !== 'closed' && (
-                  <button
-                    onClick={openTransferModal}
-                    className="flex items-center gap-2 px-4 py-2 rounded-2xl bg-indigo-500 text-white text-xs font-black hover:bg-indigo-600 transition-colors shadow-sm"
-                    title="העברת שיחה לקבוצה / מנהל משמרת / נציג אחר"
-                  >
-                    <Headphones size={14} /> העברת שיחה{isSimulator(selectedPhone!) ? ' (סימולטור)' : ''}
-                  </button>
+                  <div className="relative flex-shrink-0" ref={actionsMenuRef}>
+                    <button
+                      onClick={() => setShowActionsMenu(v => !v)}
+                      className="flex items-center gap-2 px-4 py-2 rounded-2xl bg-indigo-500 text-white text-xs font-black hover:bg-indigo-600 transition-colors shadow-sm"
+                      title="פעולות שיחה"
+                    >
+                      <Headphones size={14} />
+                      פעולות
+                      <ChevronDown size={12} className={`transition-transform ${showActionsMenu ? 'rotate-180' : ''}`} />
+                    </button>
+                    {showActionsMenu && (
+                      <div className="absolute top-full mt-1 left-0 bg-white rounded-2xl shadow-xl border border-slate-100 py-1.5 z-50 min-w-[190px]">
+                        <button
+                          onClick={() => { setShowActionsMenu(false); openTransferModal(); }}
+                          className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 transition-colors text-right"
+                        >
+                          <Headphones size={15} />
+                          העברת שיחה{isSimulator(selectedPhone!) ? ' (סימולטור)' : ''}
+                        </button>
+                        {!isSimulator(selectedPhone!) && (
+                          <button
+                            onClick={addContactToBlocklist}
+                            disabled={addingToBlocklist}
+                            className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-red-50 hover:text-red-600 transition-colors text-right disabled:opacity-60"
+                          >
+                            <Ban size={15} />
+                            {addingToBlocklist ? 'מוסיף...' : 'הוספה לרשימת הסרה'}
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+                {/* Blocklist success toast */}
+                {blocklistSuccess && (
+                  <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-black flex-shrink-0">
+                    <Check size={13} /> נוסף לרשימת הסרה
+                  </span>
                 )}
                 {!isSimulator(selectedPhone) && isAgentMode && (
                   <button

@@ -682,7 +682,20 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
           if (token) headers['Authorization'] = `Bearer ${token}`;
           const wsAbortCtrl = new AbortController();
           wsAbortControllerRef.current = wsAbortCtrl;
-          const wsBody = JSON.stringify({ url: interpolate(node.data.url), payload: payload });
+
+          // Build proxy request body with optional method/headers/body from node settings
+          const apiMethod: string = node.data.apiMethod || 'POST';
+          const apiHeaders: Array<{ key: string; value: string }> = node.data.apiHeaders || [];
+          const rawApiBody: string | undefined = node.data.apiBody;
+          const interpolatedApiBody = rawApiBody ? interpolate(rawApiBody) : undefined;
+
+          const wsBody = JSON.stringify({
+            url: interpolate(node.data.url),
+            payload: payload,
+            method: apiMethod,
+            customHeaders: apiHeaders,
+            ...(interpolatedApiBody ? { body: interpolatedApiBody } : {}),
+          });
 
           const response = await fetch(`${API_BASE}/xc/call`, { 
             method: 'POST', 

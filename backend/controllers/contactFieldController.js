@@ -12,6 +12,10 @@ export const getFields = async (req, res) => {
   }
 };
 
+// Derive a stable slug key from a label (preserves Hebrew and Latin chars)
+const toSlugKey = (label) =>
+  label.trim().replace(/\s+/g, '_').replace(/[^\w\u0590-\u05FF]/g, '');
+
 // POST /api/contact-fields
 export const createField = async (req, res) => {
   const userId = getEffectiveUserId(req);
@@ -19,10 +23,21 @@ export const createField = async (req, res) => {
   if (!label || !label.trim()) {
     return res.status(400).json({ error: 'label is required' });
   }
+  const baseKey = toSlugKey(label);
+  if (!baseKey) {
+    return res.status(400).json({ error: 'label must contain at least one valid character' });
+  }
   try {
+    // Ensure key uniqueness per user: append _2, _3, ... if needed
+    let key = baseKey;
+    let suffix = 2;
+    while (await ContactFieldDef.exists({ user_id: userId, key })) {
+      key = `${baseKey}_${suffix++}`;
+    }
     const field = await ContactFieldDef.create({
       user_id: userId,
       label: label.trim(),
+      key,
       order: order ?? 0,
     });
     res.status(201).json(field);

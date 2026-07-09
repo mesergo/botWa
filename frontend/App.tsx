@@ -165,7 +165,7 @@ const FlowBuilder: React.FC = () => {
         if (user?.role === 'rep' || user?.role === 'rep_manager') return 'sessions';
       }
     } catch {}
-    return 'dashboard';
+    return 'home';
   });
 
   const [nodes, setNodes] = useState<Node[]>([]);
@@ -2090,6 +2090,7 @@ const FlowBuilder: React.FC = () => {
         token={token}
         currentUser={currentUser}
         onBack={() => { setDashboardInitialTab('bots'); setViewMode('dashboard'); }}
+        onGoHome={() => setViewMode('home')}
         onLogout={() => { localStorage.clear(); window.location.reload(); }}
         onOpenSessions={can('sessions.view') ? (phone?: string) => { setSessionsInitialPhone(phone ?? null); setSessionsOwnOnly(true); setViewMode('sessions'); } : undefined}
         onOpenGroups={can('groups.view') ? () => setViewMode('groups') : undefined}
@@ -2108,6 +2109,7 @@ const FlowBuilder: React.FC = () => {
         token={token}
         currentUser={currentUser}
         onBack={() => { setDashboardInitialTab('bots'); setViewMode('dashboard'); }}
+        onGoHome={() => setViewMode('home')}
         onLogout={() => { localStorage.clear(); window.location.reload(); }}
         onOpenContacts={can('contacts.view') ? (phone?: string) => { setContactsInitialPhone(phone ?? null); setViewMode('contacts'); } : undefined}
         onOpenSessions={can('sessions.view') ? (phone?: string) => { setSessionsInitialPhone(phone ?? null); setSessionsOwnOnly(true); setViewMode('sessions'); } : undefined}
@@ -2125,6 +2127,7 @@ const FlowBuilder: React.FC = () => {
         token={token}
         currentUser={currentUser}
         onBack={currentUser?.role === 'rep' ? undefined : () => { setDashboardInitialTab('bots'); setViewMode('dashboard'); }}
+        onGoHome={currentUser?.role === 'rep' ? undefined : () => setViewMode('home')}
         onLogout={() => { localStorage.clear(); window.location.reload(); }}
         onOpenContacts={can('contacts.view') ? (phone?: string) => { setContactsInitialPhone(phone ?? null); setViewMode('contacts'); } : undefined}
         onOpenGroups={can('groups.view') ? () => setViewMode('groups') : undefined}
@@ -2159,6 +2162,7 @@ const FlowBuilder: React.FC = () => {
           onUpdateBotPublicId={handleUpdateBotPublicId}
           onUpdateBotEndpoint={currentUser?.isImpersonating ? handleUpdateBotEndpoint : undefined}
           onUpdateAvailability={handleUpdateAvailability}
+          onGoHome={() => setViewMode('home')}
           token={token}
           initialTab={dashboardInitialTab}
         />

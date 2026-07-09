@@ -1,13 +1,7 @@
 export interface ContactFieldDef {
   _id: string;
   label: string;
-  order: number;
-  createdAt?: string;
-}
-
-export interface ContactFieldDef {
-  _id: string;
-  label: string;
+  key: string;
   order: number;
   createdAt?: string;
 }
@@ -88,6 +82,12 @@ export interface NodeData {
   saveToContact?: boolean;
   /** The ContactFieldDef._id to store the value into; required when saveToContact is true */
   contactFieldKey?: string;
+  /** For action_web_service: HTTP method (default: POST) */
+  apiMethod?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+  /** For action_web_service: custom request headers */
+  apiHeaders?: Array<{ key: string; value: string }>;
+  /** For action_web_service: raw JSON body string; if empty, standard bot payload is used */
+  apiBody?: string;
 }
 
 export interface BotFlow {
