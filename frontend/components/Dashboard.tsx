@@ -28,6 +28,7 @@ interface DashboardProps {
   onUpdateBotPublicId?: (id: string, publicId: string) => Promise<void>;
   onUpdateBotEndpoint?: (id: string, endpoint: string) => Promise<void>;
   onUpdateAvailability?: (status: 'available' | 'unavailable' | 'on_break') => Promise<void>;
+  onGoHome?: () => void;
   token?: string | null;
   initialTab?: 'bots' | 'settings' | 'users';
 }
@@ -146,7 +147,7 @@ const AvailabilityBadge: React.FC<{
   );
 };
 
-const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, onDeleteBot, onSetDefaultBot, onLogout, currentUser, onOpenAdminPanel, onStopImpersonation, onOpenContacts, onOpenSessions, onOpenGroups, onConnectFacebook, onUpdateBotPublicId, onUpdateBotEndpoint, onUpdateAvailability, token, initialTab }) => {
+const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, onDeleteBot, onSetDefaultBot, onLogout, currentUser, onOpenAdminPanel, onStopImpersonation, onOpenContacts, onOpenSessions, onOpenGroups, onConnectFacebook, onUpdateBotPublicId, onUpdateBotEndpoint, onUpdateAvailability, onGoHome, token, initialTab }) => {
   const can = usePermission(currentUser as User | null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newBotName, setNewBotName] = useState('');
@@ -774,6 +775,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
         <AppNav
           mode="sidebar"
           activePage={activeTab}
+          onGoHome={onGoHome}
           onBots={can('bots.view_tab') ? () => setActiveTab('bots') : undefined}
           onSessions={onOpenSessions && can('sessions.view') ? onOpenSessions : undefined}
           onContacts={onOpenContacts && can('contacts.view') ? onOpenContacts : undefined}

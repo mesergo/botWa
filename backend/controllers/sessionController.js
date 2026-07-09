@@ -241,11 +241,22 @@ export const getContacts = async (req, res) => {
 
     // Enrich with assigned_to from Contact collection
     const phones = result.map(c => c.phone);
-    const contactDocs = await Contact.find({ user_id: userId, phone: { $in: phones } }).select('phone assigned_to').lean();
+    const contactDocs = await Contact.find({ user_id: userId, phone: { $in: phones } }).select('phone assigned_to whatsapp_name full_name').lean();
     const assignedToMap = {};
-    contactDocs.forEach(c => { assignedToMap[c.phone] = (c.assigned_to || []).map(id => id.toString()); });
+    const whatsappNameMap = {};
+    const fullNameMap = {};
+    contactDocs.forEach(c => {
+      assignedToMap[c.phone] = (c.assigned_to || []).map(id => id.toString());
+      whatsappNameMap[c.phone] = c.whatsapp_name || '';
+      fullNameMap[c.phone] = c.full_name || '';
+    });
 
-    let finalResult = result.map(c => ({ ...c, assigned_to: assignedToMap[c.phone] || [] }));
+    let finalResult = result.map(c => ({
+      ...c,
+      assigned_to: assignedToMap[c.phone] || [],
+      whatsapp_name: whatsappNameMap[c.phone] || '',
+      full_name: fullNameMap[c.phone] || '',
+    }));
 
     // Fetch rep user doc once (used for both restrictions below)
     const userDoc = await User.findById(req.userId).lean();

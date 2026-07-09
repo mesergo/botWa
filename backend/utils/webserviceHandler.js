@@ -72,6 +72,11 @@ export const handleWebService = async (node, session, userInput = null) => {
   // Remove null values from URL
   url = url.replace(/=[^&]*null[^&]*/g, '').replace(/[?&]&/g, '?').replace(/[?&]$/, '');
 
+  // Read node-level API settings (set via the settings modal)
+  const httpMethod = ((node.data.apiMethod) || 'POST').toUpperCase();
+  const customHeadersList = node.data.apiHeaders || [];
+  const rawApiBody = node.data.apiBody || '';
+
   console.log('[WS] ▶▶▶ Final URL:', url);
   console.log('[WS] ▶▶▶ Session params:', JSON.stringify(session.parameters || {}));
 
@@ -84,7 +89,7 @@ export const handleWebService = async (node, session, userInput = null) => {
     try {
       console.log(`[WS] Attempt ${attempt}/${maxRetries}`);
       
-      // Build payload similar to PHP version
+      // Build standard bot payload
       const payload = {
         campaign: {
           id: 50000,
@@ -101,15 +106,28 @@ export const handleWebService = async (node, session, userInput = null) => {
         process_history: session.process_history || []
       };
 
+      // Determine actual request body: custom JSON (with --var-- interpolation) or standard payload
+      const requestBodyStr = rawApiBody
+        ? replaceParameters(rawApiBody, params)
+        : JSON.stringify(payload);
+
+      // Build headers: start with defaults, then merge custom headers from node settings
+      const requestHeaders = {
+        'Content-Type': 'application/json',
+        'User-Agent': 'ChatBot/1.0',
+        'Accept': 'application/json'
+      };
+      for (const h of customHeadersList) {
+        if (h.key && h.key.trim()) requestHeaders[h.key.trim()] = h.value || '';
+      }
+
       // ── Detailed request logging ──────────────────────────────────────────
-      const payloadStr = JSON.stringify(payload);
       console.log(`\n${'─'.repeat(60)}`);
       console.log(`[WS] 📤 REQUEST (attempt ${attempt}/${maxRetries})`);
       console.log(`[WS]    URL      : ${url}`);
-      console.log(`[WS]    Method   : POST`);
-      console.log(`[WS]    Headers  : Content-Type=application/json | User-Agent=ChatBot/1.0`);
-      console.log(`[WS]    Payload  (${payloadStr.length} bytes):`);
-      console.log(`[WS]    ${payloadStr.substring(0, 2000)}${payloadStr.length > 2000 ? '\n[WS]    ...(truncated)' : ''}`);
+      console.log(`[WS]    Method   : ${httpMethod}`);
+      console.log(`[WS]    Headers  :`, JSON.stringify(requestHeaders));
+      console.log(`[WS]    Body (${requestBodyStr.length} bytes): ${requestBodyStr.substring(0, 2000)}${requestBodyStr.length > 2000 ? '...(truncated)' : ''}`);
       console.log(`${'─'.repeat(60)}`);
 
       // Create abort controller for timeout
@@ -117,17 +135,18 @@ export const handleWebService = async (node, session, userInput = null) => {
       const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
       try {
+        // Build fetch options; only add body for methods that support it
+        const fetchOptions = {
+          method: httpMethod,
+          headers: requestHeaders,
+          signal: controller.signal,
+        };
+        if (!['GET', 'HEAD'].includes(httpMethod)) {
+          fetchOptions.body = requestBodyStr;
+        }
+
         // Make HTTP request with timeout
-        const response = await fetch(url, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'User-Agent': 'ChatBot/1.0',
-            'Accept': 'application/json'
-          },
-          body: JSON.stringify(payload),
-          signal: controller.signal
-        });
+        const response = await fetch(url, fetchOptions);
 
         clearTimeout(timeoutId);
 
