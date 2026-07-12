@@ -43,6 +43,24 @@ export const getProcessUsage = async (req, res) => {
   }
 };
 
+export const renameProcess = async (req, res) => {
+  const { id } = req.params;
+  const { name } = req.body;
+  const userId = req.user.id;
+  if (!name || !name.trim()) return res.status(400).json({ error: 'Name is required' });
+  try {
+    const updated = await StandardProcess.findOneAndUpdate(
+      { _id: id, user_id: userId },
+      { process_name: name.trim() },
+      { new: true }
+    );
+    if (!updated) return res.status(404).json({ error: 'Process not found' });
+    res.json({ id: updated._id.toString(), name: updated.process_name });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
 export const deleteProcess = async (req, res) => {
   const { id } = req.params;
   const userId = req.user.id;

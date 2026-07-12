@@ -87,7 +87,8 @@ export const getBots = async (req, res) => {
         is_default: b.is_default || false,
         display_phone_number: phone,
         botParams: b.botParams ? Object.fromEntries(b.botParams) : {},
-        endpoint: b.endpoint || ''
+        endpoint: b.endpoint || '',
+        restart_keyword: b.restart_keyword || ''
       };
     }));
   } catch (err) {
@@ -1089,6 +1090,25 @@ export const updateBotEndpoint = async (req, res) => {
     bot.endpoint = trimmed;
     await bot.save();
     res.json({ success: true, endpoint: bot.endpoint });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+/**
+ * Update the bot's restart keyword (word that resets the conversation from anywhere).
+ */
+export const updateBotRestartKeyword = async (req, res) => {
+  const { id } = req.params;
+  const { restart_keyword } = req.body;
+  const userId = req.user.id;
+  const trimmed = String(restart_keyword ?? '').trim();
+  try {
+    const bot = await BotFlow.findOne({ _id: id, user_id: userId });
+    if (!bot) return res.status(404).json({ error: 'Bot not found' });
+    bot.restart_keyword = trimmed;
+    await bot.save();
+    res.json({ success: true, restart_keyword: bot.restart_keyword });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

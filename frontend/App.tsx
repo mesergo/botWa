@@ -1198,6 +1198,20 @@ const FlowBuilder: React.FC = () => {
     setBots(prev => prev.map(b => b.id === id ? { ...b, endpoint: data.endpoint } : b));
   };
 
+  const handleUpdateBotRestartKeyword = async (id: string, keyword: string) => {
+    const res = await fetch(`${API_BASE}/bots/${id}/restart-keyword`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify({ restart_keyword: keyword }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || 'שגיאה בעדכון מילת המפתח');
+    }
+    const data = await res.json();
+    setBots(prev => prev.map(b => b.id === id ? { ...b, restart_keyword: data.restart_keyword } : b));
+  };
+
   // Update current user's availability status (rep / rep_manager)
   const handleUpdateAvailability = useCallback(async (status: 'available' | 'unavailable' | 'on_break') => {
     if (!token) return;
@@ -1537,6 +1551,20 @@ const FlowBuilder: React.FC = () => {
       console.error("Restore archived version failed", e);
       alert("שגיאה בתקשורת עם השרת");
     }
+  };
+
+  const handleRenameProcess = async (processId: string, newName: string) => {
+    if (!token) return;
+    try {
+      const res = await fetch(`${API_BASE}/processes/${processId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ name: newName }),
+      });
+      if (res.ok) {
+        setFixedProcesses(prev => prev.map(p => p.id.toString() === processId ? { ...p, name: newName } : p));
+      }
+    } catch (e) { console.error('Failed to rename process', e); }
   };
 
   const handleCreateProcess = async () => {
@@ -2161,6 +2189,7 @@ const FlowBuilder: React.FC = () => {
           onConnectFacebook={(can('bots.publish') || currentUser?.isImpersonating) ? handleConnectFacebook : undefined}
           onUpdateBotPublicId={handleUpdateBotPublicId}
           onUpdateBotEndpoint={currentUser?.isImpersonating ? handleUpdateBotEndpoint : undefined}
+          onUpdateBotRestartKeyword={handleUpdateBotRestartKeyword}
           onUpdateAvailability={handleUpdateAvailability}
           onGoHome={() => setViewMode('home')}
           token={token}
@@ -2452,6 +2481,7 @@ const FlowBuilder: React.FC = () => {
         globalSearchResults={globalSearchResults}
         onNavigateToProcessResult={navigateToProcessResult}
         onOpenBotSettings={can('bots.settings') ? () => setIsBotSettingsOpen(true) : undefined}
+        onRenameProcess={handleRenameProcess}
         saveStatus={saveStatus}
         sidebarProps={{
           fixedProcesses,
@@ -2487,6 +2517,10 @@ const FlowBuilder: React.FC = () => {
             await handleUpdateBotEndpoint(id, endpoint);
             setSelectedBot(prev => prev ? { ...prev, endpoint } : null);
           } : undefined}
+          onUpdateBotRestartKeyword={async (id, keyword) => {
+            await handleUpdateBotRestartKeyword(id, keyword);
+            setSelectedBot(prev => prev ? { ...prev, restart_keyword: keyword } : null);
+          }}
           onConnectFacebook={(can('bots.publish') || currentUser?.isImpersonating) ? handleConnectFacebook : undefined}
         />
       )}

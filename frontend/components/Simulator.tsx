@@ -23,6 +23,8 @@ interface SimulatorProps {
   onNodeFocus?: (nodeId: string | null) => void;
   /** Called when the simulator enters/exits a fixed-process sub-flow (passes the FixedProcess node ID from the main flow, or null when back in main flow) */
   onFixedProcessActive?: (fixedProcessNodeId: string | null) => void;
+  /** Global restart keyword — if set, typing it from anywhere in the chat resets the session */
+  restartKeyword?: string;
 }
 
 interface StackItem {
@@ -129,7 +131,7 @@ const Carousel: React.FC<{ items: CarouselItem[], onSelect: (text: string, idx: 
   );
 };
 
-const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, nodes, edges, fixedProcesses, versions, token, isStandalone, currentUser, flowId, initialParams, onNodeFocus, onFixedProcessActive }) => {
+const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, nodes, edges, fixedProcesses, versions, token, isStandalone, currentUser, flowId, initialParams, onNodeFocus, onFixedProcessActive, restartKeyword }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [userInput, setUserInput] = useState('');
   const [dateInput, setDateInput] = useState('');
@@ -860,7 +862,22 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
 
   const handleSend = async () => {
     if (!userInput.trim()) return;
-    
+
+    // Global restart keyword — wins over everything, including menu matching.
+    // Two triggers: system keyword 'wastart' and the custom per-bot restartKeyword.
+    const rkw = (restartKeyword || '').trim().toLowerCase();
+    const inputLower = userInput.trim().toLowerCase();
+    if (inputLower === 'wastart' || (rkw && inputLower === rkw)) {
+      addMessage({ sender: 'user', type: 'text', content: userInput.trim() });
+      setUserInput('');
+      setIsBotTyping(true);
+      await new Promise(r => setTimeout(r, 400));
+      setIsBotTyping(false);
+      addMessage({ sender: 'bot', type: 'text', content: 'השיחה אופסה 🔄 שלח הודעה כלשהי להתחיל מחדש' });
+      await resetChat();
+      return;
+    }
+
     // Check if we reached the end of flow (no current node or current node has no next edge)
     if (!currentNodeId || !currentInstance) {
       // Reset and start fresh

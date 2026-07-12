@@ -14,6 +14,7 @@ interface BotSettingsModalProps {
   onClose: () => void;
   onUpdateBotPublicId?: (id: string, publicId: string) => Promise<void>;
   onUpdateBotEndpoint?: (id: string, endpoint: string) => Promise<void>;
+  onUpdateBotRestartKeyword?: (id: string, keyword: string) => Promise<void>;
   onConnectFacebook?: (bot: BotFlow) => void;
 }
 
@@ -23,6 +24,7 @@ const BotSettingsModal: React.FC<BotSettingsModalProps> = ({
   onClose,
   onUpdateBotPublicId,
   onUpdateBotEndpoint,
+  onUpdateBotRestartKeyword,
   onConnectFacebook,
 }) => {
   const [editBotPublicId, setEditBotPublicId] = useState(bot.public_id);
@@ -38,6 +40,11 @@ const BotSettingsModal: React.FC<BotSettingsModalProps> = ({
   const [botEndpointError, setBotEndpointError] = useState<string | null>(null);
   const [botEndpointSuccess, setBotEndpointSuccess] = useState(false);
 
+  const [editRestartKeyword, setEditRestartKeyword] = useState(bot.restart_keyword ?? '');
+  const [savingRestartKeyword, setSavingRestartKeyword] = useState(false);
+  const [restartKeywordError, setRestartKeywordError] = useState<string | null>(null);
+  const [restartKeywordSuccess, setRestartKeywordSuccess] = useState(false);
+
   const isAdminOrImpersonating = currentUser?.role === 'admin' || !!currentUser?.isImpersonating;
 
   useEffect(() => {
@@ -47,7 +54,10 @@ const BotSettingsModal: React.FC<BotSettingsModalProps> = ({
     setEditBotEndpoint(bot.endpoint ? bot.endpoint.split('/').pop() ?? '' : '');
     setBotEndpointError(null);
     setBotEndpointSuccess(false);
-  }, [bot.id, bot.public_id, bot.endpoint]);
+    setEditRestartKeyword(bot.restart_keyword ?? '');
+    setRestartKeywordError(null);
+    setRestartKeywordSuccess(false);
+  }, [bot.id, bot.public_id, bot.endpoint, bot.restart_keyword]);
 
   const handleSave = async () => {
     if (!onUpdateBotPublicId) return;
@@ -83,6 +93,22 @@ const BotSettingsModal: React.FC<BotSettingsModalProps> = ({
   };
 
   const canShowFacebook = !!onConnectFacebook;
+
+  const handleSaveRestartKeyword = async () => {
+    if (!onUpdateBotRestartKeyword) return;
+    setSavingRestartKeyword(true);
+    setRestartKeywordError(null);
+    setRestartKeywordSuccess(false);
+    try {
+      await onUpdateBotRestartKeyword(bot.id, editRestartKeyword.trim());
+      setRestartKeywordSuccess(true);
+      setTimeout(() => setRestartKeywordSuccess(false), 3000);
+    } catch (err: any) {
+      setRestartKeywordError(err.message || 'שגיאה בשמירה');
+    } finally {
+      setSavingRestartKeyword(false);
+    }
+  };
 
   return (
     <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[100] p-6" dir="rtl">
@@ -190,6 +216,42 @@ const BotSettingsModal: React.FC<BotSettingsModalProps> = ({
                 )}
               </>
           </div>
+          )}
+
+          {/* Restart keyword */}
+          {onUpdateBotRestartKeyword && (
+            <div>
+              <h4 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-1 flex items-center gap-2">
+                <Settings size={12} /> מילת מפתח לאיפוס שיחה
+              </h4>
+              <p className="text-xs text-slate-400 mb-3">אם המשתמש שולח מילה זו בכל שלב, השיחה תאופס ותתחיל מחדש. השאר ריק כדי לבטל.</p>
+              <div className="flex gap-2">
+                <button
+                  onClick={handleSaveRestartKeyword}
+                  disabled={savingRestartKeyword || editRestartKeyword.trim() === (bot.restart_keyword ?? '')}
+                  className="px-5 py-3 bg-blue-600 text-white rounded-2xl font-bold text-sm hover:bg-blue-700 transition-all disabled:opacity-50 shrink-0"
+                >
+                  {savingRestartKeyword ? 'שומר...' : 'שמור'}
+                </button>
+                <input
+                  className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600 transition-all"
+                  value={editRestartKeyword}
+                  onChange={e => setEditRestartKeyword(e.target.value)}
+                  placeholder="לדוגמה: התחל מחדש"
+                  dir="rtl"
+                />
+              </div>
+              {restartKeywordError && (
+                <div className="mt-3 bg-red-50 border border-red-200 rounded-xl px-4 py-2 text-red-600 text-sm font-bold">
+                  {restartKeywordError}
+                </div>
+              )}
+              {restartKeywordSuccess && (
+                <div className="mt-3 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-2 text-emerald-600 text-sm font-bold flex items-center gap-2">
+                  <Check size={14} /> מילת המפתח עודכנה בהצלחה
+                </div>
+              )}
+            </div>
           )}
 
           {canShowFacebook && (

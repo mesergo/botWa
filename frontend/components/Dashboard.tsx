@@ -27,6 +27,7 @@ interface DashboardProps {
   onConnectFacebook?: (bot: BotFlow) => Promise<void>;
   onUpdateBotPublicId?: (id: string, publicId: string) => Promise<void>;
   onUpdateBotEndpoint?: (id: string, endpoint: string) => Promise<void>;
+  onUpdateBotRestartKeyword?: (id: string, keyword: string) => Promise<void>;
   onUpdateAvailability?: (status: 'available' | 'unavailable' | 'on_break') => Promise<void>;
   onGoHome?: () => void;
   token?: string | null;
@@ -147,7 +148,7 @@ const AvailabilityBadge: React.FC<{
   );
 };
 
-const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, onDeleteBot, onSetDefaultBot, onLogout, currentUser, onOpenAdminPanel, onStopImpersonation, onOpenContacts, onOpenSessions, onOpenGroups, onConnectFacebook, onUpdateBotPublicId, onUpdateBotEndpoint, onUpdateAvailability, onGoHome, token, initialTab }) => {
+const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, onDeleteBot, onSetDefaultBot, onLogout, currentUser, onOpenAdminPanel, onStopImpersonation, onOpenContacts, onOpenSessions, onOpenGroups, onConnectFacebook, onUpdateBotPublicId, onUpdateBotEndpoint, onUpdateBotRestartKeyword, onUpdateAvailability, onGoHome, token, initialTab }) => {
   const can = usePermission(currentUser as User | null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newBotName, setNewBotName] = useState('');
@@ -1826,6 +1827,10 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
           onUpdateBotEndpoint={onUpdateBotEndpoint ? async (id, endpoint) => {
             await onUpdateBotEndpoint(id, endpoint);
             setSettingsBot(prev => prev ? { ...prev, endpoint } : null);
+          } : undefined}
+          onUpdateBotRestartKeyword={onUpdateBotRestartKeyword ? async (id, keyword) => {
+            await onUpdateBotRestartKeyword(id, keyword);
+            setSettingsBot(prev => prev ? { ...prev, restart_keyword: keyword } : null);
           } : undefined}
           onConnectFacebook={onConnectFacebook ? (_bot) => {
             setSettingsBot(null);

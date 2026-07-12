@@ -1554,6 +1554,39 @@ export const respondToMessage = async (req, res) => {
 
     const params = session.parameters || {};
 
+    // Global restart keyword check — runs FIRST before anything else so it wins
+    // over menu-default routing and any other interrupt logic.
+    // Two triggers: (1) system keyword 'wastart', (2) custom per-bot restart_keyword.
+    {
+      const restartKw = (tokenBot.restart_keyword || '').trim().toLowerCase();
+      const textLower = text.trim().toLowerCase();
+      if (textLower === 'wastart' || (restartKw && textLower === restartKw)) {
+        const RESTART_MSG = 'השיחה אופסה 🔄 שלח הודעה כלשהי להתחיל מחדש';
+        const restartOutMsg = [{ type: 'Text', text: RESTART_MSG, created: new Date().toISOString() }];
+        try {
+          session.is_active         = false;
+          session.current_node_id   = null;
+          session.waiting_text_input = false;
+          session.waiting_webservice = false;
+          session.execution_stack   = [];
+          await session.save();
+        } catch (sessSaveErr) {
+          console.error('[BOT] failed to reset session after restart keyword:', sessSaveErr.message);
+        }
+        console.log(`[BOT] 🔄 restart keyword matched: "${textLower}" | session=${session._id}`);
+        const waPushed = await pushMessagesToWhatsApp(sender, restartOutMsg, user, tokenBot);
+        return res.json({
+          StatusId: 1,
+          StatusDescription: 'Restarted by keyword',
+          sender,
+          messages: waPushed ? [] : restartOutMsg,
+          control: null,
+          restarted: true,
+          ...(waPushed && { wa_pushed: true })
+        });
+      }
+    }
+
     // ── Flow interrupt (mirrors Simulator flow-interrupt) ──────────────────────
     // If we are mid-flow (not a new session, not already at automatic_responses,
     // ── Flow interrupt ────────────────────────────────────────────────────────

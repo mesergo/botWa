@@ -13,16 +13,50 @@ import { getEffectiveUserId } from '../middleware/auth.js';
 // Ensures broadcasts for the same user run one at a time, never in parallel.
 const broadcastQueues = new Map(); // userId -> { running: boolean, queue: Array }
 
-// ── Scheduled→Completed ticker ────────────────────────────────────────────────
-// Every 60s, flip any 'scheduled' broadcast whose scheduled_at has passed to 'completed'.
+// ── Scheduled broadcast ticker ────────────────────────────────────────────────
+// Every 60s, find broadcasts whose scheduled_at has arrived and fire them via the
+// normal per-user queue — exactly like an immediate send.
 setInterval(async () => {
   try {
-    const result = await GroupBroadcast.updateMany(
-      { status: 'scheduled', scheduled_at: { $lte: new Date() } },
-      { $set: { status: 'completed', completed_at: new Date() } }
-    );
-    if (result.modifiedCount > 0) {
-      console.log(`[scheduledTicker] Marked ${result.modifiedCount} broadcast(s) as completed`);
+    const due = await GroupBroadcast.find({
+      status: 'scheduled',
+      scheduled_at: { $lte: new Date() },
+    }).select('_id user_id group_id is_template template_data message media');
+
+    for (const rec of due) {
+      // Atomically claim this broadcast — prevents double-firing if two ticks overlap
+      const claimed = await GroupBroadcast.findOneAndUpdate(
+        { _id: rec._id, status: 'scheduled' },
+        { $set: { status: 'queued' } },
+        { new: true }
+      );
+      if (!claimed) continue; // already claimed by a concurrent tick
+
+      console.log(`[scheduledTicker] ⏰ Firing broadcast ${rec._id} for user ${rec.user_id}`);
+
+      try {
+        const group = await Group.findById(rec.group_id);
+        if (!group) {
+          console.error(`[scheduledTicker] Group ${rec.group_id} not found for broadcast ${rec._id} — marking failed`);
+          await GroupBroadcast.findByIdAndUpdate(rec._id, { status: 'failed', completed_at: new Date() });
+          continue;
+        }
+        const contacts = await Contact.find({ _id: { $in: group.contact_ids }, user_id: rec.user_id });
+        const opts = {
+          isTemplate: claimed.is_template,
+          templateData: claimed.template_data,
+          msgText: claimed.message,
+          media: claimed.media || null,
+          bot_id: null,
+          scheduled_at: null, // time has arrived — send immediately, no `time` param to sheet API
+        };
+        enqueueBroadcast(String(rec.user_id), rec._id, group, contacts, opts).catch(err =>
+          console.error(`[scheduledTicker:${rec._id}] enqueue error:`, err)
+        );
+      } catch (innerErr) {
+        console.error(`[scheduledTicker:${rec._id}] error loading group/contacts:`, innerErr);
+        await GroupBroadcast.findByIdAndUpdate(rec._id, { status: 'failed', completed_at: new Date() }).catch(() => {});
+      }
     }
   } catch (err) {
     console.error('[scheduledTicker] error:', err);
@@ -448,10 +482,13 @@ export const sendToGroup = async (req, res) => {
       queue_position: queuePosition,         // 1 = next, 2 = after that, etc.
     });
 
-    // Enqueue — will run immediately if no broadcast is currently running for this user,
-    // otherwise waits in queue until the current one finishes.
-    enqueueBroadcast(userId, broadcast._id, group, contacts, { isTemplate, templateData, msgText, media: hasMedia ? media : null, bot_id: bot_id || null, scheduled_at: scheduledAt })
-      .catch(err => console.error('[groups.processBroadcast] queue error:', err));
+    // Scheduled broadcasts are held in DB — the ticker fires them when the time arrives.
+    if (!scheduledAt) {
+      // Enqueue — will run immediately if no broadcast is currently running for this user,
+      // otherwise waits in queue until the current one finishes.
+      enqueueBroadcast(userId, broadcast._id, group, contacts, { isTemplate, templateData, msgText, media: hasMedia ? media : null, bot_id: bot_id || null, scheduled_at: null })
+        .catch(err => console.error('[groups.processBroadcast] queue error:', err));
+    }
   } catch (err) {
     console.error('[groups.sendToGroup] error:', err);
     if (!res.headersSent) res.status(500).json({ error: err.message });
@@ -460,13 +497,11 @@ export const sendToGroup = async (req, res) => {
 
 // Background worker: sends one-by-one and updates progress on the broadcast record
 async function processBroadcast(broadcastId, userId, group, contacts, opts) {
-  const { isTemplate, templateData, msgText, media, bot_id, scheduled_at, resumeFrom } = opts;
+  const { isTemplate, templateData, msgText, media, bot_id, resumeFrom } = opts;
   const TAG = `[broadcast:${broadcastId}]`;
   try {
-    // התזמון מנוהל על ידי dialog360 — שולחים את כל ההודעות מיד עם שדה `time`
-    // dialog360 שומר אותן ב-waitingMessages ומשלח בזמן המתאים, גם לאחר אתחול שרת
     await GroupBroadcast.findByIdAndUpdate(broadcastId, { status: 'running', started_at: new Date() });
-    console.log(`${TAG} ▶ Starting broadcast — group="${group.name}" contacts=${contacts.length} bot_id=${bot_id || '(auto)'}${scheduled_at ? ` scheduled_at=${new Date(scheduled_at).toISOString()} (dialog360 will schedule)` : ''}`);
+    console.log(`${TAG} ▶ Starting broadcast — group="${group.name}" contacts=${contacts.length} bot_id=${bot_id || '(auto)'}`);
 
     // Resolve endpoint ID dynamically from the user's first connected bot (without dialog360/ prefix)
     let sheetEndpointId = null;
@@ -554,8 +589,6 @@ async function processBroadcast(broadcastId, userId, group, contacts, opts) {
       queryParts.push(`text=${encodeURIComponent(msgText)}`);
     }
 
-    if (scheduled_at) queryParts.push(`time=${scheduled_at}`);
-
     const fullUrl = `${SHEET_URL}?${queryParts.join('&')}`;
 
     // Body: only phones as flat array of strings
@@ -605,88 +638,32 @@ async function processBroadcast(broadcastId, userId, group, contacts, opts) {
 // ── Broadcast history ────────────────────────────────────────────────────────
 
 // DELETE /api/groups/broadcasts/:id/cancel — cancel a scheduled broadcast
+// Scheduled broadcasts are held entirely in our DB until fired by the ticker,
+// so cancellation is a simple status update — no dialog360 /unsend call needed.
 export const cancelBroadcast = async (req, res) => {
   try {
     const userId = getEffectiveUserId(req);
     const { id } = req.params;
 
-    const broadcast = await GroupBroadcast.findOne({ _id: id, user_id: userId });
-    if (!broadcast) return res.status(404).json({ error: 'Broadcast not found' });
-    if (broadcast.status !== 'scheduled') {
-      return res.status(400).json({ error: `Cannot cancel a broadcast with status "${broadcast.status}". Only scheduled broadcasts can be cancelled.` });
+    // Use findOneAndUpdate for an atomic claim — prevents a concurrent ticker tick
+    // from firing the broadcast between our read and our update.
+    const broadcast = await GroupBroadcast.findOneAndUpdate(
+      { _id: id, user_id: userId, status: 'scheduled' },
+      { $set: { status: 'cancelled', cancelled_at: new Date() } },
+      { new: true }
+    );
+
+    if (!broadcast) {
+      // Either not found or not in 'scheduled' status — check which
+      const exists = await GroupBroadcast.findOne({ _id: id, user_id: userId }).select('status');
+      if (!exists) return res.status(404).json({ error: 'Broadcast not found' });
+      return res.status(400).json({
+        error: `Cannot cancel a broadcast with status "${exists.status}". Only scheduled broadcasts can be cancelled.`,
+      });
     }
 
-    const taskids = broadcast.taskids || [];
-    console.log(`[cancelBroadcast:${id}] broadcast.status=${broadcast.status} taskids.length=${taskids.length}`);
-    console.log(`[cancelBroadcast:${id}] taskids content: ${JSON.stringify(taskids)}`);
-    if (taskids.length === 0) {
-      console.warn(`[cancelBroadcast:${id}] ⚠️ No taskids saved — dialog360 may not have returned taskid during send, or send is still in progress. Messages may NOT be cancelled in dialog360.`);
-    }
-
-    // Resolve the endpoint + token (same logic as processBroadcast)
-    let endpoint = null;
-    let waToken = null;
-    const userBots = await BotFlow.find({ user_id: userId, endpoint: { $nin: ['', null] } });
-    console.log(`[cancelBroadcast:${id}] found ${userBots.length} bot(s) with endpoint`);
-    if (userBots.length === 1) {
-      const bot = userBots[0];
-      endpoint = bot.endpoint.includes('/') ? bot.endpoint : `dialog360/${bot.endpoint}`;
-      const endpointId = endpoint.split('/').pop();
-      waToken = crypto.createHash('sha1').update(endpointId + 'moomoo').digest('hex');
-      console.log(`[cancelBroadcast:${id}] ✅ endpoint resolved: ${endpoint} (bot: ${bot.name})`);
-    } else if (userBots.length > 1) {
-      // Try to find bot from broadcast's group info — fall back to first bot
-      const bot = userBots[0];
-      endpoint = bot.endpoint.includes('/') ? bot.endpoint : `dialog360/${bot.endpoint}`;
-      const endpointId = endpoint.split('/').pop();
-      waToken = crypto.createHash('sha1').update(endpointId + 'moomoo').digest('hex');
-      console.log(`[cancelBroadcast:${id}] ✅ multiple bots — using first: ${endpoint} (bot: ${bot.name})`);
-    } else {
-      console.error(`[cancelBroadcast:${id}] ❌ No bots with endpoint found — cannot call dialog360 /unsend`);
-    }
-
-    let cancelled = 0;
-    let cancelErrors = 0;
-
-    if (endpoint && taskids.length > 0) {
-      console.log(`[cancelBroadcast:${id}] Starting /unsend loop for ${taskids.length} taskid(s)...`);
-      const unsendUrl = `https://wa.message.co.il/api/${endpoint}/unsend`;
-      for (const { taskid, contact_phone } of taskids) {
-        try {
-          const unsendBody = JSON.stringify({ id: taskid });
-          console.log(`[cancelBroadcast:${id}] → POST ${unsendUrl} body=${unsendBody}`);
-          const r = await fetch(unsendUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', token: waToken },
-            body: unsendBody,
-          });
-          const rText = await r.text().catch(() => '');
-          console.log(`[cancelBroadcast:${id}] ← HTTP ${r.status} body="${rText}"`);
-          if (r.ok) {
-            cancelled++;
-            console.log(`[cancelBroadcast:${id}] ✅ Unsent taskid=${taskid} phone=${contact_phone}`);
-          } else {
-            cancelErrors++;
-            console.warn(`[cancelBroadcast:${id}] ⚠️ Unsend failed for taskid=${taskid}: HTTP ${r.status} — ${rText}`);
-          }
-        } catch (e) {
-          cancelErrors++;
-          console.error(`[cancelBroadcast:${id}] ❌ Unsend error for taskid=${taskid}:`, e.message);
-        }
-      }
-    } else {
-      if (!endpoint) console.warn(`[cancelBroadcast:${id}] ⚠️ Skipping dialog360 unsend — no endpoint resolved`);
-      if (taskids.length === 0) console.warn(`[cancelBroadcast:${id}] ⚠️ Skipping dialog360 unsend — taskids array is empty`);
-    }
-    console.log(`[cancelBroadcast:${id}] Summary: cancelled=${cancelled} cancelErrors=${cancelErrors} total=${taskids.length}`);
-
-    await GroupBroadcast.findByIdAndUpdate(id, {
-      status: 'cancelled',
-      cancelled_at: new Date(),
-    });
-    console.log(`[cancelBroadcast:${id}] ✅ Broadcast marked as cancelled in DB`);
-
-    res.json({ success: true, cancelled, cancelErrors, total: taskids.length });
+    console.log(`[cancelBroadcast:${id}] ✅ Broadcast cancelled (was scheduled for ${broadcast.scheduled_at?.toISOString()})`);
+    res.json({ success: true });
   } catch (err) {
     console.error('[groups.cancelBroadcast] error:', err);
     res.status(500).json({ error: err.message });

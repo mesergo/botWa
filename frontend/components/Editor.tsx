@@ -72,6 +72,8 @@ interface EditorProps {
   onOpenBotSettings?: () => void;
   /** Current autosave status to display in the navbar */
   saveStatus?: 'idle' | 'saving' | 'saved';
+  /** Called when user renames the active fixed process */
+  onRenameProcess?: (processId: string, newName: string) => Promise<void>;
 }
 
 const HighlightedText: React.FC<{ text: string; query: string }> = ({ text, query }) => {
@@ -93,9 +95,11 @@ const Editor: React.FC<EditorProps> = ({
   onNodesChange, onEdgesChange, onConnect, onInit, onDrop, onSearchChange, onSearchNav, onTidy, onPublish,
   onCloseEditor, onHome, onSimulatorOpen, onSimulatorClose, onDuplicate, onChangeTemplate, sidebarProps,
   isEditingTemplate, onSaveTemplate, existingTemplateData, onOpenContacts, onOpenSessions, initialParams, onManageParams, onNodeFocus, onFixedProcessActive, isTransitioning,
-  globalSearchResults, onNavigateToProcessResult, onOpenBotSettings, saveStatus
+  globalSearchResults, onNavigateToProcessResult, onOpenBotSettings, saveStatus, onRenameProcess
 }) => {
   const [showSaveModal, setShowSaveModal] = React.useState(false);
+  const [isEditingProcessName, setIsEditingProcessName] = useState(false);
+  const [processNameInput, setProcessNameInput] = useState('');
   const [templateName, setTemplateName] = React.useState(existingTemplateData?.name || '');
   const [templateDescription, setTemplateDescription] = React.useState(existingTemplateData?.description || '');
   const [templateIsPublic, setTemplateIsPublic] = React.useState(existingTemplateData?.isPublic ?? true);
@@ -270,6 +274,39 @@ const Editor: React.FC<EditorProps> = ({
             )}
             {saveStatus === 'saving' ? 'שומר...' : saveStatus === 'saved' ? 'נשמר' : 'שמירה אוטומטית'}
           </div>
+           {viewMode === 'editing-process' && (() => {
+            const activeProcess = fixedProcesses.find(p => p.id.toString() === activeProcessId?.toString());
+            if (!activeProcess) return null;
+            return isEditingProcessName ? (
+              <input
+                className="px-3 py-2 bg-white border border-blue-400 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500/30 min-w-[100px] max-w-[200px] text-right shadow-sm"
+                dir="rtl"
+                value={processNameInput}
+                onChange={e => setProcessNameInput(e.target.value)}
+                onBlur={() => {
+                  setIsEditingProcessName(false);
+                  const trimmed = processNameInput.trim();
+                  if (trimmed && trimmed !== activeProcess.name && onRenameProcess) {
+                    onRenameProcess(activeProcess.id, trimmed);
+                  }
+                }}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                  else if (e.key === 'Escape') { setProcessNameInput(activeProcess.name); setIsEditingProcessName(false); }
+                }}
+                autoFocus
+              />
+            ) : (
+              <button
+                onClick={() => { setProcessNameInput(activeProcess.name); setIsEditingProcessName(true); }}
+                title="לחץ לשינוי שם התהליך"
+                className="px-3 py-2 bg-transparent border-none text-sm font-bold text-black hover:opacity-70 transition-all max-w-[200px] truncate"
+                dir="rtl"
+              >
+                {activeProcess.name}
+              </button>
+            );
+          })()}
           <div className="h-8 w-px bg-slate-100 mx-1"></div>
           {/* User Avatar - navigates to bots page */}
           <button
@@ -360,6 +397,7 @@ const Editor: React.FC<EditorProps> = ({
         initialParams={initialParams}
         onNodeFocus={onNodeFocus}
         onFixedProcessActive={onFixedProcessActive}
+        restartKeyword={selectedBot?.restart_keyword}
       />
     </div>
   );

@@ -102,6 +102,8 @@ export interface BotFlow {
   botParams?: Record<string, string>;
   /** External endpoint identifier */
   endpoint?: string;
+  /** Global keyword that resets the conversation from anywhere */
+  restart_keyword?: string;
 }
 
 export interface FixedProcess {

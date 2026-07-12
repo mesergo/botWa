@@ -1,6 +1,6 @@
 
 import express from 'express';
-import { createBot, getBots, deleteBot, setDefaultBot, updateBotParams, connectFacebook, facebookCallback, facebookIngest, facebookRedirect, issueFacebookState, issueFacebookStateFree, updateBotPublicId, updateBotEndpoint } from '../controllers/botController.js';
+import { createBot, getBots, deleteBot, setDefaultBot, updateBotParams, connectFacebook, facebookCallback, facebookIngest, facebookRedirect, issueFacebookState, issueFacebookStateFree, updateBotPublicId, updateBotEndpoint, updateBotRestartKeyword } from '../controllers/botController.js';
 import { authenticateToken } from '../middleware/auth.js';
 
 const router = express.Router();
@@ -20,5 +20,6 @@ router.get('/facebook-redirect-state-free', authenticateToken, issueFacebookStat
 router.get('/facebook-redirect', facebookRedirect);
 router.patch('/:id/public-id', authenticateToken, updateBotPublicId);
 router.patch('/:id/endpoint', authenticateToken, updateBotEndpoint);
+router.patch('/:id/restart-keyword', authenticateToken, updateBotRestartKeyword);
 
 export default router;
