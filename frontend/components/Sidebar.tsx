@@ -1,7 +1,7 @@
 
 import React, { useRef, useEffect, useState } from 'react';
 import { COMPONENT_GROUPS } from '../constants';
-import { Plus, Layers, Edit, Eye, Trash2, CheckCircle2, History, RotateCcw, CloudUpload, Lock, Unlock, Archive } from 'lucide-react';
+import { Plus, Layers, Edit, Eye, Trash2, CheckCircle2, History, RotateCcw, CloudUpload, Lock, Unlock, Archive, MoreVertical } from 'lucide-react';
 import { FixedProcess, Version, RestorableVersionsData } from '../types';
 
 interface SidebarProps {
@@ -41,6 +41,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   const [activeTab, setActiveTab] = useState<'components' | 'versions'>('components');
   const [restorableHeight, setRestorableHeight] = useState(80); // גובה התחלתי ב-px
   const [isDragging, setIsDragging] = useState(false);
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
   // Scroll active process into view when it changes
   useEffect(() => {
@@ -85,6 +86,14 @@ const Sidebar: React.FC<SidebarProps> = ({
       document.removeEventListener('mouseup', handleMouseUp);
     };
   }, [isDragging]);
+
+  // Close process menu on outside click
+  useEffect(() => {
+    if (!openMenuId) return;
+    const handleOutsideClick = () => setOpenMenuId(null);
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, [openMenuId]);
 
   const onDragStart = (event: React.DragEvent, nodeType: string, extraData?: any) => {
     event.dataTransfer.setData('application/reactflow', nodeType);
@@ -174,6 +183,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                 )}
                 {fixedProcesses.map((proc) => {
                   const isActive = activeProcessId?.toString() === proc.id.toString();
+                  const isMenuOpen = openMenuId === proc.id.toString();
                   return (
                     <div
                       key={proc.id}
@@ -183,24 +193,41 @@ const Sidebar: React.FC<SidebarProps> = ({
                           ? 'bg-indigo-50 border-indigo-500 shadow-sm scale-[1.01] z-10' 
                           : 'bg-white border-slate-100 hover:border-indigo-400 hover:bg-indigo-50/30'
                       }`}
-                      onClick={() => isActive ? null : onEditFixedProcess(proc.id)}
+                      onClick={() => { if (isMenuOpen) { setOpenMenuId(null); return; } if (!isActive) onEditFixedProcess(proc.id); }}
                       onDragStart={(event) => { onDragStart(event, 'fixed_process', { id: proc.id, name: proc.name }); }}
                       draggable={!isReadOnly}
                     >
-                      <div className={`absolute top-1 left-1 flex items-center gap-0.5 transition-all ${isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
-                        <button 
-                          onClick={(e) => { e.stopPropagation(); onViewFixedProcess(proc.id); }} 
+                      {/* Three-dots menu button */}
+                      <div className={`absolute top-1 left-1 transition-all ${isActive || isMenuOpen ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setOpenMenuId(isMenuOpen ? null : proc.id.toString()); }}
                           className={`p-1 rounded-md ${isActive ? 'text-indigo-600 bg-white' : 'text-slate-400 hover:text-indigo-600'}`}
                         >
-                          <Eye size={12} />
+                          <MoreVertical size={12} />
                         </button>
-                        {!isReadOnly && (
-                          <button 
-                            onClick={(e) => { e.stopPropagation(); onDeleteFixedProcess(proc.id, proc.name); }} 
-                            className="p-1 text-slate-400 hover:text-red-500 rounded-md"
+                        {isMenuOpen && (
+                          <div
+                            className="absolute top-full left-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-50 min-w-[120px] overflow-hidden"
+                            onClick={(e) => e.stopPropagation()}
+                            onMouseDown={(e) => e.stopPropagation()}
                           >
-                            <Trash2 size={12} />
-                          </button>
+                            <button
+                              onClick={() => { setOpenMenuId(null); onViewFixedProcess(proc.id); }}
+                              className="w-full flex items-center gap-2 px-3 py-2 text-[11px] font-bold text-slate-600 hover:bg-slate-50 transition-colors text-right"
+                              dir="rtl"
+                            >
+                              <Eye size={12} className="flex-shrink-0" /> הצג
+                            </button>
+                            {!isReadOnly && (
+                              <button
+                                onClick={() => { setOpenMenuId(null); onDeleteFixedProcess(proc.id, proc.name); }}
+                                className="w-full flex items-center gap-2 px-3 py-2 text-[11px] font-bold text-red-500 hover:bg-red-50 transition-colors text-right border-t border-slate-100"
+                                dir="rtl"
+                              >
+                                <Trash2 size={12} className="flex-shrink-0" /> מחק
+                              </button>
+                            )}
+                          </div>
                         )}
                       </div>
 

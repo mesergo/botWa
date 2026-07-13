@@ -1,11 +1,21 @@
 import React from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Bot, List, Users, Layers, Settings, UserCog, Home } from 'lucide-react';
 
 export type NavPage = 'bots' | 'sessions' | 'contacts' | 'groups' | 'settings' | 'users';
 
+const NAV_PATHS: Record<NavPage, string> = {
+  bots:     '/dashboard',
+  sessions: '/sessions',
+  contacts: '/contacts',
+  groups:   '/groups',
+  settings: '/settings',
+  users:    '/users',
+};
+
 interface AppNavProps {
-  /** The currently active page — shown highlighted, button disabled */
-  activePage: NavPage;
+  /** Explicit active page override — if omitted, derived from the current URL */
+  activePage?: NavPage;
   /** Pass a handler to show the item; omit (undefined) to hide it */
   onBots?: () => void;
   onSessions?: () => void;
@@ -29,7 +39,7 @@ const NAV_ITEMS: { key: NavPage; label: string; Icon: React.FC<{ size?: number; 
 ];
 
 const AppNav: React.FC<AppNavProps> = ({
-  activePage,
+  activePage: activePageProp,
   onBots,
   onSessions,
   onContacts,
@@ -39,6 +49,14 @@ const AppNav: React.FC<AppNavProps> = ({
   onGoHome,
   mode = 'sidebar',
 }) => {
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  // Derive active page from URL, fall back to explicit prop
+  const activeFromUrl = (Object.entries(NAV_PATHS) as [NavPage, string][])
+    .find(([, path]) => location.pathname === path)?.[0];
+  const activePage: NavPage = activeFromUrl ?? activePageProp ?? 'bots';
+
   const handlers: Partial<Record<NavPage, () => void>> = {
     bots: onBots,
     sessions: onSessions,
@@ -75,8 +93,8 @@ const AppNav: React.FC<AppNavProps> = ({
           return (
             <button
               key={key}
-              onClick={handlers[key]}
-              disabled={isActive && !handlers[key]}
+              onClick={() => navigate(NAV_PATHS[key])}
+              disabled={isActive}
               className={`relative flex items-center gap-3 px-4 py-3.5 rounded-xl font-bold text-sm transition-all duration-200 w-full group overflow-hidden ${
                 isActive
                   ? 'cursor-default'
@@ -130,8 +148,8 @@ const AppNav: React.FC<AppNavProps> = ({
         return (
           <button
             key={key}
-            onClick={handlers[key]}
-            disabled={isActive && !handlers[key]}
+            onClick={() => navigate(NAV_PATHS[key])}
+            disabled={isActive}
             className={`flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm transition-all ${
               isActive
                 ? 'bg-white text-slate-900 shadow-sm cursor-default'

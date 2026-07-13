@@ -58,7 +58,7 @@ const API_BASE = window.location.hostname === 'localhost'
   ? 'http://localhost:3001/api'
   : `${window.location.origin}/api`;
 
-const EMPTY_FORM = { phone: '', full_name: '', whatsapp_name: '', email: '' };
+const EMPTY_FORM = { phone: '', full_name: '', whatsapp_name: '', email: '', custom_field_values: {} as Record<string, string> };
 
 // ─── GroupNameTags ───────────────────────────────────────────────────────────
 
@@ -355,7 +355,15 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
 
   const openEdit = (c: MergedContact) => {
     setEditingContact({ _id: c._id, phone: c.phone, full_name: c.full_name, whatsapp_name: c.whatsapp_name, email: c.email });
-    setForm({ phone: c.phone, full_name: c.full_name ?? '', whatsapp_name: c.whatsapp_name ?? '', email: c.email ?? '' });
+    setForm({
+      phone: c.phone,
+      full_name: c.full_name ?? '',
+      whatsapp_name: c.whatsapp_name ?? '',
+      email: c.email ?? '',
+      custom_field_values: Object.fromEntries(
+        Object.entries(c.custom_field_values ?? {}).map(([k, v]) => [k, String(v ?? '')])
+      ),
+    });
     setModalError('');
     setModalOpen(true);
   };
@@ -922,62 +930,57 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
               </button>
             </div>
 
-            <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-3">
               {/* Phone */}
-              <label className="flex flex-row items-center gap-3">
-                <span className="text-sm font-bold text-slate-600 w-24 shrink-0 text-right">
-                  מספר טלפון <span className="text-red-400">*</span>
-                </span>
-                <div className="relative flex-1">
-                  <Phone size={15} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-300" />
-                  <input
-                    className="w-full pr-10 pl-4 py-2.5 border border-slate-200 rounded-xl text-sm outline-none focus:ring-4 focus:ring-blue-600/10 focus:border-blue-600 transition-all disabled:bg-slate-50 disabled:text-slate-400"
-                    placeholder="לדוגמה: 0501234567"
-                    value={form.phone}
-                    onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}
-                    disabled={!!editingContact?._id}
-                  />
-                </div>
-              </label>
+              <div className="relative">
+                <Phone size={15} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-300" />
+                <input
+                  className="w-full pr-10 pl-4 py-2.5 border border-slate-200 rounded-xl text-sm outline-none focus:ring-4 focus:ring-blue-600/10 focus:border-blue-600 transition-all disabled:bg-slate-50 disabled:text-slate-400"
+                  placeholder="מספר טלפון *"
+                  value={form.phone}
+                  onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}
+                  disabled={!!editingContact?._id}
+                />
+              </div>
 
               {/* Full name */}
-              <label className="flex flex-row items-center gap-3">
-                <span className="text-sm font-bold text-slate-600 w-24 shrink-0 text-right">שם מלא</span>
-                <input
-                  className="flex-1 px-4 py-2.5 border border-slate-200 rounded-xl text-sm outline-none focus:ring-4 focus:ring-blue-600/10 focus:border-blue-600 transition-all"
-                  placeholder="שם פרטי ומשפחה"
-                  value={form.full_name}
-                  onChange={e => setForm(f => ({ ...f, full_name: e.target.value }))}
-                />
-              </label>
+              <input
+                className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm outline-none focus:ring-4 focus:ring-blue-600/10 focus:border-blue-600 transition-all"
+                placeholder="שם מלא"
+                value={form.full_name}
+                onChange={e => setForm(f => ({ ...f, full_name: e.target.value }))}
+              />
 
-              {/* WhatsApp name - show only when editing and value exists */}
-              {editingContact?._id && form.whatsapp_name ? (
-                <div className="flex flex-row items-center gap-3">
-                  <span className="text-sm font-bold text-slate-600 w-24 shrink-0 text-right">שם מוואטסאפ</span>
-                  <input
-                    className="flex-1 px-4 py-2.5 border border-slate-200 rounded-xl text-sm bg-slate-50 text-slate-400 cursor-not-allowed"
-                    value={form.whatsapp_name}
-                    readOnly
-                    disabled
-                  />
-                </div>
-              ) : null}
+              {/* WhatsApp name — read-only */}
+              <input
+                className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm outline-none disabled:bg-slate-50 disabled:text-slate-400 transition-all"
+                placeholder="שם מוואטסאפ"
+                value={form.whatsapp_name}
+                disabled
+              />
 
               {/* Email */}
-              <label className="flex flex-row items-center gap-3">
-                <span className="text-sm font-bold text-slate-600 w-24 shrink-0 text-right">כתובת מייל</span>
-                <div className="relative flex-1">
-                  <Mail size={15} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-300" />
-                  <input
-                    type="email"
-                    className="w-full pr-10 pl-4 py-2.5 border border-slate-200 rounded-xl text-sm outline-none focus:ring-4 focus:ring-blue-600/10 focus:border-blue-600 transition-all"
-                    placeholder="example@email.com"
-                    value={form.email}
-                    onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
-                  />
-                </div>
-              </label>
+              <div className="relative">
+                <Mail size={15} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-300" />
+                <input
+                  type="email"
+                  className="w-full pr-10 pl-4 py-2.5 border border-slate-200 rounded-xl text-sm outline-none focus:ring-4 focus:ring-blue-600/10 focus:border-blue-600 transition-all"
+                  placeholder="כתובת מייל"
+                  value={form.email}
+                  onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
+                />
+              </div>
+
+              {/* Custom fields */}
+              {contactFieldDefs.map(fd => (
+                <input
+                  key={fd._id}
+                  className="w-full px-4 py-2.5 border border-indigo-100 bg-indigo-50/40 rounded-xl text-sm outline-none focus:ring-4 focus:ring-indigo-600/10 focus:border-indigo-400 transition-all"
+                  placeholder={fd.label}
+                  value={form.custom_field_values?.[fd.key] ?? ''}
+                  onChange={e => setForm(f => ({ ...f, custom_field_values: { ...f.custom_field_values, [fd.key]: e.target.value } }))}
+                />
+              ))}
 
               {modalError && (
                 <p className="text-sm text-red-500 font-semibold bg-red-50 px-4 py-2 rounded-xl">{modalError}</p>

@@ -1449,6 +1449,18 @@ export const sendAgentMessage = async (req, res) => {
         historyEntry.type = 'Text';
         historyEntry.text = displayText || msgText;
       }
+      // Extract buttons from BUTTONS component and save for display
+      if (templateData.components && Array.isArray(templateData.components)) {
+        const buttonsComp = templateData.components.find(c => c.type === 'BUTTONS');
+        if (buttonsComp && Array.isArray(buttonsComp.buttons) && buttonsComp.buttons.length > 0) {
+          historyEntry.template_buttons = buttonsComp.buttons.map(b => ({
+            type: b.type || 'QUICK_REPLY',
+            text: b.text || '',
+            ...(b.url ? { url: b.url } : {}),
+            ...(b.phone_number ? { phone_number: b.phone_number } : {})
+          }));
+        }
+      }
     } else if (hasMedia) {
       const waMediaType = mediaType === 'video' ? 'Video' : mediaType === 'document' ? 'Document' : 'Image';
       historyEntry.type = waMediaType;

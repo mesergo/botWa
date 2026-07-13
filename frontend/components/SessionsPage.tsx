@@ -55,6 +55,12 @@ const API_BASE = window.location.hostname === 'localhost'
   ? 'http://localhost:3001/api'
   : `${window.location.origin}/api`;
 
+const WhatsAppIcon = ({ size = 12, className = '' }: { size?: number; className?: string }) => (
+  <svg viewBox="0 0 24 24" fill="currentColor" width={size} height={size} className={className} style={{ display: 'inline', flexShrink: 0 }}>
+    <path d="M12.04 2c-5.46 0-9.91 4.45-9.91 9.91 0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38c1.45.79 3.08 1.21 4.74 1.21 5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.816 9.816 0 0012.04 2m.01 1.67c2.2 0 4.26.86 5.82 2.42a8.22 8.22 0 012.41 5.83c0 4.54-3.7 8.23-8.24 8.23-1.48 0-2.93-.39-4.19-1.15l-.3-.17-3.12.82.83-3.04-.2-.32a8.188 8.188 0 01-1.26-4.38c.01-4.54 3.7-8.24 8.25-8.24M8.53 7.33c-.16 0-.43.06-.66.31-.22.25-.87.86-.87 2.07 0 1.22.89 2.39 1 2.56.14.17 1.76 2.67 4.25 3.73.59.27 1.05.42 1.41.53.59.19 1.13.16 1.56.1.48-.07 1.46-.6 1.67-1.18.21-.58.21-1.07.15-1.18-.07-.1-.23-.16-.48-.27-.25-.14-1.47-.74-1.69-.82-.23-.08-.37-.12-.56.12-.16.25-.64.82-.78.99-.15.17-.29.19-.53.07-.26-.13-1.06-.39-2-1.23-.74-.66-1.23-1.47-1.38-1.72-.12-.24-.01-.39.11-.5.11-.11.27-.29.37-.44.13-.14.17-.25.25-.41.08-.17.04-.31-.02-.43-.06-.11-.56-1.35-.77-1.84-.2-.48-.4-.42-.56-.43-.14 0-.3-.01-.47-.01z"/>
+  </svg>
+);
+
 const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack, onLogout, onOpenContacts, onOpenGroups, onOpenAdminPanel, onOpenSettings, onOpenSubUsers, onStopImpersonation, onUpdateAvailability, onGoHome, initialPhone }) => {
   // Contacts panel state
   const [contacts, setContacts] = useState<Contact[]>([]);
@@ -1476,6 +1482,19 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
       }
     }
 
+    const renderTextWithLinks = (str: string) => {
+      const urlRegex = /(https?:\/\/[^\s]+)/g;
+      const parts = str.split(urlRegex);
+      return parts.map((part, i) =>
+        urlRegex.test(part) ? (
+          <a key={i} href={part} target="_blank" rel="noopener noreferrer"
+            className="underline text-sky-600 hover:text-sky-800 break-all">
+            {part}
+          </a>
+        ) : part
+      );
+    };
+
     return grouped.map((item: any, idx: number) => {
       const senderType: 'bot' | 'user' | 'agent' | 'system' =
         item.sender === 'system' || item.type === 'System' ? 'system'
@@ -1534,7 +1553,28 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                       <ExternalLink size={13} /> פתח מסמך
                     </a>
                   )}
-                  {text && <p className="whitespace-pre-wrap leading-snug">{text}</p>}
+                  {text && <p className="whitespace-pre-wrap leading-snug">{renderTextWithLinks(text)}</p>}
+                  {Array.isArray(item.template_buttons) && item.template_buttons.length > 0 && (
+                    <div className="flex flex-col gap-1 mt-2 pt-2 border-t border-purple-200">
+                      {item.template_buttons.map((btn: any, bi: number) =>
+                        btn.type === 'URL' && btn.url ? (
+                          <a key={bi} href={btn.url} target="_blank" rel="noopener noreferrer"
+                            className="flex items-center justify-center gap-1.5 px-3 py-1.5 text-center text-xs font-bold rounded-xl border border-sky-300 bg-sky-50 text-sky-600 hover:bg-sky-100 transition-colors">
+                            <ExternalLink size={11} />{btn.text}
+                          </a>
+                        ) : btn.type === 'PHONE_NUMBER' && btn.phone_number ? (
+                          <a key={bi} href={`tel:${btn.phone_number}`}
+                            className="flex items-center justify-center gap-1.5 px-3 py-1.5 text-center text-xs font-bold rounded-xl border border-emerald-300 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition-colors">
+                            <Phone size={11} />{btn.text}
+                          </a>
+                        ) : (
+                          <div key={bi} className="px-3 py-1.5 text-center text-xs font-bold rounded-xl border border-purple-300 bg-white text-purple-600 cursor-default select-none">
+                            {btn.text}
+                          </div>
+                        )
+                      )}
+                    </div>
+                  )}
                 </div>
                 {item.wa_sent === false && (
                   <div className="flex items-center gap-1.5 px-1 flex-wrap" dir="rtl">
@@ -1580,7 +1620,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                   : 'bg-sky-500 text-white rounded-tl-none'}`}
               >
                 {(item.type === 'Text' || item.type === 'UserInput' || !item.type || item.type.startsWith('input_')) && text && !isAudioUrl && (
-                  <p className="whitespace-pre-wrap leading-snug">{text}</p>
+                  <p className="whitespace-pre-wrap leading-snug">{renderTextWithLinks(text)}</p>
                 )}
                 {(item.type === 'Audio' || isAudioUrl) && (item.url || text) && (
                   <>
@@ -1591,13 +1631,13 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 {item.type === 'Image' && item.url && (
                   <>
                     <img src={item.url} alt="תמונה" className="rounded-xl max-w-[200px] h-auto mb-1" />
-                    {text && <p className="whitespace-pre-wrap leading-snug">{text}</p>}
+                    {text && <p className="whitespace-pre-wrap leading-snug">{renderTextWithLinks(text)}</p>}
                   </>
                 )}
                 {item.type === 'Video' && item.url && (
                   <>
                     <video src={item.url} controls className="rounded-xl max-w-[200px] mb-1" />
-                    {text && <p className="whitespace-pre-wrap leading-snug">{text}</p>}
+                    {text && <p className="whitespace-pre-wrap leading-snug">{renderTextWithLinks(text)}</p>}
                   </>
                 )}
                 {item.type === 'Document' && item.url && (
@@ -1959,17 +1999,22 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                       </div>
                       <div className="flex-1 min-w-0 flex items-center justify-between gap-2">
                         <div className="min-w-0">
-                          <p className={`text-sm font-black truncate ${isSelected ? 'text-sky-700' : 'text-slate-800'}`}>
+                          <p className={`text-sm font-black truncate flex items-center gap-1 ${isSelected ? 'text-sky-700' : 'text-slate-800'}`}>
                             {sim ? 'סימולטור' : contact.phone}
-                            {!sim && contact.whatsapp_name && (
-                              <span className={`text-sm font-semibold mr-1.5 ${isSelected ? 'text-sky-600' : 'text-slate-500'}`}>
-                                · {contact.whatsapp_name}
+                            {!sim && !contact.full_name && contact.whatsapp_name && (
+                              <span className={`text-sm font-semibold flex items-center gap-0.5 mr-1 ${isSelected ? 'text-sky-600' : 'text-slate-500'}`}>
+                                · <WhatsAppIcon size={11} className="text-slate-400" /> {contact.whatsapp_name}
+                              </span>
+                            )}
+                            {!sim && contact.full_name && (
+                              <span className={`text-sm font-semibold flex items-center gap-0.5 mr-1 ${isSelected ? 'text-sky-600' : 'text-slate-500'}`}>
+                                · {contact.full_name}
                               </span>
                             )}
                           </p>
-                          {!sim && contact.full_name && (
-                            <p className="text-[10px] font-medium truncate text-slate-400">
-                              {contact.full_name}
+                          {!sim && contact.full_name && contact.whatsapp_name && (
+                            <p className="text-[10px] font-medium truncate text-slate-400 flex items-center gap-0.5">
+                              <WhatsAppIcon size={10} className="text-slate-400 flex-shrink-0" /> {contact.whatsapp_name}
                             </p>
                           )}
                           <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
@@ -2115,8 +2160,18 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 </div>
                 <div className="flex-1">
                   <div className="flex items-center gap-2">
-                    <p className="text-base font-black text-slate-900">
+                    <p className="text-base font-black text-slate-900 flex items-center gap-1.5 flex-wrap">
                       {isSimulator(selectedPhone) ? 'סימולטור' : selectedPhone}
+                      {!isSimulator(selectedPhone) && !selectedContact?.full_name && selectedContact?.whatsapp_name && (
+                        <span className="flex items-center gap-0.5 text-sm font-semibold text-slate-500">
+                          · <WhatsAppIcon size={13} className="text-slate-400" /> {selectedContact.whatsapp_name}
+                        </span>
+                      )}
+                      {!isSimulator(selectedPhone) && selectedContact?.full_name && (
+                        <span className="flex items-center gap-0.5 text-sm font-semibold text-slate-500">
+                          · {selectedContact.full_name}
+                        </span>
+                      )}
                     </p>
                     {!isSimulator(selectedPhone) && onOpenContacts && (
                       <button
@@ -2128,6 +2183,11 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                       </button>
                     )}
                   </div>
+                  {!isSimulator(selectedPhone) && selectedContact?.full_name && selectedContact?.whatsapp_name && (
+                    <p className="text-xs text-slate-400 font-semibold flex items-center gap-0.5 mt-0.5">
+                      <WhatsAppIcon size={11} className="text-slate-400" /> {selectedContact.whatsapp_name}
+                    </p>
+                  )}
                   <p className="text-xs text-slate-400 font-semibold mt-0.5">
                     {selectedContact?.sessionCount ?? 0} שיחות
                     {selectedContact?.bots && selectedContact.bots.length > 0 && (

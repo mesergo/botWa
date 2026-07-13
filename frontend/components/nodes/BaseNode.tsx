@@ -37,9 +37,10 @@ interface BaseNodeProps {
   searchQuery?: string;
   isCurrentMatch?: boolean;
   isSearchMatch?: boolean;
+  nodeClassName?: string;
 }
 
-const BaseNode: React.FC<BaseNodeProps> = ({ id, title, icon, children, type, selected, onDelete, serialId, isSimulatorActive, searchQuery, isCurrentMatch, isSearchMatch }) => {
+const BaseNode: React.FC<BaseNodeProps> = ({ id, title, icon, children, type, selected, onDelete, serialId, isSimulatorActive, searchQuery, isCurrentMatch, isSearchMatch, nodeClassName }) => {
   const [isHovered, setIsHovered] = useState(false);
   const [isSourceHovered, setIsSourceHovered] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState<'incoming' | 'outgoing' | null>(null);
@@ -242,7 +243,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ id, title, icon, children, type, se
       </NodeToolbar>
     
     <div
-      className={`${isMediaNode ? 'min-w-[380px] max-w-[450px]' : 'min-w-[280px]'} bg-white border-2 rounded-[2.5rem] shadow-[0_15px_40px_-10px_rgba(0,0,0,0.06)] transition-all duration-400 ${
+      className={`${isMediaNode ? 'min-w-[380px] max-w-[450px]' : 'min-w-[280px]'} ${nodeClassName ?? ''} bg-white border-2 rounded-[2.5rem] shadow-[0_15px_40px_-10px_rgba(0,0,0,0.06)] transition-all duration-400 ${
         isFlashing
           ? 'ring-4 ring-green-300/40 !border-green-300'
           : isSimulatorActive

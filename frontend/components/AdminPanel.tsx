@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { 
   Users, UserCog, LogOut, ArrowLeft, AlertCircle, AlertTriangle, Shield, Activity, 
   Search, Trash2, Edit2, Ban, CheckCircle, BarChart2, Settings, 
@@ -83,7 +84,13 @@ const API_BASE = window.location.hostname === 'localhost'
   : `${window.location.origin}/api`;
 
 const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onImpersonate, onEditTemplate, onCreateTemplate }) => {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'users' | 'user-types' | 'templates' | 'settings' | 'sessions' | 'dialog360' | 'removal-log'>('dashboard');
+  const navigate = useNavigate();
+  const { tab } = useParams<{ tab?: string }>();
+
+  type AdminTab = 'dashboard' | 'users' | 'user-types' | 'templates' | 'settings' | 'sessions' | 'dialog360' | 'removal-log';
+  const VALID_TABS: AdminTab[] = ['dashboard', 'users', 'user-types', 'templates', 'settings', 'sessions', 'dialog360', 'removal-log'];
+  const activeTab: AdminTab = (VALID_TABS.includes(tab as AdminTab) ? tab : 'dashboard') as AdminTab;
+  const setActiveTab = (t: AdminTab) => navigate(`/admin/${t}`);
   const [users, setUsers] = useState<User[]>([]);
   const [stats, setStats] = useState<SystemStats | null>(null);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
@@ -190,6 +197,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
   // Delete User confirmation modal
   const [deleteConfirmUserId, setDeleteConfirmUserId] = useState<string | null>(null);
   const [isDeletingUser, setIsDeletingUser] = useState(false);
+
+  // Expand/collapse sub-users per parent
+  const [expandedUserIds, setExpandedUserIds] = useState<Set<string>>(new Set());
 
   // Create User modal
   const [showCreateUserModal, setShowCreateUserModal] = useState(false);
@@ -1032,6 +1042,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
   };
 
   const filteredUsers = users.filter(user => {
+    // Exclude sub-users (reps/rep_managers linked to a parent) from the top-level list
+    if ((user.role === 'rep' || user.role === 'rep_manager') && user.manager_id) return false;
+
     const matchesSearch = 
       user.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       user.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -1045,6 +1058,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
     
     return matchesSearch;
   });
+
+  // Returns sub-users linked to a given parent user id
+  const getSubUsers = (parentId: string) =>
+    users.filter(u => (u.role === 'rep' || u.role === 'rep_manager') && u.manager_id === parentId);
 
   // Render Component
   return (
@@ -1799,61 +1816,121 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                         <button onClick={() => {setSearchQuery(''); setFilterType('all');}} className="text-xs text-sky-600 font-bold mt-1 hover:underline">נקה סינון</button>
                      </div>
                   ) : (
-                    filteredUsers.map(user => (
-                      <div 
-                        key={user.id}
-                        onClick={() => fetchUserDetails(user.id)}
-                        className={`group p-3 rounded-xl cursor-pointer transition-all border relative overflow-hidden ${
-                          selectedUser?.id === user.id 
-                            ? 'bg-white border-sky-500 shadow-lg shadow-sky-100/50 z-10 ring-1 ring-sky-500/10' 
-                            : 'bg-white border-transparent hover:border-slate-300 hover:shadow-sm'
-                        }`}
-                      >
-                       {selectedUser?.id === user.id && <div className="absolute left-0 top-0 bottom-0 w-1 bg-sky-500"></div>}
-                        <div className="flex justify-between items-start mb-2">
-                          <div className="flex items-center gap-3">
-                             <div className={`w-9 h-9 rounded-lg flex items-center justify-center text-xs font-black shadow-sm ${selectedUser?.id === user.id ? 'bg-gradient-to-br from-sky-500 to-blue-600 text-white' : 'bg-slate-100 text-slate-600 group-hover:bg-slate-200'}`}>
-                                {user.name.charAt(0)}
-                             </div>
-                             <div>
-                                <h3 className={`font-bold text-sm leading-tight mb-0.5 ${selectedUser?.id === user.id ? 'text-sky-900' : 'text-slate-800'}`}>{user.name}</h3>
-                                <p className="text-[11px] text-slate-500 font-medium">{user.email}</p>
-                             </div>
-                          </div>
-                          {user.role === 'admin' && <div className="bg-sky-50 p-1 rounded text-sky-600" title="מנהל"><Shield size={12} fill="currentColor" className="opacity-40" /> </div>}
-                        </div>
-                        <div className="flex items-center justify-between mt-2 pl-2">
-                          <div className="flex gap-2 flex-wrap">
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${user.status === 'active' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-rose-50 text-rose-600 border border-rose-100'}`}>
-                                {user.status === 'active' ? 'פעיל' : 'חסום'}
-                            </span>
-                            {user.role !== 'rep' && user.role !== 'rep_manager' && (
-                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
-                                user.account_type === 'Premium' ? 'bg-amber-50 text-amber-600 border-amber-100'
-                                : user.account_type === 'Trial' ? 'bg-orange-50 text-orange-600 border-orange-100'
-                                : 'bg-slate-50 text-slate-500 border-slate-100'}`}>
-                                  {user.account_type === 'Trial' ? 'ניסיוני' : user.account_type}
-                              </span>
-                            )}
-                            {user.user_type_id?.name && (
-                              <span className="px-2 py-0.5 rounded text-[10px] font-bold border bg-purple-50 text-purple-600 border-purple-100 flex items-center gap-1">
-                                <UserCheck size={9} />{user.user_type_id.name}
-                              </span>
-                            )}
-                          </div>
-                          <ChevronRight size={14} className={`transition-transform duration-300 ${selectedUser?.id === user.id ? 'text-sky-500 translate-x-1' : 'text-slate-300 opacity-0 group-hover:opacity-100'}`} />
-                        </div>
-                        {(user.role === 'rep' || user.role === 'rep_manager') && user.manager_id && (() => {
-                          const parentUser = users.find(u => u.id === user.manager_id);
-                          return parentUser ? (
-                            <div className="mt-1.5 flex items-center gap-1 text-[10px] text-slate-400">
-                              <UserIcon size={10} className="shrink-0" />
-                              <span className="truncate">קשור ל: <span className="font-semibold text-slate-600">{parentUser.name}</span></span>
+                    filteredUsers.map(user => {
+                      const subUsers = getSubUsers(user.id);
+                      const hasSubUsers = subUsers.length > 0;
+                      const isExpanded = expandedUserIds.has(user.id);
+                      return (
+                        <div key={user.id}>
+                          {/* Parent user row */}
+                          <div 
+                            onClick={() => fetchUserDetails(user.id)}
+                            className={`group p-3 rounded-xl cursor-pointer transition-all border relative overflow-hidden ${
+                              selectedUser?.id === user.id 
+                                ? 'bg-white border-sky-500 shadow-lg shadow-sky-100/50 z-10 ring-1 ring-sky-500/10' 
+                                : 'bg-white border-transparent hover:border-slate-300 hover:shadow-sm'
+                            }`}
+                          >
+                           {selectedUser?.id === user.id && <div className="absolute left-0 top-0 bottom-0 w-1 bg-sky-500"></div>}
+                            <div className="flex justify-between items-start mb-2">
+                              <div className="flex items-center gap-3">
+                                 <div className={`w-9 h-9 rounded-lg flex items-center justify-center text-xs font-black shadow-sm ${selectedUser?.id === user.id ? 'bg-gradient-to-br from-sky-500 to-blue-600 text-white' : 'bg-slate-100 text-slate-600 group-hover:bg-slate-200'}`}>
+                                    {user.name.charAt(0)}
+                                 </div>
+                                 <div>
+                                    <h3 className={`font-bold text-sm leading-tight mb-0.5 ${selectedUser?.id === user.id ? 'text-sky-900' : 'text-slate-800'}`}>{user.name}</h3>
+                                    <p className="text-[11px] text-slate-500 font-medium">{user.email}</p>
+                                 </div>
+                              </div>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                {user.role === 'admin' && <div className="bg-sky-50 p-1 rounded text-sky-600" title="מנהל"><Shield size={12} fill="currentColor" className="opacity-40" /></div>}
+                                {hasSubUsers && (
+                                  <button
+                                    onClick={e => {
+                                      e.stopPropagation();
+                                      setExpandedUserIds(prev => {
+                                        const next = new Set(prev);
+                                        if (next.has(user.id)) next.delete(user.id);
+                                        else next.add(user.id);
+                                        return next;
+                                      });
+                                    }}
+                                    className="flex items-center gap-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded-lg text-[10px] font-bold transition-colors border border-indigo-100"
+                                    title={isExpanded ? 'סגור משתמשים משויכים' : 'הצג משתמשים משויכים'}
+                                  >
+                                    <Users size={10} />
+                                    {subUsers.length}
+                                    {isExpanded ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
+                                  </button>
+                                )}
+                              </div>
                             </div>
-                          ) : null;
-                        })()}
-                      </div>
-                    ))
+                            <div className="flex items-center justify-between mt-2 pl-2">
+                              <div className="flex gap-2 flex-wrap">
+                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${user.status === 'active' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-rose-50 text-rose-600 border border-rose-100'}`}>
+                                    {user.status === 'active' ? 'פעיל' : 'חסום'}
+                                </span>
+                                {user.role !== 'rep' && user.role !== 'rep_manager' && (
+                                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
+                                    user.account_type === 'Premium' ? 'bg-amber-50 text-amber-600 border-amber-100'
+                                    : user.account_type === 'Trial' ? 'bg-orange-50 text-orange-600 border-orange-100'
+                                    : 'bg-slate-50 text-slate-500 border-slate-100'}`}>
+                                      {user.account_type === 'Trial' ? 'ניסיוני' : user.account_type}
+                                  </span>
+                                )}
+                                {user.user_type_id?.name && (
+                                  <span className="px-2 py-0.5 rounded text-[10px] font-bold border bg-purple-50 text-purple-600 border-purple-100 flex items-center gap-1">
+                                    <UserCheck size={9} />{user.user_type_id.name}
+                                  </span>
+                                )}
+                              </div>
+                              <ChevronRight size={14} className={`transition-transform duration-300 ${selectedUser?.id === user.id ? 'text-sky-500 translate-x-1' : 'text-slate-300 opacity-0 group-hover:opacity-100'}`} />
+                            </div>
+                          </div>
+
+                          {/* Sub-users (collapsible) */}
+                          {hasSubUsers && isExpanded && (
+                            <div className="mr-4 mt-1 space-y-1 border-r-2 border-indigo-100 pr-2">
+                              {subUsers.map(sub => (
+                                <div
+                                  key={sub.id}
+                                  onClick={() => fetchUserDetails(sub.id)}
+                                  className={`group p-2.5 rounded-xl cursor-pointer transition-all border relative overflow-hidden ${
+                                    selectedUser?.id === sub.id
+                                      ? 'bg-white border-sky-500 shadow-md shadow-sky-100/40 ring-1 ring-sky-500/10'
+                                      : 'bg-white/80 border-transparent hover:border-slate-200 hover:shadow-sm'
+                                  }`}
+                                >
+                                  {selectedUser?.id === sub.id && <div className="absolute left-0 top-0 bottom-0 w-1 bg-sky-500 rounded-l"></div>}
+                                  <div className="flex items-center gap-2.5">
+                                    <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-[10px] font-black shadow-sm ${selectedUser?.id === sub.id ? 'bg-gradient-to-br from-sky-500 to-blue-600 text-white' : 'bg-indigo-50 text-indigo-500'}`}>
+                                      {sub.name.charAt(0)}
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                      <h4 className={`font-bold text-xs leading-tight truncate ${selectedUser?.id === sub.id ? 'text-sky-900' : 'text-slate-700'}`}>{sub.name}</h4>
+                                      <p className="text-[10px] text-slate-400 truncate">{sub.email}</p>
+                                    </div>
+                                    <div className="flex items-center gap-1 shrink-0">
+                                      <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${sub.status === 'active' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
+                                        {sub.status === 'active' ? 'פעיל' : 'חסום'}
+                                      </span>
+                                      {sub.user_type_id?.name && (
+                                        <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-purple-50 text-purple-600">
+                                          {sub.user_type_id.name}
+                                        </span>
+                                      )}
+                                      <span className="text-[9px] text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded font-medium">
+                                        {sub.role === 'rep_manager' ? 'מנהל נציגים' : 'נציג'}
+                                      </span>
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })
                   )}
                 </div>
               </div>

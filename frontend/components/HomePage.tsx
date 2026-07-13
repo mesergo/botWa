@@ -3,6 +3,7 @@ import { Bot, MessageSquare, Users, Settings, LogOut, Shield, ArrowLeft, LayoutD
 import { User } from '../types';
 import { usePermission } from '../hooks/usePermission';
 import DashboardStats from './DashboardStats';
+import ImpersonationBanner from './ImpersonationBanner';
 
 interface HomePageProps {
   currentUser: User | null;
@@ -12,6 +13,7 @@ interface HomePageProps {
   onGoToSettings: () => void;
   onOpenAdminPanel?: () => void;
   onLogout: () => void;
+  onStopImpersonation?: () => void;
 }
 
 // Sidebar nav items definition
@@ -85,6 +87,7 @@ const HomePage: React.FC<HomePageProps> = ({
   onGoToSettings,
   onOpenAdminPanel,
   onLogout,
+  onStopImpersonation,
 }) => {
   const can = usePermission(currentUser);
 
@@ -113,7 +116,10 @@ const HomePage: React.FC<HomePageProps> = ({
   });
 
   return (
-    <div className="h-screen bg-slate-50 flex overflow-hidden" dir="rtl">
+    <div className="h-screen bg-slate-50 flex flex-col overflow-hidden" dir="rtl">
+      <ImpersonationBanner currentUser={currentUser} onStopImpersonation={onStopImpersonation} />
+
+      <div className="flex flex-1 overflow-hidden">
 
       {/* ── Sidebar ── */}
       <aside className="w-64 bg-white border-l border-slate-100 flex flex-col flex-shrink-0">
@@ -259,6 +265,7 @@ const HomePage: React.FC<HomePageProps> = ({
         </div>
       </main>
 
+      </div>
     </div>
   );
 };
