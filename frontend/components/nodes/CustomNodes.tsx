@@ -1,10 +1,11 @@
 
 import React, { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Handle, Position, useReactFlow, useEdges } from 'reactflow';
 import {
   Type, Calendar, Upload, MessageSquare,
   Image as ImageIcon, ExternalLink, List, Globe, Clock, PlayCircle, Plus, Layers, X, GitBranch, Trash2, ChevronDown, Zap,
-  Mail, Phone, CreditCard, Link, Users, UserMinus, UserCheck, Settings
+  Mail, Phone, CreditCard, Link, Users, UserMinus, UserCheck, Settings, Pencil
 } from 'lucide-react';
 import BaseNode from './BaseNode';
 import { NodeType } from '../../types';
@@ -25,8 +26,90 @@ const HighlightedText = ({ text, highlight, isCurrent }: { text: string; highlig
   );
 };
 
-const SearchableInput = ({ value, onChange, placeholder, type = "text", searchQuery, isCurrentMatch, isTextArea = false, disabled = false }: any) => {
+const ExpandTextModal = ({ value, onChange, onClose }: {
+  value: string;
+  onChange: (v: string) => void;
+  onClose: () => void;
+}) => {
+  const [localValue, setLocalValue] = useState(value);
+
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      } else if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        onChange(localValue);
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [localValue, onClose, onChange]);
+
+  const handleApply = () => {
+    onChange(localValue);
+    onClose();
+  };
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/50 backdrop-blur-sm"
+      onMouseDown={onClose}
+    >
+      <div
+        className="bg-white rounded-2xl shadow-2xl flex flex-col p-6 gap-4"
+        style={{ width: 640, maxWidth: '95vw', maxHeight: '80vh' }}
+        onMouseDown={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between">
+          <button
+            onClick={onClose}
+            className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors"
+          >
+            <X size={18} className="text-slate-400" />
+          </button>
+          <span className="text-sm font-bold text-slate-500">עריכה מורחבת</span>
+        </div>
+        <textarea
+          autoFocus
+          className="w-full p-4 border border-slate-200 rounded-xl resize-none text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          style={{
+            fontFamily: 'Heebo, sans-serif',
+            fontSize: '1.05rem',
+            textAlign: 'right',
+            direction: 'rtl',
+            minHeight: 280,
+            lineHeight: '1.7',
+          }}
+          value={localValue}
+          onChange={e => setLocalValue(e.target.value)}
+        />
+        <div className="flex items-center justify-between">
+          <span className="text-[11px] text-slate-400">Ctrl+Enter לשמירה · Esc לביטול</span>
+          <div className="flex gap-2">
+            <button
+              onClick={onClose}
+              className="px-4 py-2 border border-slate-200 rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-50 transition-colors"
+            >
+              ביטול
+            </button>
+            <button
+              onClick={handleApply}
+              className="px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-700 transition-colors"
+            >
+              שמור
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+};
+
+const SearchableInput = ({ value, onChange, placeholder, type = "text", searchQuery, isCurrentMatch, isTextArea = false, disabled = false, expandable = true }: any) => {
   const [isFocused, setIsFocused] = React.useState(false);
+  const [modalOpen, setModalOpen] = useState(false);
  
   const fontStyles: React.CSSProperties = {
     fontFamily: 'Heebo, sans-serif',
@@ -39,43 +122,64 @@ const SearchableInput = ({ value, onChange, placeholder, type = "text", searchQu
   };
 
   const showHighlight = !isFocused && searchQuery && value && value.toLowerCase().includes(searchQuery.toLowerCase());
+  const showExpandBtn = expandable && !disabled && type !== 'number';
 
   return (
-    <div className={`relative w-full transition-all rounded-xl overflow-hidden ${isCurrentMatch ? 'ring-2 ring-blue-600 border-transparent shadow-md' : 'border border-slate-200'} ${disabled ? 'bg-slate-50 opacity-70 cursor-not-allowed' : ''}`}>
-      {showHighlight && (
-        <div
-          className="absolute inset-0 pointer-events-none pr-4 pl-4 pt-2.5 whitespace-pre-wrap break-words overflow-hidden bg-white z-0"
-          style={fontStyles}
+    <>
+      {modalOpen && (
+        <ExpandTextModal
+          value={value || ''}
+          onChange={onChange}
+          onClose={() => setModalOpen(false)}
+        />
+      )}
+      {showExpandBtn && (
+        <button
+          type="button"
+          onMouseDown={e => { e.preventDefault(); e.stopPropagation(); setModalOpen(true); }}
+          className="absolute top-0 left-1 z-10 w-6 h-6 flex items-center justify-center rounded-md text-slate-400 hover:text-blue-500 hover:bg-blue-50 transition-all nodrag"
+          title="פתח עורך מורחב"
+          tabIndex={-1}
         >
-          <HighlightedText text={value} highlight={searchQuery} isCurrent={isCurrentMatch} />
-        </div>
+          <Pencil size={13} />
+        </button>
       )}
-     
-      {isTextArea ? (
-        <textarea
-          disabled={disabled}
-          className={`relative z-10 w-full border-none outline-none transition-all text-right focus:ring-2 focus:ring-blue-600 nodrag h-20 resize-none text-slate-900 px-4 py-2 ${showHighlight ? 'bg-transparent text-transparent' : (disabled ? 'bg-transparent' : 'bg-white')}`}
-          value={value || ''}
-          onChange={(e) => onChange(e.target.value)}
-          onFocus={() => !disabled && setIsFocused(true)}
-          onBlur={() => setIsFocused(false)}
-          placeholder={placeholder}
-          style={fontStyles}
-        />
-      ) : (
-        <input
-          disabled={disabled}
-          type={type}
-          className={`relative z-10 w-full border-none outline-none transition-all text-right focus:ring-2 focus:ring-blue-600 nodrag text-slate-900 h-12 px-4 ${showHighlight ? 'bg-transparent text-transparent' : (disabled ? 'bg-transparent' : 'bg-white')}`}
-          value={value || ''}
-          onChange={(e) => onChange(e.target.value)}
-          onFocus={() => !disabled && setIsFocused(true)}
-          onBlur={() => setIsFocused(false)}
-          placeholder={placeholder}
-          style={fontStyles}
-        />
-      )}
-    </div>
+      <div className={`relative w-full transition-all rounded-xl overflow-hidden ${isCurrentMatch ? 'ring-2 ring-blue-600 border-transparent shadow-md' : 'border border-slate-200'} ${disabled ? 'bg-slate-50 opacity-70 cursor-not-allowed' : ''}`}>
+        {showHighlight && (
+          <div
+            className="absolute inset-0 pointer-events-none pr-4 pl-4 pt-2.5 whitespace-pre-wrap break-words overflow-hidden bg-white z-0"
+            style={fontStyles}
+          >
+            <HighlightedText text={value} highlight={searchQuery} isCurrent={isCurrentMatch} />
+          </div>
+        )}
+       
+        {isTextArea ? (
+          <textarea
+            disabled={disabled}
+            className={`relative z-10 w-full border-none outline-none transition-all text-right focus:ring-2 focus:ring-blue-600 nodrag h-20 resize-none text-slate-900 px-4 py-2 ${showHighlight ? 'bg-transparent text-transparent' : (disabled ? 'bg-transparent' : 'bg-white')}`}
+            value={value || ''}
+            onChange={(e) => onChange(e.target.value)}
+            onFocus={() => !disabled && setIsFocused(true)}
+            onBlur={() => setIsFocused(false)}
+            placeholder={placeholder}
+            style={fontStyles}
+          />
+        ) : (
+          <input
+            disabled={disabled}
+            type={type}
+            className={`relative z-10 w-full border-none outline-none transition-all text-right focus:ring-2 focus:ring-blue-600 nodrag text-slate-900 h-12 px-4 ${showHighlight ? 'bg-transparent text-transparent' : (disabled ? 'bg-transparent' : 'bg-white')}`}
+            value={value || ''}
+            onChange={(e) => onChange(e.target.value)}
+            onFocus={() => !disabled && setIsFocused(true)}
+            onBlur={() => setIsFocused(false)}
+            placeholder={placeholder}
+            style={fontStyles}
+          />
+        )}
+      </div>
+    </>
   );
 };
 
@@ -126,7 +230,7 @@ const DeletableHandle = ({ nodeId, handleId, style }: { nodeId: string; handleId
 };
 
 const InputFieldWrapper = ({ label, children }: any) => (
-  <div className="mb-4 p-1 text-right">
+  <div className="relative mb-4 p-1 text-right">
     <label className="block text-[14px] font-bold text-slate-400 uppercase mb-2 tracking-wider">
       {label}
     </label>
@@ -804,7 +908,7 @@ export const ActionWebServiceNode = (props: any) => {
         <span className={`px-2.5 py-1 rounded-lg border text-[11px] font-black tracking-wide ${badgeClass}`}>{method}</span>
       </div>
       <InputFieldWrapper label="כתובת Webhook">
-        <SearchableInput value={props.data.url} onChange={(v: string) => props.data.onChange({ url: v })} placeholder="https://api.yourdomain.com" searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
+        <SearchableInput value={props.data.url} onChange={(v: string) => props.data.onChange({ url: v })} placeholder="https://api.yourdomain.com" searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} expandable={false} />
       </InputFieldWrapper>
      
       <div className="space-y-3 mt-4 text-right">
@@ -829,7 +933,7 @@ export const ActionWebServiceNode = (props: any) => {
               <div className="flex items-center gap-2 flex-row-reverse">
                 <OperatorSelector value={operators[i]} onChange={(op) => updateOperator(i, op)} />
                 <div className="flex-1">
-                  <SearchableInput value={branch} onChange={(v: string) => updateBranch(i, v)} placeholder="ערך להשוואה..." searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
+                  <SearchableInput value={branch} onChange={(v: string) => updateBranch(i, v)} placeholder="ערך להשוואה..." searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} expandable={false} />
                 </div>
                 <button onClick={() => removeBranch(i)} className="p-2 text-slate-300 hover:text-red-500 opacity-0 group-hover/branch:opacity-100 transition-all nodrag"><X size={18} /></button>
               </div>
@@ -855,7 +959,7 @@ export const ActionWaitNode = (props: any) => (
 );
 
 export const ActionSetParameterNode = (props: any) => (
-  <BaseNode id={props.id} title="הגדרת פרמטר" icon={<Zap size={20} />} type={NodeType.ACTION_SET_PARAMETER} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} isSearchMatch={props.data.isSearchMatch}>
+  <BaseNode id={props.id} title="הגדרת פרמטר" icon={<Zap size={20} />} type={NodeType.ACTION_SET_PARAMETER} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} isSearchMatch={props.data.isSearchMatch} nodeClassName="max-w-[280px]">
     <InputFieldWrapper label="שם הפרמטר">
       <SearchableInput value={props.data.parameterName} onChange={(v: string) => props.data.onChange({ parameterName: v })} placeholder="למשל: user_status" searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
     </InputFieldWrapper>

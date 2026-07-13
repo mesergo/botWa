@@ -307,6 +307,11 @@ const Editor: React.FC<EditorProps> = ({
               </button>
             );
           })()}
+           {selectedBot?.name && (
+            <span className="px-3 py-1.5 text-base font-bold text-black max-w-[180px] truncate" title={selectedBot.name} dir="rtl">
+              {selectedBot.name}
+            </span>
+          )}
           <div className="h-8 w-px bg-slate-100 mx-1"></div>
           {/* User Avatar - navigates to bots page */}
           <button

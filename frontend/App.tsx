@@ -1,5 +1,6 @@
 
 import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
+import { useNavigate, useLocation, Routes, Route, Navigate } from 'react-router-dom';
 import { ReactFlowProvider, addEdge, Node, Edge, applyNodeChanges, applyEdgeChanges, OnNodesChange, OnEdgesChange, OnConnect, ReactFlowInstance, MarkerType } from 'reactflow';
 import { NodeType, NodeData, User, FixedProcess, Version, BotFlow, PredefinedTemplate, RestorableVersionsData } from './types';
 import { ContactFieldsProvider } from './context/ContactFieldsContext';
@@ -130,6 +131,8 @@ type ViewMode = 'home' | 'dashboard' | 'editor' | 'editing-process' | 'viewing-p
 
 const FlowBuilder: React.FC = () => {
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
+  const navigate = useNavigate();
+  const location = useLocation();
 
   // Detect expired token once on mount, before any render
   const tokenExpiredOnLoad = (() => {
@@ -158,13 +161,6 @@ const FlowBuilder: React.FC = () => {
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('mode') === 'simulator') return 'simulator-only';
-    try {
-      const saved = localStorage.getItem('flowbot_user');
-      if (saved && saved !== 'undefined') {
-        const user = JSON.parse(saved);
-        if (user?.role === 'rep' || user?.role === 'rep_manager') return 'sessions';
-      }
-    } catch {}
     return 'home';
   });
 
@@ -239,14 +235,43 @@ const FlowBuilder: React.FC = () => {
   const [sessionsOwnOnly, setSessionsOwnOnly] = useState(false);
   const [sessionsInitialPhone, setSessionsInitialPhone] = useState<string | null>(null);
   const [contactsInitialPhone, setContactsInitialPhone] = useState<string | null>(null);
-  const [dashboardInitialTab, setDashboardInitialTab] = useState<'bots' | 'settings' | 'users'>('bots');
   const [isBotSettingsOpen, setIsBotSettingsOpen] = useState(false);
+
+  // Auto-route reps to /sessions on first load
+  useEffect(() => {
+    if (!currentUser) return;
+    if (currentUser.role === 'rep' || currentUser.role === 'rep_manager') {
+      if (location.pathname === '/' || location.pathname === '') {
+        navigate('/sessions', { replace: true });
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Clear initialPhone when navigating away so it doesn't re-open on return
   useEffect(() => {
-    if (viewMode !== 'contacts') setContactsInitialPhone(null);
-    if (viewMode !== 'sessions') setSessionsInitialPhone(null);
-  }, [viewMode]);
+    if (location.pathname !== '/contacts') setContactsInitialPhone(null);
+    if (location.pathname !== '/sessions') setSessionsInitialPhone(null);
+  }, [location.pathname]);
+
+  // Load bot from URL on direct navigation / refresh (e.g. /bot/:botId)
+  useEffect(() => {
+    const match = location.pathname.match(/^\/bot\/([^/]+)/);
+    if (!match) return;
+    const botId = match[1];
+    if (selectedBot?.id === botId) return; // already loaded
+    if (bots.length === 0) return; // bots list not fetched yet
+    const bot = bots.find(b => b.id === botId);
+    if (!bot) { navigate('/dashboard', { replace: true }); return; }
+    setIsFlowTransitioning(true);
+    pendingFitViewRef.current = true;
+    setNodes([]);
+    setEdges([]);
+    setActiveProcessId(null);
+    setSelectedBot(bot);
+    setViewMode('editor');
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname, bots]);
 
   // --- Edge Delete Listener ---
   // Tracks whether a real user action occurred since the last save (ignores ReactFlow
@@ -1272,9 +1297,9 @@ const FlowBuilder: React.FC = () => {
         // Route reps directly to sessions view
         if (data.user?.role === 'rep' || data.user?.role === 'rep_manager') {
           setSessionsOwnOnly(false);
-          setViewMode('sessions');
+          navigate('/sessions');
         } else {
-          setViewMode('home');
+          navigate('/');
         }
       } else {
         setAuthErrors({ general: data.error || 'שגיאה בהתחברות עם גוגל' });
@@ -1300,9 +1325,9 @@ const FlowBuilder: React.FC = () => {
       // Route reps directly to sessions view
       if (data.user?.role === 'rep' || data.user?.role === 'rep_manager') {
         setSessionsOwnOnly(false);
-        setViewMode('sessions');
+        navigate('/sessions');
       } else {
-        setViewMode('home');
+        navigate('/');
       }
     } else {
       setAuthErrors({ general: data.error === 'Invalid credentials' ? 'שם משתמש או סיסמה שגויים' : (data.error || 'שם משתמש או סיסמה שגויים') });
@@ -1316,10 +1341,9 @@ const FlowBuilder: React.FC = () => {
     // Route based on role — same logic as normal login
     if (userData.role === 'rep' || userData.role === 'rep_manager') {
       setSessionsOwnOnly(false);
-      setViewMode('sessions');
+      navigate('/sessions');
     } else {
-      setDashboardInitialTab('bots'); // Reset stale tab (e.g. settings left from before)
-      setViewMode('dashboard');
+      navigate('/dashboard');
     }
     // Pass the new token directly to avoid stale closure with the old admin token
     loadBots(impersonationToken);
@@ -1339,7 +1363,7 @@ const FlowBuilder: React.FC = () => {
         setToken(data.token);
         setCurrentUser(data.user);
         saveStoredAuth(data.token, data.user, true);
-        setViewMode('dashboard');
+        navigate('/dashboard');
         // Pass the new token directly to avoid stale closure with the old impersonation token
         loadBots(data.token);
       }
@@ -1767,7 +1791,7 @@ const FlowBuilder: React.FC = () => {
       });
       if (res.ok) {
         setCreatingTemplate(false);
-        setViewMode('admin-panel');
+        navigate('/admin/templates');
         alert('תבנית נשמרה בהצלחה!');
       } else {
         alert('שגיאה בשמירת תבנית');
@@ -1811,7 +1835,7 @@ const FlowBuilder: React.FC = () => {
     setIsTemplateParamsModalOpen(false);
     setNodes([]);
     setEdges([]);
-    setViewMode('admin-panel');
+    navigate('/admin/templates');
   };
 
   const openTemplateParamsModal = async () => {
@@ -1878,7 +1902,8 @@ const FlowBuilder: React.FC = () => {
     setActiveProcessId(null);
     setSelectedBot(bot);  // triggers useEffect → loadFlow (single call)
     setViewMode('editor');
-  }, []);
+    navigate('/bot/' + bot.id);
+  }, [navigate]);
 
   /**
    * Flush any pending sync BEFORE changing activeProcessId/viewMode.
@@ -2098,130 +2123,30 @@ const FlowBuilder: React.FC = () => {
     );
   }
 
-  if (viewMode === 'home') {
+  if (location.pathname.startsWith('/admin')) {
     return (
-      <HomePage
-        currentUser={currentUser}
-        onGoToBots={() => setViewMode('dashboard')}
-        onGoToChats={() => { setSessionsOwnOnly(true); setViewMode('sessions'); }}
-        onGoToContacts={() => setViewMode('contacts')}
-        onGoToSettings={() => { setDashboardInitialTab('settings'); setViewMode('dashboard'); }}
-        onOpenAdminPanel={currentUser?.role === 'admin' ? () => setViewMode('admin-panel') : undefined}
-        onLogout={handleLogout}
-      />
-    );
-  }
-
-  if (viewMode === 'contacts') {
-    return (
-      <ContactsPage
-        token={token}
-        currentUser={currentUser}
-        onBack={() => { setDashboardInitialTab('bots'); setViewMode('dashboard'); }}
-        onGoHome={() => setViewMode('home')}
-        onLogout={() => { localStorage.clear(); window.location.reload(); }}
-        onOpenSessions={can('sessions.view') ? (phone?: string) => { setSessionsInitialPhone(phone ?? null); setSessionsOwnOnly(true); setViewMode('sessions'); } : undefined}
-        onOpenGroups={can('groups.view') ? () => setViewMode('groups') : undefined}
-        onOpenAdminPanel={() => setViewMode('admin-panel')}
-        onOpenSettings={can('settings.view') ? () => { setDashboardInitialTab('settings'); setViewMode('dashboard'); } : undefined}
-        onOpenSubUsers={can('users.view') ? () => { setDashboardInitialTab('users'); setViewMode('dashboard'); } : undefined}
-        onStopImpersonation={handleStopImpersonation}
-        initialPhone={contactsInitialPhone}
-      />
-    );
-  }
-
-  if (viewMode === 'groups') {
-    return (
-      <GroupsPage
-        token={token}
-        currentUser={currentUser}
-        onBack={() => { setDashboardInitialTab('bots'); setViewMode('dashboard'); }}
-        onGoHome={() => setViewMode('home')}
-        onLogout={() => { localStorage.clear(); window.location.reload(); }}
-        onOpenContacts={can('contacts.view') ? (phone?: string) => { setContactsInitialPhone(phone ?? null); setViewMode('contacts'); } : undefined}
-        onOpenSessions={can('sessions.view') ? (phone?: string) => { setSessionsInitialPhone(phone ?? null); setSessionsOwnOnly(true); setViewMode('sessions'); } : undefined}
-        onOpenAdminPanel={() => setViewMode('admin-panel')}
-        onOpenSettings={can('settings.view') ? () => { setDashboardInitialTab('settings'); setViewMode('dashboard'); } : undefined}
-        onOpenSubUsers={can('users.view') ? () => { setDashboardInitialTab('users'); setViewMode('dashboard'); } : undefined}
-        onStopImpersonation={handleStopImpersonation}
-      />
-    );
-  }
-
-  if (viewMode === 'sessions') {
-    return (
-      <SessionsPage
-        token={token}
-        currentUser={currentUser}
-        onBack={currentUser?.role === 'rep' ? undefined : () => { setDashboardInitialTab('bots'); setViewMode('dashboard'); }}
-        onGoHome={currentUser?.role === 'rep' ? undefined : () => setViewMode('home')}
-        onLogout={() => { localStorage.clear(); window.location.reload(); }}
-        onOpenContacts={can('contacts.view') ? (phone?: string) => { setContactsInitialPhone(phone ?? null); setViewMode('contacts'); } : undefined}
-        onOpenGroups={can('groups.view') ? () => setViewMode('groups') : undefined}
-        onOpenAdminPanel={() => setViewMode('admin-panel')}
-        ownOnly={sessionsOwnOnly}
-        initialPhone={sessionsInitialPhone}
-        onOpenSettings={can('settings.view') ? () => { setDashboardInitialTab('settings'); setViewMode('dashboard'); } : undefined}
-        onOpenSubUsers={can('users.view') ? () => { setDashboardInitialTab('users'); setViewMode('dashboard'); } : undefined}
-        onStopImpersonation={handleStopImpersonation}
-        onUpdateAvailability={handleUpdateAvailability}
-      />
-    );
-  }
-
-  if (viewMode === 'dashboard') {
-    return (
-      <>
-        <Dashboard 
-          bots={bots} 
-          onEnterBot={enterBot} 
-          onCreateBot={handleCreateBot} 
-          onDeleteBot={handleDeleteBot} 
-          onSetDefaultBot={handleSetDefaultBot} 
-          onLogout={handleLogout} 
-          currentUser={currentUser}
-          onOpenAdminPanel={() => setViewMode('admin-panel')}
-          onOpenContacts={() => setViewMode('contacts')}
-          onOpenSessions={() => { setSessionsOwnOnly(true); setViewMode('sessions'); }}
-          onOpenGroups={() => setViewMode('groups')}
-          onStopImpersonation={handleStopImpersonation}
-          onConnectFacebook={(can('bots.publish') || currentUser?.isImpersonating) ? handleConnectFacebook : undefined}
-          onUpdateBotPublicId={handleUpdateBotPublicId}
-          onUpdateBotEndpoint={currentUser?.isImpersonating ? handleUpdateBotEndpoint : undefined}
-          onUpdateBotRestartKeyword={handleUpdateBotRestartKeyword}
-          onUpdateAvailability={handleUpdateAvailability}
-          onGoHome={() => setViewMode('home')}
-          token={token}
-          initialTab={dashboardInitialTab}
-        />
-        {quotaError && quotaError.type === 'bots' && (
-          <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[200] p-6 text-right">
-            <div className="bg-white w-full max-w-sm rounded-[2.5rem] shadow-2xl p-10 animate-in zoom-in duration-200 border border-slate-100">
-              <div className="w-16 h-16 bg-red-50 text-red-500 rounded-3xl flex items-center justify-center mb-6 mr-0"><AlertTriangle size={32} /></div>
-              <h3 className="text-2xl font-bold text-slate-900 mb-2">המכסה הסתיימה</h3>
-              <p className="text-slate-500 text-sm mb-8 font-medium leading-relaxed">{quotaError.message}</p>
-              <div className="flex flex-col gap-3">
-                <button onClick={() => window.open('https://payment.mesergo.com', '_blank')} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold shadow-lg hover:bg-blue-700">קנה בוט חדש ({quotaError.price}₪)</button>
-                <button onClick={() => setQuotaError(null)} className="w-full py-4 border border-slate-200 text-slate-400 rounded-2xl font-bold hover:bg-slate-50">ביטול</button>
-              </div>
-            </div>
-          </div>
-        )}
-      </>
-    );
-  }
-
-  if (viewMode === 'admin-panel') {
-    return (
-      <AdminPanel 
-        token={token!} 
-        currentUser={currentUser}
-        onBack={() => setViewMode('dashboard')}
-        onImpersonate={handleImpersonate}
-        onEditTemplate={handleLoadTemplateForEditing}
-        onCreateTemplate={handleCreateNewTemplate}
-      />
+      <Routes>
+        <Route path="/admin" element={
+          <AdminPanel
+            token={token!}
+            currentUser={currentUser}
+            onBack={() => navigate('/dashboard')}
+            onImpersonate={handleImpersonate}
+            onEditTemplate={handleLoadTemplateForEditing}
+            onCreateTemplate={handleCreateNewTemplate}
+          />
+        } />
+        <Route path="/admin/:tab" element={
+          <AdminPanel
+            token={token!}
+            currentUser={currentUser}
+            onBack={() => navigate('/dashboard')}
+            onImpersonate={handleImpersonate}
+            onEditTemplate={handleLoadTemplateForEditing}
+            onCreateTemplate={handleCreateNewTemplate}
+          />
+        } />
+      </Routes>
     );
   }
 
@@ -2243,7 +2168,7 @@ const FlowBuilder: React.FC = () => {
           handleInitializeFromTemplate(template.id, {});
         }
       }} 
-      onBack={() => setViewMode('dashboard')}
+      onBack={() => navigate('/dashboard')}
     />;
   }
 
@@ -2291,8 +2216,8 @@ const FlowBuilder: React.FC = () => {
           onSimulatorClose={() => {}}
           onDuplicate={() => {}}
           onChangeTemplate={() => {}}
-          onOpenContacts={() => setViewMode('contacts')}
-          onOpenSessions={() => { setSessionsOwnOnly(true); setViewMode('sessions'); }}
+          onOpenContacts={() => navigate('/contacts')}
+          onOpenSessions={() => { setSessionsOwnOnly(true); navigate('/sessions'); }}
           sidebarProps={{
             fixedProcesses,
             versions: [],
@@ -2436,6 +2361,165 @@ const FlowBuilder: React.FC = () => {
 
   // Ensure 'simulator-only' doesn't get blocked by the Loading check
   // The check for viewMode !== 'simulator-only' is redundant here as it's handled above.
+  if (viewMode !== 'editor' && viewMode !== 'editing-process' && viewMode !== 'viewing-process' && !location.pathname.startsWith('/bot/')) {
+    // URL-based pages — rendered by React Router
+    return (
+      <>
+        <Routes>
+          <Route path="/" element={
+            <HomePage
+              currentUser={currentUser}
+              onGoToBots={() => navigate('/dashboard')}
+              onGoToChats={() => { setSessionsOwnOnly(true); navigate('/sessions'); }}
+              onGoToContacts={() => navigate('/contacts')}
+              onGoToSettings={() => navigate('/settings')}
+              onOpenAdminPanel={currentUser?.role === 'admin' ? () => navigate('/admin') : undefined}
+              onLogout={handleLogout}
+              onStopImpersonation={handleStopImpersonation}
+            />
+          } />
+          <Route path="/contacts" element={
+            <ContactsPage
+              token={token}
+              currentUser={currentUser}
+              onBack={() => navigate('/dashboard')}
+              onGoHome={() => navigate('/')}
+              onLogout={() => { localStorage.clear(); window.location.reload(); }}
+              onOpenSessions={can('sessions.view') ? (phone?: string) => { setSessionsInitialPhone(phone ?? null); setSessionsOwnOnly(true); navigate('/sessions'); } : undefined}
+              onOpenGroups={can('groups.view') ? () => navigate('/groups') : undefined}
+              onOpenAdminPanel={() => navigate('/admin')}
+              onOpenSettings={can('settings.view') ? () => navigate('/settings') : undefined}
+              onOpenSubUsers={can('users.view') ? () => navigate('/users') : undefined}
+              onStopImpersonation={handleStopImpersonation}
+              initialPhone={contactsInitialPhone}
+            />
+          } />
+          <Route path="/groups" element={
+            <GroupsPage
+              token={token}
+              currentUser={currentUser}
+              onBack={() => navigate('/dashboard')}
+              onGoHome={() => navigate('/')}
+              onLogout={() => { localStorage.clear(); window.location.reload(); }}
+              onOpenContacts={can('contacts.view') ? (phone?: string) => { setContactsInitialPhone(phone ?? null); navigate('/contacts'); } : undefined}
+              onOpenSessions={can('sessions.view') ? (phone?: string) => { setSessionsInitialPhone(phone ?? null); setSessionsOwnOnly(true); navigate('/sessions'); } : undefined}
+              onOpenAdminPanel={() => navigate('/admin')}
+              onOpenSettings={can('settings.view') ? () => navigate('/settings') : undefined}
+              onOpenSubUsers={can('users.view') ? () => navigate('/users') : undefined}
+              onStopImpersonation={handleStopImpersonation}
+            />
+          } />
+          <Route path="/sessions" element={
+            <SessionsPage
+              token={token}
+              currentUser={currentUser}
+              onBack={currentUser?.role === 'rep' ? undefined : () => navigate('/dashboard')}
+              onGoHome={currentUser?.role === 'rep' ? undefined : () => navigate('/')}
+              onLogout={() => { localStorage.clear(); window.location.reload(); }}
+              onOpenContacts={can('contacts.view') ? (phone?: string) => { setContactsInitialPhone(phone ?? null); navigate('/contacts'); } : undefined}
+              onOpenGroups={can('groups.view') ? () => navigate('/groups') : undefined}
+              onOpenAdminPanel={() => navigate('/admin')}
+              ownOnly={sessionsOwnOnly}
+              initialPhone={sessionsInitialPhone}
+              onOpenSettings={can('settings.view') ? () => navigate('/settings') : undefined}
+              onOpenSubUsers={can('users.view') ? () => navigate('/users') : undefined}
+              onStopImpersonation={handleStopImpersonation}
+              onUpdateAvailability={handleUpdateAvailability}
+            />
+          } />
+          <Route path="/dashboard" element={
+            <>
+              <Dashboard
+                bots={bots}
+                onEnterBot={enterBot}
+                onCreateBot={handleCreateBot}
+                onDeleteBot={handleDeleteBot}
+                onSetDefaultBot={handleSetDefaultBot}
+                onLogout={handleLogout}
+                currentUser={currentUser}
+                onOpenAdminPanel={() => navigate('/admin')}
+                onOpenContacts={() => navigate('/contacts')}
+                onOpenSessions={() => { setSessionsOwnOnly(true); navigate('/sessions'); }}
+                onOpenGroups={() => navigate('/groups')}
+                onStopImpersonation={handleStopImpersonation}
+                onConnectFacebook={(can('bots.publish') || currentUser?.isImpersonating) ? handleConnectFacebook : undefined}
+                onUpdateBotPublicId={handleUpdateBotPublicId}
+                onUpdateBotEndpoint={currentUser?.isImpersonating ? handleUpdateBotEndpoint : undefined}
+                onUpdateBotRestartKeyword={handleUpdateBotRestartKeyword}
+                onUpdateAvailability={handleUpdateAvailability}
+                onGoHome={() => navigate('/')}
+                token={token}
+                initialTab="bots"
+              />
+              {quotaError && quotaError.type === 'bots' && (
+                <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[200] p-6 text-right">
+                  <div className="bg-white w-full max-w-sm rounded-[2.5rem] shadow-2xl p-10 animate-in zoom-in duration-200 border border-slate-100">
+                    <div className="w-16 h-16 bg-red-50 text-red-500 rounded-3xl flex items-center justify-center mb-6 mr-0"><AlertTriangle size={32} /></div>
+                    <h3 className="text-2xl font-bold text-slate-900 mb-2">המכסה הסתיימה</h3>
+                    <p className="text-slate-500 text-sm mb-8 font-medium leading-relaxed">{quotaError.message}</p>
+                    <div className="flex flex-col gap-3">
+                      <button onClick={() => window.open('https://payment.mesergo.com', '_blank')} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold shadow-lg hover:bg-blue-700">קנה בוט חדש ({quotaError.price}₪)</button>
+                      <button onClick={() => setQuotaError(null)} className="w-full py-4 border border-slate-200 text-slate-400 rounded-2xl font-bold hover:bg-slate-50">ביטול</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </>
+          } />
+          <Route path="/settings" element={
+            <Dashboard
+              bots={bots}
+              onEnterBot={enterBot}
+              onCreateBot={handleCreateBot}
+              onDeleteBot={handleDeleteBot}
+              onSetDefaultBot={handleSetDefaultBot}
+              onLogout={handleLogout}
+              currentUser={currentUser}
+              onOpenAdminPanel={() => navigate('/admin')}
+              onOpenContacts={() => navigate('/contacts')}
+              onOpenSessions={() => { setSessionsOwnOnly(true); navigate('/sessions'); }}
+              onOpenGroups={() => navigate('/groups')}
+              onStopImpersonation={handleStopImpersonation}
+              onConnectFacebook={(can('bots.publish') || currentUser?.isImpersonating) ? handleConnectFacebook : undefined}
+              onUpdateBotPublicId={handleUpdateBotPublicId}
+              onUpdateBotEndpoint={currentUser?.isImpersonating ? handleUpdateBotEndpoint : undefined}
+              onUpdateBotRestartKeyword={handleUpdateBotRestartKeyword}
+              onUpdateAvailability={handleUpdateAvailability}
+              onGoHome={() => navigate('/')}
+              token={token}
+              initialTab="settings"
+            />
+          } />
+          <Route path="/users" element={
+            <Dashboard
+              bots={bots}
+              onEnterBot={enterBot}
+              onCreateBot={handleCreateBot}
+              onDeleteBot={handleDeleteBot}
+              onSetDefaultBot={handleSetDefaultBot}
+              onLogout={handleLogout}
+              currentUser={currentUser}
+              onOpenAdminPanel={() => navigate('/admin')}
+              onOpenContacts={() => navigate('/contacts')}
+              onOpenSessions={() => { setSessionsOwnOnly(true); navigate('/sessions'); }}
+              onOpenGroups={() => navigate('/groups')}
+              onStopImpersonation={handleStopImpersonation}
+              onConnectFacebook={(can('bots.publish') || currentUser?.isImpersonating) ? handleConnectFacebook : undefined}
+              onUpdateBotPublicId={handleUpdateBotPublicId}
+              onUpdateBotEndpoint={currentUser?.isImpersonating ? handleUpdateBotEndpoint : undefined}
+              onUpdateBotRestartKeyword={handleUpdateBotRestartKeyword}
+              onUpdateAvailability={handleUpdateAvailability}
+              onGoHome={() => navigate('/')}
+              token={token}
+              initialTab="users"
+            />
+          } />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </>
+    );
+  }
+
   if (!selectedBot && !activeProcessId && !editingTemplateId && !creatingTemplate) return <div>Loading...</div>;
 
   return (
@@ -2467,13 +2551,13 @@ const FlowBuilder: React.FC = () => {
         onTidy={tidyFlow}
         onPublish={openPublishModal}
         onCloseEditor={handleCloseProcessEditor}
-        onHome={() => { setViewMode('dashboard'); setSelectedBot(null); setActiveProcessId(null); }}
+        onHome={() => { setSelectedBot(null); setActiveProcessId(null); setViewMode('home'); navigate('/dashboard'); }}
         onSimulatorOpen={() => setIsSimulatorOpen(true)}
         onSimulatorClose={() => { setIsSimulatorOpen(false); setSimulatorActiveNodeId(null); setSimulatorFixedProcessNodeId(null); }}
         onDuplicate={() => { setDuplicateName(`${fixedProcesses.find(p => p.id.toString() === activeProcessId)?.name || ''} (עותק)`); setIsDuplicateModalOpen(true); }}
         onChangeTemplate={() => setIsChangeTemplateModalOpen(true)}
-        onOpenContacts={() => setViewMode('contacts')}
-        onOpenSessions={() => { setSessionsOwnOnly(true); setViewMode('sessions'); }}
+        onOpenContacts={() => navigate('/contacts')}
+        onOpenSessions={() => { setSessionsOwnOnly(true); navigate('/sessions'); }}
         initialParams={selectedBot?.botParams}
         onNodeFocus={setSimulatorActiveNodeId}
         onFixedProcessActive={setSimulatorFixedProcessNodeId}
