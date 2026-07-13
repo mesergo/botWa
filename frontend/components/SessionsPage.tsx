@@ -154,6 +154,9 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
   const [showBotPicker, setShowBotPicker] = useState<boolean>(!initialPhone);
 
   const chatScrollRef = useRef<HTMLDivElement>(null);
+  const [visibleMsgLimit, setVisibleMsgLimit] = useState(50);
+  const [loadingMoreMsgs, setLoadingMoreMsgs] = useState(false);
+  const prevScrollHeightRef = useRef(0);
 
   // Fetch contacts (sorted most-recent-first by backend)
   const fetchContacts = React.useCallback(() => {
@@ -350,7 +353,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
     lastMsgCountRef.current = 0;
   }, [selectedPhone]);
 
-  // Clear message input when switching contacts
+  // Clear message input + pagination when switching contacts
   useEffect(() => {
     setAgentMessage('');
     setAttachedFile(null);
@@ -359,7 +362,21 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
     setSelectedTemplate(null);
     setTemplateParams({});
     setShowTemplateParamsModal(false);
+    setVisibleMsgLimit(50);
+    setLoadingMoreMsgs(false);
+    prevScrollHeightRef.current = 0;
   }, [selectedPhone]);
+
+  // Restore scroll position after loading older messages
+  useEffect(() => {
+    if (prevScrollHeightRef.current === 0) return;
+    const el = chatScrollRef.current;
+    if (el) {
+      el.scrollTop = el.scrollHeight - prevScrollHeightRef.current;
+    }
+    prevScrollHeightRef.current = 0;
+    setLoadingMoreMsgs(false);
+  }, [visibleMsgLimit]);
 
   // Detect agent mode from last session
   useEffect(() => {
@@ -1272,10 +1289,105 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
     }
   };
 
+  const openAdvancedSearch = () => {
+    const today = new Date().toISOString().split('T')[0];
+    const sixMonthsAgo = new Date(Date.now() - 183 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    setAdvancedQuery(contactSearch || '');
+    setAdvancedFrom(sixMonthsAgo);
+    setAdvancedTo(today);
+    setAdvancedResults([]);
+    setAdvancedSearchError(null);
+    setAdvancedDateError(null);
+    setShowAdvancedSearch(true);
+  };
+
+  const setAdvancedRange = (days: number) => {
+    setAdvancedTo(new Date().toISOString().split('T')[0]);
+    setAdvancedFrom(new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
+    setAdvancedDateError(null);
+  };
+
+  const runAdvancedSearch = async () => {
+    if (advancedQuery.trim().length < 2) { setAdvancedSearchError('יש להזין לפחות 2 תווים לחיפוש'); return; }
+    if (advancedFrom && advancedTo) {
+      const from = new Date(advancedFrom);
+      const to = new Date(advancedTo + 'T23:59:59');
+      if (from >= to) { setAdvancedDateError('תאריך התחלה חייב להיות לפני תאריך סיום'); return; }
+      if ((to.getTime() - from.getTime()) > 184 * 24 * 60 * 60 * 1000) { setAdvancedDateError('טווח תאריכים מקסימלי הוא 6 חודשים'); return; }
+    }
+    setAdvancedDateError(null);
+    setAdvancedSearchError(null);
+    setAdvancedSearchLoading(true);
+    try {
+      const params = new URLSearchParams({ q: advancedQuery.trim(), mode: 'advanced' });
+      if (advancedFrom) params.set('from', advancedFrom);
+      if (advancedTo) params.set('to', advancedTo + 'T23:59:59');
+      const r = await fetch(`${API_BASE}/sessions/search-messages?${params}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!r.ok) { const e = await r.json().catch(() => ({})); setAdvancedSearchError(e.error || `שגיאה ${r.status}`); return; }
+      setAdvancedResults(await r.json());
+    } catch { setAdvancedSearchError('שגיאת רשת'); }
+    finally { setAdvancedSearchLoading(false); }
+  };
+
   const [statusFilter, setStatusFilter] = useState<ConvStatus | 'all'>('all');
 
+  // Content search state
+  const [contentSearchResults, setContentSearchResults] = useState<{ phone: string; snippet: string; whatsapp_name?: string; full_name?: string; matchCount: number }[]>([]);
+  const [contentSearchLoading, setContentSearchLoading] = useState(false);
+  const [showContentResults, setShowContentResults] = useState(false);
+  const contentSearchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Advanced message search state
+  const [showAdvancedSearch, setShowAdvancedSearch] = useState(false);
+  const [advancedQuery, setAdvancedQuery] = useState('');
+  const [advancedFrom, setAdvancedFrom] = useState('');
+  const [advancedTo, setAdvancedTo] = useState('');
+  const [advancedResults, setAdvancedResults] = useState<{ phone: string; snippet: string; whatsapp_name?: string; full_name?: string; matchCount: number }[]>([]);
+  const [advancedSearchLoading, setAdvancedSearchLoading] = useState(false);
+  const [advancedSearchError, setAdvancedSearchError] = useState<string | null>(null);
+  const [advancedDateError, setAdvancedDateError] = useState<string | null>(null);
+
+  // Contacts list pagination
+  const [visibleContactsLimit, setVisibleContactsLimit] = useState(50);
+  const [loadingMoreContacts, setLoadingMoreContacts] = useState(false);
+  const contactsScrollRef = useRef<HTMLDivElement>(null);
+
+  // Trigger content search with debounce when contactSearch changes
+  useEffect(() => {
+    if (contentSearchTimerRef.current) clearTimeout(contentSearchTimerRef.current);
+    if (!contactSearch || contactSearch.length < 2) {
+      setContentSearchResults([]);
+      setShowContentResults(false);
+      return;
+    }
+    contentSearchTimerRef.current = setTimeout(() => {
+      if (!token) return;
+      setContentSearchLoading(true);
+      fetch(`${API_BASE}/sessions/search-messages?q=${encodeURIComponent(contactSearch)}&mode=basic`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+        .then(r => r.ok ? r.json() : Promise.reject(r))
+        .then(data => setContentSearchResults(data))
+        .catch(e => console.error('Content search failed', e))
+        .finally(() => setContentSearchLoading(false));
+    }, 450);
+  }, [contactSearch, token]);
+
+  // Reset contacts pagination when search or filters change
+  useEffect(() => {
+    setVisibleContactsLimit(50);
+    setLoadingMoreContacts(false);
+  }, [contactSearch, statusFilter, activeBotFilter]);
+
   const filteredContacts = contacts.filter(c => {
-    if (!c.phone.toLowerCase().includes(contactSearch.toLowerCase())) return false;
+    if (contactSearch) {
+      const q = contactSearch.toLowerCase();
+      const matchesPhone = c.phone.toLowerCase().includes(q);
+      const matchesName = (c.whatsapp_name || '').toLowerCase().includes(q) || (c.full_name || '').toLowerCase().includes(q);
+      if (!matchesPhone && !matchesName) return false;
+    }
     if (statusFilter !== 'all' && c.status !== statusFilter) return false;
     if (activeBotFilter) {
       // Match by bot flow id (widget-based sessions)
@@ -1287,6 +1399,26 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
     }
     return true;
   });
+
+  // Return only the last visibleMsgLimit messages across all sessions
+  const getVisibleSessions = (): Session[] => {
+    const totalMsgs = phoneSessions.reduce((acc, s) => acc + (s.process_history?.length || 0), 0);
+    if (totalMsgs <= visibleMsgLimit) return phoneSessions;
+    let toSkip = totalMsgs - visibleMsgLimit;
+    const result: Session[] = [];
+    for (const session of phoneSessions) {
+      const count = session.process_history?.length || 0;
+      if (toSkip >= count) {
+        toSkip -= count;
+      } else if (toSkip > 0) {
+        result.push({ ...session, process_history: session.process_history.slice(toSkip) });
+        toSkip = 0;
+      } else {
+        result.push(session);
+      }
+    }
+    return result;
+  };
 
   const selectedContact = contacts.find(c => c.phone === selectedPhone) ?? null;
 
@@ -1774,80 +1906,193 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
           </div>
 
           {/* Scrollable contacts list */}
-          <div className="flex-1 overflow-y-auto">
+          <div
+            ref={contactsScrollRef}
+            className="flex-1 overflow-y-auto"
+            onScroll={() => {
+              const el = contactsScrollRef.current;
+              if (!el || loadingMoreContacts) return;
+              if (el.scrollHeight - el.scrollTop - el.clientHeight < 100) {
+                if (visibleContactsLimit < filteredContacts.length) {
+                  setLoadingMoreContacts(true);
+                  setTimeout(() => {
+                    setVisibleContactsLimit(prev => prev + 50);
+                    setLoadingMoreContacts(false);
+                  }, 200);
+                }
+              }
+            }}
+          >
             {contactsLoading ? (
               <div className="flex items-center justify-center py-12">
                 <div className="animate-spin w-7 h-7 border-2 border-slate-200 border-t-sky-500 rounded-full" />
               </div>
-            ) : filteredContacts.length === 0 ? (
+            ) : filteredContacts.length === 0 && !contactSearch ? (
               <div className="flex flex-col items-center justify-center py-16 gap-3 text-slate-300 px-6 text-center">
                 <Users size={36} strokeWidth={1} />
                 <p className="text-sm font-bold">אין אנשי קשר</p>
               </div>
             ) : (
-              filteredContacts.map(contact => {
-                const sim = isSimulator(contact.phone);
-                const isSelected = selectedPhone === contact.phone;
-                return (
-                  <button
-                    key={contact.phone}
-                    onClick={() => setSelectedPhone(contact.phone)}
-                    className={`w-full px-4 py-3.5 flex items-center gap-3 text-right transition-colors border-b border-slate-50 relative
-                      ${isSelected ? 'bg-sky-50' : 'hover:bg-slate-50'}`}
-                  >
-                    {isSelected && (
-                      <span className="absolute right-0 top-0 bottom-0 w-1 bg-sky-500 rounded-l-full" />
-                    )}
-                    <div className={`w-10 h-10 rounded-2xl flex-shrink-0 flex items-center justify-center text-sm font-black
-                      ${isSelected ? 'bg-sky-500 text-white' : sim ? 'bg-blue-50 text-blue-400' : 'bg-slate-100 text-slate-500'}`}>
-                      {sim ? <MessageSquare size={16} /> : (contact.whatsapp_name || contact.full_name || contact.phone).charAt(0).toUpperCase()}
-                    </div>
-                    <div className="flex-1 min-w-0 flex items-center justify-between gap-2">
-                      <div className="min-w-0">
-                        <p className={`text-sm font-black truncate ${isSelected ? 'text-sky-700' : 'text-slate-800'}`}>
-                          {sim ? 'סימולטור' : contact.phone}
-                          {!sim && contact.whatsapp_name && (
-                            <span className={`text-sm font-semibold mr-1.5 ${isSelected ? 'text-sky-600' : 'text-slate-500'}`}>
-                              · {contact.whatsapp_name}
-                            </span>
-                          )}
-                        </p>
-                        {!sim && contact.full_name && (
-                          <p className="text-[10px] font-medium truncate text-slate-400">
-                            {contact.full_name}
+              <>
+                {filteredContacts.length === 0 && contactSearch && (
+                  <div className="flex flex-col items-center justify-center py-10 gap-2 text-slate-300 px-6 text-center">
+                    <Users size={28} strokeWidth={1} />
+                    <p className="text-xs font-bold">לא נמצאו תוצאות לפי שם / מספר</p>
+                  </div>
+                )}
+                {filteredContacts.slice(0, visibleContactsLimit).map(contact => {
+                  const sim = isSimulator(contact.phone);
+                  const isSelected = selectedPhone === contact.phone;
+                  return (
+                    <button
+                      key={contact.phone}
+                      onClick={() => setSelectedPhone(contact.phone)}
+                      className={`w-full px-4 py-3.5 flex items-center gap-3 text-right transition-colors border-b border-slate-50 relative
+                        ${isSelected ? 'bg-sky-50' : 'hover:bg-slate-50'}`}
+                    >
+                      {isSelected && (
+                        <span className="absolute right-0 top-0 bottom-0 w-1 bg-sky-500 rounded-l-full" />
+                      )}
+                      <div className={`w-10 h-10 rounded-2xl flex-shrink-0 flex items-center justify-center text-sm font-black
+                        ${isSelected ? 'bg-sky-500 text-white' : sim ? 'bg-blue-50 text-blue-400' : 'bg-slate-100 text-slate-500'}`}>
+                        {sim ? <MessageSquare size={16} /> : (contact.whatsapp_name || contact.full_name || contact.phone).charAt(0).toUpperCase()}
+                      </div>
+                      <div className="flex-1 min-w-0 flex items-center justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className={`text-sm font-black truncate ${isSelected ? 'text-sky-700' : 'text-slate-800'}`}>
+                            {sim ? 'סימולטור' : contact.phone}
+                            {!sim && contact.whatsapp_name && (
+                              <span className={`text-sm font-semibold mr-1.5 ${isSelected ? 'text-sky-600' : 'text-slate-500'}`}>
+                                · {contact.whatsapp_name}
+                              </span>
+                            )}
                           </p>
-                        )}
-                        <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                          <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-full
-                            ${isSelected ? 'bg-sky-200 text-sky-700' : 'bg-slate-100 text-slate-500'}`}>
-                            {contact.sessionCount} שיחות
-                          </span>
-                          {!sim && renderStatusBadge(contact.status)}
-                          {contact.wants_phone && (
-                            <span className="flex items-center gap-0.5 text-[9px] font-black px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 ring-1 ring-green-400/60 animate-pulse">
-                              <Phone size={9} />טלפוני
+                          {!sim && contact.full_name && (
+                            <p className="text-[10px] font-medium truncate text-slate-400">
+                              {contact.full_name}
+                            </p>
+                          )}
+                          <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                            <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-full
+                              ${isSelected ? 'bg-sky-200 text-sky-700' : 'bg-slate-100 text-slate-500'}`}>
+                              {contact.sessionCount} שיחות
                             </span>
+                            {!sim && renderStatusBadge(contact.status)}
+                            {contact.wants_phone && (
+                              <span className="flex items-center gap-0.5 text-[9px] font-black px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 ring-1 ring-green-400/60 animate-pulse">
+                                <Phone size={9} />טלפוני
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                          <span className="text-[11px] text-slate-400 font-semibold">
+                            {formatContactTime(contact.lastSeen)}
+                          </span>
+                          {!sim && onOpenContacts && (
+                            <button
+                              onClick={e => { e.stopPropagation(); onOpenContacts(contact.phone); }}
+                              title="פתח פרטי איש קשר"
+                              className="p-1 text-slate-300 hover:text-sky-500 hover:bg-sky-50 rounded-lg transition-colors"
+                            >
+                              <User size={13} />
+                            </button>
                           )}
                         </div>
                       </div>
-                      <div className="flex flex-col items-end gap-1 flex-shrink-0">
-                        <span className="text-[11px] text-slate-400 font-semibold">
-                          {formatContactTime(contact.lastSeen)}
-                        </span>
-                        {!sim && onOpenContacts && (
-                          <button
-                            onClick={e => { e.stopPropagation(); onOpenContacts(contact.phone); }}
-                            title="פתח פרטי איש קשר"
-                            className="p-1 text-slate-300 hover:text-sky-500 hover:bg-sky-50 rounded-lg transition-colors"
-                          >
-                            <User size={13} />
-                          </button>
+                    </button>
+                  );
+                })}
+                {loadingMoreContacts && (
+                  <div className="flex items-center justify-center gap-2 py-3">
+                    <div className="animate-spin w-4 h-4 border-2 border-slate-200 border-t-sky-500 rounded-full" />
+                    <span className="text-xs text-slate-400 font-semibold">טוען...</span>
+                  </div>
+                )}
+                {!loadingMoreContacts && visibleContactsLimit < filteredContacts.length && (
+                  <p className="text-center text-[10px] text-slate-300 font-semibold py-2">גלול למטה לצפייה בעוד {filteredContacts.length - visibleContactsLimit} אנשי קשר</p>
+                )}
+
+                {/* Content search results section */}
+                {contactSearch.length >= 2 && (
+                  <div className="border-t border-slate-100 mt-1">
+                    <div className="px-3 py-2 flex items-center justify-between gap-1 bg-slate-50/80">
+                      <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                        <Search size={11} className="text-slate-400 flex-shrink-0" />
+                        {contentSearchLoading ? (
+                          <span className="text-[10px] text-slate-400 font-semibold">מחפש...</span>
+                        ) : (
+                          <span className="text-[10px] text-slate-500 font-semibold truncate">
+                            <span className="font-black text-sky-600">{contentSearchResults.length}</span> תוצאות (50 הודעות אחרונות)
+                          </span>
                         )}
                       </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        {!contentSearchLoading && contentSearchResults.length > 0 && (
+                          <label className="flex items-center gap-1 cursor-pointer select-none">
+                            <input
+                              type="checkbox"
+                              checked={showContentResults}
+                              onChange={e => setShowContentResults(e.target.checked)}
+                              className="w-3 h-3 accent-sky-500 cursor-pointer"
+                            />
+                            <span className="text-[9px] font-black text-slate-600">הצג</span>
+                          </label>
+                        )}
+                        <button
+                          onClick={openAdvancedSearch}
+                          className="text-[9px] font-black text-indigo-500 hover:text-indigo-700 transition-colors"
+                          title="חיפוש מתקדם - עד 6 חודשים"
+                        >
+                          מתקדם →
+                        </button>
+                      </div>
                     </div>
-                  </button>
-                );
-              })
+
+                    {showContentResults && contentSearchResults.length > 0 && (
+                      <>
+                        {contentSearchResults
+                          .filter(cr => !filteredContacts.some(c => c.phone === cr.phone))
+                          .map(cr => {
+                            const isSelected = selectedPhone === cr.phone;
+                            const displayName = cr.whatsapp_name || cr.full_name || cr.phone;
+                            return (
+                              <button
+                                key={`content-${cr.phone}`}
+                                onClick={() => setSelectedPhone(cr.phone)}
+                                className={`w-full px-4 py-3 flex items-center gap-3 text-right transition-colors border-b border-slate-50 relative
+                                  ${isSelected ? 'bg-sky-50' : 'hover:bg-amber-50/60'}`}
+                              >
+                                {isSelected && (
+                                  <span className="absolute right-0 top-0 bottom-0 w-1 bg-sky-500 rounded-l-full" />
+                                )}
+                                <div className={`w-9 h-9 rounded-2xl flex-shrink-0 flex items-center justify-center text-sm font-black
+                                  ${isSelected ? 'bg-sky-500 text-white' : 'bg-amber-100 text-amber-600'}`}>
+                                  {displayName.charAt(0).toUpperCase()}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <p className={`text-sm font-black truncate ${isSelected ? 'text-sky-700' : 'text-slate-800'}`}>
+                                    {cr.phone}
+                                    {cr.whatsapp_name && (
+                                      <span className={`text-sm font-semibold mr-1.5 ${isSelected ? 'text-sky-600' : 'text-slate-500'}`}>
+                                        · {cr.whatsapp_name}
+                                      </span>
+                                    )}
+                                  </p>
+                                  {cr.snippet && (
+                                    <p className="text-[10px] text-amber-700 font-medium truncate mt-0.5 bg-amber-50 px-1.5 py-0.5 rounded">
+                                      {cr.snippet}
+                                    </p>
+                                  )}
+                                </div>
+                              </button>
+                            );
+                          })}
+                      </>
+                    )}
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>
@@ -2055,8 +2300,33 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 </div> 
               ) : ( 
                 /* Sessions ordered oldest (top) → newest (bottom) */
-                <div ref={chatScrollRef} className="flex-1 overflow-y-auto p-3" dir="rtl">
-                  {phoneSessions.map(session => (
+                <div
+                  ref={chatScrollRef}
+                  className="flex-1 overflow-y-auto p-3"
+                  dir="rtl"
+                  onScroll={() => {
+                    const el = chatScrollRef.current;
+                    if (!el || loadingMoreMsgs) return;
+                    if (el.scrollTop < 80) {
+                      const total = phoneSessions.reduce((acc, s) => acc + (s.process_history?.length || 0), 0);
+                      if (visibleMsgLimit < total) {
+                        prevScrollHeightRef.current = el.scrollHeight;
+                        setLoadingMoreMsgs(true);
+                        setVisibleMsgLimit(prev => prev + 50);
+                      }
+                    }
+                  }}
+                >
+                  {loadingMoreMsgs && (
+                    <div className="flex items-center justify-center gap-2 py-3">
+                      <div className="animate-spin w-4 h-4 border-2 border-slate-200 border-t-sky-500 rounded-full" />
+                      <span className="text-xs text-slate-400 font-semibold">טוען הודעות קודמות...</span>
+                    </div>
+                  )}
+                  {!loadingMoreMsgs && phoneSessions.reduce((acc, s) => acc + (s.process_history?.length || 0), 0) > visibleMsgLimit && (
+                    <p className="text-center text-[10px] text-slate-300 font-semibold py-2">גלול למעלה לצפייה בהודעות קודמות</p>
+                  )}
+                  {getVisibleSessions().map(session => (
                     <React.Fragment key={session.id}>
                       {/* Thin divider with session date and bot name */}
                       <div className="flex items-center gap-3 py-1.5">
@@ -2268,6 +2538,122 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
         </div>
 
       </div>
+      )}
+
+      {/* Advanced message search modal */}
+      {showAdvancedSearch && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" dir="rtl">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-xl w-full flex flex-col max-h-[88vh] overflow-hidden">
+            {/* Header */}
+            <div className="px-6 pt-6 pb-4 border-b border-slate-100 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center">
+                  <Search size={18} />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900">חיפוש מתקדם בהודעות</h3>
+                  <p className="text-xs text-slate-400 font-semibold">טווח תאריכים מקסימלי 6 חודשים</p>
+                </div>
+              </div>
+              <button onClick={() => setShowAdvancedSearch(false)} className="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-slate-100 text-slate-400 transition-colors">
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Search controls */}
+            <div className="px-6 py-4 border-b border-slate-100 space-y-3">
+              <div className="relative">
+                <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-300" size={15} />
+                <input
+                  type="text"
+                  className="w-full pr-9 pl-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all text-right font-medium"
+                  placeholder="חיפוש בתוכן הודעות..."
+                  value={advancedQuery}
+                  onChange={e => { setAdvancedQuery(e.target.value); setAdvancedSearchError(null); }}
+                  onKeyDown={e => e.key === 'Enter' && runAdvancedSearch()}
+                  autoFocus
+                />
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[10px] font-bold text-slate-400">טווח מהיר:</span>
+                {[{ label: 'חודש', days: 30 }, { label: '3 חודשים', days: 90 }, { label: 'חצי שנה', days: 183 }].map(opt => (
+                  <button key={opt.days} onClick={() => setAdvancedRange(opt.days)}
+                    className="text-[10px] font-black px-2.5 py-1 rounded-full border border-indigo-200 text-indigo-600 hover:bg-indigo-50 transition-colors">
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-end gap-2">
+                <div className="flex-1">
+                  <label className="text-[10px] font-black text-slate-500 block mb-1">מתאריך</label>
+                  <input type="date" value={advancedFrom} max={advancedTo || new Date().toISOString().split('T')[0]}
+                    onChange={e => { setAdvancedFrom(e.target.value); setAdvancedDateError(null); }}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all" />
+                </div>
+                <span className="text-slate-400 font-bold pb-2">—</span>
+                <div className="flex-1">
+                  <label className="text-[10px] font-black text-slate-500 block mb-1">עד תאריך</label>
+                  <input type="date" value={advancedTo} min={advancedFrom} max={new Date().toISOString().split('T')[0]}
+                    onChange={e => { setAdvancedTo(e.target.value); setAdvancedDateError(null); }}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all" />
+                </div>
+                <button onClick={runAdvancedSearch} disabled={advancedSearchLoading || advancedQuery.trim().length < 2}
+                  className="px-4 py-2 bg-indigo-500 text-white rounded-xl text-sm font-black hover:bg-indigo-600 transition-colors disabled:opacity-50 flex items-center gap-2 flex-shrink-0">
+                  {advancedSearchLoading ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : 'חפש'}
+                </button>
+              </div>
+              {advancedDateError && <p className="text-xs text-red-500 font-semibold">{advancedDateError}</p>}
+              {advancedSearchError && <p className="text-xs text-red-500 font-semibold">{advancedSearchError}</p>}
+            </div>
+
+            {/* Results */}
+            <div className="flex-1 overflow-y-auto">
+              {advancedSearchLoading ? (
+                <div className="flex items-center justify-center py-16">
+                  <div className="animate-spin w-8 h-8 border-2 border-slate-200 border-t-indigo-500 rounded-full" />
+                </div>
+              ) : advancedResults.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-14 gap-3 text-slate-300">
+                  <Search size={36} strokeWidth={1} />
+                  <p className="text-sm font-bold">{advancedQuery.trim().length >= 2 ? 'לא נמצאו תוצאות' : 'הזן טקסט ולחץ חפש'}</p>
+                </div>
+              ) : (
+                <>
+                  <p className="text-[10px] text-slate-400 font-semibold px-4 py-2 bg-slate-50 border-b border-slate-100">
+                    נמצאו <span className="font-black text-indigo-600">{advancedResults.length}</span> אנשי קשר עם הודעות תואמות
+                  </p>
+                  {advancedResults.map(cr => {
+                    const isSel = selectedPhone === cr.phone;
+                    const display = cr.whatsapp_name || cr.full_name || cr.phone;
+                    return (
+                      <button key={cr.phone}
+                        onClick={() => { setSelectedPhone(cr.phone); setShowAdvancedSearch(false); }}
+                        className={`w-full px-4 py-3.5 flex items-center gap-3 text-right transition-colors border-b border-slate-50 relative ${isSel ? 'bg-indigo-50' : 'hover:bg-slate-50'}`}>
+                        {isSel && <span className="absolute right-0 top-0 bottom-0 w-1 bg-indigo-500 rounded-l-full" />}
+                        <div className={`w-10 h-10 rounded-2xl flex-shrink-0 flex items-center justify-center text-sm font-black ${isSel ? 'bg-indigo-500 text-white' : 'bg-indigo-100 text-indigo-600'}`}>
+                          {display.charAt(0).toUpperCase()}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 justify-between">
+                            <p className={`text-sm font-black truncate ${isSel ? 'text-indigo-700' : 'text-slate-800'}`}>
+                              {cr.phone}{cr.whatsapp_name && <span className="font-semibold text-slate-500 mr-1.5"> · {cr.whatsapp_name}</span>}
+                            </p>
+                            {cr.matchCount > 1 && (
+                              <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-600 flex-shrink-0">{cr.matchCount} התאמות</span>
+                            )}
+                          </div>
+                          {cr.snippet && (
+                            <p className="text-[11px] text-slate-500 font-medium truncate mt-0.5 bg-amber-50 border border-amber-100 px-1.5 py-0.5 rounded">{cr.snippet}</p>
+                          )}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </>
+              )}
+            </div>
+          </div>
+        </div>
       )}
 
       {/* New conversation modal */}

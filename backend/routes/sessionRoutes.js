@@ -1,6 +1,6 @@
 
 import express from 'express';
-import { startSession, updateSessionParameters, addHistoryMessage, getContacts, getSessionsByPhone, getUserSessions, getAllSessions, toggleSessionActive, deactivateSession, setAgentMode, clearAgentMode, closeConversation, markResolved, sendAgentMessage, sendAdminMessageToSession, sendExternalMessage, getSessionMessages, sendTemplateToPhone, transferConversation, getTransferTargets, streamEvents, getUserStats } from '../controllers/sessionController.js';
+import { startSession, updateSessionParameters, addHistoryMessage, getContacts, searchMessageContent, getSessionsByPhone, getUserSessions, getAllSessions, toggleSessionActive, deactivateSession, setAgentMode, clearAgentMode, closeConversation, markResolved, sendAgentMessage, sendAdminMessageToSession, sendExternalMessage, getSessionMessages, sendTemplateToPhone, transferConversation, getTransferTargets, streamEvents, getUserStats } from '../controllers/sessionController.js';
 import { authenticateToken, optionalAuthToken, requireAdmin } from '../middleware/auth.js';
 
 const router = express.Router();
@@ -13,6 +13,9 @@ router.get('/stats', authenticateToken, getUserStats);
 
 // Authenticated route to get all contacts
 router.get('/contacts', authenticateToken, getContacts);
+
+// Search message content from last 14 days
+router.get('/search-messages', authenticateToken, searchMessageContent);
 
 // Authenticated route to get all sessions for a specific phone number (oldest→newest)
 router.get('/by-phone', authenticateToken, getSessionsByPhone);

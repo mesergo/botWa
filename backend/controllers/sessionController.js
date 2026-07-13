@@ -293,6 +293,111 @@ export const getContacts = async (req, res) => {
   }
 };
 
+// ── Search message content ─────────────────────────────────────────────────────
+// GET /api/sessions/search-messages?q=<text>&mode=basic|advanced&from=<date>&to=<date>
+// mode=basic  → search within the 50 most recent messages across last 30 sessions
+// mode=advanced → search within a custom date range (max 6 months)
+export const searchMessageContent = async (req, res) => {
+  const userId = getEffectiveUserId(req);
+  const q = (req.query.q || '').trim();
+  const mode = req.query.mode || 'basic';
+  if (!q || q.length < 2) return res.json([]);
+
+  try {
+    const userBots = await BotFlow.find({ user_id: userId });
+    const botIds = userBots.map(b => b._id.toString());
+    const userWidgets = await Widget.find({
+      $or: [
+        { user_id: userId },
+        { user_id: userId.toString() },
+        { flow_id: { $in: botIds } }
+      ]
+    }).select('id flow_id');
+    const widgetIds = userWidgets.map(w => w.id).filter(Boolean);
+
+    const collection = mongoose.connection.collection('BotSession');
+    const regex = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+    const userFilter = {
+      $or: [
+        { user_id: userId },
+        { user_id: userId.toString() },
+        { widget_id: { $in: widgetIds } },
+        { flow_id: { $in: botIds } }
+      ]
+    };
+
+    let sessions = [];
+
+    if (mode === 'basic') {
+      // Fetch the 30 most recent sessions and search within last 50 messages total
+      const recentSessions = await collection
+        .find(userFilter, { projection: { customer_phone: 1, sender: 1, process_history: 1, created_at: 1 } })
+        .sort({ created_at: -1 })
+        .limit(30)
+        .toArray();
+
+      let totalMsgs = 0;
+      for (const s of recentSessions) {
+        if (totalMsgs >= 50) break;
+        const remaining = 50 - totalMsgs;
+        const slicedHistory = (s.process_history || []).slice(-remaining);
+        totalMsgs += slicedHistory.length;
+        if (slicedHistory.some(h => regex.test(h.text || h.content || ''))) {
+          sessions.push({ ...s, process_history: slicedHistory });
+        }
+      }
+    } else {
+      // Advanced: validate and apply date range (max 6 months)
+      const sixMonthsMs = 183 * 24 * 60 * 60 * 1000;
+      const since = req.query.from ? new Date(req.query.from) : new Date(Date.now() - sixMonthsMs);
+      const until = req.query.to ? new Date(req.query.to) : new Date();
+      if (since >= until) return res.status(400).json({ error: 'תאריך התחלה חייב להיות לפני תאריך סיום' });
+      if ((until.getTime() - since.getTime()) > sixMonthsMs) {
+        return res.status(400).json({ error: 'טווח תאריכים מקסימלי הוא 6 חודשים' });
+      }
+      sessions = await collection.find({
+        $and: [
+          userFilter,
+          { $or: [{ created_at: { $gte: since, $lte: until } }, { createdAt: { $gte: since, $lte: until } }] },
+          { process_history: { $elemMatch: { $or: [{ text: regex }, { content: regex }] } } }
+        ]
+      }, { projection: { customer_phone: 1, sender: 1, process_history: 1, created_at: 1 } }).limit(300).toArray();
+    }
+
+    // Enrich with contact names
+    const phones = [...new Set(sessions.map(s => s.sender || s.customer_phone).filter(Boolean))];
+    const contactDocs = await Contact.find({ user_id: userId, phone: { $in: phones } })
+      .select('phone whatsapp_name full_name').lean();
+    const nameMap = {};
+    contactDocs.forEach(c => { nameMap[c.phone] = { whatsapp_name: c.whatsapp_name || '', full_name: c.full_name || '' }; });
+
+    // Group by contact phone, extract best matching snippet
+    const byPhone = {};
+    for (const s of sessions) {
+      const phone = s.sender || s.customer_phone;
+      if (!phone) continue;
+      if (!byPhone[phone]) byPhone[phone] = { phone, snippet: null, matchCount: 0, ...nameMap[phone] };
+      for (const h of (s.process_history || [])) {
+        const txt = h.text || h.content || '';
+        if (regex.test(txt)) {
+          byPhone[phone].matchCount++;
+          if (!byPhone[phone].snippet) {
+            const idx = txt.search(regex);
+            const start = Math.max(0, idx - 20);
+            const end = Math.min(txt.length, idx + q.length + 40);
+            byPhone[phone].snippet = (start > 0 ? '...' : '') + txt.slice(start, end) + (end < txt.length ? '...' : '');
+          }
+        }
+      }
+    }
+
+    res.json(Object.values(byPhone));
+  } catch (err) {
+    console.error('searchMessageContent error:', err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
 export const getUserSessions = async (req, res) => {
   const userId = getEffectiveUserId(req);
   try {

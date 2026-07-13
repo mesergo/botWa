@@ -1,5 +1,5 @@
 import React from 'react';
-import { Bot, MessageSquare, Users, Settings, LogOut, Shield, ArrowLeft } from 'lucide-react';
+import { Bot, MessageSquare, Users, Settings, LogOut, Shield, ArrowLeft, LayoutDashboard, Layers } from 'lucide-react';
 import { User } from '../types';
 import { usePermission } from '../hooks/usePermission';
 import DashboardStats from './DashboardStats';
@@ -13,6 +13,26 @@ interface HomePageProps {
   onOpenAdminPanel?: () => void;
   onLogout: () => void;
 }
+
+// Sidebar nav items definition
+type NavId = 'home' | 'bots' | 'chats' | 'contacts' | 'settings';
+
+interface SideNavItem {
+  id: NavId;
+  label: string;
+  Icon: React.FC<{ size?: number; className?: string }>;
+  color: string;
+  permission?: string;
+  adminOnly?: boolean;
+}
+
+const SIDE_NAV: SideNavItem[] = [
+  { id: 'home',     label: 'סקירה כללית',  Icon: LayoutDashboard, color: 'text-blue-600' },
+  { id: 'bots',     label: 'הבוטים שלי',   Icon: Bot,             color: 'text-blue-600',    permission: 'bots.view_tab' },
+  { id: 'chats',    label: 'שיחות',         Icon: MessageSquare,   color: 'text-emerald-600', permission: 'sessions.view' },
+  { id: 'contacts', label: 'אנשי קשר',     Icon: Users,           color: 'text-violet-600',  permission: 'contacts.view' },
+  { id: 'settings', label: 'הגדרות',        Icon: Settings,        color: 'text-slate-500',   permission: 'settings.view' },
+];
 
 const tiles = [
   {
@@ -135,18 +155,60 @@ const HomePage: React.FC<HomePageProps> = ({
           )}
         </div>
 
-        {/* Actions */}
-        <div className="flex flex-col gap-2 px-4 pt-5">
+        {/* Nav items */}
+        <nav className="flex flex-col gap-0.5 px-3 pt-5">
+          <p className="px-3 pb-2 text-[10px] font-semibold text-slate-400 uppercase tracking-widest">תפריט</p>
           {currentUser?.role === 'admin' && onOpenAdminPanel && (
             <button
               onClick={onOpenAdminPanel}
-              className="flex items-center gap-2.5 px-4 py-2.5 bg-blue-50 text-blue-700 rounded-xl font-semibold text-sm hover:bg-blue-100 transition-colors w-full"
+              className="flex items-center gap-3 px-4 py-3 text-slate-500 hover:bg-slate-50 hover:text-slate-800 rounded-xl font-semibold text-sm transition-all duration-200 w-full group"
             >
-              <Shield size={15} />
-              ניהול מערכת
+              <Shield size={18} className="flex-shrink-0 text-slate-400 group-hover:text-slate-600" />
+              <span className="tracking-tight">ניהול מערכת</span>
             </button>
           )}
-        </div>
+          {SIDE_NAV.filter(({ permission }) => !permission || can(permission as any)).map(({ id, label, Icon }) => {
+            const isActive = id === 'home';
+            const handler =
+              id === 'bots'     ? onGoToBots
+              : id === 'chats'    ? onGoToChats
+              : id === 'contacts' ? onGoToContacts
+              : id === 'settings' ? onGoToSettings
+              : undefined;
+            return (
+              <button
+                key={id}
+                onClick={handler}
+                disabled={isActive}
+                className={`relative flex items-center gap-3 px-4 py-3 rounded-xl font-semibold text-sm transition-all duration-200 w-full group overflow-hidden ${
+                  isActive
+                    ? 'cursor-default'
+                    : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'
+                }`}
+                style={
+                  isActive
+                    ? {
+                        background: 'linear-gradient(90deg, rgb(219 234 254) 0%, rgb(239 246 255) 100%)',
+                        color: 'rgb(37 99 235)',
+                      }
+                    : {}
+                }
+              >
+                {isActive && (
+                  <span
+                    className="absolute right-0 top-2 bottom-2 w-1 rounded-l-full"
+                    style={{ backgroundColor: 'rgb(37 99 235)' }}
+                  />
+                )}
+                <Icon
+                  size={18}
+                  className={`flex-shrink-0 transition-colors ${isActive ? '' : 'text-slate-400 group-hover:text-slate-600'}`}
+                />
+                <span className="tracking-tight">{label}</span>
+              </button>
+            );
+          })}
+        </nav>
 
         {/* Logout */}
         <div className="mt-auto px-4 pb-6">

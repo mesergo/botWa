@@ -751,7 +751,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
             <div
               title={currentUser?.name || currentUser?.email || ''}
               className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-sm shadow-md select-none cursor-pointer hover:scale-105 transition-transform"
-              onClick={() => setActiveTab('bots')}
+              onClick={() => { setSettingsSection('profile'); setActiveTab('settings'); }}
             >
               {(currentUser?.name?.charAt(0) || currentUser?.email?.charAt(0) || '?').toUpperCase()}
             </div>

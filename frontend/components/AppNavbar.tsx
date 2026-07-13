@@ -90,7 +90,8 @@ const AppNavbar: React.FC<AppNavbarProps> = ({
         )}
         <div
           title={currentUser?.name || currentUser?.email || ''}
-          className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-sm shadow-md select-none"
+          onClick={onNavigateSettings}
+          className={`w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-sm shadow-md select-none${onNavigateSettings ? ' cursor-pointer hover:opacity-80 transition-opacity' : ''}`}
         >
           {firstName}
         </div>
