@@ -132,6 +132,7 @@ export interface UserTypePermissions {
   settings: { view: boolean; edit_profile: boolean };
   users:    { view: boolean; add: boolean; edit: boolean; delete: boolean };
   rep_groups: { view: boolean; add: boolean; delete: boolean };
+  sms_in:   { view: boolean };
 }
 
 export interface UserType {

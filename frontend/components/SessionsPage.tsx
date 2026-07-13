@@ -37,6 +37,7 @@ interface SessionsPageProps {
   onLogout: () => void;
   onOpenContacts?: (phone?: string) => void;
   onOpenGroups?: () => void;
+  onOpenSmsIn?: () => void;
   onOpenAdminPanel?: () => void;
   onOpenSettings?: () => void;
   onOpenSubUsers?: () => void;
@@ -50,7 +51,7 @@ const API_BASE = window.location.hostname === 'localhost'
   ? 'http://localhost:3001/api'
   : `${window.location.origin}/api`;
 
-const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack, onLogout, onOpenContacts, onOpenGroups, onOpenAdminPanel, onOpenSettings, onOpenSubUsers, onStopImpersonation, onUpdateAvailability, initialPhone }) => {
+const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack, onLogout, onOpenContacts, onOpenGroups, onOpenSmsIn, onOpenAdminPanel, onOpenSettings, onOpenSubUsers, onStopImpersonation, onUpdateAvailability, initialPhone }) => {
   // Contacts panel state
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [contactsLoading, setContactsLoading] = useState(true);
@@ -1351,6 +1352,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
               onBots={onBack && can('bots.view_tab') ? onBack : undefined}
               onContacts={onOpenContacts ? () => onOpenContacts() : undefined}
               onGroups={onOpenGroups}
+              onSmsIn={onOpenSmsIn}
               onSettings={onOpenSettings}
               onUsers={onOpenSubUsers && can('users.view') ? onOpenSubUsers : undefined}
             />
@@ -1420,6 +1422,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
             onSessions={botList.length > 1 ? () => { setActiveBotFilter(null); setSelectedPhone(null); setShowBotPicker(true); } : undefined}
             onContacts={onOpenContacts ? () => onOpenContacts() : undefined}
             onGroups={onOpenGroups}
+            onSmsIn={onOpenSmsIn}
             onSettings={onOpenSettings}
             onUsers={onOpenSubUsers && can('users.view') ? onOpenSubUsers : undefined}
           />

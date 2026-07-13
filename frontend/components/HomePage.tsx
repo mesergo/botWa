@@ -1,5 +1,5 @@
 import React from 'react';
-import { Bot, MessageSquare, Users, Settings, LogOut, Shield, ArrowLeft } from 'lucide-react';
+import { Bot, MessageSquare, Users, Settings, LogOut, Shield, ArrowLeft, Inbox } from 'lucide-react';
 import { User } from '../types';
 import { usePermission } from '../hooks/usePermission';
 
@@ -8,6 +8,7 @@ interface HomePageProps {
   onGoToBots: () => void;
   onGoToChats: () => void;
   onGoToContacts: () => void;
+  onGoToSmsIn?: () => void;
   onGoToSettings: () => void;
   onOpenAdminPanel?: () => void;
   onLogout: () => void;
@@ -48,6 +49,17 @@ const tiles = [
     badge: null,
   },
   {
+    id: 'sms_in' as const,
+    label: 'SMS נכנס',
+    description: 'הודעות SMS נכנסות וניתוב קווים',
+    icon: Inbox,
+    iconBg: 'bg-sky-50',
+    iconColor: 'text-sky-600',
+    accent: 'group-hover:border-sky-200',
+    arrowColor: 'text-sky-400',
+    badge: null,
+  },
+  {
     id: 'settings' as const,
     label: 'הגדרות',
     description: 'הגדרות חשבון ופרופיל',
@@ -65,6 +77,7 @@ const HomePage: React.FC<HomePageProps> = ({
   onGoToBots,
   onGoToChats,
   onGoToContacts,
+  onGoToSmsIn,
   onGoToSettings,
   onOpenAdminPanel,
   onLogout,
@@ -75,6 +88,7 @@ const HomePage: React.FC<HomePageProps> = ({
     if (id === 'bots')     return can('bots.view_tab');
     if (id === 'chats')    return can('sessions.view');
     if (id === 'contacts') return can('contacts.view');
+    if (id === 'sms_in')   return can('sms_in.view') && !!onGoToSmsIn;
     if (id === 'settings') return can('settings.view');
     return true;
   });
@@ -83,6 +97,7 @@ const HomePage: React.FC<HomePageProps> = ({
     if (id === 'bots') onGoToBots();
     else if (id === 'chats') onGoToChats();
     else if (id === 'contacts') onGoToContacts();
+    else if (id === 'sms_in') onGoToSmsIn?.();
     else if (id === 'settings') onGoToSettings();
   };
 

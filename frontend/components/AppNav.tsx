@@ -1,7 +1,7 @@
 import React from 'react';
-import { Bot, List, Users, Layers, Settings, UserCog } from 'lucide-react';
+import { Bot, List, Users, Layers, Settings, UserCog, MessageSquare } from 'lucide-react';
 
-export type NavPage = 'bots' | 'sessions' | 'contacts' | 'groups' | 'settings' | 'users';
+export type NavPage = 'bots' | 'sessions' | 'contacts' | 'groups' | 'sms_in' | 'settings' | 'users';
 
 interface AppNavProps {
   /** The currently active page — shown highlighted, button disabled */
@@ -11,6 +11,7 @@ interface AppNavProps {
   onSessions?: () => void;
   onContacts?: () => void;
   onGroups?: () => void;
+  onSmsIn?: () => void;
   onSettings?: () => void;
   onUsers?: () => void;
   /** 'sidebar' = vertical panel (right side), 'tabs' = horizontal pill bar in navbar */
@@ -22,6 +23,7 @@ const NAV_ITEMS: { key: NavPage; label: string; Icon: React.FC<{ size?: number; 
   { key: 'sessions', label: 'שיחות',       Icon: List },
   { key: 'contacts', label: 'אנשי קשר',   Icon: Users },
   { key: 'groups',   label: 'רשימות תפוצה', Icon: Layers },
+  { key: 'sms_in',   label: 'SMS נכנס',      Icon: MessageSquare },
   { key: 'settings', label: 'הגדרות',      Icon: Settings },
   { key: 'users',    label: 'משתמשים',     Icon: UserCog },
 ];
@@ -32,6 +34,7 @@ const AppNav: React.FC<AppNavProps> = ({
   onSessions,
   onContacts,
   onGroups,
+  onSmsIn,
   onSettings,
   onUsers,
   mode = 'sidebar',
@@ -41,6 +44,7 @@ const AppNav: React.FC<AppNavProps> = ({
     sessions: onSessions,
     contacts: onContacts,
     groups: onGroups,
+    sms_in: onSmsIn,
     settings: onSettings,
     users: onUsers,
   };

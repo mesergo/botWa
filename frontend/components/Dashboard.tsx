@@ -24,6 +24,7 @@ interface DashboardProps {
   onOpenContacts?: () => void;
   onOpenSessions?: () => void;
   onOpenGroups?: () => void;
+  onOpenSmsIn?: () => void;
   onConnectFacebook?: (bot: BotFlow) => Promise<void>;
   onUpdateBotPublicId?: (id: string, publicId: string) => Promise<void>;
   onUpdateBotEndpoint?: (id: string, endpoint: string) => Promise<void>;
@@ -144,7 +145,7 @@ const AvailabilityBadge: React.FC<{
   );
 };
 
-const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, onDeleteBot, onSetDefaultBot, onLogout, currentUser, onOpenAdminPanel, onStopImpersonation, onOpenContacts, onOpenSessions, onOpenGroups, onConnectFacebook, onUpdateBotPublicId, onUpdateBotEndpoint, onUpdateAvailability, token, initialTab }) => {
+const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, onDeleteBot, onSetDefaultBot, onLogout, currentUser, onOpenAdminPanel, onStopImpersonation, onOpenContacts, onOpenSessions, onOpenGroups, onOpenSmsIn, onConnectFacebook, onUpdateBotPublicId, onUpdateBotEndpoint, onUpdateAvailability, token, initialTab }) => {
   const can = usePermission(currentUser as User | null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newBotName, setNewBotName] = useState('');
@@ -593,6 +594,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
           onSessions={onOpenSessions && can('sessions.view') ? onOpenSessions : undefined}
           onContacts={onOpenContacts && can('contacts.view') ? onOpenContacts : undefined}
           onGroups={onOpenGroups && can('groups.view') ? onOpenGroups : undefined}
+          onSmsIn={onOpenSmsIn && can('sms_in.view') ? onOpenSmsIn : undefined}
           onSettings={can('settings.view') ? () => setActiveTab('settings') : undefined}
           onUsers={can('users.view') ? () => setActiveTab('users') : undefined}
         />

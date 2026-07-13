@@ -42,13 +42,19 @@ async function connectDB() {
     console.error(`   Message: ${error.message}`);
     console.error(`   Code: ${error.code || 'N/A'}`);
     
-    if (error.message.includes('ECONNREFUSED') || error.message.includes('connection refused')) {
+    if (error.message.includes('querySrv') || error.message.includes('ECONNREFUSED')) {
       console.error('');
-      console.error('💡 Connection Refused!');
-      console.error('   Please ensure MongoDB is running locally:');
-      console.error('   1. Start MongoDB service');
-      console.error('   2. Or run: mongod --dbpath /path/to/your/db');
-      console.error('   3. Check if port 27017 is available');
+      if ((process.env.MONGODB_URI || '').includes('mongodb+srv')) {
+        console.error('💡 MongoDB Atlas unreachable (DNS/network blocked)');
+        console.error('   - Check internet connection');
+        console.error('   - Verify cluster is active in Atlas dashboard');
+        console.error('   - For local dev, use: MONGODB_URI=mongodb://localhost:27017/flowbot');
+      } else {
+        console.error('💡 Connection Refused — MongoDB is not running locally');
+        console.error('   1. Start MongoDB service:  net start MongoDB');
+        console.error('   2. Or run: mongod --dbpath C:\\data\\db');
+        console.error('   3. Check port 27017 is free');
+      }
       console.error('');
     } else if (error.message.includes('authentication') || error.message.includes('password')) {
       console.error('');

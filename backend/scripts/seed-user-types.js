@@ -19,7 +19,8 @@ const SEEDED_TYPES = [
       groups:   { view: true, create: true, add_contact: true, send_message: true, remove_contact: true },
       settings: { view: true, edit_profile: true },
       users:    { view: true, add: true, edit: true, delete: true },
-      rep_groups: { view: true, add: true, delete: true }
+      rep_groups: { view: true, add: true, delete: true },
+      sms_in:   { view: true }
     }
   },
   {
@@ -35,7 +36,8 @@ const SEEDED_TYPES = [
       groups:   { view: true, create: true, add_contact: true, send_message: true, remove_contact: true },
       settings: { view: true, edit_profile: true },
       users:    { view: true, add: true, edit: true, delete: true },
-      rep_groups: { view: true, add: true, delete: true }
+      rep_groups: { view: true, add: true, delete: true },
+      sms_in:   { view: true }
     }
   },
   {
@@ -51,7 +53,8 @@ const SEEDED_TYPES = [
       groups:   { view: true, create: false, add_contact: false, send_message: true, remove_contact: false },
       settings: { view: true, edit_profile: true },
       users:    { view: false, add: false, edit: false, delete: false },
-      rep_groups: { view: false, add: false, delete: false }
+      rep_groups: { view: false, add: false, delete: false },
+      sms_in:   { view: false }
     }
   },
   {
@@ -67,7 +70,8 @@ const SEEDED_TYPES = [
       groups:   { view: true, create: false, add_contact: false, send_message: false, remove_contact: false },
       settings: { view: true, edit_profile: true },
       users:    { view: false, add: false, edit: false, delete: false },
-      rep_groups: { view: false, add: false, delete: false }
+      rep_groups: { view: false, add: false, delete: false },
+      sms_in:   { view: false }
     }
   }
 ];
@@ -93,7 +97,20 @@ export const seedUserTypes = async () => {
     const all = seeded.map(t => t._id);
     await UserType.updateOne({ _id: byRole.admin._id }, { $set: { allowed_user_type_ids: all } });
   }
-  // rep_manager and rep default to empty — no need to update if already empty
+
+  // Ensure sms_in permission exists on seeded types (idempotent patch for existing DBs)
+  await UserType.updateOne(
+    { system_role: 'admin', is_seeded: true },
+    { $set: { 'permissions.sms_in': { view: true } } }
+  );
+  await UserType.updateOne(
+    { system_role: 'user', is_seeded: true },
+    { $set: { 'permissions.sms_in': { view: true } } }
+  );
+  await UserType.updateMany(
+    { system_role: { $in: ['rep_manager', 'rep'] }, is_seeded: true },
+    { $set: { 'permissions.sms_in': { view: false } } }
+  );
 };
 
 export default seedUserTypes;

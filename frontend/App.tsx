@@ -12,6 +12,7 @@ import TemplateForm from './components/TemplateForm';
 import ContactsPage from './components/ContactsPage';
 import SessionsPage from './components/SessionsPage';
 import GroupsPage from './components/GroupsPage';
+import SmsInPage from './components/SmsInPage';
 import { StartNode, InputTextNode, InputDateNode, InputFileNode, OutputTextNode, OutputImageNode, OutputLinkNode, OutputMenuNode, ActionWebServiceNode, ActionWaitNode, ActionTimeRoutingNode, ActionAddToGroupNode, ActionRemoveFromGroupNode, ActionTransferToAgentNode, FixedProcessNode, AutomaticResponsesNode } from './components/nodes/CustomNodes';
 import ButtonEdge from './components/edges/ButtonEdge';
 import { CloudUpload, RotateCcw, Plus, AlertTriangle, Copy, X, Lock, Wallet, Sliders, Save } from 'lucide-react';
@@ -100,7 +101,7 @@ function isStoredTokenExpired(): boolean {
   }
 }
 
-type ViewMode = 'home' | 'dashboard' | 'editor' | 'editing-process' | 'viewing-process' | 'simulator-only' | 'template-selection' | 'template-form' | 'admin-panel' | 'editing-template' | 'creating-template' | 'contacts' | 'sessions' | 'groups';
+type ViewMode = 'home' | 'dashboard' | 'editor' | 'editing-process' | 'viewing-process' | 'simulator-only' | 'template-selection' | 'template-form' | 'admin-panel' | 'editing-template' | 'creating-template' | 'contacts' | 'sessions' | 'groups' | 'sms_in';
 
 const FlowBuilder: React.FC = () => {
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
@@ -1995,6 +1996,7 @@ const FlowBuilder: React.FC = () => {
         onGoToBots={() => setViewMode('dashboard')}
         onGoToChats={() => { setSessionsOwnOnly(true); setViewMode('sessions'); }}
         onGoToContacts={() => setViewMode('contacts')}
+        onGoToSmsIn={can('sms_in.view') ? () => setViewMode('sms_in') : undefined}
         onGoToSettings={() => { setDashboardInitialTab('settings'); setViewMode('dashboard'); }}
         onOpenAdminPanel={currentUser?.role === 'admin' ? () => setViewMode('admin-panel') : undefined}
         onLogout={handleLogout}
@@ -2011,6 +2013,7 @@ const FlowBuilder: React.FC = () => {
         onLogout={() => { localStorage.clear(); window.location.reload(); }}
         onOpenSessions={can('sessions.view') ? (phone?: string) => { setSessionsInitialPhone(phone ?? null); setSessionsOwnOnly(true); setViewMode('sessions'); } : undefined}
         onOpenGroups={can('groups.view') ? () => setViewMode('groups') : undefined}
+        onOpenSmsIn={can('sms_in.view') ? () => setViewMode('sms_in') : undefined}
         onOpenAdminPanel={() => setViewMode('admin-panel')}
         onOpenSettings={can('settings.view') ? () => { setDashboardInitialTab('settings'); setViewMode('dashboard'); } : undefined}
         onOpenSubUsers={can('users.view') ? () => { setDashboardInitialTab('users'); setViewMode('dashboard'); } : undefined}
@@ -2029,6 +2032,25 @@ const FlowBuilder: React.FC = () => {
         onLogout={() => { localStorage.clear(); window.location.reload(); }}
         onOpenContacts={can('contacts.view') ? (phone?: string) => { setContactsInitialPhone(phone ?? null); setViewMode('contacts'); } : undefined}
         onOpenSessions={can('sessions.view') ? (phone?: string) => { setSessionsInitialPhone(phone ?? null); setSessionsOwnOnly(true); setViewMode('sessions'); } : undefined}
+        onOpenSmsIn={can('sms_in.view') ? () => setViewMode('sms_in') : undefined}
+        onOpenAdminPanel={() => setViewMode('admin-panel')}
+        onOpenSettings={can('settings.view') ? () => { setDashboardInitialTab('settings'); setViewMode('dashboard'); } : undefined}
+        onOpenSubUsers={can('users.view') ? () => { setDashboardInitialTab('users'); setViewMode('dashboard'); } : undefined}
+        onStopImpersonation={handleStopImpersonation}
+      />
+    );
+  }
+
+  if (viewMode === 'sms_in') {
+    return (
+      <SmsInPage
+        token={token}
+        currentUser={currentUser}
+        onBack={() => { setDashboardInitialTab('bots'); setViewMode('dashboard'); }}
+        onLogout={() => { localStorage.clear(); window.location.reload(); }}
+        onOpenContacts={can('contacts.view') ? (phone?: string) => { setContactsInitialPhone(phone ?? null); setViewMode('contacts'); } : undefined}
+        onOpenSessions={can('sessions.view') ? (phone?: string) => { setSessionsInitialPhone(phone ?? null); setSessionsOwnOnly(true); setViewMode('sessions'); } : undefined}
+        onOpenGroups={can('groups.view') ? () => setViewMode('groups') : undefined}
         onOpenAdminPanel={() => setViewMode('admin-panel')}
         onOpenSettings={can('settings.view') ? () => { setDashboardInitialTab('settings'); setViewMode('dashboard'); } : undefined}
         onOpenSubUsers={can('users.view') ? () => { setDashboardInitialTab('users'); setViewMode('dashboard'); } : undefined}
@@ -2046,6 +2068,7 @@ const FlowBuilder: React.FC = () => {
         onLogout={() => { localStorage.clear(); window.location.reload(); }}
         onOpenContacts={can('contacts.view') ? (phone?: string) => { setContactsInitialPhone(phone ?? null); setViewMode('contacts'); } : undefined}
         onOpenGroups={can('groups.view') ? () => setViewMode('groups') : undefined}
+        onOpenSmsIn={can('sms_in.view') ? () => setViewMode('sms_in') : undefined}
         onOpenAdminPanel={() => setViewMode('admin-panel')}
         ownOnly={sessionsOwnOnly}
         initialPhone={sessionsInitialPhone}
@@ -2072,6 +2095,7 @@ const FlowBuilder: React.FC = () => {
           onOpenContacts={() => setViewMode('contacts')}
           onOpenSessions={() => { setSessionsOwnOnly(true); setViewMode('sessions'); }}
           onOpenGroups={() => setViewMode('groups')}
+          onOpenSmsIn={can('sms_in.view') ? () => setViewMode('sms_in') : undefined}
           onStopImpersonation={handleStopImpersonation}
           onConnectFacebook={(can('bots.publish') || currentUser?.isImpersonating) ? handleConnectFacebook : undefined}
           onUpdateBotPublicId={handleUpdateBotPublicId}
