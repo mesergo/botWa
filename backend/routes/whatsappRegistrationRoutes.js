@@ -8,6 +8,7 @@ import {
   assignToBot,
   unassignFromBot,
   markRegistered,
+  removeConnectedNumber,
   createPhpAccount
 } from '../controllers/whatsappRegistrationController.js';
 
@@ -30,6 +31,7 @@ router.get('/connected-numbers', authenticateJwtOrApiToken, listConnectedNumbers
 router.post('/assign-to-bot', authenticateJwtOrApiToken, assignToBot);
 router.post('/unassign-from-bot', authenticateJwtOrApiToken, unassignFromBot);
 router.post('/mark-registered', authenticateJwtOrApiToken, markRegistered);
+router.post('/remove-connected-number', authenticateJwtOrApiToken, removeConnectedNumber);
 
 // Stage 5: provision external dialog360/accounts/users via facebook-create.php.
 // Can be called standalone or chained after Stage 4 from the frontend.

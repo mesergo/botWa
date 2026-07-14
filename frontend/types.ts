@@ -98,6 +98,10 @@ export interface BotFlow {
   created_at: string;
   is_default?: boolean;
   display_phone_number?: string;
+  /** Provider for connected WhatsApp number: 'facebook' or 'dialog360' */
+  whatsapp_provider?: 'facebook' | 'dialog360';
+  /** Dialog360 webhook link */
+  dialog360_link?: string;
   /** Parameter values filled by the user when this bot was created from a template */
   botParams?: Record<string, string>;
   /** External endpoint identifier */

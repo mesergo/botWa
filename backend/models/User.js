@@ -29,7 +29,12 @@ const userSchema = new mongoose.Schema({
       registered: { type: Boolean, default: false },
       pin: { type: String, default: '' },
       assigned_bot_id: { type: mongoose.Schema.Types.ObjectId, ref: 'BotFlow', default: null },
-      connected_at: { type: Date, default: Date.now }
+      connected_at: { type: Date, default: Date.now },
+      // Provider: 'facebook' (default) or 'dialog360'
+      provider: { type: String, default: 'facebook' },
+      // Dialog360-specific fields
+      token360: { type: String, default: '' },
+      link: { type: String, default: '' }
     }],
     default: []
   },

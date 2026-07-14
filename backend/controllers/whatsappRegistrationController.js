@@ -218,7 +218,77 @@ export const activateNumber = async (req, res) => {
  */
 export const linkNumber = async (req, res) => {
   const userId = req.user?.id;
-  const b = normalizeLinkBody(req.body || {});
+  const raw = req.body || {};
+
+  // ── Dialog360 path ──────────────────────────────────────────────────────────
+  if (raw.type === 'dialog360') {
+    const { token360, link } = raw;
+    if (!token360) return res.status(400).json({ error: 'missing_token360' });
+    if (!link) return res.status(400).json({ error: 'missing_link' });
+
+    const phone_number_id = link;
+    const tag = `[WA-Link-D360 user=${userId} link=${link}]`;
+
+    try {
+      const user = await User.findById(userId);
+      if (!user) return res.status(404).json({ error: 'user_not_found' });
+
+      const existing = (user.connected_numbers || []).find(n => n.phone_number_id === phone_number_id);
+
+      if (!existing) {
+        const limits = await getUserLimits(user);
+        const currentCount = (user.connected_numbers || []).length;
+        if (currentCount >= limits.maxConnectedNumbers) {
+          return res.status(403).json({
+            error: 'quota_exceeded',
+            message: 'המכסה נגמרה. יש ליצור קשר עם המשרד לתשלום להוספת מספר.',
+            current: currentCount,
+            max: limits.maxConnectedNumbers
+          });
+        }
+      }
+
+      const payload = {
+        phone_number_id,
+        provider: 'dialog360',
+        token360,
+        link,
+        display_phone_number: raw.display_phone_number || existing?.display_phone_number || link,
+        verified_name: raw.verified_name || existing?.verified_name || '',
+        waba_id: existing?.waba_id || '',
+        quality_rating: existing?.quality_rating || '',
+        whatsapp_status: existing?.whatsapp_status || 'CONNECTED',
+        access_token: '',
+        registered: true,
+        pin: '',
+        assigned_bot_id: existing?.assigned_bot_id || null,
+        connected_at: existing?.connected_at || new Date()
+      };
+
+      if (existing) {
+        Object.assign(existing, payload);
+        console.log(`${tag} updated existing dialog360 entry`);
+      } else {
+        user.connected_numbers.push(payload);
+        console.log(`${tag} added new dialog360 entry`);
+      }
+
+      await user.save();
+      return res.json({
+        success: true,
+        user_id: userId,
+        user_status: user.status,
+        connected_number: sanitizeNumber(payload),
+        total_connected: user.connected_numbers.length
+      });
+    } catch (err) {
+      console.error(`${tag} exception:`, err);
+      return res.status(500).json({ error: err.message });
+    }
+  }
+
+  // ── Facebook / default path ──────────────────────────────────────────────────
+  const b = normalizeLinkBody(raw);
   const phone_number_id = b.phone_number_id;
   const tag = `[WA-Link user=${userId} pnid=${phone_number_id}]`;
 
@@ -249,6 +319,7 @@ export const linkNumber = async (req, res) => {
 
     const payload = {
       phone_number_id,
+      provider: 'facebook',
       waba_id: b.waba_id || existing?.waba_id || '',
       display_phone_number: normalizePhone(b.display_phone_number ?? existing?.display_phone_number ?? ''),
       verified_name: b.verified_name ?? existing?.verified_name ?? '',
@@ -337,6 +408,12 @@ export const assignToBot = async (req, res) => {
     bot.whatsapp_two_factor_pin = entry.pin || bot.whatsapp_two_factor_pin;
     bot.whatsapp_registered = entry.registered;
     bot.whatsapp_connected_at = new Date();
+    // Provider-specific fields
+    bot.whatsapp_provider = entry.provider || 'facebook';
+    if (entry.provider === 'dialog360') {
+      bot.dialog360_token = entry.token360 || bot.dialog360_token;
+      bot.dialog360_link = entry.link || bot.dialog360_link;
+    }
     await bot.save();
 
     entry.assigned_bot_id = bot._id;
@@ -374,6 +451,36 @@ export const unassignFromBot = async (req, res) => {
     await user.save();
     return res.json({ success: true, connected_number: sanitizeNumber(entry) });
   } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+};
+
+/**
+ * POST /api/whatsapp-registration/remove-connected-number
+ * Body: { phone_number_id }
+ * Permanently removes a connected number from the user's account.
+ */
+export const removeConnectedNumber = async (req, res) => {
+  const userId = req.user?.id;
+  const { phone_number_id } = req.body || {};
+  const tag = `[WA-Remove user=${userId} pnid=${phone_number_id}]`;
+  if (!phone_number_id) return res.status(400).json({ error: 'missing_phone_number_id' });
+  try {
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ error: 'user_not_found' });
+    const before = (user.connected_numbers || []).length;
+    user.connected_numbers = user.connected_numbers.filter(
+      n => n.phone_number_id !== phone_number_id
+    );
+    if (user.connected_numbers.length === before) {
+      return res.status(404).json({ error: 'connected_number_not_found' });
+    }
+    user.markModified('connected_numbers');
+    await user.save();
+    console.log(`${tag} → removed`);
+    return res.json({ success: true, total_connected: user.connected_numbers.length });
+  } catch (err) {
+    console.error(`${tag} exception:`, err);
     return res.status(500).json({ error: err.message });
   }
 };
@@ -577,11 +684,15 @@ export const createPhpAccount = async (req, res) => {
 
 function sanitizeNumber(n) {
   const o = (typeof n.toObject === 'function') ? n.toObject() : n;
-  const { access_token, pin, ...rest } = o;
+  const { access_token, pin, token360, ...rest } = o;
   return {
     ...rest,
+    provider: o.provider || 'facebook',
     has_access_token: !!access_token,
-    has_pin: !!pin
+    has_pin: !!pin,
+    has_token360: !!token360,
+    // Expose the dialog360 link (not sensitive) for display
+    link: o.link || ''
   };
 }
 

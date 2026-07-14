@@ -1448,8 +1448,9 @@ export const ActionTransferToAgentNode = (props: any) => {
         />
         <span className="flex items-center gap-1 text-[12px] font-bold text-slate-700">
           <Phone size={11} className="text-green-600" />
-          לקוח מעוניין בחזרת טלפון
-        </span>
+לקוח מעוניין בשיחת טלפון חוזרת    
+
+  </span>
       </label>
     </BaseNode>
   );

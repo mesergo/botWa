@@ -25,7 +25,12 @@ const botFlowSchema = new mongoose.Schema({
   whatsapp_register_response: { type: mongoose.Schema.Types.Mixed, default: null },
   whatsapp_connected_at: { type: Date, default: null },
   endpoint: { type: String, default: '' },
-  restart_keyword: { type: String, default: '' }
+  restart_keyword: { type: String, default: '' },
+  // Provider indicator: 'facebook' (default) or 'dialog360'
+  whatsapp_provider: { type: String, default: 'facebook' },
+  // Dialog360-specific connection fields
+  dialog360_token: { type: String, default: '' },
+  dialog360_link: { type: String, default: '' }
 }, {
   timestamps: true,
   collection: 'bot_flows'

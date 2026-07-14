@@ -203,8 +203,11 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
     whatsapp_status?: string;
     registered?: boolean;
     has_access_token?: boolean;
+    has_token360?: boolean;
     assigned_bot_id?: string | null;
     connected_at?: string;
+    provider?: 'facebook' | 'dialog360';
+    link?: string;
   }
   const [connectedNumbers, setConnectedNumbers] = useState<ConnectedNumber[]>([]);
   const [cnLoading, setCnLoading] = useState(false);
@@ -213,8 +216,15 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
   const [activatingPnid, setActivatingPnid] = useState<string | null>(null);
   const [activateListLogs, setActivateListLogs] = useState<Record<string, string[]>>({});
   const [markingPnid, setMarkingPnid] = useState<string | null>(null);
+  const [removingPnid, setRemovingPnid] = useState<string | null>(null);
   const [phpCreatingPnid, setPhpCreatingPnid] = useState<string | null>(null);
   const [phpCreateResults, setPhpCreateResults] = useState<Record<string, { success: boolean; logs: string[]; webhook?: string | null; endpoint?: string | null }>>({});
+  // Dialog360 add-number form
+  const [d360FormOpen, setD360FormOpen] = useState(false);
+  const [d360Token, setD360Token] = useState('');
+  const [d360Link, setD360Link] = useState('');
+  const [d360Saving, setD360Saving] = useState(false);
+  const [d360Error, setD360Error] = useState<string | null>(null);
   // Auto-removal-from-group config (per-user override of admin default)
   interface RemovalCfg { enabled: boolean; keywords_he: string[]; message_he: string; keywords_en: string[]; message_en: string; }
   const [removalEffective, setRemovalEffective] = useState<RemovalCfg | null>(null);
@@ -389,6 +399,52 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
       if (res.ok) await loadConnectedNumbers();
     } finally {
       setAssigningPnid(null);
+    }
+  };
+
+  const handleRemoveConnectedNumber = async (phone_number_id: string) => {
+    if (!token) return;
+    if (!window.confirm('למחוק מספר מחובר זה לצמיתות?')) return;
+    setRemovingPnid(phone_number_id);
+    try {
+      const res = await fetch(`${API_BASE}/whatsapp-registration/remove-connected-number`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ phone_number_id }),
+      });
+      const data = await res.json();
+      if (data.success) await loadConnectedNumbers();
+      else alert(`שגיאה: ${data.error || 'לא ידוע'}`);
+    } catch (e: any) {
+      alert(`שגיאת רשת: ${e.message}`);
+    } finally {
+      setRemovingPnid(null);
+    }
+  };
+
+  const handleAddDialog360 = async () => {
+    if (!token || !d360Token.trim() || !d360Link.trim()) return;
+    setD360Saving(true);
+    setD360Error(null);
+    try {
+      const res = await fetch(`${API_BASE}/whatsapp-registration/link-number`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ type: 'dialog360', token360: d360Token.trim(), link: d360Link.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        setD360Error(data.message || data.error || 'שגיאה בשמירת המספר');
+      } else {
+        setD360Token('');
+        setD360Link('');
+        setD360FormOpen(false);
+        await loadConnectedNumbers();
+      }
+    } catch (e: any) {
+      setD360Error(`שגיאת רשת: ${e.message}`);
+    } finally {
+      setD360Saving(false);
     }
   };
 
@@ -1009,17 +1065,70 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                         נגמרה המכסה ({connectedNumbers.length}/{maxNums}). להוספת מספר יש ליצור קשר עם המשרד לתשלום.
                       </div>
                     ) : (
-                      <button
-                        onClick={handleOpenFbOAuthFree}
-                        disabled={fbConnecting}
-                        className="flex items-center gap-2 px-5 py-2.5 bg-[#1877F2] text-white rounded-2xl font-bold text-sm hover:bg-[#166FE5] transition-all disabled:opacity-60 shadow-lg shadow-blue-600/20"
-                      >
-                        <FacebookIcon size={16} />
-                        {fbConnecting ? 'מתחבר...' : 'הוסף מספר חדש'}
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => { setD360FormOpen(v => !v); setD360Error(null); }}
+                          className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 text-white rounded-2xl font-bold text-sm hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-600/20"
+                        >
+                          <span className="text-xs font-black">360</span>
+                          הוסף Dialog360
+                        </button>
+                        <button
+                          onClick={handleOpenFbOAuthFree}
+                          disabled={fbConnecting}
+                          className="flex items-center gap-2 px-5 py-2.5 bg-[#1877F2] text-white rounded-2xl font-bold text-sm hover:bg-[#166FE5] transition-all disabled:opacity-60 shadow-lg shadow-blue-600/20"
+                        >
+                          <FacebookIcon size={16} />
+                          {fbConnecting ? 'מתחבר...' : 'הוסף Facebook'}
+                        </button>
+                      </div>
                     );
                   })()}
                 </div>
+
+                {/* ── Dialog360 add form ── */}
+                {d360FormOpen && (
+                  <div className="mb-6 p-5 bg-emerald-50 border border-emerald-200 rounded-2xl">
+                    <div className="flex items-center justify-between mb-4">
+                      <p className="text-sm font-bold text-emerald-800">חיבור מספר Dialog360</p>
+                      <button onClick={() => { setD360FormOpen(false); setD360Error(null); }} className="text-slate-400 hover:text-slate-600 transition-colors"><X size={16} /></button>
+                    </div>
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-xs font-bold text-slate-500 mb-1">Token360 *</label>
+                        <input
+                          type="text"
+                          value={d360Token}
+                          onChange={e => setD360Token(e.target.value)}
+                          placeholder="הדבק את ה-token של ה-channel ב-Dialog360"
+                          className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-mono outline-none focus:ring-2 focus:ring-emerald-600/20 focus:border-emerald-600 transition-all text-left"
+                          dir="ltr"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-slate-500 mb-1">Link (Webhook URL) *</label>
+                        <input
+                          type="url"
+                          value={d360Link}
+                          onChange={e => setD360Link(e.target.value)}
+                          placeholder="https://waba.360dialog.io/..."
+                          className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-mono outline-none focus:ring-2 focus:ring-emerald-600/20 focus:border-emerald-600 transition-all text-left"
+                          dir="ltr"
+                        />
+                      </div>
+                      {d360Error && (
+                        <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-2.5 text-red-600 text-xs font-bold">{d360Error}</div>
+                      )}
+                      <button
+                        onClick={handleAddDialog360}
+                        disabled={d360Saving || !d360Token.trim() || !d360Link.trim()}
+                        className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 text-white rounded-xl font-bold text-sm hover:bg-emerald-700 transition-all disabled:opacity-50 active:scale-95"
+                      >
+                        {d360Saving ? <><span className="animate-spin inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full" /> שומר...</> : 'שמור מספר Dialog360'}
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 {fbConnectBot && (
                   <div className="mb-5 p-4 bg-blue-50 border border-blue-200 rounded-2xl flex items-center justify-between gap-4">
@@ -1027,7 +1136,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                       <FacebookIcon size={18} className="text-[#1877F2] shrink-0" />
                       <div>
                         <p className="text-sm font-bold text-slate-800">חיבור לפייסבוק עבור הבוט: <strong>{fbConnectBot.name}</strong></p>
-                        <p className="text-xs text-slate-500 mt-0.5">לחץ על "הוסף מספר חדש" להמשך תהליך הרישום.</p>
+                        <p className="text-xs text-slate-500 mt-0.5">לחץ על "הוסף Facebook" להמשך תהליך הרישום.</p>
                       </div>
                     </div>
                     <button onClick={() => { setFbConnectBot(null); setFbResult(null); setFbActivateLogs([]); setFbActivateDone(false); }} className="text-slate-400 hover:text-slate-600 transition-colors shrink-0">
@@ -1127,9 +1236,15 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                       const listLogs = activateListLogs[n.phone_number_id] || [];
                       return (
                         <div key={n.phone_number_id} className="border border-slate-100 rounded-2xl p-5 bg-slate-50/50">
-                          <div className="flex items-start justify-between gap-4 flex-wrap">
+                          <div className="flex items-start justify-between gap-6 flex-wrap">
                             <div className="flex-1 min-w-[220px]">
-                              <div className="flex items-center gap-2 mb-2">
+                              <div className="flex items-center gap-3 flex-wrap mb-3">
+                                {/* Provider badge */}
+                                {(n.provider === 'dialog360') ? (
+                                  <span className="px-2 py-0.5 rounded-lg text-[10px] font-black bg-emerald-600 text-white">360</span>
+                                ) : (
+                                  <span className="px-2 py-0.5 rounded-lg text-[10px] font-black bg-[#1877F2] text-white">FB</span>
+                                )}
                                 <span className="text-base font-black text-slate-800" dir="ltr">
                                   {n.display_phone_number || n.phone_number_id}
                                 </span>
@@ -1151,9 +1266,18 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                                 )}
                               </div>
                               <div className="text-xs text-slate-500 font-mono" dir="ltr">
-                                <div>phone_number_id: {n.phone_number_id}</div>
-                                {n.waba_id && <div>waba_id: {n.waba_id}</div>}
-                                {n.verified_name && <div>name: {n.verified_name}</div>}
+                                {n.provider === 'dialog360' ? (
+                                  <>
+                                    <div>link: {n.link || n.phone_number_id}</div>
+                                    <div>token360: {n.has_token360 ? '✓ שמור' : '—'}</div>
+                                  </>
+                                ) : (
+                                  <>
+                                    <div>phone_number_id: {n.phone_number_id}</div>
+                                    {n.waba_id && <div>waba_id: {n.waba_id}</div>}
+                                    {n.verified_name && <div>name: {n.verified_name}</div>}
+                                  </>
+                                )}
                               </div>
                             </div>
 
@@ -1227,9 +1351,12 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                               ) : assignedBot ? (
                                 /* ── Activated + assigned to bot ── */
                                 <>
-                                  <span className="inline-flex items-center gap-2 px-3 py-2 bg-emerald-50 text-emerald-700 border border-emerald-100 rounded-xl text-xs font-bold">
-                                    <LinkIcon size={12} /> משויך לבוט: {assignedBot.name}
+                                  <span className={`inline-flex items-center gap-2 px-3 py-2 border rounded-xl text-xs font-bold ${n.provider === 'dialog360' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-emerald-50 text-emerald-700 border-emerald-100'}`}>
+                                    <LinkIcon size={12} />
+                                    {n.provider === 'dialog360' ? '360 • ' : 'FB • '}
+                                    משויך לבוט: {assignedBot.name}
                                   </span>
+                                  {n.provider !== 'dialog360' && (
                                   <button
                                     disabled={phpCreatingPnid === n.phone_number_id}
                                     title="עדכן נתונים בשרת החיצוני (facebook-create.php)"
@@ -1268,6 +1395,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                                       ? <><span className="animate-spin inline-block w-3 h-3 border-2 border-white border-t-transparent rounded-full" /> שולח...</>
                                       : <><Globe size={12} /> הגדר בשרת</>}
                                   </button>
+                                  )}
                                   <button
                                     onClick={() => handleUnassign(n.phone_number_id)}
                                     disabled={isBusy}
@@ -1296,6 +1424,16 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                                     className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl text-xs font-bold hover:bg-blue-700 transition-all disabled:opacity-50 active:scale-95"
                                   >
                                     <LinkIcon size={12} /> {isBusy ? 'משייך...' : 'שייך לבוט'}
+                                  </button>
+                                  <button
+                                    onClick={() => handleRemoveConnectedNumber(n.phone_number_id)}
+                                    disabled={removingPnid === n.phone_number_id}
+                                    className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all disabled:opacity-50"
+                                    title="מחק מספר מחובר"
+                                  >
+                                    {removingPnid === n.phone_number_id
+                                      ? <span className="animate-spin inline-block w-3.5 h-3.5 border-2 border-red-400 border-t-transparent rounded-full" />
+                                      : <Trash2 size={15} />}
                                   </button>
                                 </>
                               )}
@@ -1722,6 +1860,11 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                     <p className="text-slate-500 text-sm font-bold flex items-center justify-end gap-2 mt-1">
                       <span dir="ltr">{bot.display_phone_number}</span>
                       <span>בוט משויך למספר</span>
+                      {bot.whatsapp_provider === 'dialog360' ? (
+                        <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-emerald-600 text-white">360</span>
+                      ) : (
+                        <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-[#1877F2] text-white">FB</span>
+                      )}
                     </p>
                   )}
                 </div>

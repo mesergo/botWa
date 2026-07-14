@@ -75,9 +75,15 @@ export const getBots = async (req, res) => {
     const connected = (user && user.connected_numbers) || [];
     res.json(bots.map(b => {
       let phone = b.display_phone_number || '';
+      let provider = b.whatsapp_provider || 'facebook';
+      let dialog360Link = b.dialog360_link || '';
       if (!phone) {
         const match = connected.find(c => c.assigned_bot_id && String(c.assigned_bot_id) === String(b._id));
-        if (match) phone = match.display_phone_number || '';
+        if (match) {
+          phone = match.display_phone_number || '';
+          provider = match.provider || 'facebook';
+          dialog360Link = match.link || '';
+        }
       }
       return {
         id: b._id.toString(),
@@ -86,6 +92,8 @@ export const getBots = async (req, res) => {
         created_at: b.created_at,
         is_default: b.is_default || false,
         display_phone_number: phone,
+        whatsapp_provider: provider,
+        dialog360_link: dialog360Link,
         botParams: b.botParams ? Object.fromEntries(b.botParams) : {},
         endpoint: b.endpoint || '',
         restart_keyword: b.restart_keyword || ''

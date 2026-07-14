@@ -3278,8 +3278,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
               />
               <span className="flex items-center gap-1.5 text-sm font-bold text-slate-700">
                 <Phone size={14} className="text-green-600" />
-                לקוח מעוניין בחזרת טלפון
-              </span>
+לקוח מעוניין בשיחת טלפון חוזרת              </span>
             </label>
 
             <div className="flex gap-2 justify-end">
