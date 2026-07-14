@@ -5,7 +5,7 @@ import SystemSetting from '../models/SystemSetting.js';
 const DEFAULT_CONFIG = {
   Trial: { maxBots: 1, maxVersions: 0, versionPrice: 0, botPrice: 0, canPublish: false, trialDays: 30, maxConnectedNumbers: 1 },
   Basic: { maxBots: 3, maxVersions: 5, versionPrice: 5, botPrice: 30, canPublish: true, maxConnectedNumbers: 1 },
-  Premium: { maxBots: 6, maxVersions: 10, versionPrice: 5, botPrice: 30, canPublish: true, maxConnectedNumbers: 3 }
+  Premium: { maxBots: 6, maxVersions: 10, versionPrice: 5, botPrice: 30, canPublish: true, maxConnectedNumbers: 5 }
 };
 
 export const getUserLimits = async (user) => {
