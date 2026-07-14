@@ -226,8 +226,9 @@ export const linkNumber = async (req, res) => {
     if (!token360) return res.status(400).json({ error: 'missing_token360' });
     if (!link) return res.status(400).json({ error: 'missing_link' });
 
-    const phone_number_id = link;
-    const tag = `[WA-Link-D360 user=${userId} link=${link}]`;
+    // token360 is unique per channel; link (base URL) is shared across all channels
+    const phone_number_id = token360;
+    const tag = `[WA-Link-D360 user=${userId} token=${token360.slice(0, 8)}...]`;
 
     try {
       const user = await User.findById(userId);
@@ -253,7 +254,7 @@ export const linkNumber = async (req, res) => {
         provider: 'dialog360',
         token360,
         link,
-        display_phone_number: raw.display_phone_number || existing?.display_phone_number || link,
+        display_phone_number: raw.display_phone_number || existing?.display_phone_number || '',
         verified_name: raw.verified_name || existing?.verified_name || '',
         waba_id: existing?.waba_id || '',
         quality_rating: existing?.quality_rating || '',
