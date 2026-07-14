@@ -1316,6 +1316,7 @@ export const sendAgentMessage = async (req, res) => {
 
     let waSent = false;
     let waError = null;
+    let agentWamid = null;
     let waRetryable = false;
 
     if (isTemplate && templateData) {
@@ -1387,7 +1388,9 @@ export const sendAgentMessage = async (req, res) => {
       }
       console.log(`[AGENT-SEND]    wa payload : ${JSON.stringify(waMessages[0])}`);
       try {
-        waSent = await pushMessagesToWhatsApp(normalizedPhone, waMessages, user, bot);
+        const pushResult = await pushMessagesToWhatsApp(normalizedPhone, waMessages, user, bot);
+        waSent = pushResult.anySuccess;
+        agentWamid = pushResult.wamidPerMsg?.find(Boolean) || null;
         console.log(`[AGENT-SEND] ${waSent ? '✅ WhatsApp delivered' : '❌ WhatsApp delivery FAILED'}`);
         console.log(`${'─'.repeat(60)}\n`);
         if (!waSent) waError = 'משלוח ה-WhatsApp נכשל';
@@ -1405,7 +1408,9 @@ export const sendAgentMessage = async (req, res) => {
       node_id: 'agent',
       created,
       wa_sent: waSent,
-      wa_error: waError || null
+      wa_error: waError || null,
+      wamid: agentWamid,
+      deliveryStatus: null
     };
     
     // Build display content based on template or text
@@ -1840,7 +1845,9 @@ export const sendAdminMessageToSession = async (req, res) => {
       name: 'נציג',
       node_id: 'agent',
       created,
-      wa_sent: waSent
+      wa_sent: waSent,
+      wamid: null,
+      deliveryStatus: null
     };
     
     // Build display content based on template or text
@@ -2002,7 +2009,8 @@ export const sendExternalMessage = async (req, res) => {
       options: message.options,
       created: new Date().toISOString(),
       isExternal: true, // Flag to identify external messages
-      targetSimulatorId: simulator_id || null // Target specific simulator or all
+      targetSimulatorId: simulator_id || null, // Target specific simulator or all
+      ...((message.sender || 'bot') !== 'user' ? { wamid: null, deliveryStatus: null } : {})
     };
 
     // Add message to process_history
