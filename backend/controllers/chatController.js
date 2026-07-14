@@ -1666,7 +1666,7 @@ export const respondToMessage = async (req, res) => {
             messages = await walkChain(interruptNextId, flowData.nodes, flowData.edges, session, session.flow_id, req);
             await session.save();
             const { anySuccess: waPushedInterrupt1, wamidPerMsg: wamids1 } = await pushMessagesToWhatsApp(sender, messages, user, tokenBot);
-            await applyWamids(session, messages, wamids1);
+            try { await applyWamids(session, messages, wamids1); } catch (e) { console.error('[BOT] applyWamids failed (non-critical):', e.message); }
             return res.json({ StatusId: 1, StatusDescription: 'Success', sender, messages: waPushedInterrupt1 ? [] : messages, control: null, ...(waPushedInterrupt1 && { wa_pushed: true }) });
           }
         }
@@ -1705,7 +1705,7 @@ export const respondToMessage = async (req, res) => {
               messages = await walkChain(interruptNextId, flowData.nodes, flowData.edges, session, session.flow_id, req);
               await session.save();
               const { anySuccess: waPushedInterrupt2, wamidPerMsg: wamids2 } = await pushMessagesToWhatsApp(sender, messages, user, tokenBot);
-              await applyWamids(session, messages, wamids2);
+              try { await applyWamids(session, messages, wamids2); } catch (e) { console.error('[BOT] applyWamids failed (non-critical):', e.message); }
               return res.json({ StatusId: 1, StatusDescription: 'Success', sender, messages: waPushedInterrupt2 ? [] : messages, control: null, ...(waPushedInterrupt2 && { wa_pushed: true }) });
             }
           }
@@ -2081,7 +2081,7 @@ export const respondToMessage = async (req, res) => {
     // Uses the bot's endpoint when available, falling back to user credentials or env vars.
     // When push succeeds, return an empty messages array so dialog360 does NOT double-send.
     const { anySuccess: waPushed, wamidPerMsg } = await pushMessagesToWhatsApp(sender, messages, user, tokenBot);
-    await applyWamids(session, messages, wamidPerMsg);
+    try { await applyWamids(session, messages, wamidPerMsg); } catch (e) { console.error('[BOT] applyWamids failed (non-critical):', e.message); }
     console.log(`[BOT] 🚀 pushMessagesToWhatsApp → waPushed=${waPushed}`);
 
     const elapsedMs = Date.now() - reqStartedAt;
