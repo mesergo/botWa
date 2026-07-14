@@ -322,7 +322,8 @@ const addToHistory = (session, message, nodeId) => {
     node_id: nodeId,
     sender: isUser ? 'user' : 'bot',
     name: isUser ? 'משתמש' : 'בוט',
-    created: new Date().toISOString()
+    created: new Date().toISOString(),
+    ...(!isUser ? { wamid: null, deliveryStatus: null } : {})
   });
   session.process_history = history;
 };
@@ -1191,6 +1192,25 @@ const performAutoRemoval = async (user, sender, phone, text, name = '') => {
   }
 };
 
+// Saves wamids returned from pushMessagesToWhatsApp into the matching process_history entries.
+const applyWamids = async (sess, msgs, wamidPerMsg) => {
+  if (!wamidPerMsg || !wamidPerMsg.some(Boolean)) return;
+  const histLen = sess.process_history ? sess.process_history.length : 0;
+  const startIdx = histLen - msgs.length;
+  if (startIdx < 0) return;
+  let changed = false;
+  wamidPerMsg.forEach((wamid, i) => {
+    if (wamid && sess.process_history[startIdx + i]) {
+      sess.process_history[startIdx + i].wamid = wamid;
+      changed = true;
+    }
+  });
+  if (changed) {
+    sess.markModified('process_history');
+    await sess.save();
+  }
+};
+
 // Main API endpoint
 export const respondToMessage = async (req, res) => {
   const reqStartedAt = Date.now();
@@ -1574,7 +1594,7 @@ export const respondToMessage = async (req, res) => {
           console.error('[BOT] failed to reset session after restart keyword:', sessSaveErr.message);
         }
         console.log(`[BOT] 🔄 restart keyword matched: "${textLower}" | session=${session._id}`);
-        const waPushed = await pushMessagesToWhatsApp(sender, restartOutMsg, user, tokenBot);
+        const { anySuccess: waPushed } = await pushMessagesToWhatsApp(sender, restartOutMsg, user, tokenBot);
         return res.json({
           StatusId: 1,
           StatusDescription: 'Restarted by keyword',
@@ -1645,7 +1665,8 @@ export const respondToMessage = async (req, res) => {
 
             messages = await walkChain(interruptNextId, flowData.nodes, flowData.edges, session, session.flow_id, req);
             await session.save();
-            const waPushedInterrupt1 = await pushMessagesToWhatsApp(sender, messages, user, tokenBot);
+            const { anySuccess: waPushedInterrupt1, wamidPerMsg: wamids1 } = await pushMessagesToWhatsApp(sender, messages, user, tokenBot);
+            await applyWamids(session, messages, wamids1);
             return res.json({ StatusId: 1, StatusDescription: 'Success', sender, messages: waPushedInterrupt1 ? [] : messages, control: null, ...(waPushedInterrupt1 && { wa_pushed: true }) });
           }
         }
@@ -1683,7 +1704,8 @@ export const respondToMessage = async (req, res) => {
             if (interruptNextId) {
               messages = await walkChain(interruptNextId, flowData.nodes, flowData.edges, session, session.flow_id, req);
               await session.save();
-              const waPushedInterrupt2 = await pushMessagesToWhatsApp(sender, messages, user, tokenBot);
+              const { anySuccess: waPushedInterrupt2, wamidPerMsg: wamids2 } = await pushMessagesToWhatsApp(sender, messages, user, tokenBot);
+              await applyWamids(session, messages, wamids2);
               return res.json({ StatusId: 1, StatusDescription: 'Success', sender, messages: waPushedInterrupt2 ? [] : messages, control: null, ...(waPushedInterrupt2 && { wa_pushed: true }) });
             }
           }
@@ -1706,9 +1728,9 @@ export const respondToMessage = async (req, res) => {
         } catch (sessSaveErr) {
           console.error('[BOT] failed to close current session after removal:', sessSaveErr.message);
         }
-        const waPushed = removalResult.outMessages.length > 0
+        const { anySuccess: waPushed } = removalResult.outMessages.length > 0
           ? await pushMessagesToWhatsApp(sender, removalResult.outMessages, user, tokenBot)
-          : false;
+          : { anySuccess: false };
         return res.json({
           StatusId: 1,
           StatusDescription: 'Removed by keyword',
@@ -1754,9 +1776,9 @@ export const respondToMessage = async (req, res) => {
           } catch (sessSaveErr) {
             console.error('[BOT] failed to close current session after removal:', sessSaveErr.message);
           }
-          const waPushed = removalResult.outMessages.length > 0
+          const { anySuccess: waPushed } = removalResult.outMessages.length > 0
             ? await pushMessagesToWhatsApp(sender, removalResult.outMessages, user, tokenBot)
-            : false;
+            : { anySuccess: false };
           return res.json({
             StatusId: 1,
             StatusDescription: 'Removed by keyword',
@@ -2008,9 +2030,9 @@ export const respondToMessage = async (req, res) => {
           } catch (sessSaveErr) {
             console.error('[BOT] failed to close current session after removal:', sessSaveErr.message);
           }
-          const waPushed = removalResult.outMessages.length > 0
+          const { anySuccess: waPushed } = removalResult.outMessages.length > 0
             ? await pushMessagesToWhatsApp(sender, removalResult.outMessages, user, tokenBot)
-            : false;
+            : { anySuccess: false };
           return res.json({
             StatusId: 1,
             StatusDescription: 'Removed by keyword',
@@ -2058,7 +2080,8 @@ export const respondToMessage = async (req, res) => {
     // Proactively push messages to WhatsApp via dialog360 /send endpoint.
     // Uses the bot's endpoint when available, falling back to user credentials or env vars.
     // When push succeeds, return an empty messages array so dialog360 does NOT double-send.
-    const waPushed = await pushMessagesToWhatsApp(sender, messages, user, tokenBot);
+    const { anySuccess: waPushed, wamidPerMsg } = await pushMessagesToWhatsApp(sender, messages, user, tokenBot);
+    await applyWamids(session, messages, wamidPerMsg);
     console.log(`[BOT] 🚀 pushMessagesToWhatsApp → waPushed=${waPushed}`);
 
     const elapsedMs = Date.now() - reqStartedAt;
@@ -2311,6 +2334,8 @@ export const sendTemplateExternal = async (req, res) => {
       template_params: paramsArray,
       wa_sent: waSent,
       created: now.toISOString(),
+      wamid: null,
+      deliveryStatus: null,
     };
 
     if (userId) {
