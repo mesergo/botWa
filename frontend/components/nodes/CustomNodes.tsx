@@ -383,9 +383,24 @@ const ExpandTextModal = ({ value, onChange, onClose }: {
   );
 };
 
-const SearchableInput = ({ value, onChange, placeholder, type = "text", searchQuery, isCurrentMatch, isTextArea = false, disabled = false, expandable = true }: any) => {
+const SearchableInput = ({ value, onChange, placeholder, type = "text", searchQuery, isCurrentMatch, isTextArea = false, disabled = false, expandable = true, autoResize = false }: any) => {
   const [isFocused, setIsFocused] = React.useState(false);
   const [modalOpen, setModalOpen] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const adjustHeight = React.useCallback(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    const maxH = 90; // ~3 rows
+    const newH = Math.min(el.scrollHeight, maxH);
+    el.style.height = newH + 'px';
+    el.style.overflowY = el.scrollHeight > maxH ? 'auto' : 'hidden';
+  }, []);
+
+  useEffect(() => {
+    if (autoResize) adjustHeight();
+  }, [value, autoResize, adjustHeight]);
  
   const fontStyles: React.CSSProperties = {
     fontFamily: 'Heebo, sans-serif',
@@ -432,14 +447,15 @@ const SearchableInput = ({ value, onChange, placeholder, type = "text", searchQu
        
         {isTextArea ? (
           <textarea
+            ref={autoResize ? textareaRef : undefined}
             disabled={disabled}
-            className={`relative z-10 w-full border-none outline-none transition-all text-right focus:ring-2 focus:ring-blue-600 nodrag h-20 resize-none text-slate-900 px-4 py-2 ${showHighlight ? 'bg-transparent text-transparent' : (disabled ? 'bg-transparent' : 'bg-white')}`}
+            className={`relative z-10 w-full border-none outline-none transition-all text-right focus:ring-2 focus:ring-blue-600 nodrag resize-none text-slate-900 px-4 py-2 ${autoResize ? '' : 'h-20'} ${showHighlight ? 'bg-transparent text-transparent' : (disabled ? 'bg-transparent' : 'bg-white')}`}
             value={value || ''}
-            onChange={(e) => onChange(e.target.value)}
+            onChange={(e) => { onChange(e.target.value); if (autoResize) adjustHeight(); }}
             onFocus={() => !disabled && setIsFocused(true)}
             onBlur={() => setIsFocused(false)}
             placeholder={placeholder}
-            style={fontStyles}
+            style={{ ...fontStyles, ...(autoResize ? { minHeight: '44px', overflowY: 'hidden' } : {}) }}
           />
         ) : (
           <input
@@ -1184,7 +1200,7 @@ export const ActionWebServiceNode = (props: any) => {
         <span className={`px-2.5 py-1 rounded-lg border text-[11px] font-black tracking-wide ${badgeClass}`}>{method}</span>
       </div>
       <InputFieldWrapper label="כתובת Webhook">
-        <SearchableInput value={props.data.url} onChange={(v: string) => props.data.onChange({ url: v })} placeholder="https://api.yourdomain.com" searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} expandable={false} />
+        <SearchableInput value={props.data.url} onChange={(v: string) => props.data.onChange({ url: v })} placeholder="https://api.yourdomain.com" searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} expandable={false} isTextArea={true} autoResize={true} />
       </InputFieldWrapper>
      
       <div className="space-y-3 mt-4 text-right">

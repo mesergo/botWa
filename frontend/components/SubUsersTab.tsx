@@ -115,6 +115,7 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
   const [formError, setFormError] = useState<string | null>(null);
   const [formSaving, setFormSaving] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [sendInvite, setSendInvite] = useState(false);
 
   // Delete confirm
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -231,6 +232,7 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
     setForm({ ...emptyForm, user_type_id: firstType, role: (firstSystemRole as any) || 'rep' });
     setFormError(null);
     setShowPassword(false);
+    setSendInvite(false);
     setShowRepModal(true);
   };
 
@@ -256,6 +258,7 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
     setEditingId(null);
     setForm(emptyForm);
     setFormError(null);
+    setSendInvite(false);
   };
 
   const handleSave = async () => {
@@ -280,6 +283,7 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
       if (form.password.trim()) body.password = form.password.trim();
       if (form.role === 'rep') body.rep_group_ids = form.repGroupIds;
       if (form.role === 'rep') body.allowed_bot_ids = form.allowedBotIds;
+      if (!editingId && sendInvite) body.send_invite = true;
 
       const url = editingId ? `${API_BASE}/sub-users/${editingId}` : `${API_BASE}/sub-users`;
       const method = editingId ? 'PATCH' : 'POST';
@@ -857,6 +861,24 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
                 </div>
               )}
             </div>
+
+            {/* Send invite checkbox — only when creating a new rep */}
+            {!editingId && (
+              <div className="md:col-span-2 mt-4">
+                <label className="flex items-center gap-3 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={sendInvite}
+                    onChange={e => setSendInvite(e.target.checked)}
+                    className="w-4 h-4 accent-blue-600 cursor-pointer flex-shrink-0"
+                  />
+                  <span className="text-sm font-bold text-slate-700">שלח הזמנה לנציג במייל</span>
+                </label>
+                {sendInvite && (
+                  <p className="mt-1 text-xs text-slate-400 mr-7">יישלח מייל הזמנה עם קישור כניסה למערכת לכתובת {form.email || '...'}</p>
+                )}
+              </div>
+            )}
 
             {formError && (
               <div className="mt-4 p-3 bg-red-50 text-red-700 rounded-xl text-sm font-bold">{formError}</div>

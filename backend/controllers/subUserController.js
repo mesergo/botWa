@@ -151,6 +151,57 @@ export const createSubUser = async (req, res) => {
     }
     const rep = await User.create(repData);
 
+    // Send invitation email if requested
+    if (req.body.send_invite && rep.email) {
+      try {
+        const manager = await User.findById(managerId).select('name').lean();
+        const managerName = (manager?.name || '').replace(/[<>'"]/g, '');
+        const repNameSafe = rep.name.replace(/[<>'"]/g, '');
+        const systemUrl = process.env.SYSTEM_URL || 'https://botwa.message.co.il/';
+        const inviteLink = `${systemUrl}?name=${encodeURIComponent(managerName)}`;
+
+        const emailUsername = process.env.MESERGO_EMAIL_USERNAME || 'admin@chatgo.live';
+        const emailToken = process.env.MESERGO_EMAIL_TOKEN || '1aa14226-ceae-4104-ba86-899eca88631d';
+        const fromAddress = process.env.MESERGO_FROM_ADDRESS || 'admin@chatgo.live';
+
+        const subject = 'הוזמנת להצטרף למערכת';
+        const htmlBody = `<div dir="rtl" style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
+  <h2 style="color:#2563eb;">שלום ${repNameSafe},</h2>
+  <p>הוזמנת להצטרף למערכת ניהול הבוטים של <strong>${managerName}</strong>.</p>
+  <p>לחץ על הקישור הבא כדי להיכנס למערכת:</p>
+  <a href="${inviteLink}" style="display:inline-block;background:#2563eb;color:white;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:bold;font-size:16px;margin:16px 0;">כניסה למערכת</a>
+  <p style="margin-top:20px;color:#64748b;font-size:14px;">שם המשתמש שלך: <strong>${rep.email}</strong></p>
+</div>`;
+
+        const xmlString = `<InfoMailClient>
+<SendEmails>
+<User>
+<Username>${emailUsername}</Username>
+<Token>${emailToken}</Token>
+</User>
+<Message>
+<CampaignName>הזמנת נציג - ${repNameSafe}</CampaignName>
+<FromAddress>${fromAddress}</FromAddress>
+<FromName>Bot Flow</FromName>
+<Subject><![CDATA[${subject}]]></Subject>
+<Body><![CDATA[${htmlBody}]]></Body>
+</Message>
+<Recipients>
+<Email address="${rep.email}" />
+</Recipients>
+</SendEmails>
+</InfoMailClient>`;
+
+        const encodedXml = encodeURIComponent(xmlString);
+        const mailUrl = `https://capi.mesergo.co.il/mail/api.php?xml=${encodedXml}`;
+        await fetch(mailUrl, { method: 'GET' });
+        console.log(`✅ Invite email sent to ${rep.email}`);
+      } catch (mailErr) {
+        console.error('❌ Failed to send invite email:', mailErr);
+        // Don't fail the user creation — just log
+      }
+    }
+
     res.status(201).json({
       id: rep._id.toString(),
       name: rep.name,

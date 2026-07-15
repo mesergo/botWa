@@ -18,6 +18,16 @@ interface AuthScreenProps {
 
 const AuthScreen: React.FC<AuthScreenProps> = ({ form, errors, onFormChange, onAuth, onGoogleLogin }) => {
   const [showPassword, setShowPassword] = useState(false);
+
+  // Read ?name= param from URL — set by invitation links
+  const invitedByName = (() => {
+    try {
+      return new URLSearchParams(window.location.search).get('name') || '';
+    } catch {
+      return '';
+    }
+  })();
+
   const onGoogleLoginRef = useRef(onGoogleLogin);
   useEffect(() => {
     onGoogleLoginRef.current = onGoogleLogin;
@@ -61,6 +71,13 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ form, errors, onFormChange, onA
   return (
     <div className="h-screen w-screen bg-[#0f172a] flex items-center justify-center p-6 text-right">
       <div className="bg-white p-12 rounded-[2.5rem] shadow-2xl w-full max-w-md border border-slate-100">
+        {invitedByName && (
+          <div className="mb-6 px-5 py-4 bg-blue-50 border border-blue-200 rounded-2xl text-center">
+            <p className="text-blue-700 font-bold text-base">
+              הוזמנת לחברת &ldquo;{invitedByName}&rdquo;
+            </p>
+          </div>
+        )}
         <div className="flex justify-center mb-10">
           <img src="/images/mesergo-logo.png" alt="Logo" className="h-24 w-auto transition-transform duration-300 hover:scale-105" />
         </div>
