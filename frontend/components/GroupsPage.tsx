@@ -147,6 +147,14 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
   const [cancellingBroadcastId, setCancellingBroadcastId] = useState<string | null>(null);
   const [copiedBroadcastId, setCopiedBroadcastId] = useState<string | null>(null);
 
+  // Consolidated all-broadcasts view
+  const [pageView, setPageView] = useState<'groups' | 'all-broadcasts'>('groups');
+  const [allBroadcasts, setAllBroadcasts] = useState<any[]>([]);
+  const [allBroadcastsLoading, setAllBroadcastsLoading] = useState(false);
+  const [allBroadcastsGroupFilter, setAllBroadcastsGroupFilter] = useState<string>('');
+  const [allBroadcastsCopiedId, setAllBroadcastsCopiedId] = useState<string | null>(null);
+  const [allBroadcastsSelectedDetail, setAllBroadcastsSelectedDetail] = useState<any | null>(null);
+
   // Remove-member confirmation + removals report
   const [removeTarget, setRemoveTarget] = useState<ContactRecord | null>(null);
   const [removeReason, setRemoveReason] = useState('');
@@ -651,6 +659,25 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
     }
   };
 
+  // ── All broadcasts — consolidated across all groups ──────────────────────
+  const fetchAllBroadcasts = useCallback(async () => {
+    if (!token) return;
+    setAllBroadcastsLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/groups/broadcasts?limit=500`, { headers: authHeader });
+      const data = await res.json();
+      if (res.ok) setAllBroadcasts(data.broadcasts || []);
+    } catch (e) {
+      console.error('Failed to load all broadcasts', e);
+    } finally {
+      setAllBroadcastsLoading(false);
+    }
+  }, [token, authHeader]);
+
+  useEffect(() => {
+    if (pageView === 'all-broadcasts') fetchAllBroadcasts();
+  }, [pageView, fetchAllBroadcasts]);
+
   // Reset to members tab when switching group; auto-load history when tab=history
   useEffect(() => {
     setActiveTab('members');
@@ -815,6 +842,26 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
               </div>
             </div>
 
+            {/* Page view tabs */}
+            <div className="flex items-center gap-1 bg-slate-100 rounded-2xl p-1 mb-4">
+              <button
+                onClick={() => setPageView('groups')}
+                className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl font-bold text-xs transition-all ${
+                  pageView === 'groups' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                <Layers size={13} /> רשימות
+              </button>
+              <button
+                onClick={() => setPageView('all-broadcasts')}
+                className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl font-bold text-xs transition-all ${
+                  pageView === 'all-broadcasts' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                <History size={13} /> שליחות מרוכזות
+              </button>
+            </div>
+
             {/* Create new */}
             {can('groups.create') && (
             <div className="flex items-center gap-2">
@@ -935,9 +982,135 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
           </div>
         </aside>
 
-        {/* Main panel — selected group */}
+        {/* Main panel — selected group OR consolidated broadcasts */}
         <main className="flex-1 overflow-y-auto p-8">
-          {!selectedGroup ? (
+          {pageView === 'all-broadcasts' ? (
+            /* ── Consolidated broadcasts view ── */
+            <div className="max-w-6xl mx-auto">
+              {/* Header */}
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                    <History size={26} />
+                  </div>
+                  <div>
+                    <h1 className="text-3xl font-black text-slate-900">שליחות מרוכזות</h1>
+                    <p className="text-slate-400 text-sm font-semibold mt-0.5">כל השליחות לכל רשימות התפוצה — ממוין לפי תאריך</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  {/* Group filter */}
+                  <select
+                    value={allBroadcastsGroupFilter}
+                    onChange={e => setAllBroadcastsGroupFilter(e.target.value)}
+                    className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-sm font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400"
+                  >
+                    <option value="">כל הרשימות</option>
+                    {regularGroups.map(g => (
+                      <option key={g._id} value={g._id}>{g.name}</option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={fetchAllBroadcasts}
+                    disabled={allBroadcastsLoading}
+                    className="flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl font-bold text-sm transition-colors disabled:opacity-50"
+                  >
+                    <RotateCcw size={15} className={allBroadcastsLoading ? 'animate-spin' : ''} /> רענן
+                  </button>
+                </div>
+              </div>
+
+              {allBroadcastsLoading ? (
+                <div className="flex items-center justify-center py-24 text-slate-300">
+                  <div className="animate-spin w-10 h-10 border-4 border-slate-200 border-t-indigo-500 rounded-full" />
+                </div>
+              ) : (() => {
+                const filtered = allBroadcastsGroupFilter
+                  ? allBroadcasts.filter(b => String(b.group_id) === allBroadcastsGroupFilter)
+                  : allBroadcasts;
+                return filtered.length === 0 ? (
+                  <div className="py-24 bg-white border-2 border-dashed border-slate-200 rounded-[2.5rem] flex flex-col items-center justify-center gap-4 text-slate-300">
+                    <History size={64} strokeWidth={1} />
+                    <p className="text-xl font-bold">לא נמצאו שליחות</p>
+                  </div>
+                ) : (
+                  <div className="bg-white border border-slate-100 rounded-2xl overflow-hidden shadow-sm">
+                    <div className="grid grid-cols-[9rem_1fr_5rem_4rem_4rem_4rem_4rem_5rem_5rem] gap-2 px-6 py-3 bg-slate-50 border-b border-slate-100 text-xs font-bold text-slate-400 uppercase tracking-wide">
+                      <span>תאריך</span>
+                      <span>תוכן</span>
+                      <span>רשימה</span>
+                      <span>סה"כ</span>
+                      <span>נשלחו</span>
+                      <span>נכשלו</span>
+                      <span>דולגו</span>
+                      <span>תזמון</span>
+                      <span>סטטוס</span>
+                    </div>
+                    {filtered.map((b, idx) => {
+                      const isPartial = b.processed > 0 && b.processed < b.total;
+                      const isStopped = (b.status === 'failed' || b.status === 'running' || (b.status === 'queued' && b.processed > 0)) && isPartial;
+                      return (
+                        <div
+                          key={b._id}
+                          onClick={() => fetchBroadcastDetail(b._id)}
+                          className={`grid grid-cols-[9rem_1fr_5rem_4rem_4rem_4rem_4rem_5rem_5rem] gap-2 px-6 py-3.5 items-start hover:bg-slate-50/70 transition-colors cursor-pointer ${idx !== filtered.length - 1 ? 'border-b border-slate-100' : ''}`}
+                        >
+                          <div className="flex items-center gap-2 text-xs font-bold text-slate-600">
+                            <Calendar size={13} className="text-slate-400" />
+                            {new Date(b.createdAt).toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' })}
+                          </div>
+                          <div className="min-w-0">
+                            {b.is_template ? (
+                              <div className="flex items-start gap-2 flex-wrap">
+                                <span className="px-2 py-0.5 bg-purple-100 text-purple-700 rounded-md text-xs font-black flex-shrink-0">תבנית</span>
+                                <span className="text-sm font-bold text-slate-800 break-words">{b.template_name}</span>
+                              </div>
+                            ) : (
+                              <p className="text-sm text-slate-700 break-words whitespace-pre-wrap line-clamp-2">{b.message}</p>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <span
+                              className="text-xs font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-md truncate max-w-[4.5rem]"
+                              title={b.group_name || '—'}
+                            >
+                              {b.group_name || '—'}
+                            </span>
+                          </div>
+                          <span className="text-sm font-black text-slate-700">{b.total}</span>
+                          <span className="text-sm font-black text-green-600">{b.sent}</span>
+                          <span className="text-sm font-black text-red-500">{b.failed}</span>
+                          <span className="text-sm font-black text-amber-500">{b.skipped}</span>
+                          <span>
+                            {b.scheduled_at
+                              ? (
+                                <div className="flex flex-col gap-0.5">
+                                  <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-md text-xs font-black w-fit">מתוזמן</span>
+                                  <span className="text-xs font-semibold text-blue-600 whitespace-nowrap">
+                                    {new Date(b.scheduled_at).toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' })}
+                                  </span>
+                                </div>
+                              )
+                              : <span className="px-2 py-0.5 bg-slate-100 text-slate-500 rounded-md text-xs font-semibold">מיידי</span>
+                            }
+                          </span>
+                          <span>
+                            {b.status === 'cancelled' && <span className="px-2 py-0.5 bg-red-100 text-red-600 rounded-md text-xs font-black">בוטל</span>}
+                            {b.status === 'completed' && <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded-md text-xs font-black">הושלם</span>}
+                            {isStopped && <span className="px-2 py-0.5 bg-orange-100 text-orange-700 rounded-md text-xs font-black">הופסק ({b.processed}/{b.total})</span>}
+                            {!isStopped && b.status === 'running' && <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-md text-xs font-black animate-pulse">רץ</span>}
+                            {!isStopped && b.status === 'queued' && b.processed === 0 && <span className="px-2 py-0.5 bg-slate-100 text-slate-500 rounded-md text-xs font-black">בתור</span>}
+                            {!isStopped && b.status === 'failed' && <span className="px-2 py-0.5 bg-red-100 text-red-700 rounded-md text-xs font-black">נכשל</span>}
+                            {b.status === 'scheduled' && <span className="px-2 py-0.5 bg-blue-50 text-blue-500 rounded-md text-xs font-semibold">ממתין</span>}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+            </div>
+          ) : !selectedGroup ? (
             <div className="h-full flex flex-col items-center justify-center text-slate-300">
               <Layers size={72} strokeWidth={1} />
               <p className="text-xl font-bold mt-4">בחר רשימת תפוצה</p>
