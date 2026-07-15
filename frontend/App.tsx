@@ -154,6 +154,16 @@ const FlowBuilder: React.FC = () => {
     }
   });
   const can = usePermission(currentUser);
+
+  // Returns true when the user should be routed to /sessions (no main dashboard access).
+  // Uses bots.view_tab permission when available; falls back to role for legacy sessions.
+  const isRepOnlyUser = (user: User | null): boolean => {
+    if (!user) return false;
+    const perms = (user as any).permissions;
+    if (perms) return !perms?.bots?.view_tab;
+    return user.role === 'rep' || user.role === 'rep_manager';
+  };
+
   const [token, setToken] = useState<string | null>(tokenExpiredOnLoad ? null : getStoredToken());
   const [sessionExpired, setSessionExpired] = useState(tokenExpiredOnLoad);
   
@@ -241,7 +251,7 @@ const FlowBuilder: React.FC = () => {
   // Auto-route reps to /sessions on first load
   useEffect(() => {
     if (!currentUser) return;
-    if (currentUser.role === 'rep' || currentUser.role === 'rep_manager') {
+    if (isRepOnlyUser(currentUser)) {
       if (location.pathname === '/' || location.pathname === '') {
         navigate('/sessions', { replace: true });
       }
@@ -1296,7 +1306,7 @@ const FlowBuilder: React.FC = () => {
         setToken(data.token);
         setCurrentUser(data.user);
         // Route reps directly to sessions view
-        if (data.user?.role === 'rep' || data.user?.role === 'rep_manager') {
+        if (isRepOnlyUser(data.user)) {
           setSessionsOwnOnly(false);
           navigate('/sessions');
         } else {
@@ -1324,7 +1334,7 @@ const FlowBuilder: React.FC = () => {
       setToken(data.token);
       setCurrentUser(data.user);
       // Route reps directly to sessions view
-      if (data.user?.role === 'rep' || data.user?.role === 'rep_manager') {
+      if (isRepOnlyUser(data.user)) {
         setSessionsOwnOnly(false);
         navigate('/sessions');
       } else {
@@ -1339,8 +1349,8 @@ const FlowBuilder: React.FC = () => {
     setToken(impersonationToken);
     setCurrentUser(userData);
     saveStoredAuth(impersonationToken, userData, true);
-    // Route based on role — same logic as normal login
-    if (userData.role === 'rep' || userData.role === 'rep_manager') {
+    // Route based on permissions — same logic as normal login
+    if (isRepOnlyUser(userData)) {
       setSessionsOwnOnly(false);
       navigate('/sessions');
     } else {
@@ -2417,8 +2427,8 @@ const FlowBuilder: React.FC = () => {
             <SessionsPage
               token={token}
               currentUser={currentUser}
-              onBack={currentUser?.role === 'rep' ? undefined : () => navigate('/dashboard')}
-              onGoHome={currentUser?.role === 'rep' ? undefined : () => navigate('/')}
+              onBack={isRepOnlyUser(currentUser) ? undefined : () => navigate('/dashboard')}
+              onGoHome={isRepOnlyUser(currentUser) ? undefined : () => navigate('/')}
               onLogout={() => { localStorage.clear(); window.location.reload(); }}
               onOpenContacts={can('contacts.view') ? (phone?: string) => { setContactsInitialPhone(phone ?? null); navigate('/contacts'); } : undefined}
               onOpenGroups={can('groups.view') ? () => navigate('/groups') : undefined}

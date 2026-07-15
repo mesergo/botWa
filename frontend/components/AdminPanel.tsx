@@ -1914,13 +1914,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                                       <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${sub.status === 'active' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
                                         {sub.status === 'active' ? 'פעיל' : 'חסום'}
                                       </span>
-                                      {sub.user_type_id?.name && (
-                                        <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-purple-50 text-purple-600">
-                                          {sub.user_type_id.name}
-                                        </span>
-                                      )}
                                       <span className="text-[9px] text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded font-medium">
-                                        {sub.role === 'rep_manager' ? 'מנהל נציגים' : 'נציג'}
+                                        {sub.user_type_id?.name || (sub.role === 'rep_manager' ? 'מנהל נציגים' : 'נציג')}
                                       </span>
                                     </div>
                                   </div>

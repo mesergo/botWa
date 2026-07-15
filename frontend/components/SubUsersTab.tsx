@@ -509,13 +509,19 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
                       <td className="px-6 py-4 text-slate-600 font-bold" dir="ltr">{u.email}</td>
                       <td className="px-6 py-4 text-slate-600 font-bold" dir="ltr">{u.phone || '—'}</td>
                       <td className="px-6 py-4">
-                        <span className={`px-3 py-1 rounded-full text-xs font-black ${
-                          u.role === 'rep_manager'
-                            ? 'bg-blue-100 text-blue-700'
-                            : 'bg-slate-100 text-slate-600'
-                        }`}>
-                          {ROLE_LABELS[u.role] || u.role}
-                        </span>
+                        {(() => {
+                          const typeName = availableUserTypes.find(t => t._id === u.user_type_id)?.name;
+                          const label = typeName || ROLE_LABELS[u.role] || u.role;
+                          return (
+                            <span className={`px-3 py-1 rounded-full text-xs font-black ${
+                              u.role === 'rep_manager'
+                                ? 'bg-blue-100 text-blue-700'
+                                : 'bg-slate-100 text-slate-600'
+                            }`}>
+                              {label}
+                            </span>
+                          );
+                        })()}
                       </td>
                       <td className="px-6 py-4">
                         {(() => {

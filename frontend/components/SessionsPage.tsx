@@ -1,4 +1,5 @@
 ﻿import React, { useState, useEffect, useRef } from 'react';
+import { WhatsAppText } from '../utils/whatsappFormat';
 import { Clock, MessageSquare, Search, Bot, LogOut, User, Phone, List, Users, ExternalLink, X, Headphones, RefreshCw, Shield, Settings, UserCog, Layers, Plus, UserPlus, Check, Paperclip, ChevronRight, Bell, MoreVertical, Ban } from 'lucide-react';
 import ImpersonationBanner from './ImpersonationBanner';
 import { FileUploader } from './FileUploader';
@@ -1483,18 +1484,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
       }
     }
 
-    const renderTextWithLinks = (str: string) => {
-      const urlRegex = /(https?:\/\/[^\s]+)/g;
-      const parts = str.split(urlRegex);
-      return parts.map((part, i) =>
-        urlRegex.test(part) ? (
-          <a key={i} href={part} target="_blank" rel="noopener noreferrer"
-            className="underline text-sky-600 hover:text-sky-800 break-all">
-            {part}
-          </a>
-        ) : part
-      );
-    };
+
 
     return grouped.map((item: any, idx: number) => {
       const senderType: 'bot' | 'user' | 'agent' | 'system' =
@@ -1554,7 +1544,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                       <ExternalLink size={13} /> פתח מסמך
                     </a>
                   )}
-                  {text && <p className="whitespace-pre-wrap leading-snug">{renderTextWithLinks(text)}</p>}
+                  {text && <WhatsAppText text={text} className="leading-snug" />}
                   {Array.isArray(item.template_buttons) && item.template_buttons.length > 0 && (
                     <div className="flex flex-col gap-1 mt-2 pt-2 border-t border-purple-200">
                       {item.template_buttons.map((btn: any, bi: number) =>
@@ -1621,7 +1611,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                   : 'bg-sky-500 text-white rounded-tl-none'}`}
               >
                 {(item.type === 'Text' || item.type === 'UserInput' || !item.type || item.type.startsWith('input_')) && text && !isAudioUrl && (
-                  <p className="whitespace-pre-wrap leading-snug">{renderTextWithLinks(text)}</p>
+                  <WhatsAppText text={text} className="leading-snug" />
                 )}
                 {(item.type === 'Audio' || isAudioUrl) && (item.url || text) && (
                   <>
@@ -1632,13 +1622,13 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 {item.type === 'Image' && item.url && (
                   <>
                     <img src={item.url} alt="תמונה" className="rounded-xl max-w-[200px] h-auto mb-1" />
-                    {text && <p className="whitespace-pre-wrap leading-snug">{renderTextWithLinks(text)}</p>}
+                    {text && <WhatsAppText text={text} className="leading-snug" />}
                   </>
                 )}
                 {item.type === 'Video' && item.url && (
                   <>
                     <video src={item.url} controls className="rounded-xl max-w-[200px] mb-1" />
-                    {text && <p className="whitespace-pre-wrap leading-snug">{renderTextWithLinks(text)}</p>}
+                    {text && <WhatsAppText text={text} className="leading-snug" />}
                   </>
                 )}
                 {item.type === 'Document' && item.url && (
@@ -1795,7 +1785,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
       {/* ── Bot Picker ─────────────────────────────────────────────────────── */}
       {showBotPicker ? (
         <div className="flex-1 flex overflow-hidden">
-          {currentUser?.role !== 'rep' && (
+          {(onGoHome || onBack) && (
             <AppNav
               mode="sidebar"
               activePage="sessions"
@@ -1865,7 +1855,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
         </div>
       ) : (
       <div className="flex-1 flex overflow-hidden">
-        {currentUser?.role !== 'rep' && (
+        {(onGoHome || onBack) && (
           <AppNav
             mode="sidebar"
             activePage="sessions"
