@@ -26,83 +26,359 @@ const HighlightedText = ({ text, highlight, isCurrent }: { text: string; highlig
   );
 };
 
+// Convert WhatsApp syntax → HTML for the rich editor
+function _waToHtml(text: string): string {
+  if (!text) return '';
+  const esc = (s: string) => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const inlineToHtml = (raw: string): string => {
+    let s = esc(raw);
+    s = s.replace(/```([\s\S]+?)```/g, '<code data-wa="mblock" style="font-family:monospace;background:#f1f5f9;border-radius:4px;padding:2px 6px">$1</code>');
+    s = s.replace(/`([^`\n]+)`/g, '<code data-wa="icode" style="font-family:monospace;background:#f1f5f9;border-radius:3px;padding:1px 4px">$1</code>');
+    s = s.replace(/\*([^*\n]+)\*/g, '<strong>$1</strong>');
+    s = s.replace(/_([^_\n]+)_/g, '<em>$1</em>');
+    s = s.replace(/~~([^~\n]+)~~/g, '<s>$1</s>');
+    return s;
+  };
+  const lines = text.split('\n');
+  const html: string[] = [];
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    if (line.trim() === '```') {
+      const mono: string[] = [];
+      i++;
+      while (i < lines.length && lines[i].trim() !== '```') { mono.push(esc(lines[i])); i++; }
+      i++;
+      html.push(`<div><code data-wa="mblock" style="display:block;font-family:monospace;background:#f1f5f9;border-radius:6px;padding:4px 10px">${mono.join('<br>')}</code></div>`);
+      continue;
+    }
+    const im = line.match(/^```(.+)```$/);
+    if (im) { html.push(`<div><code data-wa="mblock" style="display:block;font-family:monospace;background:#f1f5f9;border-radius:6px;padding:4px 10px">${esc(im[1])}</code></div>`); i++; continue; }
+    if (/^> /.test(line)) {
+      html.push(`<blockquote style="border-right:4px solid #94a3b8;margin:1px 0;padding:2px 10px 2px 0;color:#475569;font-style:italic">${inlineToHtml(line.slice(2))}</blockquote>`);
+      i++; continue;
+    }
+    if (/^[-*] /.test(line)) {
+      const items: string[] = [];
+      while (i < lines.length && /^[-*] /.test(lines[i])) { items.push(`<li>${inlineToHtml(lines[i].slice(2))}</li>`); i++; }
+      html.push(`<ul style="list-style-type:disc;padding-right:20px;margin:2px 0">${items.join('')}</ul>`);
+      continue;
+    }
+    if (/^\d+\. /.test(line)) {
+      const items: string[] = [];
+      while (i < lines.length && /^\d+\. /.test(lines[i])) { items.push(`<li>${inlineToHtml(lines[i].replace(/^\d+\. /,''))}</li>`); i++; }
+      html.push(`<ol style="list-style-type:decimal;padding-right:20px;margin:2px 0">${items.join('')}</ol>`);
+      continue;
+    }
+    html.push(`<div>${inlineToHtml(line) || '<br>'}</div>`);
+    i++;
+  }
+  return html.join('');
+}
+
+// Convert contentEditable HTML → WhatsApp syntax
+function _htmlToWa(container: HTMLElement): string {
+  // Wrap each non-empty line with before/after markers (handles multi-line inline elements)
+  function wrapLines(inner: string, before: string, after: string): string {
+    if (!inner) return '';
+    if (!inner.includes('\n')) {
+      const trimmed = inner.trim();
+      return trimmed ? `${before}${trimmed}${after}` : '';
+    }
+    return inner.split('\n').map(l => { const t = l.trim(); return t ? `${before}${t}${after}` : ''; }).join('\n');
+  }
+
+  function walk(node: Node): string {
+    if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? '';
+    if (node.nodeType !== Node.ELEMENT_NODE) return '';
+    const el = node as HTMLElement;
+    const tag = el.tagName.toLowerCase();
+    const ch = () => Array.from(el.childNodes).map(walk).join('');
+    const needsNewlineBefore = !!el.previousSibling;
+    switch (tag) {
+      case 'strong': case 'b': return wrapLines(ch(), '*', '*');
+      case 'em':     case 'i': return wrapLines(ch(), '_', '_');
+      case 's': case 'strike': case 'del': return wrapLines(ch(), '~~', '~~');
+      case 'code': {
+        const wa = el.dataset.wa;
+        const inner = (el.textContent ?? '').replace(/\u200B/g, '');
+        return (wa === 'mblock') ? `\`\`\`${inner}\`\`\`` : `\`${inner}\``;
+      }
+      case 'pre': return `\`\`\`${el.textContent ?? ''}\`\`\``;
+      case 'blockquote': {
+        const content = ch().split('\n').map((l: string) => `> ${l}`).join('\n');
+        return (needsNewlineBefore ? '\n' : '') + content;
+      }
+      case 'ul': {
+        const items = Array.from(el.querySelectorAll(':scope > li')).map(li => `- ${walk(li)}`).join('\n');
+        return (needsNewlineBefore ? '\n' : '') + items;
+      }
+      case 'ol': {
+        const items = Array.from(el.querySelectorAll(':scope > li')).map((li, idx) => `${idx + 1}. ${walk(li)}`).join('\n');
+        return (needsNewlineBefore ? '\n' : '') + items;
+      }
+      case 'li': return ch();
+      case 'br': return '\n';
+      case 'span': {
+        const fw = el.style.fontWeight;
+        const fs = el.style.fontStyle;
+        const td = el.style.textDecoration;
+        const inner = ch();
+        if (fw === 'bold' || fw === '700') return wrapLines(inner, '*', '*');
+        if (fs === 'italic') return wrapLines(inner, '_', '_');
+        if (td.includes('line-through')) return wrapLines(inner, '~~', '~~');
+        return inner;
+      }
+      case 'div': case 'p': {
+        const hasPrev = !!el.previousElementSibling;
+        const onlyBr = el.childNodes.length === 1 && el.childNodes[0].nodeName === 'BR';
+        return (hasPrev ? '\n' : '') + (onlyBr ? '' : ch());
+      }
+      default: return ch();
+    }
+  }
+  return Array.from(container.childNodes).map(walk).join('').trim().replace(/\n{3,}/g, '\n\n');
+}
+
 const ExpandTextModal = ({ value, onChange, onClose }: {
   value: string;
   onChange: (v: string) => void;
   onClose: () => void;
 }) => {
-  const [localValue, setLocalValue] = useState(value);
+  const editorRef = useRef<HTMLDivElement>(null);
+  const [activeFormats, setActiveFormats] = useState<Set<string>>(new Set());
+
+  const updateActiveFormats = () => {
+    const active = new Set<string>();
+    try {
+      const sel = window.getSelection();
+      if (!sel || sel.rangeCount === 0) { setActiveFormats(active); return; }
+
+      // Check if inside <code> via DOM walk
+      let node: Node | null = sel.getRangeAt(0).commonAncestorContainer;
+      if (node.nodeType === Node.TEXT_NODE) node = node.parentNode;
+      let insideCode = false;
+      let n: Node | null = node;
+      while (n && n !== editorRef.current) {
+        if ((n as HTMLElement).tagName?.toLowerCase() === 'code') { insideCode = true; break; }
+        n = n.parentNode;
+      }
+
+      if (insideCode) {
+        active.add('code');
+        // When inside code: no other formats
+      } else {
+        // queryCommandState correctly reflects both pending state AND applied state
+        if (document.queryCommandState('bold'))                active.add('bold');
+        if (document.queryCommandState('italic'))              active.add('italic');
+        if (document.queryCommandState('strikeThrough'))       active.add('strikeThrough');
+        if (document.queryCommandState('insertUnorderedList')) active.add('insertUnorderedList');
+        if (document.queryCommandState('insertOrderedList'))   active.add('insertOrderedList');
+        // Blockquote via DOM walk (queryCommandValue is more reliable here)
+        let nb: Node | null = node;
+        while (nb && nb !== editorRef.current) {
+          if ((nb as HTMLElement).tagName?.toLowerCase() === 'blockquote') { active.add('blockquote'); break; }
+          nb = nb.parentNode;
+        }
+      }
+    } catch { /* ignore */ }
+    setActiveFormats(active);
+  };
+
+  useEffect(() => {
+    document.addEventListener('selectionchange', updateActiveFormats);
+    return () => document.removeEventListener('selectionchange', updateActiveFormats);
+  }, []);
+
+  // Init: convert WhatsApp syntax → visual HTML
+  useEffect(() => {
+    if (editorRef.current) {
+      editorRef.current.innerHTML = _waToHtml(value);
+      editorRef.current.focus();
+      const range = document.createRange();
+      range.selectNodeContents(editorRef.current);
+      range.collapse(false);
+      const sel = window.getSelection();
+      sel?.removeAllRanges();
+      sel?.addRange(range);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const getWaText = () => editorRef.current ? _htmlToWa(editorRef.current) : '';
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onClose();
-      } else if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-        onChange(localValue);
-        onClose();
-      }
+      if (e.key === 'Escape') onClose();
+      else if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { onChange(getWaText()); onClose(); }
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [localValue, onClose, onChange]);
+  }, [onClose, onChange]);
 
-  const handleApply = () => {
-    onChange(localValue);
-    onClose();
+  const execFmt = (cmd: string, val?: string) => { editorRef.current?.focus(); document.execCommand(cmd, false, val); requestAnimationFrame(updateActiveFormats); };
+
+  const toggleCode = () => {
+    editorRef.current?.focus();
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return;
+
+    // Check if cursor/selection is inside a <code> element
+    let node: Node | null = sel.getRangeAt(0).commonAncestorContainer;
+    let codeEl: HTMLElement | null = null;
+    while (node && node !== editorRef.current) {
+      if ((node as HTMLElement).tagName?.toLowerCase() === 'code') { codeEl = node as HTMLElement; break; }
+      node = node.parentNode;
+    }
+
+    if (codeEl) {
+      const hasSelection = sel.toString().length > 0;
+      if (hasSelection) {
+        // User selected text inside code → unwrap the whole code element
+        const rawText = (codeEl.textContent ?? '').replace(/\u200B/g, '');
+        const text = document.createTextNode(rawText);
+        codeEl.replaceWith(text);
+        const r = document.createRange();
+        r.setStartAfter(text);
+        r.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(r);
+      } else {
+        // No selection — just move cursor to after the <code> element
+        let after = codeEl.nextSibling;
+        if (!after || after.nodeType !== Node.TEXT_NODE) {
+          after = document.createTextNode('\u200B');
+          codeEl.after(after);
+        }
+        const r = document.createRange();
+        r.setStart(after, after.nodeType === Node.TEXT_NODE ? (after as Text).length : 0);
+        r.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(r);
+        // Reset stale browser pending-format states after direct DOM manipulation
+        // (browser can keep ghost state from before entering code)
+        try {
+          if (document.queryCommandState('strikeThrough')) document.execCommand('strikeThrough', false);
+          if (document.queryCommandState('bold'))          document.execCommand('bold', false);
+          if (document.queryCommandState('italic'))        document.execCommand('italic', false);
+        } catch { /* ignore */ }
+      }
+    } else {
+      // Wrap selection (or placeholder) in <code>
+      const range = sel.getRangeAt(0);
+      const selected = range.toString();
+      const code = document.createElement('code');
+      Object.assign(code.style, { fontFamily: 'monospace', background: '#f1f5f9', borderRadius: '3px', padding: '1px 4px' });
+      code.dataset.wa = 'icode';
+      code.textContent = selected || '\u200B'; // zero-width space so cursor can enter
+      range.deleteContents();
+      range.insertNode(code);
+      const r = document.createRange();
+      r.selectNodeContents(code);
+      sel.removeAllRanges();
+      sel.addRange(r);
+    }
+    requestAnimationFrame(updateActiveFormats);
   };
 
+  const toggleBlockquote = () => {
+    editorRef.current?.focus();
+    const isQuote = document.queryCommandValue('formatBlock').toLowerCase() === 'blockquote';
+    document.execCommand('formatBlock', false, isQuote ? 'div' : 'blockquote');
+    requestAnimationFrame(updateActiveFormats);
+  };
+
+  const FORMAT_BUTTONS = [
+    { symbol: 'B',  label: 'מודגש',  action: () => execFmt('bold'),                       ss: 'font-bold',    cmd: 'bold' },
+    { symbol: 'I',  label: 'נטוי',   action: () => execFmt('italic'),                     ss: 'italic',       cmd: 'italic' },
+    { symbol: 'S',  label: 'חוצה',   action: () => execFmt('strikeThrough'),               ss: 'line-through', cmd: 'strikeThrough' },
+    { symbol: '`',  label: 'קוד',    action: toggleCode,                                    ss: 'font-mono',    cmd: 'code' },
+    { symbol: '•',  label: 'תבליט', action: () => execFmt('insertUnorderedList'),          ss: '',             cmd: 'insertUnorderedList' },
+    { symbol: '1.', label: 'ממוספר',action: () => execFmt('insertOrderedList'),            ss: '',             cmd: 'insertOrderedList' },
+    { symbol: '>',  label: 'ציטוט', action: toggleBlockquote,                              ss: '',             cmd: 'blockquote' },
+  ];
+
   return createPortal(
-    <div
+    <>
+      <style>{`
+        [data-wysiwyg] ul { list-style-type: disc !important; padding-right: 22px !important; margin: 3px 0 !important; }
+        [data-wysiwyg] ol { list-style-type: decimal !important; padding-right: 22px !important; margin: 3px 0 !important; }
+        [data-wysiwyg] li { display: list-item !important; margin: 1px 0 !important; }
+        [data-wysiwyg] blockquote { border-right: 4px solid #94a3b8 !important; margin: 3px 0 !important; padding: 3px 10px 3px 0 !important; color: #475569 !important; font-style: italic !important; background: #f8fafc !important; border-radius: 0 4px 4px 0 !important; }
+      `}</style>
+      <div
       className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/50 backdrop-blur-sm"
       onMouseDown={onClose}
     >
       <div
-        className="bg-white rounded-2xl shadow-2xl flex flex-col p-6 gap-4"
-        style={{ width: 640, maxWidth: '95vw', maxHeight: '80vh' }}
+        className="bg-white rounded-2xl shadow-2xl flex flex-col p-5 gap-3"
+        style={{ width: 640, maxWidth: '95vw', maxHeight: '90vh' }}
         onMouseDown={e => e.stopPropagation()}
       >
+        {/* Header */}
         <div className="flex items-center justify-between">
-          <button
-            onClick={onClose}
-            className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors"
-          >
+          <button onClick={onClose} className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors">
             <X size={18} className="text-slate-400" />
           </button>
           <span className="text-sm font-bold text-slate-500">עריכה מורחבת</span>
         </div>
-        <textarea
-          autoFocus
-          className="w-full p-4 border border-slate-200 rounded-xl resize-none text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+
+        {/* WYSIWYG editor */}
+        <div
+          ref={editorRef}
+          contentEditable
+          suppressContentEditableWarning
+          data-wysiwyg
+          className="p-4 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 overflow-y-auto"
           style={{
             fontFamily: 'Heebo, sans-serif',
             fontSize: '1.05rem',
             textAlign: 'right',
             direction: 'rtl',
             minHeight: 280,
-            lineHeight: '1.7',
+            lineHeight: '1.8',
           }}
-          value={localValue}
-          onChange={e => setLocalValue(e.target.value)}
+          onKeyUp={updateActiveFormats}
+          onMouseUp={updateActiveFormats}
+          onKeyDown={e => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'b') { e.preventDefault(); execFmt('bold'); }
+            if ((e.ctrlKey || e.metaKey) && e.key === 'i') { e.preventDefault(); execFmt('italic'); }
+          }}
         />
+
+        {/* Toolbar at bottom */}
+        <div className="flex flex-wrap gap-1.5 p-2 bg-slate-50 border border-slate-200 rounded-xl" dir="rtl">
+          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider self-center ml-auto">עיצוב:</span>
+          {FORMAT_BUTTONS.map(btn => {
+            const isActive = activeFormats.has(btn.cmd);
+            return (
+              <button
+                key={btn.symbol}
+                type="button"
+                onMouseDown={e => { e.preventDefault(); btn.action(); }}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border transition-all select-none shadow-sm ${
+                  isActive
+                    ? 'bg-blue-100 border-blue-400 text-blue-700'
+                    : 'bg-white border-slate-200 hover:border-blue-400 hover:bg-blue-50 hover:text-blue-700'
+                }`}
+              >
+                <span className={`text-[12px] font-mono leading-none ${btn.ss} ${isActive ? 'text-blue-600' : 'text-slate-500'}`}>{btn.symbol}</span>
+                <span className={`text-[11px] font-bold ${isActive ? 'text-blue-700' : 'text-slate-600'}`}>{btn.label}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Footer */}
         <div className="flex items-center justify-between">
-          <span className="text-[11px] text-slate-400">Ctrl+Enter לשמירה · Esc לביטול</span>
+          <span className="text-[11px] text-slate-400">Ctrl+Enter לשמירה · Esc לביטול · Ctrl+B מודגש · Ctrl+I נטוי</span>
           <div className="flex gap-2">
-            <button
-              onClick={onClose}
-              className="px-4 py-2 border border-slate-200 rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-50 transition-colors"
-            >
-              ביטול
-            </button>
-            <button
-              onClick={handleApply}
-              className="px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-700 transition-colors"
-            >
-              שמור
-            </button>
+            <button onClick={onClose} className="px-4 py-2 border border-slate-200 rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-50 transition-colors">ביטול</button>
+            <button onClick={() => { onChange(getWaText()); onClose(); }} className="px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-700 transition-colors">שמור</button>
           </div>
         </div>
       </div>
-    </div>,
+    </div>
+    </>,
     document.body
   );
 };

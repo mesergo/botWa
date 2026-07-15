@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
+import { WhatsAppText } from '../utils/whatsappFormat';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Send, X, RotateCcw, User, Bot, ExternalLink, FileText, ChevronLeft, ChevronRight, Maximize2, Share2, Check, GitBranch, Upload, History, Globe } from 'lucide-react';
 import { ChatMessage, NodeType, FixedProcess, CarouselItem, User as UserType, Version } from '../types';
@@ -1194,7 +1195,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
                   {msg.sender === 'bot' ? <Bot size={18} /> : <User size={18} />}
                 </div>
                 <div className={`p-4 rounded-3xl shadow-sm text-sm font-bold text-right ${msg.sender === 'bot' ? 'bg-white text-black border border-slate-100 rounded-tr-none' : 'bg-blue-600 text-white rounded-tl-none'}`}>
-                  {msg.type === 'text' && <div className="whitespace-pre-wrap">{msg.content}</div>}
+                  {msg.type === 'text' && <div><WhatsAppText text={msg.content || ''} /></div>}
                   {msg.type === 'image' && <img src={msg.url} className="rounded-xl w-full h-auto mt-2" alt="Bot message" />}
                   {msg.type === 'video' && <video src={msg.url} controls className="rounded-xl w-full h-auto mt-2" />}
                   {msg.type === 'document' && (
