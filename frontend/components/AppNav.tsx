@@ -1,8 +1,8 @@
 import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Bot, List, Users, Layers, Settings, UserCog, Home } from 'lucide-react';
+import { Bot, List, Users, Layers, Settings, UserCog, Home,MessageSquare } from 'lucide-react';
 
-export type NavPage = 'bots' | 'sessions' | 'contacts' | 'groups' | 'settings' | 'users';
+export type NavPage = 'bots' | 'sessions' | 'contacts' | 'groups'| 'sms_in' | 'settings' | 'users';
 
 const NAV_PATHS: Record<NavPage, string> = {
   bots:     '/dashboard',
@@ -10,6 +10,7 @@ const NAV_PATHS: Record<NavPage, string> = {
   contacts: '/contacts',
   groups:   '/groups',
   settings: '/settings',
+  sms_in:   '/sms-in',
   users:    '/users',
 };
 
@@ -21,6 +22,7 @@ interface AppNavProps {
   onSessions?: () => void;
   onContacts?: () => void;
   onGroups?: () => void;
+  onSmsIn?: () => void;
   onSettings?: () => void;
   onUsers?: () => void;
   /** Navigate back to the home / dashboard overview page */
@@ -34,6 +36,7 @@ const NAV_ITEMS: { key: NavPage; label: string; Icon: React.FC<{ size?: number; 
   { key: 'sessions', label: 'שיחות',       Icon: List },
   { key: 'contacts', label: 'אנשי קשר',   Icon: Users },
   { key: 'groups',   label: 'רשימות תפוצה', Icon: Layers },
+  { key: 'sms_in',   label: 'SMS נכנס',      Icon: MessageSquare },
   { key: 'settings', label: 'הגדרות',      Icon: Settings },
   { key: 'users',    label: 'משתמשים',     Icon: UserCog },
 ];
@@ -44,6 +47,7 @@ const AppNav: React.FC<AppNavProps> = ({
   onSessions,
   onContacts,
   onGroups,
+  onSmsIn,
   onSettings,
   onUsers,
   onGoHome,
@@ -62,6 +66,7 @@ const AppNav: React.FC<AppNavProps> = ({
     sessions: onSessions,
     contacts: onContacts,
     groups: onGroups,
+    sms_in: onSmsIn,
     settings: onSettings,
     users: onUsers,
   };

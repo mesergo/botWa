@@ -30,3 +30,4 @@ botsWa.save
 # Temporary files
 *.tmp
 temp/
+.env

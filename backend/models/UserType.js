@@ -45,6 +45,9 @@ const permissionsSchema = new mongoose.Schema({
     view:   { type: Boolean, default: false },
     add:    { type: Boolean, default: false },
     delete: { type: Boolean, default: false }
+  },
+  sms_in: {
+    view: { type: Boolean, default: false }
   }
 }, { _id: false });
 

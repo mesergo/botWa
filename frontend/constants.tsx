@@ -17,7 +17,7 @@ import {
   Zap
 } from 'lucide-react';
 import { NodeType } from './types';
-
+ 
 export const COMPONENT_GROUPS = [
   {
     title: 'קלט (משתמש)',

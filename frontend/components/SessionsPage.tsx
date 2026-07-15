@@ -41,6 +41,7 @@ interface SessionsPageProps {
   onLogout: () => void;
   onOpenContacts?: (phone?: string) => void;
   onOpenGroups?: () => void;
+  onOpenSmsIn?: () => void;
   onOpenAdminPanel?: () => void;
   onOpenSettings?: () => void;
   onOpenSubUsers?: () => void;
@@ -61,7 +62,7 @@ const WhatsAppIcon = ({ size = 12, className = '' }: { size?: number; className?
   </svg>
 );
 
-const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack, onLogout, onOpenContacts, onOpenGroups, onOpenAdminPanel, onOpenSettings, onOpenSubUsers, onStopImpersonation, onUpdateAvailability, onGoHome, initialPhone }) => {
+const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack, onLogout, onOpenContacts, onOpenGroups, onOpenAdminPanel,onOpenSmsIn, onOpenSettings, onOpenSubUsers, onStopImpersonation, onUpdateAvailability, onGoHome, initialPhone }) => {
   // Contacts panel state
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [contactsLoading, setContactsLoading] = useState(true);
@@ -1802,6 +1803,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
               onBots={onBack && can('bots.view_tab') ? onBack : undefined}
               onContacts={onOpenContacts ? () => onOpenContacts() : undefined}
               onGroups={onOpenGroups}
+              onSmsIn={onOpenSmsIn}
               onSettings={onOpenSettings}
               onUsers={onOpenSubUsers && can('users.view') ? onOpenSubUsers : undefined}
             />
@@ -1872,6 +1874,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
             onSessions={botList.length > 1 ? () => { setActiveBotFilter(null); setSelectedPhone(null); setShowBotPicker(true); } : undefined}
             onContacts={onOpenContacts ? () => onOpenContacts() : undefined}
             onGroups={onOpenGroups}
+            onSmsIn={onOpenSmsIn}
             onSettings={onOpenSettings}
             onUsers={onOpenSubUsers && can('users.view') ? onOpenSubUsers : undefined}
           />

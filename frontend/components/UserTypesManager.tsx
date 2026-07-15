@@ -85,6 +85,13 @@ const PERMISSION_GROUPS: Array<{
       { key: 'delete', label: 'מחיקה' },
     ]
   },
+  {
+    key: 'sms_in',
+    label: 'SMS נכנס',
+    actions: [
+      { key: 'view', label: 'הצגת לשונית' },
+    ]
+  },
 ];
 
 const emptyPermissions = (): UserTypePermissions => ({
@@ -95,6 +102,7 @@ const emptyPermissions = (): UserTypePermissions => ({
   settings: { view: false, edit_profile: false },
   users:    { view: false, add: false, edit: false, delete: false },
   rep_groups: { view: false, add: false, delete: false },
+  sms_in:   { view: false },
 });
 
 const UserTypesManager: React.FC<Props> = ({ token, apiBase }) => {
@@ -137,7 +145,7 @@ const UserTypesManager: React.FC<Props> = ({ token, apiBase }) => {
           can_add_users: t.can_add_users,
           show_in_users_tab: t.show_in_users_tab !== false,
           allowed_user_type_ids: (t.allowed_user_type_ids || []).map(x => x._id),
-          permissions: t.permissions
+          permissions: { ...emptyPermissions(), ...t.permissions, sms_in: t.permissions?.sms_in ?? { view: false } }
         };
       });
       setDrafts(initial);

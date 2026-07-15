@@ -26,6 +26,9 @@ import whatsappWebhookRoutes from './routes/whatsappWebhookRoutes.js';
 import whatsappRegistrationRoutes from './routes/whatsappRegistrationRoutes.js';
 import api360Routes from './routes/api360Routes.js';
 import notificationRoutes from './routes/notificationRoutes.js';
+import smsInRoutes from './routes/smsInRoutes.js';
+import { connectSmsDb } from './sms-in/smsDb.js';
+import { seedSmsDemoIfEmpty } from './sms-in/services/demoSeed.service.js';
 import { seedTemplates } from './controllers/templateController.js';
 import { seedUserTypes } from './scripts/seed-user-types.js';
  
@@ -60,6 +63,8 @@ async function startServer() {
   try {
     // Connect to database FIRST
     await connectDB();
+    await connectSmsDb();
+    await seedSmsDemoIfEmpty();
     console.log('✅ Database connected, registering routes...');
     
     // Seed templates and user types AFTER database connection
@@ -88,6 +93,7 @@ async function startServer() {
     app.use('/api/groups', groupRoutes);
     app.use('/api/whatsapp', whatsappWebhookRoutes);  // Meta WhatsApp Business webhook (GET verify + POST events)
     app.use('/api/whatsapp-registration', whatsappRegistrationRoutes);  // Stage 2/3 of FB onboarding + connected-numbers settings
+    app.use('/api/sms-in', smsInRoutes);
     app.use('/api', uploadRoutes);  // Upload route
     app.use('/api/360', api360Routes);  // External template-send endpoint (mirrors WA API URL)
     app.use('/api/notifications', notificationRoutes);

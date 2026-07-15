@@ -44,6 +44,7 @@ interface ContactsPageProps {
   onLogout: () => void;
   onOpenSessions?: (phone?: string) => void;
   onOpenGroups?: () => void;
+  onOpenSmsIn?: () => void;
   onOpenAdminPanel?: () => void;
   onOpenSettings?: () => void;
   onOpenSubUsers?: () => void;
@@ -153,7 +154,7 @@ const BotPhonesTags: React.FC<{ phones: string[] }> = ({ phones }) => {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 const ContactsPage: React.FC<ContactsPageProps> = ({
-  token, currentUser, onBack, onLogout, onOpenSessions, onOpenGroups,
+  token, currentUser, onBack, onLogout, onOpenSessions, onOpenGroups,onOpenSmsIn,
   onOpenAdminPanel, onOpenSettings, onOpenSubUsers, onStopImpersonation, onGoHome, initialPhone,
 }) => {
   const [contacts, setContacts] = useState<MergedContact[]>([]);
@@ -472,6 +473,7 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
           onBots={can('bots.view_tab') ? onBack : undefined}
           onSessions={onOpenSessions ? () => onOpenSessions() : undefined}
           onGroups={onOpenGroups}
+          onSmsIn={onOpenSmsIn}
           onSettings={onOpenSettings}
           onUsers={onOpenSubUsers && can('users.view') ? onOpenSubUsers : undefined}
         />

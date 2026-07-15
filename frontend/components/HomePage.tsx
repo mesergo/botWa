@@ -1,5 +1,5 @@
 import React from 'react';
-import { Bot, MessageSquare, Users, Settings, LogOut, Shield, ArrowLeft, LayoutDashboard, Layers } from 'lucide-react';
+import { Bot, MessageSquare, Users, Settings, LogOut, Shield, ArrowLeft, LayoutDashboard, Layers,Inbox } from 'lucide-react';
 import { User } from '../types';
 import { usePermission } from '../hooks/usePermission';
 import DashboardStats from './DashboardStats';
@@ -10,6 +10,7 @@ interface HomePageProps {
   onGoToBots: () => void;
   onGoToChats: () => void;
   onGoToContacts: () => void;
+  onGoToSmsIn?: () => void;
   onGoToSettings: () => void;
   onOpenAdminPanel?: () => void;
   onLogout: () => void;
@@ -17,7 +18,7 @@ interface HomePageProps {
 }
 
 // Sidebar nav items definition
-type NavId = 'home' | 'bots' | 'chats' | 'contacts' | 'settings';
+type NavId = 'home' | 'bots' | 'chats' | 'sms_in' | 'contacts' | 'settings';
 
 interface SideNavItem {
   id: NavId;
@@ -32,6 +33,7 @@ const SIDE_NAV: SideNavItem[] = [
   { id: 'home',     label: 'סקירה כללית',  Icon: LayoutDashboard, color: 'text-blue-600' },
   { id: 'bots',     label: 'הבוטים שלי',   Icon: Bot,             color: 'text-blue-600',    permission: 'bots.view_tab' },
   { id: 'chats',    label: 'שיחות',         Icon: MessageSquare,   color: 'text-emerald-600', permission: 'sessions.view' },
+  { id: 'sms_in',   label: 'SMS נכנס',      Icon: Inbox,           color: 'text-sky-600',     permission: 'sms_in.view' },
   { id: 'contacts', label: 'אנשי קשר',     Icon: Users,           color: 'text-violet-600',  permission: 'contacts.view' },
   { id: 'settings', label: 'הגדרות',        Icon: Settings,        color: 'text-slate-500',   permission: 'settings.view' },
 ];
@@ -68,6 +70,17 @@ const tiles = [
     badge: null,
   },
   {
+    id: 'sms_in' as const,
+    label: 'SMS נכנס',
+    description: 'הודעות SMS נכנסות וניתוב קווים',
+    icon: Inbox,
+    iconBg: 'bg-sky-50',
+    iconColor: 'text-sky-600',
+    accent: 'group-hover:border-sky-200',
+    arrowColor: 'text-sky-400',
+    badge: null,
+  },
+  {
     id: 'settings' as const,
     label: 'הגדרות',
     description: 'הגדרות חשבון ופרופיל',
@@ -84,6 +97,7 @@ const HomePage: React.FC<HomePageProps> = ({
   onGoToBots,
   onGoToChats,
   onGoToContacts,
+  onGoToSmsIn,
   onGoToSettings,
   onOpenAdminPanel,
   onLogout,
@@ -95,6 +109,7 @@ const HomePage: React.FC<HomePageProps> = ({
     if (id === 'bots')     return can('bots.view_tab');
     if (id === 'chats')    return can('sessions.view');
     if (id === 'contacts') return can('contacts.view');
+    if (id === 'sms_in')   return can('sms_in.view') && !!onGoToSmsIn;
     if (id === 'settings') return can('settings.view');
     return true;
   });
@@ -103,6 +118,7 @@ const HomePage: React.FC<HomePageProps> = ({
     if (id === 'bots') onGoToBots();
     else if (id === 'chats') onGoToChats();
     else if (id === 'contacts') onGoToContacts();
+    else if (id === 'sms_in') onGoToSmsIn?.();
     else if (id === 'settings') onGoToSettings();
   };
 
@@ -178,6 +194,7 @@ const HomePage: React.FC<HomePageProps> = ({
             const handler =
               id === 'bots'     ? onGoToBots
               : id === 'chats'    ? onGoToChats
+              : id === 'sms_in'   ? onGoToSmsIn
               : id === 'contacts' ? onGoToContacts
               : id === 'settings' ? onGoToSettings
               : undefined;

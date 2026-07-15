@@ -19,7 +19,12 @@ export function usePermission(currentUser: User | null) {
       return roleDefaultCheck(currentUser.role, key);
     }
     const [section, action] = key.split('.');
-    return !!(perms as any)?.[section]?.[action];
+    const sectionPerms = (perms as any)?.[section];
+    // If a newer permission section is missing from an older UserType doc, fall back to role defaults
+    if (sectionPerms == null) {
+      return roleDefaultCheck(currentUser.role, key);
+    }
+    return !!sectionPerms?.[action];
   }, [currentUser]);
 
   return check;
@@ -33,6 +38,7 @@ function roleDefaultCheck(role: string | undefined, key: string): boolean {
     'sessions.view','sessions.add','sessions.view_all','sessions.templates_as_manager',
     'contacts.view','contacts.add','contacts.edit','contacts.delete','contacts.import_excel',
     'groups.view','groups.create','groups.add_contact','groups.send_message','groups.remove_contact',
+    'sms_in.view',
     'settings.view','settings.edit_profile',
     'users.view','users.add','users.edit','users.delete',
     'rep_groups.view','rep_groups.add','rep_groups.delete'

@@ -159,7 +159,8 @@ function getDefaultPermissionsForRole(role) {
     groups:   { view: true, create: true, add_contact: true, send_message: true, remove_contact: true },
     settings: { view: true, edit_profile: true },
     users:    { view: true, add: true, edit: true, delete: true },
-    rep_groups: { view: true, add: true, delete: true }
+    rep_groups: { view: true, add: true, delete: true },
+    sms_in:   { view: true }
   };
   const none = {
     bots:     { view_tab: false, create: false, edit: false, delete: false, settings: false, publish: false },
@@ -168,7 +169,8 @@ function getDefaultPermissionsForRole(role) {
     groups:   { view: false, create: false, add_contact: false, send_message: false, remove_contact: false },
     settings: { view: false, edit_profile: false },
     users:    { view: false, add: false, edit: false, delete: false },
-    rep_groups: { view: false, add: false, delete: false }
+    rep_groups: { view: false, add: false, delete: false },
+    sms_in:   { view: false }
   };
   if (role === 'admin') return all;
   if (role === 'user') return all;
@@ -179,7 +181,8 @@ function getDefaultPermissionsForRole(role) {
     groups:   { view: true, create: false, add_contact: false, send_message: true, remove_contact: false },
     settings: { view: true, edit_profile: true },
     users:    { ...none.users },
-    rep_groups: { ...none.rep_groups }
+    rep_groups: { ...none.rep_groups },
+    sms_in:   { ...none.sms_in }
   };
   // rep (default)
   return {
@@ -189,6 +192,7 @@ function getDefaultPermissionsForRole(role) {
     groups:   { view: true, create: false, add_contact: false, send_message: false, remove_contact: false },
     settings: { view: true, edit_profile: true },
     users:    { ...none.users },
-    rep_groups: { ...none.rep_groups }
+    rep_groups: { ...none.rep_groups },
+    sms_in:   { ...none.sms_in }
   };
 }

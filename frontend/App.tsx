@@ -14,6 +14,7 @@ import TemplateForm from './components/TemplateForm';
 import ContactsPage from './components/ContactsPage';
 import SessionsPage from './components/SessionsPage';
 import GroupsPage from './components/GroupsPage';
+import SmsInPage from './components/SmsInPage';
 import { StartNode, InputTextNode, InputDateNode, InputFileNode, OutputTextNode, OutputImageNode, OutputLinkNode, OutputMenuNode, ActionWebServiceNode, ActionWaitNode, ActionTimeRoutingNode, ActionAddToGroupNode, ActionRemoveFromGroupNode, ActionTransferToAgentNode, ActionSetParameterNode, FixedProcessNode, AutomaticResponsesNode } from './components/nodes/CustomNodes';
 import ButtonEdge from './components/edges/ButtonEdge';
 import { CloudUpload, RotateCcw, Plus, AlertTriangle, Copy, X, Lock, Wallet, Sliders, Save } from 'lucide-react';
@@ -118,7 +119,7 @@ function clearStoredAuth() {
   sessionStorage.removeItem('flowbot_user');
   window.dispatchEvent(new Event('flowbot-auth-change'));
 }
-
+ 
 function saveStoredAuth(token: string, user: any, rememberMe: boolean) {
   clearStoredAuth();
   const storage = rememberMe ? localStorage : sessionStorage;
@@ -127,7 +128,7 @@ function saveStoredAuth(token: string, user: any, rememberMe: boolean) {
   window.dispatchEvent(new Event('flowbot-auth-change'));
 }
 
-type ViewMode = 'home' | 'dashboard' | 'editor' | 'editing-process' | 'viewing-process' | 'simulator-only' | 'template-selection' | 'template-form' | 'admin-panel' | 'editing-template' | 'creating-template' | 'contacts' | 'sessions' | 'groups';
+type ViewMode = 'home' | 'dashboard' | 'editor' | 'editing-process' | 'viewing-process' | 'simulator-only' | 'template-selection' | 'template-form' | 'admin-panel' | 'editing-template' | 'creating-template' | 'contacts' | 'sessions' | 'groups' | 'sms_in';
 
 const FlowBuilder: React.FC = () => {
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
@@ -2372,6 +2373,7 @@ const FlowBuilder: React.FC = () => {
               onGoToBots={() => navigate('/dashboard')}
               onGoToChats={() => { setSessionsOwnOnly(true); navigate('/sessions'); }}
               onGoToContacts={() => navigate('/contacts')}
+              onGoToSmsIn={can('sms_in.view') ? () => navigate('/sms-in') : undefined}
               onGoToSettings={() => navigate('/settings')}
               onOpenAdminPanel={currentUser?.role === 'admin' ? () => navigate('/admin') : undefined}
               onLogout={handleLogout}
@@ -2387,6 +2389,7 @@ const FlowBuilder: React.FC = () => {
               onLogout={() => { localStorage.clear(); window.location.reload(); }}
               onOpenSessions={can('sessions.view') ? (phone?: string) => { setSessionsInitialPhone(phone ?? null); setSessionsOwnOnly(true); navigate('/sessions'); } : undefined}
               onOpenGroups={can('groups.view') ? () => navigate('/groups') : undefined}
+              onOpenSmsIn={can('sms_in.view') ? () => navigate('/sms-in') : undefined}
               onOpenAdminPanel={() => navigate('/admin')}
               onOpenSettings={can('settings.view') ? () => navigate('/settings') : undefined}
               onOpenSubUsers={can('users.view') ? () => navigate('/users') : undefined}
@@ -2403,6 +2406,7 @@ const FlowBuilder: React.FC = () => {
               onLogout={() => { localStorage.clear(); window.location.reload(); }}
               onOpenContacts={can('contacts.view') ? (phone?: string) => { setContactsInitialPhone(phone ?? null); navigate('/contacts'); } : undefined}
               onOpenSessions={can('sessions.view') ? (phone?: string) => { setSessionsInitialPhone(phone ?? null); setSessionsOwnOnly(true); navigate('/sessions'); } : undefined}
+              onOpenSmsIn={can('sms_in.view') ? () => navigate('/sms-in') : undefined}
               onOpenAdminPanel={() => navigate('/admin')}
               onOpenSettings={can('settings.view') ? () => navigate('/settings') : undefined}
               onOpenSubUsers={can('users.view') ? () => navigate('/users') : undefined}
@@ -2418,6 +2422,7 @@ const FlowBuilder: React.FC = () => {
               onLogout={() => { localStorage.clear(); window.location.reload(); }}
               onOpenContacts={can('contacts.view') ? (phone?: string) => { setContactsInitialPhone(phone ?? null); navigate('/contacts'); } : undefined}
               onOpenGroups={can('groups.view') ? () => navigate('/groups') : undefined}
+              onOpenSmsIn={can('sms_in.view') ? () => navigate('/sms-in') : undefined}
               onOpenAdminPanel={() => navigate('/admin')}
               ownOnly={sessionsOwnOnly}
               initialPhone={sessionsInitialPhone}
@@ -2441,6 +2446,7 @@ const FlowBuilder: React.FC = () => {
                 onOpenContacts={() => navigate('/contacts')}
                 onOpenSessions={() => { setSessionsOwnOnly(true); navigate('/sessions'); }}
                 onOpenGroups={() => navigate('/groups')}
+                onOpenSmsIn={can('sms_in.view') ? () => navigate('/sms-in') : undefined}
                 onStopImpersonation={handleStopImpersonation}
                 onConnectFacebook={(can('bots.publish') || currentUser?.isImpersonating) ? handleConnectFacebook : undefined}
                 onUpdateBotPublicId={handleUpdateBotPublicId}
@@ -2479,6 +2485,7 @@ const FlowBuilder: React.FC = () => {
               onOpenContacts={() => navigate('/contacts')}
               onOpenSessions={() => { setSessionsOwnOnly(true); navigate('/sessions'); }}
               onOpenGroups={() => navigate('/groups')}
+              onOpenSmsIn={can('sms_in.view') ? () => navigate('/sms-in') : undefined}
               onStopImpersonation={handleStopImpersonation}
               onConnectFacebook={(can('bots.publish') || currentUser?.isImpersonating) ? handleConnectFacebook : undefined}
               onUpdateBotPublicId={handleUpdateBotPublicId}
@@ -2503,6 +2510,7 @@ const FlowBuilder: React.FC = () => {
               onOpenContacts={() => navigate('/contacts')}
               onOpenSessions={() => { setSessionsOwnOnly(true); navigate('/sessions'); }}
               onOpenGroups={() => navigate('/groups')}
+              onOpenSmsIn={can('sms_in.view') ? () => navigate('/sms-in') : undefined}
               onStopImpersonation={handleStopImpersonation}
               onConnectFacebook={(can('bots.publish') || currentUser?.isImpersonating) ? handleConnectFacebook : undefined}
               onUpdateBotPublicId={handleUpdateBotPublicId}
@@ -2512,6 +2520,21 @@ const FlowBuilder: React.FC = () => {
               onGoHome={() => navigate('/')}
               token={token}
               initialTab="users"
+            />
+          } />
+          <Route path="/sms-in" element={
+            <SmsInPage
+              token={token}
+              currentUser={currentUser}
+              onBack={() => navigate('/dashboard')}
+              onLogout={() => { localStorage.clear(); window.location.reload(); }}
+              onOpenSessions={can('sessions.view') ? (phone?: string) => { setSessionsInitialPhone(phone ?? null); setSessionsOwnOnly(true); navigate('/sessions'); } : undefined}
+              onOpenContacts={can('contacts.view') ? (phone?: string) => { setContactsInitialPhone(phone ?? null); navigate('/contacts'); } : undefined}
+              onOpenGroups={can('groups.view') ? () => navigate('/groups') : undefined}
+              onOpenAdminPanel={currentUser?.role === 'admin' ? () => navigate('/admin') : undefined}
+              onOpenSettings={can('settings.view') ? () => navigate('/settings') : undefined}
+              onOpenSubUsers={can('users.view') ? () => navigate('/users') : undefined}
+              onStopImpersonation={handleStopImpersonation}
             />
           } />
           <Route path="*" element={<Navigate to="/" replace />} />
