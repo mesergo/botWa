@@ -821,6 +821,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
               <input
                 value={newGroupName}
                 onChange={e => setNewGroupName(e.target.value)}
+                maxLength={50}
                 onKeyDown={e => { if (e.key === 'Enter') createGroup(); }}
                 placeholder="שם רשימה חדשה..."
                 className="flex-1 px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-500 transition-all"
@@ -877,7 +878,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                     <div
                       key={g._id}
                       onClick={() => fetchGroupDetail(g._id)}
-                      className={`group flex items-center justify-between gap-3 px-4 py-3 mb-2 rounded-2xl cursor-pointer transition-all border ${
+                      className={`group relative flex items-center gap-3 px-4 py-3 mb-2 rounded-2xl cursor-pointer transition-all border ${
                         selectedGroup?._id === g._id
                           ? 'bg-blue-50 border-blue-200'
                           : 'bg-white border-slate-100 hover:bg-slate-50'
@@ -902,14 +903,14 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                             />
                           ) : (
                             <>
-                              <p className="text-sm font-bold text-slate-900 truncate">{g.name}</p>
+                              <p className="text-sm font-bold text-slate-900 truncate" title={g.name}>{g.name}</p>
                               <p className="text-xs font-semibold text-slate-400">{g.contact_count} אנשי קשר</p>
                             </>
                           )}
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
+                      <div className="absolute left-2 bottom-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
                         {renamingId === g._id ? (
                           <>
                             <button onClick={saveRename} className="p-1.5 text-green-600 hover:bg-green-50 rounded-lg"><Check size={14} /></button>

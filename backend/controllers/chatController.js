@@ -1151,25 +1151,9 @@ const performAutoRemoval = async (user, sender, phone, text, name = '') => {
       { _id: blocklist._id },
       { $addToSet: { phones: sender, contact_ids: contact._id } }
     );
-    if (updateRes.modifiedCount > 0) {
-      try {
-        await GroupRemovalLog.create({
-          user_id: userId,
-          group_id: blocklist._id,
-          group_name: blocklist.name,
-          is_blocklist: true,
-          contact_id: contact?._id || null,
-          phone: sender,
-          full_name: contact?.full_name || '',
-          whatsapp_name: contact?.whatsapp_name || name || '',
-          email: contact?.email || '',
-          reason: `מילת מפתח: ${matched}`,
-          removed_by: 'auto-keyword'
-        });
-      } catch (logErr) {
-        console.error('[BOT] removal-keyword log write failed:', logErr.message);
-      }
-    }
+    // NOTE: We intentionally do NOT create a GroupRemovalLog entry here.
+    // Adding to blocklist via opt-out keyword appears under "אנשי קשר" in the blocklist.
+    // GroupRemovalLog is only for manual removals FROM the blocklist by a user.
  
     try {
       await BotSession.updateMany(

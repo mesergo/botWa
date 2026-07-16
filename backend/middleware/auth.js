@@ -43,8 +43,30 @@ export const requireCompanyManager = (req, res, next) => {
   return res.status(403).json({ error: 'Access denied. Company manager role required.' });
 };
 
+/**
+ * Factory: creates a middleware that allows company managers/admins/impersonators,
+ * AND users whose custom user type grants the given permission key (e.g. 'users.add').
+ */
+export const requirePermission = (permKey) => async (req, res, next) => {
+  if (!req.user) {
+    return res.status(403).json({ error: 'Access denied.' });
+  }
+  const role = req.user.role;
+  if (role === 'user' || role === 'admin' || req.user.isImpersonating) {
+    return next();
+  }
+  try {
+    const perms = await resolvePermissions(req.user);
+    if (hasPermission(perms, permKey)) {
+      return next();
+    }
+  } catch (_) {}
+  return res.status(403).json({ error: 'Access denied.' });
+};
+
 // Middleware: company managers AND rep_managers may access this route.
-export const requireManagerOrRepManager = (req, res, next) => {
+// Also allows users with custom user types that have the 'users.view' permission.
+export const requireManagerOrRepManager = async (req, res, next) => {
   if (!req.user) {
     return res.status(403).json({ error: 'Access denied.' });
   }
@@ -52,6 +74,13 @@ export const requireManagerOrRepManager = (req, res, next) => {
   if (role === 'user' || role === 'admin' || role === 'rep_manager' || req.user.isImpersonating) {
     return next();
   }
+  // Also allow users whose custom user type grants users.view permission
+  try {
+    const perms = await resolvePermissions(req.user);
+    if (hasPermission(perms, 'users.view')) {
+      return next();
+    }
+  } catch (_) {}
   return res.status(403).json({ error: 'Access denied.' });
 };
 
