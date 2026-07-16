@@ -28,7 +28,6 @@ import api360Routes from './routes/api360Routes.js';
 import notificationRoutes from './routes/notificationRoutes.js';
 import smsInRoutes from './routes/smsInRoutes.js';
 import { connectSmsDb } from './sms-in/smsDb.js';
-import { seedSmsDemoIfEmpty } from './sms-in/services/demoSeed.service.js';
 import { seedTemplates } from './controllers/templateController.js';
 import { seedUserTypes } from './scripts/seed-user-types.js';
  
@@ -64,7 +63,6 @@ async function startServer() {
     // Connect to database FIRST
     await connectDB();
     await connectSmsDb();
-    await seedSmsDemoIfEmpty();
     console.log('✅ Database connected, registering routes...');
     
     // Seed templates and user types AFTER database connection

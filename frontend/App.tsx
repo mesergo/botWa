@@ -166,6 +166,30 @@ const FlowBuilder: React.FC = () => {
 
   const [token, setToken] = useState<string | null>(tokenExpiredOnLoad ? null : getStoredToken());
   const [sessionExpired, setSessionExpired] = useState(tokenExpiredOnLoad);
+
+  // Refresh permissions from the server on load, so admin-side changes
+  // (e.g. the per-client "SMS נכנס" toggle) take effect without re-login.
+  useEffect(() => {
+    if (!token) return;
+    (async () => {
+      try {
+        const res = await fetch(`${API_BASE}/auth/profile`, { headers: { Authorization: `Bearer ${token}` } });
+        if (!res.ok) return;
+        const profile = await res.json();
+        if (!profile?.permissions) return;
+        setCurrentUser(prev => {
+          if (!prev) return prev;
+          const updated = { ...prev, permissions: profile.permissions } as User;
+          try {
+            const storage = localStorage.getItem('flowbot_token') ? localStorage : sessionStorage;
+            storage.setItem('flowbot_user', JSON.stringify(updated));
+          } catch {}
+          return updated;
+        });
+      } catch {}
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
   
   const [bots, setBots] = useState<BotFlow[]>([]);
   const [selectedBot, setSelectedBot] = useState<BotFlow | null>(null);
@@ -2533,6 +2557,7 @@ const FlowBuilder: React.FC = () => {
             />
           } />
           <Route path="/sms-in" element={
+            !can('sms_in.view') ? <Navigate to="/" replace /> :
             <SmsInPage
               token={token}
               currentUser={currentUser}

@@ -6,7 +6,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  INITIAL_MESSAGES, 
   INITIAL_CLIENTS, 
   INITIAL_DEST_SETTINGS,
   normalizeDestSetting,
@@ -29,12 +28,10 @@ import {
   Download, 
   ArrowLeft, 
   ExternalLink,
-  Smartphone,
   CheckCircle2,
   AlertCircle,
   Calendar,
   Layers,
-  Sparkles,
   Link2,
   X,
   ChevronLeft,
@@ -78,10 +75,10 @@ export default function SmsInApp({
   const [loginPassword, setLoginPassword] = useState('admin');
   const [loginError, setLoginError] = useState('');
 
-  // Core App Data persistence with localStorage
+  // Messages come exclusively from the SMS MongoDB — never from browser storage
   const [messages, setMessages] = useState<Message[]>(() => {
-    const saved = localStorage.getItem('mesergo_messages');
-    return saved ? JSON.parse(saved) : INITIAL_MESSAGES;
+    localStorage.removeItem('mesergo_messages'); // purge stale demo data from old versions
+    return [];
   });
 
   const [clients, setClients] = useState<Client[]>(() => {
@@ -127,18 +124,7 @@ export default function SmsInApp({
 
   // Modals & Panels State
   const [editingDestSetting, setEditingDestSetting] = useState<DestSetting | null>(null);
-  const [showSimulateSms, setShowSimulateSms] = useState(false);
   const [showExportDateModal, setShowExportDateModal] = useState(false);
-  
-  // Simulation Form State
-  const [simDest, setSimDest] = useState('');
-  const [simPhone, setSimPhone] = useState('0525544332');
-  const [simMessage, setSimMessage] = useState('היי שלום, אשמח שתיצרו איתי קשר בנוגע לפרסום של סניף ירושלים החדש');
-  const [simDate, setSimDate] = useState(() => {
-    const now = new Date();
-    const pad = (n: number) => String(n).padStart(2, '0');
-    return `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())} ${pad(now.getDate())}/${pad(now.getMonth()+1)}/${String(now.getFullYear()).substr(-2)}`;
-  });
 
   // Notifications
   const [toast, setToast] = useState<{ type: 'success' | 'info' | 'error'; text: string } | null>(null);
@@ -147,16 +133,13 @@ export default function SmsInApp({
   const [dbStatus, setDbStatus] = useState<{
     connected: boolean;
     configured: boolean;
-    localDev?: boolean;
-    demoMode?: boolean;
-    seeded?: boolean;
     message?: string;
     reason?: string;
     dbName?: string;
     collection?: string;
     collectionsDetected?: string[];
   }>({ connected: false, configured: false });
-  const [messagesSource, setMessagesSource] = useState<'mongodb' | 'demo' | 'local' | null>(null);
+  const [messagesSource, setMessagesSource] = useState<'mongodb' | 'local' | null>(null);
   const [isLoadingMessages, setIsLoadingMessages] = useState<boolean>(false);
 
   // Fetch real-time connection status of database
@@ -180,20 +163,16 @@ export default function SmsInApp({
       if (token) headers.Authorization = `Bearer ${token}`;
       const res = await fetch(`${API_BASE}/messages?limit=${MESSAGES_FETCH_LIMIT}`, { headers });
       const data = await res.json();
-      if ((data.source === 'mongodb' || data.source === 'demo') && Array.isArray(data.messages)) {
+      if (data.source === 'mongodb' && Array.isArray(data.messages)) {
         setMessages(data.messages);
-        setMessagesSource(data.source === 'demo' || data.demoMode ? 'demo' : 'mongodb');
+        setMessagesSource('mongodb');
         if (!silent) {
-          if (data.source === 'demo' || data.demoMode) {
-            showToastMsg(`נטענו ${data.messages.length} הודעות דמו לפיתוח`, 'info');
-          } else {
-            showToastMsg(`הנתונים נטענו בהצלחה מ-MongoDB (${data.messages.length} SMS)`, 'success');
-          }
+          showToastMsg(`הנתונים נטענו בהצלחה מ-MongoDB (${data.messages.length} SMS)`, 'success');
         }
       } else {
         setMessagesSource('local');
         if (!silent) {
-          showToastMsg('מצב מקומי — נתונים מהדפדפן (בפרודקשן ייטענו מהשרת)', 'info');
+          showToastMsg('אין חיבור לטבלת ה-SMS — בדוק את הגדרות השרת', 'error');
         }
       }
     } catch (e) {
@@ -251,7 +230,7 @@ export default function SmsInApp({
   // Run on mount
   useEffect(() => {
     fetchDbStatus().then((status) => {
-      if (status && (status.connected || status.demoMode || status.localDev)) {
+      if (status && status.connected) {
         fetchRealMessages(true);
       }
     });
@@ -267,10 +246,6 @@ export default function SmsInApp({
   }, [embedded, token, isAdmin]);
 
   // Sync state to LocalStorage
-  useEffect(() => {
-    localStorage.setItem('mesergo_messages', JSON.stringify(messages));
-  }, [messages]);
-
   useEffect(() => {
     // Don't overwrite local demo clients when using MongoDB accounts
     if (clientsFromMongo || embedded) return;
@@ -658,66 +633,6 @@ export default function SmsInApp({
     }
   };
 
-  // Simulate Incoming SMS action
-  const handleSimulateSmsSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!simDest || !simPhone || !simMessage) {
-      showToastMsg('אנא מלא את כל פרטי ה-SMS להדמיה', 'error');
-      return;
-    }
-
-    // Create a mock original ObjectID
-    const randomHex = Array.from({length: 24}, () => Math.floor(Math.random()*16).toString(16)).join('');
-    const mockId = `MongoDB\\BSON\\ObjectID("${randomHex}")`;
-
-    const newSMS: Message = {
-      id_: mockId,
-      dest: simDest,
-      phone: simPhone.trim(),
-      date: simDate,
-      message: simMessage.trim()
-    };
-
-    // If backend DB is connected, let's post it to the server!
-    if (dbStatus.connected) {
-      fetch(`${API_BASE}/messages`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          dest: simDest,
-          phone: simPhone.trim(),
-          date: simDate,
-          message: simMessage.trim()
-        })
-      })
-      .then(res => res.json())
-      .then(data => {
-        if (data.success && data.id_) {
-          newSMS.id_ = data.id_;
-          // update state to have the real database ID
-          setMessages(prev => prev.map(m => m.date === simDate && m.phone === simPhone.trim() ? { ...m, id_: data.id_ } : m));
-          showToastMsg('ה-SMS נשמר במונגורד דיבי בהצלחה!', 'success');
-        }
-      })
-      .catch(err => {
-        console.error('Failed to persist simulated sms to Mongo:', err);
-      });
-    }
-
-    // Trigger webhook if configuration exists on this line destination
-    const lineSetting = destSettings.find(ds => ds.dest === simDest);
-    
-    // Add to messages top
-    setMessages([newSMS, ...messages]);
-    setShowSimulateSms(false);
-    showToastMsg(`הודעת SMS נכנסה התקבלה בהצלחה בנתב ${simDest}!`, 'success');
-
-    if (lineSetting && lineSetting.isActive && (lineSetting.googleSheetsUrl || lineSetting.webhookUrl)) {
-      triggerLineWebhooks(newSMS, lineSetting);
-      showToastMsg(`בוצע ניתוב ווב-הוק חם לגוגל שיטס עבור קו ${simDest}`, 'success');
-    }
-  };
-
   // Trigger webhook manual resend
   const handleManualWebhookResend = (msg: Message) => {
     const lineSetting = destSettings.find(ds => ds.dest === msg.dest);
@@ -829,19 +744,6 @@ export default function SmsInApp({
     } else {
       showToastMsg(`הגדרות קו ${toSave.dest} עודכנו בהצלחה!`, 'success');
     }
-  };
-
-  // Update simulation date when modal is opened in real time
-  const handleOpenSimulation = () => {
-    const now = new Date();
-    const pad = (n: number) => String(n).padStart(2, '0');
-    setSimDate(`${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())} ${pad(now.getDate())}/${pad(now.getMonth()+1)}/${String(now.getFullYear()).substr(-2)}`);
-    
-    if (messageDestNumbers.length > 0) {
-      setSimDest(messageDestNumbers[0]);
-    }
-    
-    setShowSimulateSms(true);
   };
 
   // Custom visual CSS statistics counts
@@ -1089,18 +991,6 @@ export default function SmsInApp({
                 </h1>
               </div>
 
-              <div className="flex flex-wrap items-center gap-2">
-                {isAdmin && (
-                  <button
-                    type="button"
-                    onClick={handleOpenSimulation}
-                    className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg text-xs px-3.5 py-2.5 flex items-center gap-1.5 transition-all shadow-xs hover:shadow-md cursor-pointer"
-                  >
-                    <Smartphone className="animate-bounce" size={14} />
-                    <span>הדמיית SMS נכנס 📲</span>
-                  </button>
-                )}
-              </div>
             </header>
 
             {embedded && (
@@ -1153,104 +1043,7 @@ export default function SmsInApp({
                 {/* 1. MAIN SMS TAB VIEW */}
                 {activeTab === 'sms_in' && (
                   <div className="space-y-4">
-                    
-                    {/* Database Integration Dashboard Status Banner */}
-                    {(() => {
-                      const isLive = dbStatus.connected && !dbStatus.demoMode;
-                      const isDevDb = dbStatus.connected && dbStatus.demoMode;
-                      const isDemoOnly = !dbStatus.connected && (messagesSource === 'demo' || dbStatus.demoMode);
-                      const statusLabel = isLive
-                        ? 'LIVE'
-                        : isDevDb
-                          ? 'DEV'
-                          : isDemoOnly
-                            ? 'DEMO'
-                            : dbStatus.localDev
-                              ? 'DEV MODE'
-                              : 'OFFLINE';
-                      const statusTitle = isLive
-                        ? 'סטטוס בסיס נתונים: מקושר לטבלה אמיתית'
-                        : isDevDb
-                          ? 'MongoDB מקומי עם נתוני דמו'
-                          : isDemoOnly
-                            ? 'נתוני הדגמה לפיתוח'
-                            : dbStatus.connected
-                              ? 'סטטוס בסיס נתונים: מקושר בהצלחה'
-                              : dbStatus.localDev
-                                ? 'מצב פיתוח מקומי — ללא חיבור לשרת SMS'
-                                : 'סטטוס בסיס נתונים: לא מחובר';
-                      const statusDescription = isLive
-                        ? `מחובר לטבלת SMS אמיתית! בסיס נתונים: ${dbStatus.dbName}, קולקשן: ${dbStatus.collection}.`
-                        : isDevDb
-                          ? (dbStatus.message || `מחובר ל-MongoDB מקומי עם נתוני דמו. בסיס נתונים: ${dbStatus.dbName}, קולקשן: ${dbStatus.collection}.`)
-                          : isDemoOnly
-                            ? (dbStatus.message || 'מוצגים נתוני דמו מהשרת — בפרודקשן ייטענו מהטבלה האמיתית.')
-                            : dbStatus.connected
-                              ? `מחובר לשרת בהצלחה! בסיס נתונים: ${dbStatus.dbName}, קולקשן: ${dbStatus.collection}.`
-                              : (dbStatus.message || dbStatus.reason || 'בפרודקשן החיבור לשרת SMS יעבוד אוטומטית.');
-                      const bannerTone = isLive
-                        ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
-                        : isDevDb || isDemoOnly
-                          ? 'bg-sky-50 border-sky-200 text-sky-900'
-                          : 'bg-amber-50/70 border-amber-200 text-slate-800';
-                      const iconTone = isLive
-                        ? 'bg-emerald-100 text-emerald-800'
-                        : isDevDb || isDemoOnly
-                          ? 'bg-sky-100 text-sky-800'
-                          : 'bg-amber-100/90 text-amber-800';
-                      const badgeTone = isLive
-                        ? 'bg-emerald-200 text-emerald-950 border border-emerald-300'
-                        : isDevDb || isDemoOnly
-                          ? 'bg-sky-200 text-sky-950 border border-sky-300'
-                          : 'bg-amber-200 text-amber-950 border border-amber-200';
 
-                      return (
-                    <div className={`p-4 rounded-xl border ${bannerTone} flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-xs`}>
-                      <div className="flex items-start gap-3">
-                        <div className={`w-8 h-8 rounded-full ${iconTone} flex items-center justify-center shrink-0`}>
-                          <Layers size={16} />
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <h4 className="font-bold text-xs uppercase tracking-wide text-slate-900">
-                              {statusTitle}
-                            </h4>
-                            <span className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded-full ${badgeTone}`}>
-                              {statusLabel}
-                            </span>
-                          </div>
-                          <p className="text-xs text-slate-600 mt-1 leading-relaxed">
-                            {statusDescription}
-                          </p>
-                          {!dbStatus.connected && dbStatus.localDev && messagesSource !== 'demo' && (
-                            <p className="mt-2 text-[11px] text-sky-700 font-medium">
-                              ניתן להמשיך לעבוד עם נתוני הדגמה מהשרת — אין צורך בפעולה נוספת.
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                      
-                      <div className="flex items-center gap-2 self-start md:self-center shrink-0 text-right">
-                        <button
-                          type="button"
-                          disabled={isLoadingMessages}
-                          onClick={() => {
-                            fetchDbStatus();
-                            fetchRealMessages();
-                          }}
-                          className={`text-xs font-bold px-3 py-2 rounded-lg border transition-all cursor-pointer ${
-                            dbStatus.connected 
-                              ? 'bg-emerald-600 border-emerald-700 text-white hover:bg-emerald-500' 
-                              : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
-                          }`}
-                        >
-                          {isLoadingMessages ? 'טוען נתונים...' : 'בדוק חיבור ורענן נתונים 🔄'}
-                        </button>
-                      </div>
-                    </div>
-                      );
-                    })()}
-                    
                     {/* ADVANCED FILTER BAR */}
                     <div className="bg-white shadow-xs rounded-xl border border-slate-200 p-4 space-y-4">
                       <div className="flex items-center gap-1.5 border-b border-slate-100 pb-2">
@@ -1710,142 +1503,6 @@ export default function SmsInApp({
                 ייצא והורד
               </button>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* ==================== 3. MODAL: DYNAMIC SMS SIMULATOR PANEL ==================== */}
-      {showSimulateSms && (
-        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full border border-slate-100 overflow-hidden flex flex-col text-slate-800">
-            {/* Header */}
-            <div className="p-4 border-b bg-slate-50 flex items-center justify-between">
-              <div>
-                <h4 className="font-bold text-slate-900 text-sm">הדמיית קבלת SMS נכנס מדגם (Simulator)</h4>
-                <p className="text-[10px] text-slate-400 mt-0.5">נסה להזרים הודעות מדגם אל תוך המערכת ולבחון סינכרון גוגל שיטס</p>
-              </div>
-              <button onClick={() => setShowSimulateSms(false)} className="text-slate-400 hover:text-slate-600">
-                <X size={18} />
-              </button>
-            </div>
-
-            {/* Form body */}
-            <form onSubmit={handleSimulateSmsSubmit} className="p-5 space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  בחר קו יעד מקבל (dest number) <span className="text-red-500">*</span>
-                </label>
-                <select
-                  value={simDest}
-                  onChange={(e) => setSimDest(e.target.value)}
-                  className="w-full text-xs border border-slate-200 rounded-lg p-2.5 bg-white font-mono"
-                >
-                  {messageDestNumbers.map(dest => {
-                    const setting = visibleDestSettings.find(d => d.dest === dest);
-                    return (
-                    <option key={dest} value={dest}>
-                      {dest} {setting?.assignedClients[0]
-                        ? `(${setting.assignedClientName || resolveClientLabel(setting.assignedClients[0])})`
-                        : '(ללא לקוח משויך)'}
-                    </option>
-                  )})}
-                  {messageDestNumbers.length === 0 && (
-                    <option value="">אין קווים — טען הודעות מ-DB תחילה</option>
-                  )}
-                </select>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    מספר שולח (phone) <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="05xxxxxxx / WIGBOX / test"
-                    value={simPhone}
-                    onChange={(e) => setSimPhone(e.target.value)}
-                    className="w-full text-xs border border-slate-200 rounded-lg p-2.5 bg-white font-mono text-left"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">חותמת זמן (date)</label>
-                  <input
-                    type="text"
-                    value={simDate}
-                    onChange={(e) => setSimDate(e.target.value)}
-                    placeholder="12:00:00 25/06/26"
-                    className="w-full text-xs border border-slate-200 rounded-lg p-2.5 bg-white font-mono text-left"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  תוכן הודעת ה-SMS הנכנסת <span className="text-red-500">*</span>
-                </label>
-                <textarea
-                  required
-                  rows={3}
-                  value={simMessage}
-                  onChange={(e) => setSimMessage(e.target.value)}
-                  placeholder="רשום פה את הודעת ה-SMS להתנסות..."
-                  className="w-full text-xs border border-slate-200 rounded-lg p-2.5 bg-white"
-                />
-
-                {/* Templates selectors */}
-                <div className="mt-2 space-y-1">
-                  <span className="text-[10px] text-slate-400 font-bold">הדבק תבנית SMS מהירה:</span>
-                  <div className="flex flex-wrap gap-1">
-                    <button
-                      type="button"
-                      onClick={() => setSimMessage('אהלן בדיקה חוזרת מוצלחת של מערכת ניתוב למסרגו 💫')}
-                      className="text-[9px] bg-slate-100 hover:bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded cursor-pointer"
-                    >
-                      בדיקת מדליקה
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setSimMessage('שירו להשם שיר חדש 🎼 ברוך השם המשיח כאן כבר בפתח!!')}
-                      className="text-[9px] bg-slate-100 hover:bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded cursor-pointer"
-                    >
-                      דוגמה רוחנית 👑
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setSimMessage('אני רוצה להזמין שלוש פיצות משפחתיות עם גבינה אקסטרה לרחוב המלך גורג')}
-                      className="text-[9px] bg-slate-100 hover:bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded cursor-pointer"
-                    >
-                      פניית לקוח פיצה 🍕
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {/* Status active summary helper */}
-              <div className="p-3 bg-sky-50 rounded-lg border border-sky-100 text-[11px] leading-relaxed text-sky-800">
-                💡 <b>מה קורה ברגע זה?</b> ברגע שתקליק שמירה, ההודעה תיכנס ישירות לטבלה. אם הקו פעיל והוגדרו כתובות Google Sheets או Webhook, תישלח בקשת POST לכל אחת מהן.
-              </div>
-
-              {/* Footer action */}
-              <div className="flex gap-2 justify-end text-xs font-semibold pt-2.5 border-t">
-                <button
-                  type="button"
-                  onClick={() => setShowSimulateSms(false)}
-                  className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-lg cursor-pointer"
-                >
-                  סגור
-                </button>
-                <button
-                  type="submit"
-                  className="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-2 rounded-lg flex items-center gap-1 cursor-pointer"
-                >
-                  <Smartphone size={13} />
-                  סמל קבלת ה-SMS!
-                </button>
-              </div>
-            </form>
           </div>
         </div>
       )}

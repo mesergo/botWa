@@ -248,6 +248,7 @@ export const getAllUsers = async (req, res) => {
         manager_id: user.manager_id || null,
         allowed_bot_ids: (user.allowed_bot_ids || []).map(id => id.toString()),
         user_type_id: user.user_type_id || null,
+        sms_in_enabled: user.sms_in_enabled === true,
         createdAt: user.createdAt,
         updatedAt: user.updatedAt,
         custom_limits: user.custom_limits,
@@ -294,6 +295,7 @@ export const getUserDetails = async (req, res) => {
         dialog360_bot_id: user.dialog360_bot_id,
         manager_id: user.manager_id || null,
         allowed_bot_ids: (user.allowed_bot_ids || []).map(id => id.toString()),
+        sms_in_enabled: user.sms_in_enabled === true,
         custom_limits: user.custom_limits,
         limits_in_effect: limits,
         createdAt: user.createdAt,
@@ -314,7 +316,7 @@ export const getUserDetails = async (req, res) => {
 export const updateUser = async (req, res) => {
   try {
     const { userId } = req.params;
-    const { name, email, phone, password, status, account_type, custom_limits, dialog360_bot_id, user_type_id, manager_id, allowed_bot_ids } = req.body;
+    const { name, email, phone, password, status, account_type, custom_limits, dialog360_bot_id, user_type_id, manager_id, allowed_bot_ids, sms_in_enabled } = req.body;
     
     console.log('[Admin] Updating user:', userId, 'with data:', { ...req.body, password: password ? '***' : undefined });
     
@@ -333,6 +335,7 @@ export const updateUser = async (req, res) => {
     if (dialog360_bot_id !== undefined) user.dialog360_bot_id = dialog360_bot_id;
     if (manager_id !== undefined) user.manager_id = manager_id || null;
     if (Array.isArray(allowed_bot_ids)) user.allowed_bot_ids = allowed_bot_ids;
+    if (sms_in_enabled !== undefined) user.sms_in_enabled = sms_in_enabled === true;
     
     // Update user type / permissions
     if (user_type_id !== undefined) {
@@ -386,6 +389,7 @@ export const updateUser = async (req, res) => {
         user_type_id: user.user_type_id || null,
         manager_id: user.manager_id || null,
         allowed_bot_ids: (user.allowed_bot_ids || []).map(id => id.toString()),
+        sms_in_enabled: user.sms_in_enabled === true,
         custom_limits: user.custom_limits,
         limits_in_effect: limits,
         createdAt: user.createdAt,

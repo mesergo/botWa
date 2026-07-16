@@ -62,6 +62,8 @@ const userSchema = new mongoose.Schema({
     message_en: { type: String, default: '' }
   },
   user_type_id: { type: mongoose.Schema.Types.ObjectId, ref: 'UserType', default: null },
+  // Per-client toggle (set by admin): show the "SMS נכנס" tab. Admins always see it.
+  sms_in_enabled: { type: Boolean, default: false },
 }, { 
   timestamps: true,
   collection: 'User'

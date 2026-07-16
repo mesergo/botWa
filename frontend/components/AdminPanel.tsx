@@ -25,6 +25,7 @@ interface User {
   manager_id?: string | null;
   allowed_bot_ids?: string[];
   user_type_id?: { _id: string; name: string; system_role: string } | null;
+  sms_in_enabled?: boolean;
   createdAt: string;
   updatedAt: string;
   stats?: {
@@ -2164,6 +2165,25 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                                             <div className="w-full bg-slate-50 px-4 py-3 rounded-xl border border-slate-100 text-slate-800 font-bold text-sm flex justify-between items-center">
                                                 {selectedUser.user_type_id?.name || '—'}
                                                 {selectedUser.user_type_id && <Shield size={14} className="text-purple-400" />}
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-400 mb-2 flex items-center gap-1"><MessageSquare size={12} /> לשונית SMS נכנס</label>
+                                        {isEditing ? (
+                                            <label className="w-full flex items-center gap-3 p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm cursor-pointer select-none">
+                                                <input
+                                                    type="checkbox"
+                                                    className="w-4 h-4 accent-sky-600 cursor-pointer"
+                                                    checked={editForm.sms_in_enabled === true}
+                                                    onChange={e => setEditForm(prev => ({ ...prev, sms_in_enabled: e.target.checked }))}
+                                                />
+                                                <span className="font-bold text-slate-700">הצג ללקוח את לשונית "SMS נכנס"</span>
+                                            </label>
+                                        ) : (
+                                            <div className={`w-full px-4 py-3 rounded-xl border font-bold text-sm flex justify-between items-center ${selectedUser.sms_in_enabled ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-slate-50 text-slate-400 border-slate-100'}`}>
+                                                {selectedUser.sms_in_enabled ? 'מוצג ללקוח' : 'מוסתר (ברירת מחדל)'}
+                                                {selectedUser.sms_in_enabled ? <CheckCircle size={14} /> : <EyeOff size={14} />}
                                             </div>
                                         )}
                                     </div>

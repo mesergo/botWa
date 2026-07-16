@@ -328,12 +328,15 @@ export const getProfile = async (req, res) => {
     ]);
     if (!user) return res.status(404).json({ error: 'User not found' });
     const limits_in_effect = await getUserLimits(user);
+    const permissions = await resolvePermissions(user);
     res.json({
       id: user._id.toString(),
       name: user.name,
       email: user.email,
       phone: user.phone || '',
       role: user.role,
+      user_type_id: user.user_type_id || null,
+      permissions,
       public_id: user.public_id,
       account_type: user.account_type,
       status: user.status,

@@ -1,18 +1,6 @@
 import * as smsService from '../services/sms.service.js';
 import { getSmsDbName, getSmsCollectionName } from '../repositories/sms.repository.js';
-import { DEMO_MESSAGES } from '../data/demoMessages.js';
-import { formatDemoMessage } from '../utils/smsFormatter.js';
-import { isDemoSeedEnabled } from '../services/demoSeed.service.js';
 import { getAssignedDestsForUser } from './destSettings.controller.js';
-
-function getDemoMessagesPayload() {
-  return {
-    source: 'demo',
-    localDev: true,
-    demoMode: true,
-    messages: DEMO_MESSAGES.map(formatDemoMessage),
-  };
-}
 
 function isFullAccess(req) {
   // Real admin (not impersonating a customer) sees everything
@@ -38,7 +26,6 @@ export async function getMessages(req, res, next) {
 
     res.json({
       source: 'mongodb',
-      demoMode: isDemoSeedEnabled(),
       dbName: getSmsDbName(),
       collection: getSmsCollectionName(),
       messages,
@@ -46,12 +33,6 @@ export async function getMessages(req, res, next) {
     });
   } catch (err) {
     if (err.message === 'Database not configured') {
-      if (isDemoSeedEnabled()) {
-        const payload = getDemoMessagesPayload();
-        payload.messages = await filterMessagesForUser(req, payload.messages);
-        payload.scoped = !isFullAccess(req) && !!req.user;
-        return res.json(payload);
-      }
       return res.json({
         source: 'local_storage_fallback',
         messages: [],
