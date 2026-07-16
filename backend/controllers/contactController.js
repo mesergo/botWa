@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import Contact from '../models/Contact.js';
 import BotSession from '../models/BotSession.js';
+import Group from '../models/Group.js';
 import { getEffectiveUserId } from '../middleware/auth.js';
 import { normalizePhone } from '../utils/phone.js';
 import XLSX from 'xlsx';
@@ -96,6 +97,25 @@ export const updateContact = async (req, res) => {
   }
 };
 
+// GET /api/contacts/groups-map — returns a map of contactId -> [{_id, name}] for all non-blocklist groups
+export const getContactGroupsMap = async (req, res) => {
+  const userId = getEffectiveUserId(req);
+  try {
+    const groups = await Group.find({ user_id: userId, is_blocklist: false }).select('_id name contact_ids');
+    const map = {};
+    for (const g of groups) {
+      for (const cid of g.contact_ids) {
+        const key = cid.toString();
+        if (!map[key]) map[key] = [];
+        map[key].push({ _id: g._id, name: g.name });
+      }
+    }
+    res.json(map);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
 // DELETE /api/contacts/:id
 export const deleteContact = async (req, res) => {
   const userId = getEffectiveUserId(req);
@@ -147,6 +167,17 @@ export const importContacts = async (req, res) => {
   const userId = getEffectiveUserId(req);
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
+  // groupIds may be sent as a JSON-encoded array in the FormData field
+  let groupIds = [];
+  try {
+    if (req.body.groupIds) {
+      const parsed = JSON.parse(req.body.groupIds);
+      if (Array.isArray(parsed)) {
+        groupIds = parsed.filter(id => mongoose.Types.ObjectId.isValid(id));
+      }
+    }
+  } catch { /* ignore malformed groupIds */ }
+
   const filePath = req.file.path;
   try {
     const workbook = XLSX.readFile(filePath);
@@ -155,6 +186,7 @@ export const importContacts = async (req, res) => {
 
     let imported = 0, skipped = 0;
     const errors = [];
+    const importedContactIds = [];
 
     for (const row of rows) {
       // Accept Hebrew or English column headers
@@ -170,15 +202,24 @@ export const importContacts = async (req, res) => {
       const email = String(row['מייל'] ?? row['email'] ?? row['Email'] ?? '').trim();
 
       try {
-        await Contact.findOneAndUpdate(
+        const contact = await Contact.findOneAndUpdate(
           { user_id: userId, phone },
-          { $set: { full_name, whatsapp_name, email } },
-          { upsert: true }
+          { $set: { full_name, email } },
+          { upsert: true, new: true }
         );
+        importedContactIds.push(contact._id);
         imported++;
       } catch (e) {
         errors.push({ phone, error: e.message });
       }
+    }
+
+    // Assign imported contacts to selected groups
+    if (groupIds.length > 0 && importedContactIds.length > 0) {
+      await Group.updateMany(
+        { _id: { $in: groupIds }, user_id: userId, is_blocklist: false },
+        { $addToSet: { contact_ids: { $each: importedContactIds } } }
+      );
     }
 
     res.json({ imported, skipped, errors });

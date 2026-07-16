@@ -1,3 +1,11 @@
+export interface ContactFieldDef {
+  _id: string;
+  label: string;
+  key: string;
+  order: number;
+  createdAt?: string;
+}
+
 export enum NodeType {
   // Inputs
   INPUT_TEXT = 'input_text',
@@ -15,6 +23,8 @@ export enum NodeType {
   ACTION_ADD_TO_GROUP = 'action_add_to_group',
   ACTION_REMOVE_FROM_GROUP = 'action_remove_from_group',
   ACTION_TRANSFER_TO_AGENT = 'action_transfer_to_agent',
+  // Actions (continued)
+  ACTION_SET_PARAMETER = 'action_set_parameter',
   // Special
   START = 'start',
   FIXED_PROCESS = 'fixed_process',
@@ -35,6 +45,7 @@ export interface NodeData {
   options?: string[];
   optionOperators?: string[];
   optionImages?: string[];
+  dateTimeMode?: 'date' | 'time' | 'datetime';
   routingMode?: 'time' | 'date';
   timeRanges?: Array<{ fromHour: number; toHour: number; }>;
   dateRanges?: Array<{ fromDate: string; toDate: string; }>;
@@ -51,12 +62,32 @@ export interface NodeData {
   repUserId?: string;
   /** Unified add/remove group component: which action to perform */
   groupActionMode?: 'add' | 'remove';
+  /** For action_set_parameter: the parameter name to set */
+  parameterName?: string;
+  /** For action_set_parameter: the value to assign (supports --varName-- syntax) */
+  parameterValue?: string;
   processId?: string;
   onChange?: (data: Partial<NodeData>) => void;
   onDelete?: () => void;
   searchQuery?: string;
   isCurrentMatch?: boolean;
   serialId?: string;
+  /** Nodes whose outgoing edge connects to this node (populated at render time) */
+  incomingNodes?: Array<{ id: string; serialId?: string; type: string; label?: string }>;
+  /** Nodes this node connects to (populated at render time) */
+  outgoingNodes?: Array<{ id: string; serialId?: string; type: string; label?: string }>;
+  /** Navigate the canvas to a node by id */
+  onNavigateToNode?: (nodeId: string) => void;
+  /** Whether to save the captured value to the contact's custom_field_values */
+  saveToContact?: boolean;
+  /** The ContactFieldDef._id to store the value into; required when saveToContact is true */
+  contactFieldKey?: string;
+  /** For action_web_service: HTTP method (default: POST) */
+  apiMethod?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+  /** For action_web_service: custom request headers */
+  apiHeaders?: Array<{ key: string; value: string }>;
+  /** For action_web_service: raw JSON body string; if empty, standard bot payload is used */
+  apiBody?: string;
 }
 
 export interface BotFlow {
@@ -67,10 +98,16 @@ export interface BotFlow {
   created_at: string;
   is_default?: boolean;
   display_phone_number?: string;
+  /** Provider for connected WhatsApp number: 'facebook' or 'dialog360' */
+  whatsapp_provider?: 'facebook' | 'dialog360';
+  /** Dialog360 webhook link */
+  dialog360_link?: string;
   /** Parameter values filled by the user when this bot was created from a template */
   botParams?: Record<string, string>;
   /** External endpoint identifier */
   endpoint?: string;
+  /** Global keyword that resets the conversation from anywhere */
+  restart_keyword?: string;
 }
 
 export interface FixedProcess {
@@ -184,4 +221,5 @@ export interface ChatMessage {
   carouselItems?: CarouselItem[];
   timestamp: Date;
   sourceNodeId?: string;
+  dateTimeMode?: 'date' | 'time' | 'datetime';
 }

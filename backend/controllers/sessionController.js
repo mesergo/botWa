@@ -1,5 +1,6 @@
 
 import crypto from 'crypto';
+import jwt from 'jsonwebtoken';
 import { mongoose } from '../config/db.js';
 import BotFlow from '../models/BotFlow.js';
 import Widget from '../models/Widget.js';
@@ -8,6 +9,9 @@ import Contact from '../models/Contact.js';
 import fetch from 'node-fetch';
 import { getEffectiveUserId, resolvePermissions, hasPermission } from '../middleware/auth.js';
 import { pushMessagesToWhatsApp } from '../utils/whatsappSender.js';
+import eventBus from '../utils/eventBus.js';
+
+const SSE_SECRET_KEY = 'dfghjukiolp;[p0o9i8uytgbhnjmk,l.;p9876543t4rre2asd';
 
 export const startSession = async (req, res) => {
   // Safe extraction: explicitly check for req.user to avoid 'undefined' values in DB insert
@@ -25,7 +29,7 @@ export const startSession = async (req, res) => {
   if (!widget_id) {
     console.log(`[startSession] ❌ Missing widget_id — rejected`);
     console.log(`${'─'.repeat(80)}\n`);
-    return res.status(400).json({ error: 'Missing widget_id' });
+    return res.status(400).json({ error: 'חסר מזהה ווידג\'ט' });
   }
 
   try {
@@ -33,7 +37,7 @@ export const startSession = async (req, res) => {
     if (!mongoose.connection || mongoose.connection.readyState !== 1) {
       console.log(`[startSession] ❌ DB not ready (state=${mongoose.connection?.readyState})`);
       console.log(`${'─'.repeat(80)}\n`);
-      return res.status(503).json({ error: 'Database connection not ready' });
+      return res.status(503).json({ error: 'החיבור למסד הנתונים אינו מוכן' });
     }
     
     const collection = mongoose.connection.collection('BotSession');
@@ -76,14 +80,14 @@ export const updateSessionParameters = async (req, res) => {
   
   if (!mongoose.Types.ObjectId.isValid(sessionId)) {
     console.error('[updateSessionParameters] Invalid sessionId format:', sessionId);
-    return res.status(400).json({ error: 'Invalid sessionId format' });
+    return res.status(400).json({ error: 'פורמט מזהה שיחה אינו תקין' });
   }
 
   try {
     // Ensure mongoose is connected
     if (!mongoose.connection || mongoose.connection.readyState !== 1) {
       console.error('[updateSessionParameters] Database not connected, readyState:', mongoose.connection?.readyState);
-      return res.status(503).json({ error: 'Database connection not ready' });
+      return res.status(503).json({ error: 'החיבור למסד הנתונים אינו מוכן' });
     }
     
     const collection = mongoose.connection.collection('BotSession');
@@ -136,12 +140,14 @@ export const addHistoryMessage = async (req, res) => {
 
 export const getContacts = async (req, res) => {
   const userId = getEffectiveUserId(req);
+  console.log(`[getContacts] userId=${userId} | reqUserId=${req.userId} | role=${req.user?.role} | manager_id=${req.user?.manager_id}`);
   try {
     // Get all bots owned by this user
     const userBots = await BotFlow.find({ user_id: userId });
     const botNameMap = {};
     userBots.forEach(b => { botNameMap[b._id.toString()] = b.name; });
     const botIds = userBots.map(b => b._id.toString());
+    console.log(`[getContacts] userBots=${userBots.length} | botIds=${JSON.stringify(botIds)}`);
 
     // Get all widget_ids that belong to the user's bots
     // (covers historical sessions saved before user_id was stored properly)
@@ -165,7 +171,8 @@ export const getContacts = async (req, res) => {
           $or: [
             { user_id: userId },
             { user_id: userId.toString() },
-            { widget_id: { $in: widgetIds } }
+            { widget_id: { $in: widgetIds } },
+            { flow_id: { $in: botIds } }
           ]
         }
       },
@@ -193,26 +200,32 @@ export const getContacts = async (req, res) => {
           sessionCount: { $sum: 1 },
           lastSeen: { $max: '$_date' },
           widgetIds: { $addToSet: '$widget_id' },
+          flowIds: { $addToSet: '$flow_id' },
           repGroupIds: { $addToSet: '$rep_group_id' },
           repUserIds: { $addToSet: '$rep_user_id' },
           customerPhones: { $addToSet: '$customer_phone' },
           // Status of the most recent session for this contact
           latestStatus: { $first: '$status' },
-          latestSessionDate: { $first: '$_date' }
+          latestSessionDate: { $first: '$_date' },
+          latestWantsPhone: { $first: '$wants_phone' }
         }
       }, 
       { $sort: { lastSeen: -1 } }
     ];
 
     const contacts = await collection.aggregate(pipeline).toArray();
+    console.log(`[getContacts] aggregation returned ${contacts.length} contacts`);
 
-    // Map widget_ids → bot names via widgetFlowMap
+    // Map widget_ids → bot names via widgetFlowMap, with fallback to session flow_id
+    // (WhatsApp sessions created via respondToMessage set flow_id but NOT widget_id)
     const result = contacts.map(c => {
-      const usedBotIds = new Set(
-        (c.widgetIds || [])
+      const usedBotIds = new Set([
+        ...(c.widgetIds || [])
           .map(wid => widgetFlowMap[wid])
+          .filter(fid => fid && botNameMap[fid]),
+        ...(c.flowIds || [])
           .filter(fid => fid && botNameMap[fid])
-      );
+      ]);
       return {
         phone: c._id,
         sessionCount: c.sessionCount,
@@ -221,17 +234,29 @@ export const getContacts = async (req, res) => {
         botPhones: (c.customerPhones || []).filter(p => p && p !== 'Simulated' && p !== 'simulated'),
         repGroupIds: (c.repGroupIds || []).filter(Boolean).map(String),
         repUserIds: (c.repUserIds || []).filter(Boolean).map(String),
-        status: c.latestStatus || 'bot'
+        status: c.latestStatus || 'bot',
+        wants_phone: !!c.latestWantsPhone
       };
     });
 
     // Enrich with assigned_to from Contact collection
     const phones = result.map(c => c.phone);
-    const contactDocs = await Contact.find({ user_id: userId, phone: { $in: phones } }).select('phone assigned_to').lean();
+    const contactDocs = await Contact.find({ user_id: userId, phone: { $in: phones } }).select('phone assigned_to whatsapp_name full_name').lean();
     const assignedToMap = {};
-    contactDocs.forEach(c => { assignedToMap[c.phone] = (c.assigned_to || []).map(id => id.toString()); });
+    const whatsappNameMap = {};
+    const fullNameMap = {};
+    contactDocs.forEach(c => {
+      assignedToMap[c.phone] = (c.assigned_to || []).map(id => id.toString());
+      whatsappNameMap[c.phone] = c.whatsapp_name || '';
+      fullNameMap[c.phone] = c.full_name || '';
+    });
 
-    let finalResult = result.map(c => ({ ...c, assigned_to: assignedToMap[c.phone] || [] }));
+    let finalResult = result.map(c => ({
+      ...c,
+      assigned_to: assignedToMap[c.phone] || [],
+      whatsapp_name: whatsappNameMap[c.phone] || '',
+      full_name: fullNameMap[c.phone] || '',
+    }));
 
     // Fetch rep user doc once (used for both restrictions below)
     const userDoc = await User.findById(req.userId).lean();
@@ -239,6 +264,8 @@ export const getContacts = async (req, res) => {
 
     // If rep has allowed_bot_ids restriction, keep only contacts whose sessions belong to those bots
     const repAllowedBotIds = (userDoc?.allowed_bot_ids || []).map(id => id.toString());
+    console.log(`[getContacts] repAllowedBotIds=${JSON.stringify(repAllowedBotIds)} | finalResult before filter=${finalResult.length}`);
+    console.log(`[getContacts] sample bots:`, finalResult.slice(0,3).map(c=>({phone:c.phone, bots:c.bots})));
     if (repAllowedBotIds.length > 0) {
       const allowedBotSet = new Set(repAllowedBotIds);
       finalResult = finalResult.filter(c =>
@@ -248,6 +275,7 @@ export const getContacts = async (req, res) => {
 
     // If user has view_assigned_only permission (but NOT view_all), filter to assigned contacts only
     const viewOnlyAssigned = hasPermission(perms, 'sessions.view_assigned_only') && !hasPermission(perms, 'sessions.view_all');
+    console.log(`[getContacts] perms.sessions=${JSON.stringify(perms?.sessions)} | viewOnlyAssigned=${viewOnlyAssigned} | finalResult=${finalResult.length}`);
     if (viewOnlyAssigned) {
       const repId = req.userId;
       const repGroupSet = new Set(((userDoc?.rep_group_ids) || []).map(id => id.toString()));
@@ -261,6 +289,111 @@ export const getContacts = async (req, res) => {
     res.json(finalResult);
   } catch (err) {
     console.error('getContacts error:', err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// ── Search message content ─────────────────────────────────────────────────────
+// GET /api/sessions/search-messages?q=<text>&mode=basic|advanced&from=<date>&to=<date>
+// mode=basic  → search within the 50 most recent messages across last 30 sessions
+// mode=advanced → search within a custom date range (max 6 months)
+export const searchMessageContent = async (req, res) => {
+  const userId = getEffectiveUserId(req);
+  const q = (req.query.q || '').trim();
+  const mode = req.query.mode || 'basic';
+  if (!q || q.length < 2) return res.json([]);
+
+  try {
+    const userBots = await BotFlow.find({ user_id: userId });
+    const botIds = userBots.map(b => b._id.toString());
+    const userWidgets = await Widget.find({
+      $or: [
+        { user_id: userId },
+        { user_id: userId.toString() },
+        { flow_id: { $in: botIds } }
+      ]
+    }).select('id flow_id');
+    const widgetIds = userWidgets.map(w => w.id).filter(Boolean);
+
+    const collection = mongoose.connection.collection('BotSession');
+    const regex = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+    const userFilter = {
+      $or: [
+        { user_id: userId },
+        { user_id: userId.toString() },
+        { widget_id: { $in: widgetIds } },
+        { flow_id: { $in: botIds } }
+      ]
+    };
+
+    let sessions = [];
+
+    if (mode === 'basic') {
+      // Fetch the 30 most recent sessions and search within last 50 messages total
+      const recentSessions = await collection
+        .find(userFilter, { projection: { customer_phone: 1, sender: 1, process_history: 1, created_at: 1 } })
+        .sort({ created_at: -1 })
+        .limit(30)
+        .toArray();
+
+      let totalMsgs = 0;
+      for (const s of recentSessions) {
+        if (totalMsgs >= 50) break;
+        const remaining = 50 - totalMsgs;
+        const slicedHistory = (s.process_history || []).slice(-remaining);
+        totalMsgs += slicedHistory.length;
+        if (slicedHistory.some(h => regex.test(h.text || h.content || ''))) {
+          sessions.push({ ...s, process_history: slicedHistory });
+        }
+      }
+    } else {
+      // Advanced: validate and apply date range (max 6 months)
+      const sixMonthsMs = 183 * 24 * 60 * 60 * 1000;
+      const since = req.query.from ? new Date(req.query.from) : new Date(Date.now() - sixMonthsMs);
+      const until = req.query.to ? new Date(req.query.to) : new Date();
+      if (since >= until) return res.status(400).json({ error: 'תאריך התחלה חייב להיות לפני תאריך סיום' });
+      if ((until.getTime() - since.getTime()) > sixMonthsMs) {
+        return res.status(400).json({ error: 'טווח תאריכים מקסימלי הוא 6 חודשים' });
+      }
+      sessions = await collection.find({
+        $and: [
+          userFilter,
+          { $or: [{ created_at: { $gte: since, $lte: until } }, { createdAt: { $gte: since, $lte: until } }] },
+          { process_history: { $elemMatch: { $or: [{ text: regex }, { content: regex }] } } }
+        ]
+      }, { projection: { customer_phone: 1, sender: 1, process_history: 1, created_at: 1 } }).limit(300).toArray();
+    }
+
+    // Enrich with contact names
+    const phones = [...new Set(sessions.map(s => s.sender || s.customer_phone).filter(Boolean))];
+    const contactDocs = await Contact.find({ user_id: userId, phone: { $in: phones } })
+      .select('phone whatsapp_name full_name').lean();
+    const nameMap = {};
+    contactDocs.forEach(c => { nameMap[c.phone] = { whatsapp_name: c.whatsapp_name || '', full_name: c.full_name || '' }; });
+
+    // Group by contact phone, extract best matching snippet
+    const byPhone = {};
+    for (const s of sessions) {
+      const phone = s.sender || s.customer_phone;
+      if (!phone) continue;
+      if (!byPhone[phone]) byPhone[phone] = { phone, snippet: null, matchCount: 0, ...nameMap[phone] };
+      for (const h of (s.process_history || [])) {
+        const txt = h.text || h.content || '';
+        if (regex.test(txt)) {
+          byPhone[phone].matchCount++;
+          if (!byPhone[phone].snippet) {
+            const idx = txt.search(regex);
+            const start = Math.max(0, idx - 20);
+            const end = Math.min(txt.length, idx + q.length + 40);
+            byPhone[phone].snippet = (start > 0 ? '...' : '') + txt.slice(start, end) + (end < txt.length ? '...' : '');
+          }
+        }
+      }
+    }
+
+    res.json(Object.values(byPhone));
+  } catch (err) {
+    console.error('searchMessageContent error:', err);
     res.status(500).json({ error: err.message });
   }
 };
@@ -485,7 +618,7 @@ export const getSessionsByPhone = async (req, res) => {
   const userId = getEffectiveUserId(req);
   const phone = req.query.phone || '';
   const botId = req.query.botId || ''; // optional: filter to a specific bot/flow
-  if (!phone) return res.status(400).json({ error: 'phone is required' });
+  if (!phone) return res.status(400).json({ error: 'מספר טלפון הוא שדה חובה' });
 
   try {
     const [userBots, userWidgets] = await Promise.all([
@@ -531,7 +664,7 @@ export const getSessionsByPhone = async (req, res) => {
 
     const sessions = await collection.aggregate([
       { $match: { $and: matchConditions } },
-      { $addFields: { _sortDate: { $ifNull: ['$created_at', '$createdAt'] } } },
+      { $addFields: { _sortDate: { $ifNull: ['$created_at', '$createdAt', { $toDate: '$_id' }] } } },
       { $sort: { _sortDate: 1 } }
     ]).toArray();
 
@@ -565,14 +698,14 @@ export const deactivateSession = async (req, res) => {
   try {
     const { id } = req.params;
     if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({ error: 'Invalid session ID' });
+      return res.status(400).json({ error: 'מזהה שיחה לא תקין' });
     }
     const collection = mongoose.connection.collection('BotSession');
     const result = await collection.updateOne(
       { _id: new mongoose.Types.ObjectId(id) },
       { $set: { is_active: false, ended_at: new Date() } }
     );
-    if (result.matchedCount === 0) return res.status(404).json({ error: 'Session not found' });
+    if (result.matchedCount === 0) return res.status(404).json({ error: 'השיחה לא נמצאה' });
     res.json({ success: true });
   } catch (err) {
     console.error('deactivateSession error:', err);
@@ -589,10 +722,10 @@ export const deactivateSession = async (req, res) => {
 // involved in the session — either explicitly assigned (rep_user_id === me),
 // or the session belongs to a rep group the rep is a member of.
 const getSessionWithOwnership = async (id, req) => {
-  if (!mongoose.Types.ObjectId.isValid(id)) return { error: 'Invalid session ID', status: 400 };
+  if (!mongoose.Types.ObjectId.isValid(id)) return { error: 'מזהה שיחה לא תקין', status: 400 };
   const collection = mongoose.connection.collection('BotSession');
   const session = await collection.findOne({ _id: new mongoose.Types.ObjectId(id) });
-  if (!session) return { error: 'Session not found', status: 404 };
+  if (!session) return { error: 'השיחה לא נמצאה', status: 404 };
 
   // Effective owner = manager id for reps, own id for everyone else.
   const ownerId = getEffectiveUserId(req);
@@ -607,7 +740,7 @@ const getSessionWithOwnership = async (id, req) => {
     session.user_id === String(ownerId) ||
     widgetIds.includes(session.widget_id);
 
-  if (!owned) return { error: 'Access denied', status: 403 };
+  if (!owned) return { error: 'גישה נדחית', status: 403 };
 
   // Additional rep involvement guard.
   if (req.user?.role === 'rep') {
@@ -650,6 +783,7 @@ export const setAgentMode = async (req, res) => {
       { _id: new mongoose.Types.ObjectId(id) },
       { $set: { is_agent: true, agent_since, status: newStatus } }
     );
+    eventBus.emit('session:update', { userId: String(req.userId), phone: String(session.sender || session.customer_phone || '') });
     res.json({ success: true, agent_since: agent_since.toISOString(), status: newStatus });
   } catch (err) {
     console.error('setAgentMode error:', err);
@@ -660,13 +794,14 @@ export const setAgentMode = async (req, res) => {
 export const clearAgentMode = async (req, res) => {
   try {
     const { id } = req.params;
-    const { collection, error, status } = await getSessionWithOwnership(id, req);
+    const { session, collection, error, status } = await getSessionWithOwnership(id, req);
     if (error) return res.status(status).json({ error });
 
     await collection.updateOne(
       { _id: new mongoose.Types.ObjectId(id) },
-      { $set: { is_agent: false, agent_since: null, status: 'bot' } }
+      { $set: { is_agent: false, agent_since: null, status: 'bot', wants_phone: false } }
     );
+    eventBus.emit('session:update', { userId: String(req.userId), phone: String(session.sender || session.customer_phone || '') });
     res.json({ success: true, status: 'bot' });
   } catch (err) {
     console.error('clearAgentMode error:', err);
@@ -679,7 +814,7 @@ export const clearAgentMode = async (req, res) => {
 export const closeConversation = async (req, res) => {
   try {
     const { id } = req.params;
-    const { collection, error, status } = await getSessionWithOwnership(id, req);
+    const { session, collection, error, status } = await getSessionWithOwnership(id, req);
     if (error) return res.status(status).json({ error });
 
     const now = new Date();
@@ -700,9 +835,48 @@ export const closeConversation = async (req, res) => {
         $push: { process_history: historyEntry }
       }
     );
+    eventBus.emit('session:update', { userId: String(req.userId), phone: String(session.sender || session.customer_phone || '') });
     res.json({ success: true, status: 'closed', historyEntry });
   } catch (err) {
     console.error('closeConversation error:', err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// Mark a conversation as resolved by the representative (טופל).
+// The session stays active (is_agent=true, agent_since unchanged) so the
+// bot remains paused. If the customer sends a new message within the 30-min
+// window the status is automatically flipped back to 'waiting' (handled in
+// chatController). A system history entry is recorded for the audit trail.
+// PATCH /api/sessions/:id/mark-resolved
+export const markResolved = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { session, collection, error, status } = await getSessionWithOwnership(id, req);
+    if (error) return res.status(status).json({ error });
+
+    const now = new Date();
+    const historyEntry = {
+      type: 'System',
+      text: 'השיחה סומנה כטופלה',
+      sender: 'system',
+      name: 'מערכת',
+      node_id: 'system',
+      event: 'conversation_resolved',
+      created: now.toISOString()
+    };
+
+    await collection.updateOne(
+      { _id: new mongoose.Types.ObjectId(id) },
+      {
+        $set: { status: 'resolved', wants_phone: false },
+        $push: { process_history: historyEntry }
+      }
+    );
+    eventBus.emit('session:update', { userId: String(req.userId), phone: String(session.sender || session.customer_phone || '') });
+    res.json({ success: true, status: 'resolved', historyEntry });
+  } catch (err) {
+    console.error('markResolved error:', err);
     res.status(500).json({ error: err.message });
   }
 };
@@ -721,7 +895,7 @@ export const closeConversation = async (req, res) => {
 export const transferConversation = async (req, res) => {
   try {
     const { id } = req.params;
-    const { targetType, targetId, groupId, note } = req.body || {};
+    const { targetType, targetId, groupId, note, wantsPhone } = req.body || {};
 
     if (!['group', 'rep', 'shift_manager'].includes(targetType)) {
       return res.status(400).json({ error: 'targetType חייב להיות group / rep / shift_manager' });
@@ -735,7 +909,7 @@ export const transferConversation = async (req, res) => {
 
     const collection = mongoose.connection.collection('BotSession');
     const session = await collection.findOne({ _id: new mongoose.Types.ObjectId(id) });
-    if (!session) return res.status(404).json({ error: 'Session not found' });
+    if (!session) return res.status(404).json({ error: 'השיחה לא נמצאה' });
 
     // Ownership: resolve to the effective company-manager id and verify the
     // session belongs to that company (either by user_id or via a widget that
@@ -749,7 +923,7 @@ export const transferConversation = async (req, res) => {
       session.user_id === ownerId ||
       session.user_id === String(ownerId) ||
       widgetIds.includes(session.widget_id);
-    if (!owned) return res.status(403).json({ error: 'Access denied' });
+    if (!owned) return res.status(403).json({ error: 'גישה נדחית' });
 
     // Additional guard for reps: a rep may only transfer conversations they
     // are currently involved in (assigned via rep_user_id, or via one of
@@ -765,7 +939,7 @@ export const transferConversation = async (req, res) => {
 
     // Validate target belongs to the same company.
     let targetLabel = '';
-    const update = { is_agent: true, agent_since: new Date(), status: 'waiting' };
+    const update = { is_agent: true, agent_since: new Date(), status: 'waiting', wants_phone: !!wantsPhone };
     let groupUnavailableMessage = ''; // group's message when no one is available
 
     if (targetType === 'group') {
@@ -905,9 +1079,11 @@ export const transferConversation = async (req, res) => {
     const now = new Date();
     const fromName = req.user?.name || req.user?.email || 'נציג';
     const noteText = typeof note === 'string' && note.trim() ? ` — ${note.trim()}` : '';
+    const phoneText = wantsPhone ? ' 📞 (טלפוני)' : '';
     const historyEntry = {
       type: 'System',
-      text: `השיחה הועברה ע"י ${fromName} ל${targetLabel}${noteText}`,
+      text: `השיחה הועברה ע"י ${fromName} ל${targetLabel}${phoneText}${noteText}`,
+      wants_phone: !!wantsPhone,
       sender: 'system',
       name: 'מערכת',
       node_id: 'system',
@@ -924,6 +1100,40 @@ export const transferConversation = async (req, res) => {
       { _id: new mongoose.Types.ObjectId(id) },
       { $set: update, $push: { process_history: { $each: historyEntriesToAdd } } }
     );
+    eventBus.emit('session:update', { userId: String(ownerId), phone: String(session.sender || session.customer_phone || '') });
+
+    // ── Create notifications for target reps and emit SSE notification events ──
+    try {
+      const Notification = (await import('../models/Notification.js')).default;
+      const sessionPhone = String(session.sender || session.customer_phone || '');
+      const isSimulatorSession = sessionPhone === 'Simulated' || sessionPhone === 'simulator' || sessionPhone.toLowerCase() === 'simulated';
+
+      // Determine which user IDs should receive a notification
+      let targetUserIds = [];
+      if (targetType === 'group') {
+        const groupReps = await User.find({ rep_group_ids: String(targetId) }).select('_id').lean();
+        targetUserIds = groupReps.map(r => r._id.toString());
+      } else {
+        // rep or shift_manager — notify that specific user
+        targetUserIds = [String(targetId)];
+      }
+
+      for (const repId of targetUserIds) {
+        const notif = await Notification.create({
+          user_id: repId,
+          session_id: String(session._id),
+          session_phone: sessionPhone,
+          from_user_name: fromName,
+          target_label: targetLabel,
+          is_simulator: isSimulatorSession,
+          wants_phone: !!wantsPhone
+        });
+        eventBus.emit('notification:new', { userId: repId, notification: notif.toObject() });
+      }
+    } catch (notifErr) {
+      console.error('[transferConversation] failed to create notifications:', notifErr.message);
+    }
+    // ────────────────────────────────────────────────────────────────────────
 
     res.json({
       success: true,
@@ -994,7 +1204,7 @@ export const sendAgentMessage = async (req, res) => {
     const { message, isTemplate, templateData, mediaType, mediaUrl, mediaFilename } = req.body;
     const hasMedia = !!(mediaType && mediaUrl);
     if (!hasMedia && (!message || !String(message).trim())) {
-      return res.status(400).json({ error: 'message or media is required' });
+      return res.status(400).json({ error: 'הודעה או מדיה הם שדה חובה' });
     }
     const { session, collection, error, status } = await getSessionWithOwnership(id, req);
     if (error) return res.status(status).json({ error });
@@ -1035,7 +1245,7 @@ export const sendAgentMessage = async (req, res) => {
 
     if (!normalizedPhone || normalizedPhone === '972') {
       console.error(`[sendAgentMessage] ❌ Empty phone on session ${id}, aborting`);
-      return res.status(400).json({ error: 'Session has no phone number' });
+      return res.status(400).json({ error: 'לשיחה זו אין מספר טלפון' });
     }
 
     // Build WhatsApp body - different structure for template vs text
@@ -1075,21 +1285,13 @@ export const sendAgentMessage = async (req, res) => {
         if (templateData.components && Array.isArray(templateData.components)) {
           const headerComponent = templateData.components.find(c => c.type === 'HEADER');
           if (headerComponent) {
-            if (headerComponent.format === 'IMAGE' && headerComponent.example?.header_handle) {
-              waBody.header = [{
-                type: 'image',
-                image: { link: headerComponent.example.header_handle[0] || '' }
-              }];
-            } else if (headerComponent.format === 'VIDEO' && headerComponent.example?.header_handle) {
-              waBody.header = [{
-                type: 'video',
-                video: { link: headerComponent.example.header_handle[0] || '' }
-              }];
-            } else if (headerComponent.format === 'DOCUMENT' && headerComponent.example?.header_handle) {
-              waBody.header = [{
-                type: 'document',
-                document: { link: headerComponent.example.header_handle[0] || '' }
-              }];
+            const ex = headerComponent.example || {};
+            const exLink = (Array.isArray(ex.header_handle) ? ex.header_handle[0] : ex.header_handle)
+                        || (Array.isArray(ex.header_url)    ? ex.header_url[0]    : ex.header_url)
+                        || '';
+            if (['IMAGE', 'VIDEO', 'DOCUMENT'].includes(headerComponent.format) && exLink) {
+              const mediaType = headerComponent.format.toLowerCase();
+              waBody.header = [{ type: mediaType, [mediaType]: { link: exLink } }];
             }
           }
         }
@@ -1098,11 +1300,14 @@ export const sendAgentMessage = async (req, res) => {
       if (!waBody.header && templateData.components && Array.isArray(templateData.components)) {
         const headerComp = templateData.components.find(c => c.type === 'HEADER');
         if (headerComp && ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(headerComp.format)) {
-          const handles = headerComp.example?.header_handle;
-          if (handles && handles.length > 0) {
+          const ex = headerComp.example || {};
+          const exLink = (Array.isArray(ex.header_handle) ? ex.header_handle[0] : ex.header_handle)
+                      || (Array.isArray(ex.header_url)    ? ex.header_url[0]    : ex.header_url)
+                      || '';
+          if (exLink) {
             const mediaType = headerComp.format.toLowerCase();
-            waBody.header = [{ type: mediaType, [mediaType]: { link: handles[0] } }];
-            console.log(`[sendAgentMessage] ⚠️ No header URL in params — using template example: ${handles[0]}`);
+            waBody.header = [{ type: mediaType, [mediaType]: { link: exLink } }];
+            console.log(`[sendAgentMessage] ⚠️ No header URL in params — using template example: ${exLink}`);
           }
         }
       }
@@ -1111,33 +1316,58 @@ export const sendAgentMessage = async (req, res) => {
 
     let waSent = false;
     let waError = null;
+    let agentWamid = null;
+    let waRetryable = false;
 
     if (isTemplate && templateData) {
       // Templates use a different body structure — send directly
-      console.log(`[sendAgentMessage] 📤 Sending TEMPLATE | endpoint=${endpoint} | phone=${normalizedPhone}`);
-      console.log(`[sendAgentMessage] 📤 Body:`, JSON.stringify(waBody, null, 2));
-      try {
-        const waRes = await fetch(`https://wa.message.co.il/api/${endpoint}/send`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json; charset=utf-8',
-            'Accept': 'application/json',
-            token: waToken
-          },
-          body: JSON.stringify(waBody)
-        });
-        if (waRes.ok) {
-          waSent = true;
-          let responseBody = '';
-          try { responseBody = await waRes.text(); } catch (_) {}
-          console.log(`[sendAgentMessage] ✅ WhatsApp OK | phone=${normalizedPhone} | status=${waRes.status} | response=${responseBody}`);
-        } else {
-          waError = `HTTP ${waRes.status}: ${await waRes.text()}`;
-          console.error(`[sendAgentMessage] ❌ WhatsApp FAILED | phone=${normalizedPhone} | ${waError}`);
+      const WA_SEND_URL = `https://wa.message.co.il/api/${endpoint}/send`;
+      const MAX_TEMPLATE_RETRIES = 2;
+      const RETRY_DELAY_MS = 3000;
+      for (let attempt = 0; attempt <= MAX_TEMPLATE_RETRIES; attempt++) {
+        if (attempt > 0) {
+          console.log(`[sendAgentMessage] ⏳ Retry ${attempt}/${MAX_TEMPLATE_RETRIES} in ${RETRY_DELAY_MS / 1000}s...`);
+          await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
         }
-      } catch (waErr) {
-        waError = waErr.message;
-        console.error(`[sendAgentMessage] ❌ WhatsApp exception:`, waErr.message);
+        console.log(`\n${'─'.repeat(60)}`);
+        console.log(`[sendAgentMessage] 📤 ATTEMPT ${attempt + 1}/${MAX_TEMPLATE_RETRIES + 1}`);
+        console.log(`[sendAgentMessage] 📤 URL:     ${WA_SEND_URL}`);
+        console.log(`[sendAgentMessage] 📤 TOKEN:   ${waToken}`);
+        console.log(`[sendAgentMessage] 📤 PHONE:   ${normalizedPhone}`);
+        console.log(`[sendAgentMessage] 📤 PAYLOAD:\n${JSON.stringify(waBody, null, 2)}`);
+        console.log(`${'─'.repeat(60)}`);
+        try {
+          const waRes = await fetch(WA_SEND_URL, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json; charset=utf-8',
+              'Accept': 'application/json',
+              token: waToken
+            },
+            body: JSON.stringify(waBody)
+          });
+          const responseBody = await waRes.text().catch(() => '');
+          console.log(`[sendAgentMessage] ⬅️  RESPONSE HTTP ${waRes.status} | body: ${responseBody}`);
+          if (waRes.ok) {
+            waSent = true;
+            waError = null;
+            waRetryable = false;
+            console.log(`[sendAgentMessage] ✅ WhatsApp OK | attempt=${attempt + 1} | phone=${normalizedPhone}`);
+            break;
+          } else {
+            let errorData = null;
+            try { errorData = JSON.parse(responseBody); } catch (_) {}
+            waRetryable = errorData?.retryable === true || waRes.status === 502 || waRes.status === 503 || waRes.status === 504;
+            waError = `HTTP ${waRes.status}: ${responseBody}`;
+            console.error(`[sendAgentMessage] ❌ WhatsApp FAILED | attempt=${attempt + 1}/${MAX_TEMPLATE_RETRIES + 1} | phone=${normalizedPhone} | retryable=${waRetryable} | status=${waRes.status}`);
+            if (!waRetryable || attempt >= MAX_TEMPLATE_RETRIES) break;
+          }
+        } catch (waErr) {
+          waError = waErr.message;
+          waRetryable = false;
+          console.error(`[sendAgentMessage] ❌ WhatsApp exception | attempt=${attempt + 1}:`, waErr.message);
+          break; // Network-level errors — don't retry
+        }
       }
     } else {
       // Text or media: use shared whatsappSender utility
@@ -1158,10 +1388,12 @@ export const sendAgentMessage = async (req, res) => {
       }
       console.log(`[AGENT-SEND]    wa payload : ${JSON.stringify(waMessages[0])}`);
       try {
-        waSent = await pushMessagesToWhatsApp(normalizedPhone, waMessages, user, bot);
+        const pushResult = await pushMessagesToWhatsApp(normalizedPhone, waMessages, user, bot);
+        waSent = pushResult.anySuccess;
+        agentWamid = pushResult.wamidPerMsg?.find(Boolean) || null;
         console.log(`[AGENT-SEND] ${waSent ? '✅ WhatsApp delivered' : '❌ WhatsApp delivery FAILED'}`);
         console.log(`${'─'.repeat(60)}\n`);
-        if (!waSent) waError = 'WhatsApp delivery failed';
+        if (!waSent) waError = 'משלוח ה-WhatsApp נכשל';
       } catch (waErr) {
         waError = waErr.message;
         console.error(`[AGENT-SEND] ❌ WhatsApp exception:`, waErr.message);
@@ -1176,7 +1408,9 @@ export const sendAgentMessage = async (req, res) => {
       node_id: 'agent',
       created,
       wa_sent: waSent,
-      wa_error: waError || null
+      wa_error: waError || null,
+      wamid: agentWamid,
+      deliveryStatus: null
     };
     
     // Build display content based on template or text
@@ -1220,6 +1454,18 @@ export const sendAgentMessage = async (req, res) => {
         historyEntry.type = 'Text';
         historyEntry.text = displayText || msgText;
       }
+      // Extract buttons from BUTTONS component and save for display
+      if (templateData.components && Array.isArray(templateData.components)) {
+        const buttonsComp = templateData.components.find(c => c.type === 'BUTTONS');
+        if (buttonsComp && Array.isArray(buttonsComp.buttons) && buttonsComp.buttons.length > 0) {
+          historyEntry.template_buttons = buttonsComp.buttons.map(b => ({
+            type: b.type || 'QUICK_REPLY',
+            text: b.text || '',
+            ...(b.url ? { url: b.url } : {}),
+            ...(b.phone_number ? { phone_number: b.phone_number } : {})
+          }));
+        }
+      }
     } else if (hasMedia) {
       const waMediaType = mediaType === 'video' ? 'Video' : mediaType === 'document' ? 'Document' : 'Image';
       historyEntry.type = waMediaType;
@@ -1247,8 +1493,9 @@ export const sendAgentMessage = async (req, res) => {
       { _id: new mongoose.Types.ObjectId(id) },
       update
     );
+    eventBus.emit('session:update', { userId: String(getEffectiveUserId(req)), phone: String(session.sender || session.customer_phone || '') });
 
-    res.json({ success: true, waSent, waError, created, historyEntry, status: newStatus });
+    res.json({ success: true, waSent, waError, waRetryable, created, historyEntry, status: newStatus });
   } catch (err) {
     console.error('sendAgentMessage error:', err);
     res.status(500).json({ error: err.message });
@@ -1260,17 +1507,17 @@ export const sendTemplateToPhone = async (req, res) => {
   try {
     const { phone, message, templateData } = req.body;
     if (!phone || !String(phone).trim()) {
-      return res.status(400).json({ error: 'phone is required' });
+      return res.status(400).json({ error: 'מספר טלפון הוא שדה חובה' });
     }
     if (!templateData) {
-      return res.status(400).json({ error: 'templateData is required' });
+      return res.status(400).json({ error: 'נתוני תבנית הם שדה חובה' });
     }
     if (!message || !String(message).trim()) {
-      return res.status(400).json({ error: 'message is required' });
+      return res.status(400).json({ error: 'הודעה היא שדה חובה' });
     }
 
     const user = await User.findById(getEffectiveUserId(req));
-    if (!user) return res.status(404).json({ error: 'User not found' });
+    if (!user) return res.status(404).json({ error: 'המשתמש לא נמצא' });
 
     // Normalize phone first so we can look up the last session
     let normalizedPhone = String(phone).replace(/[^0-9]/g, '');
@@ -1327,11 +1574,14 @@ export const sendTemplateToPhone = async (req, res) => {
     if (!waBody.header && templateData.components && Array.isArray(templateData.components)) {
       const headerComp = templateData.components.find(c => c.type === 'HEADER');
       if (headerComp && ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(headerComp.format)) {
-        const handles = headerComp.example?.header_handle;
-        if (handles && handles.length > 0) {
+        const ex = headerComp.example || {};
+        const exLink = (Array.isArray(ex.header_handle) ? ex.header_handle[0] : ex.header_handle)
+                    || (Array.isArray(ex.header_url)    ? ex.header_url[0]    : ex.header_url)
+                    || '';
+        if (exLink) {
           const mediaType = headerComp.format.toLowerCase();
-          waBody.header = [{ type: mediaType, [mediaType]: { link: handles[0] } }];
-          console.log(`[sendTemplateToPhone] ⚠️ No header URL provided — using template example: ${handles[0]}`);
+          waBody.header = [{ type: mediaType, [mediaType]: { link: exLink } }];
+          console.log(`[sendTemplateToPhone] ⚠️ No header URL provided — using template example: ${exLink}`);
         } else {
           console.warn(`[sendTemplateToPhone] ⚠️ Template requires ${headerComp.format} header but no URL and no example available`);
         }
@@ -1430,22 +1680,22 @@ export const sendAdminMessageToSession = async (req, res) => {
     const { sessionId, message, isTemplate, templateData } = req.body;
     
     if (!sessionId) {
-      return res.status(400).json({ error: 'sessionId is required' });
+      return res.status(400).json({ error: 'מזהה שיחה הוא שדה חובה' });
     }
     
     if (!message || !String(message).trim()) {
-      return res.status(400).json({ error: 'message is required' });
+      return res.status(400).json({ error: 'הודעה היא שדה חובה' });
     }
 
     if (!mongoose.Types.ObjectId.isValid(sessionId)) {
-      return res.status(400).json({ error: 'Invalid sessionId format' });
+      return res.status(400).json({ error: 'פורמט מזהה שיחה אינו תקין' });
     }
 
     const collection = mongoose.connection.collection('BotSession');
     const session = await collection.findOne({ _id: new mongoose.Types.ObjectId(sessionId) });
     
     if (!session) {
-      return res.status(404).json({ error: 'Session not found' });
+      return res.status(404).json({ error: 'השיחה לא נמצאה' });
     }
 
     const msgText = String(message).trim();
@@ -1455,7 +1705,7 @@ export const sendAdminMessageToSession = async (req, res) => {
     // Get user's Dialog360 credentials
     const user = await User.findById(session.user_id);
     if (!user) {
-      return res.status(404).json({ error: 'User not found' });
+      return res.status(404).json({ error: 'המשתמש לא נמצא' });
     }
 
     // Load the bot associated with this session for per-bot endpoint
@@ -1522,21 +1772,13 @@ export const sendAdminMessageToSession = async (req, res) => {
         if (templateData.components && Array.isArray(templateData.components)) {
           const headerComponent = templateData.components.find(c => c.type === 'HEADER');
           if (headerComponent) {
-            if (headerComponent.format === 'IMAGE' && headerComponent.example?.header_handle) {
-              waBody.header = [{
-                type: 'image',
-                image: { link: headerComponent.example.header_handle[0] || '' }
-              }];
-            } else if (headerComponent.format === 'VIDEO' && headerComponent.example?.header_handle) {
-              waBody.header = [{
-                type: 'video',
-                video: { link: headerComponent.example.header_handle[0] || '' }
-              }];
-            } else if (headerComponent.format === 'DOCUMENT' && headerComponent.example?.header_handle) {
-              waBody.header = [{
-                type: 'document',
-                document: { link: headerComponent.example.header_handle[0] || '' }
-              }];
+            const ex = headerComponent.example || {};
+            const exLink = (Array.isArray(ex.header_handle) ? ex.header_handle[0] : ex.header_handle)
+                        || (Array.isArray(ex.header_url)    ? ex.header_url[0]    : ex.header_url)
+                        || '';
+            if (['IMAGE', 'VIDEO', 'DOCUMENT'].includes(headerComponent.format) && exLink) {
+              const mediaType = headerComponent.format.toLowerCase();
+              waBody.header = [{ type: mediaType, [mediaType]: { link: exLink } }];
             }
           }
         }
@@ -1545,11 +1787,14 @@ export const sendAdminMessageToSession = async (req, res) => {
       if (!waBody.header && templateData.components && Array.isArray(templateData.components)) {
         const headerComp = templateData.components.find(c => c.type === 'HEADER');
         if (headerComp && ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(headerComp.format)) {
-          const handles = headerComp.example?.header_handle;
-          if (handles && handles.length > 0) {
+          const ex = headerComp.example || {};
+          const exLink = (Array.isArray(ex.header_handle) ? ex.header_handle[0] : ex.header_handle)
+                      || (Array.isArray(ex.header_url)    ? ex.header_url[0]    : ex.header_url)
+                      || '';
+          if (exLink) {
             const mediaType = headerComp.format.toLowerCase();
-            waBody.header = [{ type: mediaType, [mediaType]: { link: handles[0] } }];
-            console.log(`[sendAdminMessageToSession] ⚠️ No header URL in params — using template example: ${handles[0]}`);
+            waBody.header = [{ type: mediaType, [mediaType]: { link: exLink } }];
+            console.log(`[sendAdminMessageToSession] ⚠️ No header URL in params — using template example: ${exLink}`);
           }
         }
       }
@@ -1600,7 +1845,9 @@ export const sendAdminMessageToSession = async (req, res) => {
       name: 'נציג',
       node_id: 'agent',
       created,
-      wa_sent: waSent
+      wa_sent: waSent,
+      wamid: null,
+      deliveryStatus: null
     };
     
     // Build display content based on template or text
@@ -1715,13 +1962,13 @@ export const sendExternalMessage = async (req, res) => {
   if (!sessionId) {
     console.log(`[sendExternalMessage] ❌ Missing sessionId`);
     console.log(`${'─'.repeat(80)}\n`);
-    return res.status(400).json({ error: 'Missing sessionId' });
+    return res.status(400).json({ error: 'חסר מזהה שיחה' });
   }
 
   if (!message || !message.content) {
     console.log(`[sendExternalMessage] ❌ Missing message content`);
     console.log(`${'─'.repeat(80)}\n`);
-    return res.status(400).json({ error: 'Missing message content' });
+    return res.status(400).json({ error: 'חסר תוכן הודעה' });
   }
 
   if (!mongoose.Types.ObjectId.isValid(sessionId)) {
@@ -1762,7 +2009,8 @@ export const sendExternalMessage = async (req, res) => {
       options: message.options,
       created: new Date().toISOString(),
       isExternal: true, // Flag to identify external messages
-      targetSimulatorId: simulator_id || null // Target specific simulator or all
+      targetSimulatorId: simulator_id || null, // Target specific simulator or all
+      ...((message.sender || 'bot') !== 'user' ? { wamid: null, deliveryStatus: null } : {})
     };
 
     // Add message to process_history
@@ -1790,7 +2038,7 @@ export const getSessionMessages = async (req, res) => {
   const { since, simulator_id } = req.query; // ISO timestamp of last received message and simulator ID
 
   if (!sessionId || !mongoose.Types.ObjectId.isValid(sessionId)) {
-    return res.status(400).json({ error: 'Invalid sessionId' });
+    return res.status(400).json({ error: 'מזהה שיחה לא תקין' });
   }
 
   try {
@@ -1851,4 +2099,160 @@ export const getSessionMessages = async (req, res) => {
     console.error('getSessionMessages Error:', err);
     res.status(500).json({ error: err.message });
   }
+};
+
+// ── User Dashboard Stats ──────────────────────────────────────────────────────
+// GET /api/sessions/stats
+// Returns sessions and message statistics for the current user.
+export const getUserStats = async (req, res) => {
+  const userId = getEffectiveUserId(req);
+  try {
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const startOfWeek = new Date(startOfToday);
+    startOfWeek.setDate(startOfToday.getDate() - startOfToday.getDay());
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    // Build user's bots/widgets (same pattern as getUserSessions)
+    const [userBots, userWidgets] = await Promise.all([
+      BotFlow.find({ user_id: userId }).lean(),
+      Widget.find({ $or: [{ user_id: userId }, { user_id: userId.toString() }] }).select('id flow_id').lean()
+    ]);
+
+    const botIds = userBots.map(b => b._id.toString());
+    const botWidgets = await Widget.find({ flow_id: { $in: botIds } }).select('id flow_id').lean();
+    const widgetIds = [...new Set([...userWidgets, ...botWidgets].map(w => w.id).filter(Boolean))];
+
+    const matchStage = {
+      $or: [
+        { user_id: userId },
+        { user_id: userId.toString() },
+        { widget_id: { $in: widgetIds } },
+        { flow_id: { $in: botIds } }
+      ]
+    };
+
+    const collection = mongoose.connection.collection('BotSession');
+
+    // Sessions stats (one aggregate pass)
+    const [sessionResult] = await collection.aggregate([
+      { $match: matchStage },
+      { $addFields: { _date: { $ifNull: ['$created_at', '$createdAt'] } } },
+      { $facet: {
+        today: [{ $match: { _date: { $gte: startOfToday } } }, { $count: 'n' }],
+        month: [{ $match: { _date: { $gte: startOfMonth } } }, { $count: 'n' }],
+        active: [{ $match: { is_active: true } }, { $count: 'n' }],
+        total: [{ $count: 'n' }]
+      }}
+    ]).toArray();
+
+    // Bot-sent messages stats (unwind process_history)
+    const [msgResult] = await collection.aggregate([
+      { $match: matchStage },
+      { $unwind: '$process_history' },
+      { $match: { 'process_history.sender': 'bot' } },
+      { $addFields: { _msgDate: { $cond: {
+        if: { $eq: [{ $type: '$process_history.created' }, 'string'] },
+        then: { $dateFromString: { dateString: '$process_history.created', onError: null } },
+        else: '$process_history.created'
+      }}}},
+      { $match: { _msgDate: { $ne: null } } },
+      { $facet: {
+        today: [{ $match: { _msgDate: { $gte: startOfToday } } }, { $count: 'n' }],
+        week:  [{ $match: { _msgDate: { $gte: startOfWeek } } },  { $count: 'n' }],
+        month: [{ $match: { _msgDate: { $gte: startOfMonth } } }, { $count: 'n' }]
+      }}
+    ]).toArray();
+
+    const totalContacts = await Contact.countDocuments({ user_id: userId });
+
+    res.json({
+      sessions: {
+        today: sessionResult?.today?.[0]?.n ?? 0,
+        month: sessionResult?.month?.[0]?.n ?? 0,
+        active: sessionResult?.active?.[0]?.n ?? 0,
+        total: sessionResult?.total?.[0]?.n ?? 0
+      },
+      messages: {
+        today: msgResult?.today?.[0]?.n ?? 0,
+        week:  msgResult?.week?.[0]?.n ?? 0,
+        month: msgResult?.month?.[0]?.n ?? 0
+      },
+      bots: botIds.length,
+      contacts: totalContacts
+    });
+  } catch (err) {
+    console.error('getUserStats error:', err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// ── SSE: real-time session update stream ─────────────────────────────────────
+// GET /api/sessions/stream?token=<jwt>
+// Keeps the connection open and pushes a small JSON event whenever any session
+// belonging to this user changes. The browser (EventSource) auto-reconnects.
+export const streamEvents = (req, res) => {
+  const token = req.query.token;
+  if (!token) {
+    res.status(401).end();
+    return;
+  }
+
+  let userId;
+  let managerIdFromToken;
+  try {
+    const payload = jwt.verify(token, SSE_SECRET_KEY);
+    userId = String(payload.id || payload.userId || '');
+    managerIdFromToken = payload.manager_id ? String(payload.manager_id) : null;
+  } catch {
+    res.status(403).end();
+    return;
+  }
+
+  if (!userId) {
+    res.status(403).end();
+    return;
+  }
+
+  // SSE headers
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no'); // disable nginx buffering
+  res.flushHeaders();
+
+  console.log(`[SSE] client connected userId=${userId} managerIdFromToken=${managerIdFromToken || '(none)'}`);
+
+  // Keepalive comment every 30s to prevent proxy timeouts
+  const keepalive = setInterval(() => {
+    res.write(': ping\n\n');
+  }, 30000);
+
+  const handler = (event) => {
+    // Allow: own userId, or manager's userId (for reps/rep_managers working under a company)
+    const eventUserId = String(event.userId);
+    const matches = eventUserId === userId || (managerIdFromToken && eventUserId === managerIdFromToken);
+    if (!matches) return;
+    console.log(`[SSE] pushing session_update to userId=${userId} phone=${event.phone}`);
+    const data = JSON.stringify({ type: 'session_update', phone: event.phone });
+    res.write(`data: ${data}\n\n`);
+  };
+
+  // Deliver notification events directly to the target rep
+  const notifHandler = (event) => {
+    if (String(event.userId) !== userId) return;
+    console.log(`[SSE] pushing notification to userId=${userId}`);
+    const data = JSON.stringify({ type: 'notification', notification: event.notification });
+    res.write(`data: ${data}\n\n`);
+  };
+
+  eventBus.on('session:update', handler);
+  eventBus.on('notification:new', notifHandler);
+
+  req.on('close', () => {
+    console.log(`[SSE] client disconnected userId=${userId}`);
+    clearInterval(keepalive);
+    eventBus.off('session:update', handler);
+    eventBus.off('notification:new', notifHandler);
+  });
 };

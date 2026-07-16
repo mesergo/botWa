@@ -1,7 +1,9 @@
 
 import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
+import { useNavigate, useLocation, Routes, Route, Navigate } from 'react-router-dom';
 import { ReactFlowProvider, addEdge, Node, Edge, applyNodeChanges, applyEdgeChanges, OnNodesChange, OnEdgesChange, OnConnect, ReactFlowInstance, MarkerType } from 'reactflow';
 import { NodeType, NodeData, User, FixedProcess, Version, BotFlow, PredefinedTemplate, RestorableVersionsData } from './types';
+import { ContactFieldsProvider } from './context/ContactFieldsContext';
 import { usePermission } from './hooks/usePermission';
 import Dashboard from './components/Dashboard';
 import AuthScreen from './components/AuthScreen';
@@ -13,7 +15,7 @@ import ContactsPage from './components/ContactsPage';
 import SessionsPage from './components/SessionsPage';
 import GroupsPage from './components/GroupsPage';
 import SmsInPage from './components/SmsInPage';
-import { StartNode, InputTextNode, InputDateNode, InputFileNode, OutputTextNode, OutputImageNode, OutputLinkNode, OutputMenuNode, ActionWebServiceNode, ActionWaitNode, ActionTimeRoutingNode, ActionAddToGroupNode, ActionRemoveFromGroupNode, ActionTransferToAgentNode, FixedProcessNode, AutomaticResponsesNode } from './components/nodes/CustomNodes';
+import { StartNode, InputTextNode, InputDateNode, InputFileNode, OutputTextNode, OutputImageNode, OutputLinkNode, OutputMenuNode, ActionWebServiceNode, ActionWaitNode, ActionTimeRoutingNode, ActionAddToGroupNode, ActionRemoveFromGroupNode, ActionTransferToAgentNode, ActionSetParameterNode, FixedProcessNode, AutomaticResponsesNode } from './components/nodes/CustomNodes';
 import ButtonEdge from './components/edges/ButtonEdge';
 import { CloudUpload, RotateCcw, Plus, AlertTriangle, Copy, X, Lock, Wallet, Sliders, Save } from 'lucide-react';
 import Simulator from './components/Simulator';
@@ -48,7 +50,7 @@ const TrialExpiredScreen: React.FC<{ userName: string; onLogout: () => void }> =
         ))}
       </div>
       <button
-        onClick={() => { alert('ליצירת קשר לשדרוג: contact@mesergo.com'); }}
+        onClick={() => { alert('ליצירת קשר לשדרוג: go@mesergo.co.il'); }}
         className="w-full bg-blue-600 text-white py-4 rounded-xl font-bold text-lg shadow-lg shadow-blue-600/20 hover:bg-blue-700 transition-all mb-3"
       >
         שדרג עכשיו
@@ -81,6 +83,7 @@ const nodeTypes = {
   [NodeType.ACTION_ADD_TO_GROUP]: ActionAddToGroupNode,
   [NodeType.ACTION_REMOVE_FROM_GROUP]: ActionRemoveFromGroupNode,
   [NodeType.ACTION_TRANSFER_TO_AGENT]: ActionTransferToAgentNode,
+  [NodeType.ACTION_SET_PARAMETER]: ActionSetParameterNode,
   [NodeType.FIXED_PROCESS]: FixedProcessNode,
   [NodeType.AUTOMATIC_RESPONSES]: AutomaticResponsesNode,
 };
@@ -89,7 +92,7 @@ const DEFAULT_EDGE_STYLE = { stroke: '#3b82f6', strokeWidth: 2, strokeDasharray:
 
 /** Returns true if the stored JWT token is expired (or unreadable). */
 function isStoredTokenExpired(): boolean {
-  const token = localStorage.getItem('flowbot_token');
+  const token = localStorage.getItem('flowbot_token') || sessionStorage.getItem('flowbot_token');
   if (!token) return false;
   try {
     // JWT uses base64url — replace chars before decoding
@@ -101,23 +104,48 @@ function isStoredTokenExpired(): boolean {
   }
 }
 
+function getStoredToken(): string | null {
+  return localStorage.getItem('flowbot_token') || sessionStorage.getItem('flowbot_token');
+}
+
+function getStoredUser(): string | null {
+  return localStorage.getItem('flowbot_user') || sessionStorage.getItem('flowbot_user');
+}
+
+function clearStoredAuth() {
+  localStorage.removeItem('flowbot_token');
+  localStorage.removeItem('flowbot_user');
+  sessionStorage.removeItem('flowbot_token');
+  sessionStorage.removeItem('flowbot_user');
+  window.dispatchEvent(new Event('flowbot-auth-change'));
+}
+ 
+function saveStoredAuth(token: string, user: any, rememberMe: boolean) {
+  clearStoredAuth();
+  const storage = rememberMe ? localStorage : sessionStorage;
+  storage.setItem('flowbot_token', token);
+  storage.setItem('flowbot_user', JSON.stringify(user));
+  window.dispatchEvent(new Event('flowbot-auth-change'));
+}
+
 type ViewMode = 'home' | 'dashboard' | 'editor' | 'editing-process' | 'viewing-process' | 'simulator-only' | 'template-selection' | 'template-form' | 'admin-panel' | 'editing-template' | 'creating-template' | 'contacts' | 'sessions' | 'groups' | 'sms_in';
 
 const FlowBuilder: React.FC = () => {
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
+  const navigate = useNavigate();
+  const location = useLocation();
 
   // Detect expired token once on mount, before any render
   const tokenExpiredOnLoad = (() => {
     if (!isStoredTokenExpired()) return false;
-    localStorage.removeItem('flowbot_token');
-    localStorage.removeItem('flowbot_user');
+    clearStoredAuth();
     return true;
   })();
 
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
     if (tokenExpiredOnLoad) return null;
     try {
-      const saved = localStorage.getItem('flowbot_user');
+      const saved = getStoredUser();
       if (!saved || saved === "undefined") return null;
       return JSON.parse(saved);
     } catch (e) {
@@ -126,22 +154,49 @@ const FlowBuilder: React.FC = () => {
     }
   });
   const can = usePermission(currentUser);
-  const [token, setToken] = useState<string | null>(tokenExpiredOnLoad ? null : localStorage.getItem('flowbot_token'));
+
+  // Returns true when the user should be routed to /sessions (no main dashboard access).
+  // Uses bots.view_tab permission when available; falls back to role for legacy sessions.
+  const isRepOnlyUser = (user: User | null): boolean => {
+    if (!user) return false;
+    const perms = (user as any).permissions;
+    if (perms) return !perms?.bots?.view_tab;
+    return user.role === 'rep' || user.role === 'rep_manager';
+  };
+
+  const [token, setToken] = useState<string | null>(tokenExpiredOnLoad ? null : getStoredToken());
   const [sessionExpired, setSessionExpired] = useState(tokenExpiredOnLoad);
+
+  // Refresh permissions from the server on load, so admin-side changes
+  // (e.g. the per-client "SMS נכנס" toggle) take effect without re-login.
+  useEffect(() => {
+    if (!token) return;
+    (async () => {
+      try {
+        const res = await fetch(`${API_BASE}/auth/profile`, { headers: { Authorization: `Bearer ${token}` } });
+        if (!res.ok) return;
+        const profile = await res.json();
+        if (!profile?.permissions) return;
+        setCurrentUser(prev => {
+          if (!prev) return prev;
+          const updated = { ...prev, permissions: profile.permissions } as User;
+          try {
+            const storage = localStorage.getItem('flowbot_token') ? localStorage : sessionStorage;
+            storage.setItem('flowbot_user', JSON.stringify(updated));
+          } catch {}
+          return updated;
+        });
+      } catch {}
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
   
   const [bots, setBots] = useState<BotFlow[]>([]);
   const [selectedBot, setSelectedBot] = useState<BotFlow | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('mode') === 'simulator') return 'simulator-only';
-    try {
-      const saved = localStorage.getItem('flowbot_user');
-      if (saved && saved !== 'undefined') {
-        const user = JSON.parse(saved);
-        if (user?.role === 'rep' || user?.role === 'rep_manager') return 'sessions';
-      }
-    } catch {}
-    return 'dashboard';
+    return 'home';
   });
 
   const [nodes, setNodes] = useState<Node[]>([]);
@@ -176,7 +231,7 @@ const FlowBuilder: React.FC = () => {
   // Signals that the next nodes update is a fresh bot load and needs fitView
   const pendingFitViewRef = useRef(false);
 
-  const [authForm, setAuthForm] = useState({ name: '', email: '', password: '' });
+  const [authForm, setAuthForm] = useState({ name: '', email: '', password: '', rememberMe: false });
   const [authErrors, setAuthErrors] = useState<Record<string, string>>({});
 
   const [isPublishModalOpen, setIsPublishModalOpen] = useState(false);
@@ -215,19 +270,53 @@ const FlowBuilder: React.FC = () => {
   const [sessionsOwnOnly, setSessionsOwnOnly] = useState(false);
   const [sessionsInitialPhone, setSessionsInitialPhone] = useState<string | null>(null);
   const [contactsInitialPhone, setContactsInitialPhone] = useState<string | null>(null);
-  const [dashboardInitialTab, setDashboardInitialTab] = useState<'bots' | 'settings' | 'users'>('bots');
   const [isBotSettingsOpen, setIsBotSettingsOpen] = useState(false);
+
+  // Auto-route reps to /sessions on first load
+  useEffect(() => {
+    if (!currentUser) return;
+    if (isRepOnlyUser(currentUser)) {
+      if (location.pathname === '/' || location.pathname === '') {
+        navigate('/sessions', { replace: true });
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Clear initialPhone when navigating away so it doesn't re-open on return
   useEffect(() => {
-    if (viewMode !== 'contacts') setContactsInitialPhone(null);
-    if (viewMode !== 'sessions') setSessionsInitialPhone(null);
-  }, [viewMode]);
+    if (location.pathname !== '/contacts') setContactsInitialPhone(null);
+    if (location.pathname !== '/sessions') setSessionsInitialPhone(null);
+  }, [location.pathname]);
+
+  // Load bot from URL on direct navigation / refresh (e.g. /bot/:botId)
+  useEffect(() => {
+    const match = location.pathname.match(/^\/bot\/([^/]+)/);
+    if (!match) return;
+    const botId = match[1];
+    if (selectedBot?.id === botId) return; // already loaded
+    if (bots.length === 0) return; // bots list not fetched yet
+    const bot = bots.find(b => b.id === botId);
+    if (!bot) { navigate('/dashboard', { replace: true }); return; }
+    setIsFlowTransitioning(true);
+    pendingFitViewRef.current = true;
+    setNodes([]);
+    setEdges([]);
+    setActiveProcessId(null);
+    setSelectedBot(bot);
+    setViewMode('editor');
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname, bots]);
 
   // --- Edge Delete Listener ---
+  // Tracks whether a real user action occurred since the last save (ignores ReactFlow
+  // internal changes like node dimension measurements and selection state).
+  const dirtyRef = useRef(false);
+
   useEffect(() => {
     const handleEdgeDelete = (e: any) => {
       const edgeId = e.detail.id;
+      dirtyRef.current = true;
       setEdges(eds => eds.filter(edge => edge.id !== edgeId));
     };
     window.addEventListener('delete-edge', handleEdgeDelete);
@@ -479,10 +568,12 @@ const FlowBuilder: React.FC = () => {
   }, [searchQuery, fixedProcesses, activeProcessId, globalSearchTrigger]);
 
   const onNodeDataChange = useCallback((nodeId: string, data: Partial<NodeData>) => {
+    dirtyRef.current = true;
     setNodes((nds) => nds.map((n) => n.id === nodeId ? { ...n, data: { ...n.data, ...data } } : n));
   }, []);
 
   const onDeleteNode = useCallback((id: string) => {
+    dirtyRef.current = true;
     setNodes((nds) => nds.filter((node) => node.id !== id));
     setEdges((eds) => eds.filter((edge) => edge.source !== id && edge.target !== id));
   }, []);
@@ -491,6 +582,7 @@ const FlowBuilder: React.FC = () => {
   // 1. Delete any edge connected to that option's handle (option-<optionIndex>)
   // 2. Re-index handles of options that shifted down (indices > optionIndex)
   const onRemoveOption = useCallback((nodeId: string, optionIndex: number) => {
+    dirtyRef.current = true;
     setEdges((eds) =>
       eds
         .filter((e) => !(e.source === nodeId && e.sourceHandle === `option-${optionIndex}`))
@@ -519,8 +611,7 @@ const FlowBuilder: React.FC = () => {
   const handleSessionExpired = useCallback(() => {
     setToken(null);
     setCurrentUser(null);
-    localStorage.removeItem('flowbot_token');
-    localStorage.removeItem('flowbot_user');
+    clearStoredAuth();
     setSessionExpired(true);
   }, []);
 
@@ -922,10 +1013,32 @@ const FlowBuilder: React.FC = () => {
   const syncFlowRef = useRef(syncFlow);
   useEffect(() => { syncFlowRef.current = syncFlow; });
 
+  // ── Save status indicator ──────────────────────────────────────────────────
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Persistent debounce timer ref — NOT cleaned up by useEffect so that
+  // ReactFlow internal re-renders (dimension measurements, hover state, etc.)
+  // don't cancel a pending save mid-flight.
+  const saveDebounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   useEffect(() => {
     if (viewMode !== 'dashboard' && viewMode !== 'template-selection' && viewMode !== 'template-form' && viewMode !== 'simulator-only' && viewMode !== 'admin-panel' && viewMode !== 'contacts' && viewMode !== 'sessions' && viewMode !== 'groups' && (selectedBot || activeProcessId || editingTemplateId)) {
-      const timer = setTimeout(() => syncFlowRef.current(), 1500);
-      return () => clearTimeout(timer);
+      // Skip ReactFlow internal changes (dimension measurements, selection state, etc.)
+      if (!dirtyRef.current) return;
+      dirtyRef.current = false;
+      setSaveStatus('saving');
+      // Cancel any previous pending debounce then start a fresh one.
+      // Using a ref (not useEffect cleanup) so that unrelated re-renders
+      // don't accidentally clear a timer that's still counting down.
+      if (saveDebounceTimerRef.current) clearTimeout(saveDebounceTimerRef.current);
+      saveDebounceTimerRef.current = setTimeout(() => {
+        saveDebounceTimerRef.current = null;
+        syncFlowRef.current().then(() => {
+          setSaveStatus('saved');
+          if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
+          savedTimerRef.current = setTimeout(() => setSaveStatus('idle'), 2500);
+        }).catch(() => setSaveStatus('idle'));
+      }, 1500);
     }
   }, [nodes, edges, viewMode, selectedBot, activeProcessId, editingTemplateId]);
 
@@ -944,7 +1057,7 @@ const FlowBuilder: React.FC = () => {
       let height = 112; 
       switch(node.type) {
         case NodeType.INPUT_TEXT: height += 160; break;
-        case NodeType.INPUT_DATE: height += 80; break;
+        case NodeType.INPUT_DATE: height += 185; break;
         case NodeType.INPUT_FILE: height += 80; break;
         case NodeType.OUTPUT_TEXT: height += 120; break;
         case NodeType.OUTPUT_IMAGE: height += 80 + 360; break;
@@ -1039,6 +1152,7 @@ const FlowBuilder: React.FC = () => {
 
     const currentZoom = reactFlowInstance.getZoom();
     const startPos = finalPositions[startNode.id] || { x: 100, y: 150 };
+    dirtyRef.current = true;
     setNodes(nds => nds.map(n => ({ ...n, position: finalPositions[n.id] || n.position })));
     setTimeout(() => {
       // מיקום הרכיב הראשון צמוד לצד שמאל (60px מהקצה) ו-80px מלמעלה, באותו זום
@@ -1144,6 +1258,20 @@ const FlowBuilder: React.FC = () => {
     setBots(prev => prev.map(b => b.id === id ? { ...b, endpoint: data.endpoint } : b));
   };
 
+  const handleUpdateBotRestartKeyword = async (id: string, keyword: string) => {
+    const res = await fetch(`${API_BASE}/bots/${id}/restart-keyword`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify({ restart_keyword: keyword }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || 'שגיאה בעדכון מילת המפתח');
+    }
+    const data = await res.json();
+    setBots(prev => prev.map(b => b.id === id ? { ...b, restart_keyword: data.restart_keyword } : b));
+  };
+
   // Update current user's availability status (rep / rep_manager)
   const handleUpdateAvailability = useCallback(async (status: 'available' | 'unavailable' | 'on_break') => {
     if (!token) return;
@@ -1159,7 +1287,13 @@ const FlowBuilder: React.FC = () => {
     setCurrentUser(prev => {
       if (!prev) return prev;
       const updated = { ...prev, availability_status: status } as User;
-      try { localStorage.setItem('flowbot_user', JSON.stringify(updated)); } catch {}
+      try {
+        if (localStorage.getItem('flowbot_token')) {
+          localStorage.setItem('flowbot_user', JSON.stringify(updated));
+        } else {
+          sessionStorage.setItem('flowbot_user', JSON.stringify(updated));
+        }
+      } catch {}
       return updated;
     });
   }, [token]);
@@ -1178,6 +1312,7 @@ const FlowBuilder: React.FC = () => {
       } catch { /* ignore */ }
     }
     localStorage.clear();
+    sessionStorage.clear();
     window.location.reload();
   }, [token]);
  
@@ -1191,16 +1326,15 @@ const FlowBuilder: React.FC = () => {
       });
       const data = await res.json();
       if (res.ok && data.token) {
+        saveStoredAuth(data.token, data.user, authForm.rememberMe);
         setToken(data.token);
         setCurrentUser(data.user);
-        localStorage.setItem('flowbot_token', data.token);
-        localStorage.setItem('flowbot_user', JSON.stringify(data.user));
         // Route reps directly to sessions view
-        if (data.user?.role === 'rep' || data.user?.role === 'rep_manager') {
+        if (isRepOnlyUser(data.user)) {
           setSessionsOwnOnly(false);
-          setViewMode('sessions');
+          navigate('/sessions');
         } else {
-          setViewMode('home');
+          navigate('/');
         }
       } else {
         setAuthErrors({ general: data.error || 'שגיאה בהתחברות עם גוגל' });
@@ -1216,20 +1350,19 @@ const FlowBuilder: React.FC = () => {
     const res = await fetch(`${API_BASE}${endpoint}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(authForm)
+      body: JSON.stringify({ email: authForm.email, password: authForm.password })
     });
     const data = await res.json();
     if (res.ok && data.token) {
+      saveStoredAuth(data.token, data.user, authForm.rememberMe);
       setToken(data.token);
       setCurrentUser(data.user);
-      localStorage.setItem('flowbot_token', data.token);
-      localStorage.setItem('flowbot_user', JSON.stringify(data.user));
       // Route reps directly to sessions view
-      if (data.user?.role === 'rep' || data.user?.role === 'rep_manager') {
+      if (isRepOnlyUser(data.user)) {
         setSessionsOwnOnly(false);
-        setViewMode('sessions');
+        navigate('/sessions');
       } else {
-        setViewMode('home');
+        navigate('/');
       }
     } else {
       setAuthErrors({ general: data.error === 'Invalid credentials' ? 'שם משתמש או סיסמה שגויים' : (data.error || 'שם משתמש או סיסמה שגויים') });
@@ -1239,15 +1372,13 @@ const FlowBuilder: React.FC = () => {
   const handleImpersonate = useCallback((userData: any, impersonationToken: string) => {
     setToken(impersonationToken);
     setCurrentUser(userData);
-    localStorage.setItem('flowbot_token', impersonationToken);
-    localStorage.setItem('flowbot_user', JSON.stringify(userData));
-    // Route based on role — same logic as normal login
-    if (userData.role === 'rep' || userData.role === 'rep_manager') {
+    saveStoredAuth(impersonationToken, userData, true);
+    // Route based on permissions — same logic as normal login
+    if (isRepOnlyUser(userData)) {
       setSessionsOwnOnly(false);
-      setViewMode('sessions');
+      navigate('/sessions');
     } else {
-      setDashboardInitialTab('bots'); // Reset stale tab (e.g. settings left from before)
-      setViewMode('dashboard');
+      navigate('/dashboard');
     }
     // Pass the new token directly to avoid stale closure with the old admin token
     loadBots(impersonationToken);
@@ -1266,9 +1397,8 @@ const FlowBuilder: React.FC = () => {
       if (res.ok && data.token) {
         setToken(data.token);
         setCurrentUser(data.user);
-        localStorage.setItem('flowbot_token', data.token);
-        localStorage.setItem('flowbot_user', JSON.stringify(data.user));
-        setViewMode('dashboard');
+        saveStoredAuth(data.token, data.user, true);
+        navigate('/dashboard');
         // Pass the new token directly to avoid stale closure with the old impersonation token
         loadBots(data.token);
       }
@@ -1323,6 +1453,16 @@ const FlowBuilder: React.FC = () => {
   const handlePublishVersion = async () => {
     if (!newVersionName.trim() || !selectedBot || !token) {
       if (!newVersionName.trim()) alert("נא להזין שם לגרסה");
+      return;
+    }
+
+    // Validate: any input_text node with saveToContact=true must have contactFieldKey set
+    const invalidNodes = nodes.filter(
+      n => n.type === 'input_text' && n.data?.saveToContact && !n.data?.contactFieldKey
+    );
+    if (invalidNodes.length > 0) {
+      const ids = invalidNodes.map(n => n.data?.serialId ?? n.id).join(', ');
+      alert(`⚠ יש צמתים עם "שמור בפרטי איש קשר" ללא שדה נבחר (${ids}).\nיש לבחור שדה לשמירה בכל צומת כזה לפני הפרסום.`);
       return;
     }
     
@@ -1470,6 +1610,20 @@ const FlowBuilder: React.FC = () => {
       console.error("Restore archived version failed", e);
       alert("שגיאה בתקשורת עם השרת");
     }
+  };
+
+  const handleRenameProcess = async (processId: string, newName: string) => {
+    if (!token) return;
+    try {
+      const res = await fetch(`${API_BASE}/processes/${processId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ name: newName }),
+      });
+      if (res.ok) {
+        setFixedProcesses(prev => prev.map(p => p.id.toString() === processId ? { ...p, name: newName } : p));
+      }
+    } catch (e) { console.error('Failed to rename process', e); }
   };
 
   const handleCreateProcess = async () => {
@@ -1672,7 +1826,7 @@ const FlowBuilder: React.FC = () => {
       });
       if (res.ok) {
         setCreatingTemplate(false);
-        setViewMode('admin-panel');
+        navigate('/admin/templates');
         alert('תבנית נשמרה בהצלחה!');
       } else {
         alert('שגיאה בשמירת תבנית');
@@ -1716,7 +1870,7 @@ const FlowBuilder: React.FC = () => {
     setIsTemplateParamsModalOpen(false);
     setNodes([]);
     setEdges([]);
-    setViewMode('admin-panel');
+    navigate('/admin/templates');
   };
 
   const openTemplateParamsModal = async () => {
@@ -1783,7 +1937,8 @@ const FlowBuilder: React.FC = () => {
     setActiveProcessId(null);
     setSelectedBot(bot);  // triggers useEffect → loadFlow (single call)
     setViewMode('editor');
-  }, []);
+    navigate('/bot/' + bot.id);
+  }, [navigate]);
 
   /**
    * Flush any pending sync BEFORE changing activeProcessId/viewMode.
@@ -1862,9 +2017,21 @@ const FlowBuilder: React.FC = () => {
     await handleEditFixedProcess(processId);
   }, [handleEditFixedProcess]);
 
-  const onNodesChange: OnNodesChange = useCallback((changes) => setNodes((nds) => applyNodeChanges(changes, nds)), []);
-  const onEdgesChange: OnEdgesChange = useCallback((changes) => setEdges((eds) => applyEdgeChanges(changes, eds)), []);
-  const onConnect: OnConnect = useCallback((params) => setEdges((eds) => {
+  const onNodesChange: OnNodesChange = useCallback((changes) => {
+    // Only mark dirty for real structural changes, not ReactFlow internals
+    // (dimension measurements, hover selection, etc.)
+    if (changes.some(c => c.type === 'remove' || (c.type === 'position' && !c.dragging))) {
+      dirtyRef.current = true;
+    }
+    setNodes((nds) => applyNodeChanges(changes, nds));
+  }, []);
+  const onEdgesChange: OnEdgesChange = useCallback((changes) => {
+    if (changes.some(c => c.type === 'remove')) dirtyRef.current = true;
+    setEdges((eds) => applyEdgeChanges(changes, eds));
+  }, []);
+  const onConnect: OnConnect = useCallback((params) => {
+    dirtyRef.current = true;
+    return setEdges((eds) => {
     // Remove any existing edge from the same source-handle before adding the new connection.
     // Without this, old edges loaded from the DB coexist with the new one and the backend
     // finds the OLD edge first (via Array.find), saving the wrong target.
@@ -1872,7 +2039,8 @@ const FlowBuilder: React.FC = () => {
       ? eds.filter(e => !(e.source === params.source && e.sourceHandle === params.sourceHandle))
       : eds;
     return addEdge({ ...params, type: 'button', style: DEFAULT_EDGE_STYLE, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6' } }, withoutOld);
-  }), []);
+  });
+  }, []);
 
   const onDrop = useCallback((event: React.DragEvent) => {
     event.preventDefault();
@@ -1889,7 +2057,7 @@ const FlowBuilder: React.FC = () => {
     const nextNum = nodes.filter(n => n.data.serialId?.startsWith(prefix)).length + 1;
     const hebrewNodeNames: Record<string, string> = {
       [NodeType.INPUT_TEXT]: 'שדה טקסט',
-      [NodeType.INPUT_DATE]: 'בחירת תאריך',
+      [NodeType.INPUT_DATE]: 'בחירת תאריך/שעה',
       [NodeType.INPUT_FILE]: 'העלאת קובץ',
       [NodeType.OUTPUT_TEXT]: 'הודעת טקסט',
       [NodeType.OUTPUT_IMAGE]: 'הודעת תמונה',
@@ -1913,6 +2081,7 @@ const FlowBuilder: React.FC = () => {
         isStandardProcess: type === NodeType.FIXED_PROCESS
       },
     });
+    dirtyRef.current = true;
     setNodes((nds) => nds.concat(newNode));
   }, [reactFlowInstance, bindNodeCallbacks, nodes]);
 
@@ -1989,148 +2158,30 @@ const FlowBuilder: React.FC = () => {
     );
   }
 
-  if (viewMode === 'home') {
+  if (location.pathname.startsWith('/admin')) {
     return (
-      <HomePage
-        currentUser={currentUser}
-        onGoToBots={() => setViewMode('dashboard')}
-        onGoToChats={() => { setSessionsOwnOnly(true); setViewMode('sessions'); }}
-        onGoToContacts={() => setViewMode('contacts')}
-        onGoToSmsIn={can('sms_in.view') ? () => setViewMode('sms_in') : undefined}
-        onGoToSettings={() => { setDashboardInitialTab('settings'); setViewMode('dashboard'); }}
-        onOpenAdminPanel={currentUser?.role === 'admin' ? () => setViewMode('admin-panel') : undefined}
-        onLogout={handleLogout}
-      />
-    );
-  }
-
-  if (viewMode === 'contacts') {
-    return (
-      <ContactsPage
-        token={token}
-        currentUser={currentUser}
-        onBack={() => { setDashboardInitialTab('bots'); setViewMode('dashboard'); }}
-        onLogout={() => { localStorage.clear(); window.location.reload(); }}
-        onOpenSessions={can('sessions.view') ? (phone?: string) => { setSessionsInitialPhone(phone ?? null); setSessionsOwnOnly(true); setViewMode('sessions'); } : undefined}
-        onOpenGroups={can('groups.view') ? () => setViewMode('groups') : undefined}
-        onOpenSmsIn={can('sms_in.view') ? () => setViewMode('sms_in') : undefined}
-        onOpenAdminPanel={() => setViewMode('admin-panel')}
-        onOpenSettings={can('settings.view') ? () => { setDashboardInitialTab('settings'); setViewMode('dashboard'); } : undefined}
-        onOpenSubUsers={can('users.view') ? () => { setDashboardInitialTab('users'); setViewMode('dashboard'); } : undefined}
-        onStopImpersonation={handleStopImpersonation}
-        initialPhone={contactsInitialPhone}
-      />
-    );
-  }
-
-  if (viewMode === 'groups') {
-    return (
-      <GroupsPage
-        token={token}
-        currentUser={currentUser}
-        onBack={() => { setDashboardInitialTab('bots'); setViewMode('dashboard'); }}
-        onLogout={() => { localStorage.clear(); window.location.reload(); }}
-        onOpenContacts={can('contacts.view') ? (phone?: string) => { setContactsInitialPhone(phone ?? null); setViewMode('contacts'); } : undefined}
-        onOpenSessions={can('sessions.view') ? (phone?: string) => { setSessionsInitialPhone(phone ?? null); setSessionsOwnOnly(true); setViewMode('sessions'); } : undefined}
-        onOpenSmsIn={can('sms_in.view') ? () => setViewMode('sms_in') : undefined}
-        onOpenAdminPanel={() => setViewMode('admin-panel')}
-        onOpenSettings={can('settings.view') ? () => { setDashboardInitialTab('settings'); setViewMode('dashboard'); } : undefined}
-        onOpenSubUsers={can('users.view') ? () => { setDashboardInitialTab('users'); setViewMode('dashboard'); } : undefined}
-        onStopImpersonation={handleStopImpersonation}
-      />
-    );
-  }
-
-  if (viewMode === 'sms_in') {
-    return (
-      <SmsInPage
-        token={token}
-        currentUser={currentUser}
-        onBack={() => { setDashboardInitialTab('bots'); setViewMode('dashboard'); }}
-        onLogout={() => { localStorage.clear(); window.location.reload(); }}
-        onOpenContacts={can('contacts.view') ? (phone?: string) => { setContactsInitialPhone(phone ?? null); setViewMode('contacts'); } : undefined}
-        onOpenSessions={can('sessions.view') ? (phone?: string) => { setSessionsInitialPhone(phone ?? null); setSessionsOwnOnly(true); setViewMode('sessions'); } : undefined}
-        onOpenGroups={can('groups.view') ? () => setViewMode('groups') : undefined}
-        onOpenAdminPanel={() => setViewMode('admin-panel')}
-        onOpenSettings={can('settings.view') ? () => { setDashboardInitialTab('settings'); setViewMode('dashboard'); } : undefined}
-        onOpenSubUsers={can('users.view') ? () => { setDashboardInitialTab('users'); setViewMode('dashboard'); } : undefined}
-        onStopImpersonation={handleStopImpersonation}
-      />
-    );
-  }
-
-  if (viewMode === 'sessions') {
-    return (
-      <SessionsPage
-        token={token}
-        currentUser={currentUser}
-        onBack={currentUser?.role === 'rep' ? undefined : () => { setDashboardInitialTab('bots'); setViewMode('dashboard'); }}
-        onLogout={() => { localStorage.clear(); window.location.reload(); }}
-        onOpenContacts={can('contacts.view') ? (phone?: string) => { setContactsInitialPhone(phone ?? null); setViewMode('contacts'); } : undefined}
-        onOpenGroups={can('groups.view') ? () => setViewMode('groups') : undefined}
-        onOpenSmsIn={can('sms_in.view') ? () => setViewMode('sms_in') : undefined}
-        onOpenAdminPanel={() => setViewMode('admin-panel')}
-        ownOnly={sessionsOwnOnly}
-        initialPhone={sessionsInitialPhone}
-        onOpenSettings={can('settings.view') ? () => { setDashboardInitialTab('settings'); setViewMode('dashboard'); } : undefined}
-        onOpenSubUsers={can('users.view') ? () => { setDashboardInitialTab('users'); setViewMode('dashboard'); } : undefined}
-        onStopImpersonation={handleStopImpersonation}
-        onUpdateAvailability={handleUpdateAvailability}
-      />
-    );
-  }
-
-  if (viewMode === 'dashboard') {
-    return (
-      <>
-        <Dashboard 
-          bots={bots} 
-          onEnterBot={enterBot} 
-          onCreateBot={handleCreateBot} 
-          onDeleteBot={handleDeleteBot} 
-          onSetDefaultBot={handleSetDefaultBot} 
-          onLogout={handleLogout} 
-          currentUser={currentUser}
-          onOpenAdminPanel={() => setViewMode('admin-panel')}
-          onOpenContacts={() => setViewMode('contacts')}
-          onOpenSessions={() => { setSessionsOwnOnly(true); setViewMode('sessions'); }}
-          onOpenGroups={() => setViewMode('groups')}
-          onOpenSmsIn={can('sms_in.view') ? () => setViewMode('sms_in') : undefined}
-          onStopImpersonation={handleStopImpersonation}
-          onConnectFacebook={(can('bots.publish') || currentUser?.isImpersonating) ? handleConnectFacebook : undefined}
-          onUpdateBotPublicId={handleUpdateBotPublicId}
-          onUpdateBotEndpoint={currentUser?.isImpersonating ? handleUpdateBotEndpoint : undefined}
-          onUpdateAvailability={handleUpdateAvailability}
-          token={token}
-          initialTab={dashboardInitialTab}
-        />
-        {quotaError && quotaError.type === 'bots' && (
-          <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[200] p-6 text-right">
-            <div className="bg-white w-full max-w-sm rounded-[2.5rem] shadow-2xl p-10 animate-in zoom-in duration-200 border border-slate-100">
-              <div className="w-16 h-16 bg-red-50 text-red-500 rounded-3xl flex items-center justify-center mb-6 mr-0"><AlertTriangle size={32} /></div>
-              <h3 className="text-2xl font-bold text-slate-900 mb-2">המכסה הסתיימה</h3>
-              <p className="text-slate-500 text-sm mb-8 font-medium leading-relaxed">{quotaError.message}</p>
-              <div className="flex flex-col gap-3">
-                <button onClick={() => window.open('https://payment.mesergo.com', '_blank')} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold shadow-lg hover:bg-blue-700">קנה בוט חדש ({quotaError.price}₪)</button>
-                <button onClick={() => setQuotaError(null)} className="w-full py-4 border border-slate-200 text-slate-400 rounded-2xl font-bold hover:bg-slate-50">ביטול</button>
-              </div>
-            </div>
-          </div>
-        )}
-      </>
-    );
-  }
-
-  if (viewMode === 'admin-panel') {
-    return (
-      <AdminPanel 
-        token={token!} 
-        currentUser={currentUser}
-        onBack={() => setViewMode('dashboard')}
-        onImpersonate={handleImpersonate}
-        onEditTemplate={handleLoadTemplateForEditing}
-        onCreateTemplate={handleCreateNewTemplate}
-      />
+      <Routes>
+        <Route path="/admin" element={
+          <AdminPanel
+            token={token!}
+            currentUser={currentUser}
+            onBack={() => navigate('/dashboard')}
+            onImpersonate={handleImpersonate}
+            onEditTemplate={handleLoadTemplateForEditing}
+            onCreateTemplate={handleCreateNewTemplate}
+          />
+        } />
+        <Route path="/admin/:tab" element={
+          <AdminPanel
+            token={token!}
+            currentUser={currentUser}
+            onBack={() => navigate('/dashboard')}
+            onImpersonate={handleImpersonate}
+            onEditTemplate={handleLoadTemplateForEditing}
+            onCreateTemplate={handleCreateNewTemplate}
+          />
+        } />
+      </Routes>
     );
   }
 
@@ -2152,7 +2203,7 @@ const FlowBuilder: React.FC = () => {
           handleInitializeFromTemplate(template.id, {});
         }
       }} 
-      onBack={() => setViewMode('dashboard')}
+      onBack={() => navigate('/dashboard')}
     />;
   }
 
@@ -2200,8 +2251,8 @@ const FlowBuilder: React.FC = () => {
           onSimulatorClose={() => {}}
           onDuplicate={() => {}}
           onChangeTemplate={() => {}}
-          onOpenContacts={() => setViewMode('contacts')}
-          onOpenSessions={() => { setSessionsOwnOnly(true); setViewMode('sessions'); }}
+          onOpenContacts={() => navigate('/contacts')}
+          onOpenSessions={() => { setSessionsOwnOnly(true); navigate('/sessions'); }}
           sidebarProps={{
             fixedProcesses,
             versions: [],
@@ -2220,6 +2271,7 @@ const FlowBuilder: React.FC = () => {
           onSaveTemplate={viewMode === 'creating-template' ? handleSaveNewTemplate : handleUpdateExistingTemplate}
           existingTemplateData={editingTemplateData}
           onManageParams={viewMode === 'editing-template' ? openTemplateParamsModal : undefined}
+          saveStatus={saveStatus}
         />
 
         {/* Template Params Modal - accessible from within editor */}
@@ -2344,6 +2396,188 @@ const FlowBuilder: React.FC = () => {
 
   // Ensure 'simulator-only' doesn't get blocked by the Loading check
   // The check for viewMode !== 'simulator-only' is redundant here as it's handled above.
+  if (viewMode !== 'editor' && viewMode !== 'editing-process' && viewMode !== 'viewing-process' && !location.pathname.startsWith('/bot/')) {
+    // URL-based pages — rendered by React Router
+    return (
+      <>
+        <Routes>
+          <Route path="/" element={
+            <HomePage
+              currentUser={currentUser}
+              onGoToBots={() => navigate('/dashboard')}
+              onGoToChats={() => { setSessionsOwnOnly(true); navigate('/sessions'); }}
+              onGoToContacts={() => navigate('/contacts')}
+              onGoToSmsIn={can('sms_in.view') ? () => navigate('/sms-in') : undefined}
+              onGoToSettings={() => navigate('/settings')}
+              onOpenAdminPanel={currentUser?.role === 'admin' ? () => navigate('/admin') : undefined}
+              onLogout={handleLogout}
+              onStopImpersonation={handleStopImpersonation}
+            />
+          } />
+          <Route path="/contacts" element={
+            <ContactsPage
+              token={token}
+              currentUser={currentUser}
+              onBack={() => navigate('/dashboard')}
+              onGoHome={() => navigate('/')}
+              onLogout={() => { localStorage.clear(); window.location.reload(); }}
+              onOpenSessions={can('sessions.view') ? (phone?: string) => { setSessionsInitialPhone(phone ?? null); setSessionsOwnOnly(true); navigate('/sessions'); } : undefined}
+              onOpenGroups={can('groups.view') ? () => navigate('/groups') : undefined}
+              onOpenSmsIn={can('sms_in.view') ? () => navigate('/sms-in') : undefined}
+              onOpenAdminPanel={() => navigate('/admin')}
+              onOpenSettings={can('settings.view') ? () => navigate('/settings') : undefined}
+              onOpenSubUsers={can('users.view') ? () => navigate('/users') : undefined}
+              onStopImpersonation={handleStopImpersonation}
+              initialPhone={contactsInitialPhone}
+            />
+          } />
+          <Route path="/groups" element={
+            <GroupsPage
+              token={token}
+              currentUser={currentUser}
+              onBack={() => navigate('/dashboard')}
+              onGoHome={() => navigate('/')}
+              onLogout={() => { localStorage.clear(); window.location.reload(); }}
+              onOpenContacts={can('contacts.view') ? (phone?: string) => { setContactsInitialPhone(phone ?? null); navigate('/contacts'); } : undefined}
+              onOpenSessions={can('sessions.view') ? (phone?: string) => { setSessionsInitialPhone(phone ?? null); setSessionsOwnOnly(true); navigate('/sessions'); } : undefined}
+              onOpenSmsIn={can('sms_in.view') ? () => navigate('/sms-in') : undefined}
+              onOpenAdminPanel={() => navigate('/admin')}
+              onOpenSettings={can('settings.view') ? () => navigate('/settings') : undefined}
+              onOpenSubUsers={can('users.view') ? () => navigate('/users') : undefined}
+              onStopImpersonation={handleStopImpersonation}
+            />
+          } />
+          <Route path="/sessions" element={
+            <SessionsPage
+              token={token}
+              currentUser={currentUser}
+              onBack={isRepOnlyUser(currentUser) ? undefined : () => navigate('/dashboard')}
+              onGoHome={isRepOnlyUser(currentUser) ? undefined : () => navigate('/')}
+              onLogout={() => { localStorage.clear(); window.location.reload(); }}
+              onOpenContacts={can('contacts.view') ? (phone?: string) => { setContactsInitialPhone(phone ?? null); navigate('/contacts'); } : undefined}
+              onOpenGroups={can('groups.view') ? () => navigate('/groups') : undefined}
+              onOpenSmsIn={can('sms_in.view') ? () => navigate('/sms-in') : undefined}
+              onOpenAdminPanel={() => navigate('/admin')}
+              ownOnly={sessionsOwnOnly}
+              initialPhone={sessionsInitialPhone}
+              onOpenSettings={can('settings.view') ? () => navigate('/settings') : undefined}
+              onOpenSubUsers={can('users.view') ? () => navigate('/users') : undefined}
+              onStopImpersonation={handleStopImpersonation}
+              onUpdateAvailability={handleUpdateAvailability}
+            />
+          } />
+          <Route path="/dashboard" element={
+            <>
+              <Dashboard
+                bots={bots}
+                onEnterBot={enterBot}
+                onCreateBot={handleCreateBot}
+                onDeleteBot={handleDeleteBot}
+                onSetDefaultBot={handleSetDefaultBot}
+                onLogout={handleLogout}
+                currentUser={currentUser}
+                onOpenAdminPanel={() => navigate('/admin')}
+                onOpenContacts={() => navigate('/contacts')}
+                onOpenSessions={() => { setSessionsOwnOnly(true); navigate('/sessions'); }}
+                onOpenGroups={() => navigate('/groups')}
+                onOpenSmsIn={can('sms_in.view') ? () => navigate('/sms-in') : undefined}
+                onStopImpersonation={handleStopImpersonation}
+                onConnectFacebook={(can('bots.publish') || currentUser?.isImpersonating) ? handleConnectFacebook : undefined}
+                onUpdateBotPublicId={handleUpdateBotPublicId}
+                onUpdateBotEndpoint={currentUser?.isImpersonating ? handleUpdateBotEndpoint : undefined}
+                onUpdateBotRestartKeyword={handleUpdateBotRestartKeyword}
+                onUpdateAvailability={handleUpdateAvailability}
+                onGoHome={() => navigate('/')}
+                token={token}
+                initialTab="bots"
+              />
+              {quotaError && quotaError.type === 'bots' && (
+                <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[200] p-6 text-right">
+                  <div className="bg-white w-full max-w-sm rounded-[2.5rem] shadow-2xl p-10 animate-in zoom-in duration-200 border border-slate-100">
+                    <div className="w-16 h-16 bg-red-50 text-red-500 rounded-3xl flex items-center justify-center mb-6 mr-0"><AlertTriangle size={32} /></div>
+                    <h3 className="text-2xl font-bold text-slate-900 mb-2">המכסה הסתיימה</h3>
+                    <p className="text-slate-500 text-sm mb-8 font-medium leading-relaxed">{quotaError.message}</p>
+                    <div className="flex flex-col gap-3">
+                      <button onClick={() => window.open('https://payment.mesergo.com', '_blank')} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold shadow-lg hover:bg-blue-700">קנה בוט חדש ({quotaError.price}₪)</button>
+                      <button onClick={() => setQuotaError(null)} className="w-full py-4 border border-slate-200 text-slate-400 rounded-2xl font-bold hover:bg-slate-50">ביטול</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </>
+          } />
+          <Route path="/settings" element={
+            <Dashboard
+              bots={bots}
+              onEnterBot={enterBot}
+              onCreateBot={handleCreateBot}
+              onDeleteBot={handleDeleteBot}
+              onSetDefaultBot={handleSetDefaultBot}
+              onLogout={handleLogout}
+              currentUser={currentUser}
+              onOpenAdminPanel={() => navigate('/admin')}
+              onOpenContacts={() => navigate('/contacts')}
+              onOpenSessions={() => { setSessionsOwnOnly(true); navigate('/sessions'); }}
+              onOpenGroups={() => navigate('/groups')}
+              onOpenSmsIn={can('sms_in.view') ? () => navigate('/sms-in') : undefined}
+              onStopImpersonation={handleStopImpersonation}
+              onConnectFacebook={(can('bots.publish') || currentUser?.isImpersonating) ? handleConnectFacebook : undefined}
+              onUpdateBotPublicId={handleUpdateBotPublicId}
+              onUpdateBotEndpoint={currentUser?.isImpersonating ? handleUpdateBotEndpoint : undefined}
+              onUpdateBotRestartKeyword={handleUpdateBotRestartKeyword}
+              onUpdateAvailability={handleUpdateAvailability}
+              onGoHome={() => navigate('/')}
+              token={token}
+              initialTab="settings"
+            />
+          } />
+          <Route path="/users" element={
+            <Dashboard
+              bots={bots}
+              onEnterBot={enterBot}
+              onCreateBot={handleCreateBot}
+              onDeleteBot={handleDeleteBot}
+              onSetDefaultBot={handleSetDefaultBot}
+              onLogout={handleLogout}
+              currentUser={currentUser}
+              onOpenAdminPanel={() => navigate('/admin')}
+              onOpenContacts={() => navigate('/contacts')}
+              onOpenSessions={() => { setSessionsOwnOnly(true); navigate('/sessions'); }}
+              onOpenGroups={() => navigate('/groups')}
+              onOpenSmsIn={can('sms_in.view') ? () => navigate('/sms-in') : undefined}
+              onStopImpersonation={handleStopImpersonation}
+              onConnectFacebook={(can('bots.publish') || currentUser?.isImpersonating) ? handleConnectFacebook : undefined}
+              onUpdateBotPublicId={handleUpdateBotPublicId}
+              onUpdateBotEndpoint={currentUser?.isImpersonating ? handleUpdateBotEndpoint : undefined}
+              onUpdateBotRestartKeyword={handleUpdateBotRestartKeyword}
+              onUpdateAvailability={handleUpdateAvailability}
+              onGoHome={() => navigate('/')}
+              token={token}
+              initialTab="users"
+            />
+          } />
+          <Route path="/sms-in" element={
+            !can('sms_in.view') ? <Navigate to="/" replace /> :
+            <SmsInPage
+              token={token}
+              currentUser={currentUser}
+              onBack={() => navigate('/dashboard')}
+              onLogout={() => { localStorage.clear(); window.location.reload(); }}
+              onOpenSessions={can('sessions.view') ? (phone?: string) => { setSessionsInitialPhone(phone ?? null); setSessionsOwnOnly(true); navigate('/sessions'); } : undefined}
+              onOpenContacts={can('contacts.view') ? (phone?: string) => { setContactsInitialPhone(phone ?? null); navigate('/contacts'); } : undefined}
+              onOpenGroups={can('groups.view') ? () => navigate('/groups') : undefined}
+              onOpenAdminPanel={currentUser?.role === 'admin' ? () => navigate('/admin') : undefined}
+              onOpenSettings={can('settings.view') ? () => navigate('/settings') : undefined}
+              onOpenSubUsers={can('users.view') ? () => navigate('/users') : undefined}
+              onStopImpersonation={handleStopImpersonation}
+            />
+          } />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </>
+    );
+  }
+
   if (!selectedBot && !activeProcessId && !editingTemplateId && !creatingTemplate) return <div>Loading...</div>;
 
   return (
@@ -2375,13 +2609,13 @@ const FlowBuilder: React.FC = () => {
         onTidy={tidyFlow}
         onPublish={openPublishModal}
         onCloseEditor={handleCloseProcessEditor}
-        onHome={() => { setViewMode('dashboard'); setSelectedBot(null); setActiveProcessId(null); }}
+        onHome={() => { setSelectedBot(null); setActiveProcessId(null); setViewMode('home'); navigate('/dashboard'); }}
         onSimulatorOpen={() => setIsSimulatorOpen(true)}
         onSimulatorClose={() => { setIsSimulatorOpen(false); setSimulatorActiveNodeId(null); setSimulatorFixedProcessNodeId(null); }}
         onDuplicate={() => { setDuplicateName(`${fixedProcesses.find(p => p.id.toString() === activeProcessId)?.name || ''} (עותק)`); setIsDuplicateModalOpen(true); }}
         onChangeTemplate={() => setIsChangeTemplateModalOpen(true)}
-        onOpenContacts={() => setViewMode('contacts')}
-        onOpenSessions={() => { setSessionsOwnOnly(true); setViewMode('sessions'); }}
+        onOpenContacts={() => navigate('/contacts')}
+        onOpenSessions={() => { setSessionsOwnOnly(true); navigate('/sessions'); }}
         initialParams={selectedBot?.botParams}
         onNodeFocus={setSimulatorActiveNodeId}
         onFixedProcessActive={setSimulatorFixedProcessNodeId}
@@ -2389,6 +2623,8 @@ const FlowBuilder: React.FC = () => {
         globalSearchResults={globalSearchResults}
         onNavigateToProcessResult={navigateToProcessResult}
         onOpenBotSettings={can('bots.settings') ? () => setIsBotSettingsOpen(true) : undefined}
+        onRenameProcess={handleRenameProcess}
+        saveStatus={saveStatus}
         sidebarProps={{
           fixedProcesses,
           versions,
@@ -2419,10 +2655,14 @@ const FlowBuilder: React.FC = () => {
             await handleUpdateBotPublicId(id, publicId);
             setSelectedBot(prev => prev ? { ...prev, public_id: publicId } : null);
           }}
-          onUpdateBotEndpoint={currentUser?.isImpersonating ? async (id, endpoint) => {
+          onUpdateBotEndpoint={(currentUser?.isImpersonating || currentUser?.role === 'admin') ? async (id, endpoint) => {
             await handleUpdateBotEndpoint(id, endpoint);
             setSelectedBot(prev => prev ? { ...prev, endpoint } : null);
           } : undefined}
+          onUpdateBotRestartKeyword={async (id, keyword) => {
+            await handleUpdateBotRestartKeyword(id, keyword);
+            setSelectedBot(prev => prev ? { ...prev, restart_keyword: keyword } : null);
+          }}
           onConnectFacebook={(can('bots.publish') || currentUser?.isImpersonating) ? handleConnectFacebook : undefined}
         />
       )}
@@ -2595,4 +2835,36 @@ const FlowBuilder: React.FC = () => {
   );
 };
 
-export default function AppWrapper() { return <ReactFlowProvider><FlowBuilder /></ReactFlowProvider>; }
+export default function AppWrapper() {
+  return (
+    <ReactFlowProvider>
+      <ContactFieldsWrapper />
+    </ReactFlowProvider>
+  );
+}
+
+/** Inner wrapper so ContactFieldsProvider receives the reactive token from FlowBuilder's state */
+function ContactFieldsWrapper() {
+  const [token, setToken] = React.useState<string | null>(
+    localStorage.getItem('flowbot_token') || sessionStorage.getItem('flowbot_token')
+  );
+
+  React.useEffect(() => {
+    const onStorage = () => {
+      setToken(localStorage.getItem('flowbot_token') || sessionStorage.getItem('flowbot_token'));
+    };
+    window.addEventListener('storage', onStorage);
+    // Also listen to a custom event fired on login/logout within the same tab
+    window.addEventListener('flowbot-auth-change', onStorage);
+    return () => {
+      window.removeEventListener('storage', onStorage);
+      window.removeEventListener('flowbot-auth-change', onStorage);
+    };
+  }, []);
+
+  return (
+    <ContactFieldsProvider token={token}>
+      <FlowBuilder />
+    </ContactFieldsProvider>
+  );
+}

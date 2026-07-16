@@ -12,16 +12,26 @@ import {
   sendToGroup,
   listBroadcasts,
   getBroadcast,
+  completeBroadcast,
+  resumeBroadcast,
+  cancelBroadcast,
   listRemovals,
 } from '../controllers/groupController.js';
  
 const router = express.Router();
+
+// Public routes — no auth required (called externally by webhook/service)
+router.get('/broadcasts/:id/complete', completeBroadcast);
+router.post('/broadcasts/:id/complete', completeBroadcast);
+
 router.use(authenticateToken);
 
 // Specific routes first
 router.post('/blocklist/add', addToBlocklist);
 router.get('/broadcasts', listBroadcasts);
 router.get('/broadcasts/:id', getBroadcast);
+router.post('/broadcasts/:id/resume', resumeBroadcast);
+router.delete('/broadcasts/:id/cancel', cancelBroadcast);
 router.get('/removals/log', listRemovals);
 
 router.get('/', listGroups);
@@ -33,6 +43,6 @@ router.delete('/:id', deleteGroup);
 router.post('/:id/members', addMembers);
 router.delete('/:id/members/:contactId', removeMember);
 
-router.post('/:id/send', sendToGroup);
+router.post('/:id/broadcast', sendToGroup);
 
 export default router;

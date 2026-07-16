@@ -62,49 +62,9 @@ Http::post('http://localhost:3001/api/sessions/send-message', [
 
 ✅ **Polling אוטומטי** - הסימולטור בודק הודעות חדשות כל 3 שניות  
 ✅ **זמן אמת** - הודעות מופיעות מיד בסימולטור  
-✅ **מזהה סימולטור** - שליחה לסימולטור ספציפי או broadcast לכולם ⭐ NEW  
 ✅ **סוגי הודעות** - תמיכה בטקסט, תמונות, סרטונים, מסמכים, קישורים, תפריטים  
 ✅ **Web Service** - מושלם לתשובות מ-web services  
 ✅ **היסטוריה** - כל ההודעות נשמרות ב-process_history  
-
-## מזהה סימולטור (Simulator ID) ⭐ חדש!
-
-כל סימולטור מקבל מזהה ייחודי שמאפשר לך לשלוח הודעות רק לסימולטור מסוים.
-
-### שליחה לסימולטור ספציפי
-```javascript
-await fetch('http://localhost:3001/api/sessions/send-message', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    sessionId: 'SESSION_ID',
-    simulator_id: 'sim-1713702000000-a3b9x2z1k', // ⭐ שלח רק לסימולטור זה
-    message: {
-      content: 'הודעה ספציפית',
-      type: 'Text'
-    }
-  })
-});
-```
-
-### שליחה לכולם (Broadcast)
-```javascript
-// אל תצרף simulator_id - ההודעה תשלח לכל הסימולטורים
-await fetch('http://localhost:3001/api/sessions/send-message', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    sessionId: 'SESSION_ID',
-    // ללא simulator_id = broadcast
-    message: {
-      content: 'הודעה לכולם',
-      type: 'Text'
-    }
-  })
-});
-```
-
-📖 **למידע מפורט**: [SIMULATOR-ID-GUIDE.md](SIMULATOR-ID-GUIDE.md)
 
 ## דוגמאות שימוש
 

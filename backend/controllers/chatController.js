@@ -15,8 +15,9 @@ import { fileURLToPath } from 'url';
 import crypto from 'crypto';
 import { handleWebService, findMatchingOption } from '../utils/webserviceHandler.js';
 import { normalizePhone } from '../utils/phone.js';
-import { getEffectiveRemovalConfig, matchRemovalKeyword, DEFAULT_REMOVAL_CONFIG } from '../utils/removalConfig.js';
+import { getEffectiveRemovalConfig, matchRemovalKeywordWithLang, DEFAULT_REMOVAL_CONFIG } from '../utils/removalConfig.js';
 import { pushMessagesToWhatsApp } from '../utils/whatsappSender.js';
+import eventBus from '../utils/eventBus.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -31,6 +32,7 @@ const detectMediaType = (text) => {
   if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) return 'Image';
   if (['mp4', 'mov', 'avi', 'mkv', 'webm'].includes(ext)) return 'Video';
   if (['pdf', 'doc', 'docx', 'xls', 'xlsx', 'txt', 'csv', 'zip'].includes(ext)) return 'Document';
+  if (['oga', 'ogg', 'mp3', 'wav', 'm4a', 'aac', 'opus'].includes(ext)) return 'Audio';
   console.log(`[detectMediaType] 🔍 URL has unknown extension: .${ext} — treating as text | url=${text.substring(0, 80)}`);
   return null;
 };
@@ -140,6 +142,17 @@ const validateInput = (type, value) => {
       return /^https?:\/\/.+\..+/.test(v);
     default:
       return true;
+  }
+};
+
+const validateDateTimeInput = (mode, value) => {
+  const v = String(value || '').trim();
+  if (mode === 'time') {
+    return /^([01]\d|2[0-3]):([0-5]\d)$/.test(v);
+  } else if (mode === 'datetime') {
+    return /^(0[1-9]|[12]\d|3[01])\/(0[1-9]|1[0-2])\/\d{4} ([01]\d|2[0-3]):([0-5]\d)$/.test(v);
+  } else {
+    return /^(0[1-9]|[12]\d|3[01])\/(0[1-9]|1[0-2])\/\d{4}$/.test(v);
   }
 };
 
@@ -309,7 +322,8 @@ const addToHistory = (session, message, nodeId) => {
     node_id: nodeId,
     sender: isUser ? 'user' : 'bot',
     name: isUser ? 'משתמש' : 'בוט',
-    created: new Date().toISOString()
+    created: new Date().toISOString(),
+    ...(!isUser ? { wamid: null, deliveryStatus: null } : {})
   });
   session.process_history = history;
 };
@@ -1119,8 +1133,9 @@ const performAutoRemoval = async (user, sender, phone, text, name = '') => {
     const removalCfg = await getEffectiveRemovalConfig(user);
     if (!removalCfg || removalCfg.enabled === false) return null;
 
-    const matched = matchRemovalKeyword(inboundText, removalCfg.keywords || []);
-    if (!matched) return null;
+    const removalMatch = matchRemovalKeywordWithLang(inboundText, removalCfg);
+    if (!removalMatch) return null;
+    const { matched, lang } = removalMatch;
 
     console.log(`[BOT] 🛑 removal keyword matched: "${matched}" | phone=${sender}`);
     const userId = String(user._id);
@@ -1165,15 +1180,34 @@ const performAutoRemoval = async (user, sender, phone, text, name = '') => {
       console.error('[BOT] failed to close sessions after removal:', sessErr.message);
     }
 
-    const confirmText = String(removalCfg.message || '').trim()
-      || String(DEFAULT_REMOVAL_CONFIG.message || '').trim()
-      || 'הוסרת בהצלחה מרשימת התפוצה. לא נשלח אליך יותר הודעות. תודה!';
+    const confirmText = lang === 'en'
+      ? (String(removalCfg.message_en || '').trim() || String(DEFAULT_REMOVAL_CONFIG.message_en || '').trim() || 'You have been successfully removed from our mailing list. Thank you!')
+      : (String(removalCfg.message_he || '').trim() || String(DEFAULT_REMOVAL_CONFIG.message_he || '').trim() || 'הוסרת בהצלחה מרשימת התפוצה. לא נשלח אליך יותר הודעות. תודה!');
     console.log(`[BOT] 📤 sending removal confirmation to ${sender}: "${confirmText.substring(0, 80)}"`);
     const outMessages = [{ type: 'Text', text: confirmText, created: new Date().toISOString() }];
     return { matched, outMessages };
   } catch (err) {
     console.error('[BOT] performAutoRemoval failed:', err.message);
     return null;
+  }
+};
+
+// Saves wamids returned from pushMessagesToWhatsApp into the matching process_history entries.
+const applyWamids = async (sess, msgs, wamidPerMsg) => {
+  if (!wamidPerMsg || !wamidPerMsg.some(Boolean)) return;
+  const histLen = sess.process_history ? sess.process_history.length : 0;
+  const startIdx = histLen - msgs.length;
+  if (startIdx < 0) return;
+  let changed = false;
+  wamidPerMsg.forEach((wamid, i) => {
+    if (wamid && sess.process_history[startIdx + i]) {
+      sess.process_history[startIdx + i].wamid = wamid;
+      changed = true;
+    }
+  });
+  if (changed) {
+    sess.markModified('process_history');
+    await sess.save();
   }
 };
 
@@ -1266,7 +1300,12 @@ export const respondToMessage = async (req, res) => {
         );
         console.log(`[BOT-MEDIA] ✅ Saved to process_history as ${mediaType || 'UserInput'}`);
         agentCheckSession.markModified('process_history');
+        // If the conversation was marked as resolved, reopen it so the rep sees it again
+        if (agentCheckSession.status === 'resolved') {
+          agentCheckSession.status = 'waiting';
+        }
         await agentCheckSession.save();
+        eventBus.emit('session:update', { userId: String(user._id), phone: sender });
         console.log(`[BOT] 🙋 AGENT MODE active for sessionId=${agentCheckSession._id} phone=${phone} — bot suppressed, message recorded`);
         console.log(`${'═'.repeat(80)}\n`);
         return res.json({ StatusId: 1, StatusDescription: 'Agent mode active', sender, messages: [], agentMode: true });
@@ -1415,7 +1454,7 @@ export const respondToMessage = async (req, res) => {
         sender,
         current_node_id: autoResponseNode.id,
         is_active: true,
-        parameters: { ...botParamsObj, waPhone: sender, ...(waSimulatorId ? { _simulatorId: waSimulatorId } : {}) },
+        parameters: { ...botParamsObj, waPhone: sender, waName: name || '', ...(waSimulatorId ? { _simulatorId: waSimulatorId } : {}) },
         process_history: []
       });
       
@@ -1463,6 +1502,7 @@ export const respondToMessage = async (req, res) => {
         addToHistory(session, { type: mediaType, url: text }, 'user');
         session.markModified('process_history');
         await session.save();
+        eventBus.emit('session:update', { userId: String(user._id), phone: sender });
         console.log(`[BOT-MEDIA] ✅ Saved to process_history as ${mediaType} | bot flow NOT advanced`);
         console.log(`${'═'.repeat(60)}\n`);
         return res.json({ StatusId: 1, StatusDescription: 'Media recorded', sender, messages: [] });
@@ -1534,6 +1574,39 @@ export const respondToMessage = async (req, res) => {
 
     const params = session.parameters || {};
 
+    // Global restart keyword check — runs FIRST before anything else so it wins
+    // over menu-default routing and any other interrupt logic.
+    // Two triggers: (1) system keyword 'wastart', (2) custom per-bot restart_keyword.
+    {
+      const restartKw = (tokenBot.restart_keyword || '').trim().toLowerCase();
+      const textLower = text.trim().toLowerCase();
+      if (textLower === 'wastart' || (restartKw && textLower === restartKw)) {
+        const RESTART_MSG = 'השיחה אופסה 🔄 שלח הודעה כלשהי להתחיל מחדש';
+        const restartOutMsg = [{ type: 'Text', text: RESTART_MSG, created: new Date().toISOString() }];
+        try {
+          session.is_active         = false;
+          session.current_node_id   = null;
+          session.waiting_text_input = false;
+          session.waiting_webservice = false;
+          session.execution_stack   = [];
+          await session.save();
+        } catch (sessSaveErr) {
+          console.error('[BOT] failed to reset session after restart keyword:', sessSaveErr.message);
+        }
+        console.log(`[BOT] 🔄 restart keyword matched: "${textLower}" | session=${session._id}`);
+        const { anySuccess: waPushed } = await pushMessagesToWhatsApp(sender, restartOutMsg, user, tokenBot);
+        return res.json({
+          StatusId: 1,
+          StatusDescription: 'Restarted by keyword',
+          sender,
+          messages: waPushed ? [] : restartOutMsg,
+          control: null,
+          restarted: true,
+          ...(waPushed && { wa_pushed: true })
+        });
+      }
+    }
+
     // ── Flow interrupt (mirrors Simulator flow-interrupt) ──────────────────────
     // If we are mid-flow (not a new session, not already at automatic_responses,
     // ── Flow interrupt ────────────────────────────────────────────────────────
@@ -1585,15 +1658,15 @@ export const respondToMessage = async (req, res) => {
               if (menuNode.data.variableName && matchedMenuIdx !== -1) {
                 interruptParams[menuNode.data.variableName] = text.trim();
               }
-              interruptParams['open'] = text.trim();
+              interruptParams['waOpen'] = text.trim();
               session.parameters = interruptParams;
               session.markModified('parameters');
             }
 
-            addToHistory(session, { type: 'UserInput', text }, 'user');
             messages = await walkChain(interruptNextId, flowData.nodes, flowData.edges, session, session.flow_id, req);
             await session.save();
-            const waPushedInterrupt1 = await pushMessagesToWhatsApp(sender, messages, user, tokenBot);
+            const { anySuccess: waPushedInterrupt1, wamidPerMsg: wamids1 } = await pushMessagesToWhatsApp(sender, messages, user, tokenBot);
+            try { await applyWamids(session, messages, wamids1); } catch (e) { console.error('[BOT] applyWamids failed (non-critical):', e.message); }
             return res.json({ StatusId: 1, StatusDescription: 'Success', sender, messages: waPushedInterrupt1 ? [] : messages, control: null, ...(waPushedInterrupt1 && { wa_pushed: true }) });
           }
         }
@@ -1622,17 +1695,17 @@ export const respondToMessage = async (req, res) => {
             session.waiting_text_input = false;
             {
               const interruptParams = session.parameters || {};
-              interruptParams['open'] = text.trim();
+              interruptParams['waOpen'] = text.trim();
               session.parameters = interruptParams;
               session.markModified('parameters');
             }
 
             const interruptNextId = findNextNode(autoNode.id, flowData.edges, `option-${interruptIdx}`);
             if (interruptNextId) {
-              addToHistory(session, { type: 'UserInput', text }, 'user');
               messages = await walkChain(interruptNextId, flowData.nodes, flowData.edges, session, session.flow_id, req);
               await session.save();
-              const waPushedInterrupt2 = await pushMessagesToWhatsApp(sender, messages, user, tokenBot);
+              const { anySuccess: waPushedInterrupt2, wamidPerMsg: wamids2 } = await pushMessagesToWhatsApp(sender, messages, user, tokenBot);
+              try { await applyWamids(session, messages, wamids2); } catch (e) { console.error('[BOT] applyWamids failed (non-critical):', e.message); }
               return res.json({ StatusId: 1, StatusDescription: 'Success', sender, messages: waPushedInterrupt2 ? [] : messages, control: null, ...(waPushedInterrupt2 && { wa_pushed: true }) });
             }
           }
@@ -1655,9 +1728,9 @@ export const respondToMessage = async (req, res) => {
         } catch (sessSaveErr) {
           console.error('[BOT] failed to close current session after removal:', sessSaveErr.message);
         }
-        const waPushed = removalResult.outMessages.length > 0
+        const { anySuccess: waPushed } = removalResult.outMessages.length > 0
           ? await pushMessagesToWhatsApp(sender, removalResult.outMessages, user, tokenBot)
-          : false;
+          : { anySuccess: false };
         return res.json({
           StatusId: 1,
           StatusDescription: 'Removed by keyword',
@@ -1703,9 +1776,9 @@ export const respondToMessage = async (req, res) => {
           } catch (sessSaveErr) {
             console.error('[BOT] failed to close current session after removal:', sessSaveErr.message);
           }
-          const waPushed = removalResult.outMessages.length > 0
+          const { anySuccess: waPushed } = removalResult.outMessages.length > 0
             ? await pushMessagesToWhatsApp(sender, removalResult.outMessages, user, tokenBot)
-            : false;
+            : { anySuccess: false };
           return res.json({
             StatusId: 1,
             StatusDescription: 'Removed by keyword',
@@ -1721,7 +1794,7 @@ export const respondToMessage = async (req, res) => {
 
       // Default to first option (כניסה) if no match
       const finalIdx = matchedIdx !== -1 ? matchedIdx : 0;
-      params['open'] = text.trim();
+      params['waOpen'] = text.trim();
       session.parameters = params;
       session.markModified('parameters');
       const nextNodeId = findNextNode(currentNode.id, flowData.edges, `option-${finalIdx}`);
@@ -1750,6 +1823,17 @@ export const respondToMessage = async (req, res) => {
         }
         session.waiting_text_input = true;
         // current_node_id stays unchanged — fall through to session.save()
+      } else if (currentNode.type === 'input_date' && !validateDateTimeInput(currentNode.data.dateTimeMode || 'date', text)) {
+        const dtMode = currentNode.data.dateTimeMode || 'date';
+        const formatHint = dtMode === 'time'     ? 'HH:MM (לדוגמה: 14:30)' :
+                           dtMode === 'datetime' ? 'DD/MM/YYYY HH:MM (לדוגמה: 25/06/2025 14:30)' :
+                                                   'DD/MM/YYYY (לדוגמה: 25/06/2025)';
+        messages.push({ type: 'Text', text: `הפורמט שהוזן אינו תקין. אנא הזן בפורמט ${formatHint}`, created: new Date().toISOString() });
+        if (currentNode.data.label) {
+          messages.push({ type: 'Text', text: replaceParameters(currentNode.data.label, params), created: new Date().toISOString() });
+        }
+        session.waiting_text_input = true;
+        // current_node_id stays unchanged — fall through to session.save()
       } else {
       // We received the answer — no longer waiting
       session.waiting_text_input = false;
@@ -1759,17 +1843,23 @@ export const respondToMessage = async (req, res) => {
       if (varName) {
         params[varName] = text;
       }
-      params['open'] = text;
+      params['waOpen'] = text;
       session.parameters = params;
       session.markModified('parameters');
 
       // Save to contact custom_field_values if flagged
-      if (varName && currentNode.data.saveToContact) {
-        Contact.findOneAndUpdate(
-          { user_id: session.user_id, phone: session.customer_phone },
-          { $set: { [`custom_field_values.${varName}`]: text } },
-          { upsert: true, new: true }
-        ).catch(err => console.error('[BOT] Failed to save contact field:', err));
+      if (currentNode.data.saveToContact) {
+        // contactFieldKey (field _id) takes precedence; fall back to varName for legacy flows
+        const contactKey = currentNode.data.contactFieldKey || varName;
+        // session.sender is the customer's phone; session.customer_phone is the bot's phone
+        const contactPhone = session.sender || session.customer_phone;
+        if (contactKey && contactPhone) {
+          Contact.findOneAndUpdate(
+            { user_id: session.user_id, phone: contactPhone },
+            { $set: { [`custom_field_values.${contactKey}`]: text } },
+            { upsert: true, new: true }
+          ).catch(err => console.error('[BOT] Failed to save contact field:', err));
+        }
       }
 
       // Use sub-flow edges if the node lives inside a fixed_process
@@ -1844,7 +1934,7 @@ export const respondToMessage = async (req, res) => {
         if (currentNode.data.variableName) {
           params[currentNode.data.variableName] = selectedValue;
         }
-        params['open'] = selectedValue;
+        params['waOpen'] = selectedValue;
         session.parameters = params;
         session.markModified('parameters');
 
@@ -1875,7 +1965,7 @@ export const respondToMessage = async (req, res) => {
         console.log(`[SUB-FLOW]   no match for "${selectedValue}" → defaultNextId=${defaultNextId || '(none)'}`);
         if (defaultNextId) {
           console.log(`[SUB-FLOW]   routing to option-default → ${defaultNextId}`);
-          params['open'] = selectedValue;
+          params['waOpen'] = selectedValue;
           session.parameters = params;
           session.markModified('parameters');
           messages = await walkChain(defaultNextId, menuActiveNodes, menuActiveEdges, session, session.flow_id, req);
@@ -1895,11 +1985,21 @@ export const respondToMessage = async (req, res) => {
             console.log(`[SUB-FLOW]   ⏸ sub-flow menu default still waiting — not returning to parent yet`);
           }
         } else {
+          // No default edge — tell the user to pick from the menu and re-display it
           messages.push({
             type: 'Text',
-            text: '⚠️ לא נמצאה אפשרות תואמת לתשובה שלך.',
+            text: 'בחר רק מהאפשרויות',
             created: new Date().toISOString()
           });
+          const menuOptions = (currentNode.data.options || []).filter(opt => opt !== 'default');
+          messages.push({
+            type: 'Options',
+            text: replaceParameters(currentNode.data.content || '', params),
+            options: menuOptions,
+            created: new Date().toISOString()
+          });
+          // Keep session.current_node_id pointing to this menu node so the next
+          // incoming message is handled by the output_menu branch again.
         }
       }
     } else if (currentNode.type === 'automatic_responses' && !isNewSession) {
@@ -1930,9 +2030,9 @@ export const respondToMessage = async (req, res) => {
           } catch (sessSaveErr) {
             console.error('[BOT] failed to close current session after removal:', sessSaveErr.message);
           }
-          const waPushed = removalResult.outMessages.length > 0
+          const { anySuccess: waPushed } = removalResult.outMessages.length > 0
             ? await pushMessagesToWhatsApp(sender, removalResult.outMessages, user, tokenBot)
-            : false;
+            : { anySuccess: false };
           return res.json({
             StatusId: 1,
             StatusDescription: 'Removed by keyword',
@@ -1946,7 +2046,7 @@ export const respondToMessage = async (req, res) => {
         }
       }
 
-      params['open'] = text.trim();
+      params['waOpen'] = text.trim();
       session.parameters = params;
       session.markModified('parameters');
       const finalIdx = matchedIdx !== -1 ? matchedIdx : 0;
@@ -1959,6 +2059,8 @@ export const respondToMessage = async (req, res) => {
     // Save session
     console.log(`[BOT] 💾 Saving session - sender: ${session.sender}, phone: ${session.customer_phone}`);
     await session.save();
+    eventBus.emit('session:update', { userId: String(user._id), phone: sender });
+    console.log(`[eventBus] emitted session:update userId=${String(user._id)} phone=${sender}`);
 
     // Build control object if needed
     // Reload the waiting node from the updated session.current_node_id (may have changed inside walkChain)
@@ -1978,7 +2080,8 @@ export const respondToMessage = async (req, res) => {
     // Proactively push messages to WhatsApp via dialog360 /send endpoint.
     // Uses the bot's endpoint when available, falling back to user credentials or env vars.
     // When push succeeds, return an empty messages array so dialog360 does NOT double-send.
-    const waPushed = await pushMessagesToWhatsApp(sender, messages, user, tokenBot);
+    const { anySuccess: waPushed, wamidPerMsg } = await pushMessagesToWhatsApp(sender, messages, user, tokenBot);
+    try { await applyWamids(session, messages, wamidPerMsg); } catch (e) { console.error('[BOT] applyWamids failed (non-critical):', e.message); }
     console.log(`[BOT] 🚀 pushMessagesToWhatsApp → waPushed=${waPushed}`);
 
     const elapsedMs = Date.now() - reqStartedAt;
@@ -2002,5 +2105,290 @@ export const respondToMessage = async (req, res) => {
       StatusId: 0,
       StatusDescription: error.message
     });
+  }
+};
+
+/**
+ * GET/POST /api/360/:wa_id/send
+ *
+ * Steps performed:
+ *   1. Find bot by wa_id (endpoint match) → resolve user_id
+ *   2. Normalise phone
+ *   3. Flatten params[] + extract header media URL
+ *   4. Fetch template definition → substitute {{1}}…{{N}} with real values
+ *   5. Forward request as-is to https://wa.message.co.il/api/360/:wa_id/send
+ *   6. Ensure a Contact record exists for this phone (create if missing)
+ *   7. Append history entry to existing active BotSession or create a new one
+ */
+export const sendTemplateExternal = async (req, res) => {
+  try {
+    const { wa_id } = req.params;
+    const isGet = req.method === 'GET';
+    const source = isGet ? req.query : (req.body || {});
+    const { phone, template, token } = source;
+
+    console.log(`\n${'═'.repeat(80)}`);
+    console.log(`[360-TEMPLATE] 🚀 START | ${req.method} | wa_id=${wa_id}`);
+    console.log(`[360-TEMPLATE]    phone=${phone} | template=${template} | token=${token ? String(token).substring(0, 8) + '…' : '(missing)'}`);
+
+    if (!phone || !template || !token) {
+      console.log(`[360-TEMPLATE] ❌ Missing required params (phone / template / token)`);
+      return res.status(400).json({ success: false, error: 'phone, template and token are required' });
+    }
+
+    // ── Step 1: Find bot by wa_id ────────────────────────────────────────────
+    console.log(`[360-TEMPLATE] 🔍 STEP 1 — Looking up bot for wa_id=${wa_id}`);
+    const bot = await BotFlow.findOne({
+      $or: [{ endpoint: wa_id }, { endpoint: `dialog360/${wa_id}` }],
+    }).select('_id user_id endpoint name').lean();
+
+    let userId = null;
+    if (bot) {
+      userId = bot.user_id?.toString();
+      console.log(`[360-TEMPLATE]    ✅ Bot found: "${bot.name}" (${bot._id}) | user_id=${userId}`);
+    } else {
+      const userByBotId = await User.findOne({ dialog360_bot_id: wa_id }).lean();
+      if (userByBotId) {
+        userId = userByBotId._id.toString();
+        console.log(`[360-TEMPLATE]    ✅ User found by dialog360_bot_id | email=${userByBotId.email} | userId=${userId}`);
+      } else {
+        console.log(`[360-TEMPLATE]    ⚠️ No bot or user found for wa_id=${wa_id} — will proxy but skip history`);
+      }
+    }
+
+    // ── Step 2: Normalise phone ──────────────────────────────────────────────
+    console.log(`[360-TEMPLATE] 📞 STEP 2 — Normalising phone: ${phone}`);
+    let normalizedPhone = String(phone).replace(/[^0-9]/g, '');
+    normalizedPhone = normalizedPhone.replace(/^972972/, '972');
+    if (!normalizedPhone.startsWith('972')) {
+      normalizedPhone = normalizedPhone.replace(/^0+/, '');
+      normalizedPhone = '972' + normalizedPhone;
+    }
+    console.log(`[360-TEMPLATE]    → ${normalizedPhone}`);
+
+    // ── Step 3: Flatten params[] and extract header media ────────────────────
+    console.log(`[360-TEMPLATE] 🔢 STEP 3 — Parsing params and header`);
+    const rawParams = source.params || {};
+    let paramsArray;
+    if (Array.isArray(rawParams)) {
+      paramsArray = rawParams.map(String);
+    } else if (rawParams && typeof rawParams === 'object') {
+      paramsArray = Object.keys(rawParams)
+        .sort((a, b) => Number(a) - Number(b))
+        .map(k => String(rawParams[k]));
+    } else {
+      paramsArray = [];
+    }
+    console.log(`[360-TEMPLATE]    params (${paramsArray.length}): ${JSON.stringify(paramsArray)}`);
+
+    // Walk any nested structure to find media URL + type inside header[...]
+    let mediaUrl = null;
+    let mediaType = 'image';
+    const rawHeader = source.header;
+    if (rawHeader) {
+      const walkNode = (node) => {
+        if (!node) return;
+        if (typeof node === 'string' && /^https?:\/\//i.test(node)) {
+          mediaUrl = mediaUrl || node;
+        } else if (typeof node === 'object') {
+          if (node.link && typeof node.link === 'string') mediaUrl = mediaUrl || node.link;
+          for (const v of Object.values(node)) walkNode(v);
+        }
+      };
+      walkNode(rawHeader);
+      const typeStrings = [];
+      const collectStr = (node) => {
+        if (typeof node === 'string') typeStrings.push(node.toLowerCase());
+        else if (node && typeof node === 'object') Object.values(node).forEach(collectStr);
+      };
+      collectStr(rawHeader);
+      const found = ['image', 'video', 'document'].find(t => typeStrings.includes(t));
+      if (found) mediaType = found;
+    }
+    console.log(`[360-TEMPLATE]    header: mediaUrl=${mediaUrl || '(none)'} | mediaType=${mediaType}`);
+
+    // ── Step 4: Fetch template definition → resolve body text ────────────────
+    console.log(`[360-TEMPLATE] 📋 STEP 4 — Fetching template definition for "${template}"`);
+    let displayText = paramsArray.length > 0
+      ? `[${template}]: ${paramsArray.join(' | ')}`
+      : `[${template}]`;
+
+    try {
+      const apiToken = crypto.createHash('sha1').update(wa_id + 'moomoo').digest('hex');
+      const templatesUrl = `https://app.chatgo.live/api/dialog360/${wa_id}/message_templates`;
+      console.log(`[360-TEMPLATE]    GET ${templatesUrl}`);
+      const tplRes = await fetch(templatesUrl, { headers: { token: apiToken } });
+      console.log(`[360-TEMPLATE]    templates API status=${tplRes.status}`);
+
+      if (tplRes.ok) {
+        const tplData = await tplRes.json();
+        const allTemplates = tplData?.data || tplData?.waba_templates || [];
+        console.log(`[360-TEMPLATE]    total templates returned: ${allTemplates.length}`);
+        const tplDef = allTemplates.find(t => t.name === template || t.elementName === template);
+
+        if (tplDef) {
+          console.log(`[360-TEMPLATE]    ✅ Template matched: "${tplDef.name}" | status=${tplDef.status} | components: ${(tplDef.components || []).map(c => c.type).join(', ')}`);
+          const components = tplDef.components || [];
+          const bodyComp = components.find(c => c.type === 'BODY');
+          if (bodyComp?.text) {
+            let bodyText = bodyComp.text;
+            paramsArray.forEach((val, idx) => {
+              bodyText = bodyText.replace(new RegExp(`\\{\\{${idx + 1}\\}\\}`, 'g'), val);
+            });
+            const footerComp = components.find(c => c.type === 'FOOTER');
+            if (footerComp?.text) bodyText += `\n\n― ${footerComp.text}`;
+            displayText = bodyText;
+            console.log(`[360-TEMPLATE]    📝 Resolved text: "${displayText.substring(0, 120)}${displayText.length > 120 ? '…' : ''}"`);
+          }
+          // Fallback header URL from template example if not supplied in the request
+          if (!mediaUrl) {
+            const headerComp = components.find(c => c.type === 'HEADER');
+            if (headerComp && ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(headerComp.format)) {
+              const ex = headerComp.example || {};
+              const exLink = (Array.isArray(ex.header_handle) ? ex.header_handle[0] : ex.header_handle)
+                          || (Array.isArray(ex.header_url) ? ex.header_url[0] : ex.header_url) || '';
+              if (exLink) {
+                mediaUrl = exLink;
+                mediaType = headerComp.format.toLowerCase();
+                console.log(`[360-TEMPLATE]    📎 Header URL from template example: ${mediaUrl}`);
+              }
+            }
+          }
+        } else {
+          console.log(`[360-TEMPLATE]    ⚠️ Template "${template}" not found in list — using fallback display text`);
+        }
+      } else {
+        console.warn(`[360-TEMPLATE]    ⚠️ templates API returned ${tplRes.status} — using fallback display text`);
+      }
+    } catch (tplErr) {
+      console.warn(`[360-TEMPLATE]    ⚠️ Template fetch error: ${tplErr.message} — using fallback display text`);
+    }
+
+    // ── Step 5: Forward to wa.message.co.il ─────────────────────────────────
+    console.log(`[360-TEMPLATE] 📡 STEP 5 — Forwarding to wa.message.co.il`);
+    let waSent = false;
+    let waError = null;
+    let waResponseBody = null;
+    try {
+      let waRes;
+      if (isGet) {
+        const rawQuery = req.originalUrl.split('?')[1] || '';
+        const waUrl = `https://wa.message.co.il/api/360/${wa_id}/send?${rawQuery}`;
+        console.log(`[360-TEMPLATE]    GET → ${waUrl}`);
+        waRes = await fetch(waUrl, { method: 'GET' });
+      } else {
+        const waUrl = `https://wa.message.co.il/api/360/${wa_id}/send`;
+        console.log(`[360-TEMPLATE]    POST → ${waUrl} | body=${JSON.stringify(source).substring(0, 200)}`);
+        waRes = await fetch(waUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json; charset=utf-8',
+            Accept: 'application/json',
+            token: String(token),
+          },
+          body: JSON.stringify(source),
+        });
+      }
+      const rawText = await waRes.text();
+      try { waResponseBody = JSON.parse(rawText); } catch { waResponseBody = rawText; }
+      if (waRes.ok) {
+        waSent = true;
+        console.log(`[360-TEMPLATE]    ✅ WA OK | status=${waRes.status}`);
+      } else {
+        waError = `HTTP ${waRes.status}: ${rawText}`;
+        console.error(`[360-TEMPLATE]    ❌ WA failed | ${waError}`);
+      }
+    } catch (waErr) {
+      waError = waErr.message;
+      console.error(`[360-TEMPLATE]    ❌ WA exception: ${waErr.message}`);
+    }
+
+    // ── Step 6: Ensure Contact record exists ─────────────────────────────────
+    if (userId) {
+      console.log(`[360-TEMPLATE] 👤 STEP 6 — Ensuring contact for phone=${normalizedPhone} user=${userId}`);
+      try {
+        const existing = await Contact.findOne({ user_id: userId, phone: normalizedPhone }).lean();
+        if (existing) {
+          console.log(`[360-TEMPLATE]    ✅ Contact already exists (_id=${existing._id})`);
+        } else {
+          const created = await Contact.create({ user_id: userId, phone: normalizedPhone, full_name: '', whatsapp_name: '', email: '', custom_field_values: {} });
+          console.log(`[360-TEMPLATE]    ✅ Contact created (_id=${created._id})`);
+        }
+      } catch (contactErr) {
+        console.warn(`[360-TEMPLATE]    ⚠️ Contact upsert error: ${contactErr.message}`);
+      }
+    } else {
+      console.log(`[360-TEMPLATE] ⏭ STEP 6 — Skipping contact (no userId)`);
+    }
+
+    // ── Step 7: Save history to BotSession ───────────────────────────────────
+    const now = new Date();
+    const historyEntry = {
+      type: mediaUrl ? (mediaType === 'video' ? 'Video' : mediaType === 'document' ? 'Document' : 'Image') : 'Text',
+      text: displayText,
+      ...(mediaUrl ? { url: mediaUrl } : {}),
+      sender: 'agent',
+      name: 'הודעה יוצאת',
+      node_id: 'outgoing_template',
+      template_name: String(template),
+      template_params: paramsArray,
+      wa_sent: waSent,
+      created: now.toISOString(),
+      wamid: null,
+      deliveryStatus: null,
+    };
+
+    if (userId) {
+      console.log(`[360-TEMPLATE] 💾 STEP 7 — Saving to BotSession | type=${historyEntry.type} | mediaUrl=${mediaUrl || '(none)'}`);
+      const collection = mongoose.connection.collection('BotSession');
+      const twentyMinutesAgo = new Date(Date.now() - 20 * 60 * 1000);
+      const existingSession = await collection.findOne(
+        {
+          $or: [{ sender: normalizedPhone }, { customer_phone: normalizedPhone }],
+          user_id: userId,
+          is_active: { $ne: false },
+          created_at: { $gte: twentyMinutesAgo },
+        },
+        { sort: { created_at: -1 } }
+      );
+
+      if (existingSession) {
+        await collection.updateOne(
+          { _id: existingSession._id },
+          {
+            $push: { process_history: historyEntry },
+            $set: { status: 'bot', is_agent: false, agent_since: null },
+          }
+        );
+        console.log(`[360-TEMPLATE]    ✅ Appended to existing session=${existingSession._id} (status→bot)`);
+      } else {
+        const result = await collection.insertOne({
+          sender: normalizedPhone,
+          customer_phone: normalizedPhone,
+          user_id: userId,
+          flow_id: bot?._id?.toString() || null,
+          is_agent: false,
+          agent_since: null,
+          status: 'bot',
+          is_active: true,
+          created_at: now,
+          process_history: [historyEntry],
+        });
+        console.log(`[360-TEMPLATE]    ✅ Created new session=${result.insertedId}`);
+      }
+    } else {
+      console.log(`[360-TEMPLATE] ⏭ STEP 7 — Skipping history save (no userId)`);
+    }
+
+    console.log(`[360-TEMPLATE] ✅ DONE | waSent=${waSent} | phone=${normalizedPhone} | waError=${waError || 'none'}`);
+    console.log(`${'═'.repeat(80)}\n`);
+    if (waResponseBody !== null) {
+      res.json(waResponseBody);
+    } else {
+      res.json({ success: true, waSent, waError, phone: normalizedPhone });
+    }
+  } catch (err) {
+    console.error('[360-TEMPLATE] ❌ FATAL:', err);
+    res.status(500).json({ success: false, error: err.message });
   }
 };

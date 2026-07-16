@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { 
   Users, UserCog, LogOut, ArrowLeft, AlertCircle, AlertTriangle, Shield, Activity, 
   Search, Trash2, Edit2, Ban, CheckCircle, BarChart2, Settings, 
@@ -24,6 +25,7 @@ interface User {
   manager_id?: string | null;
   allowed_bot_ids?: string[];
   user_type_id?: { _id: string; name: string; system_role: string } | null;
+  sms_in_enabled?: boolean;
   createdAt: string;
   updatedAt: string;
   stats?: {
@@ -35,6 +37,7 @@ interface User {
     max_versions: number | null;
     version_price: number | null;
     bot_price: number | null;
+    max_connected_numbers: number | null;
   };
   limits_in_effect?: {
     maxBots: number;
@@ -82,7 +85,13 @@ const API_BASE = window.location.hostname === 'localhost'
   : `${window.location.origin}/api`;
 
 const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onImpersonate, onEditTemplate, onCreateTemplate }) => {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'users' | 'user-types' | 'templates' | 'settings' | 'sessions' | 'dialog360'>('dashboard');
+  const navigate = useNavigate();
+  const { tab } = useParams<{ tab?: string }>();
+
+  type AdminTab = 'dashboard' | 'users' | 'user-types' | 'templates' | 'settings' | 'sessions' | 'dialog360' | 'removal-log';
+  const VALID_TABS: AdminTab[] = ['dashboard', 'users', 'user-types', 'templates', 'settings', 'sessions', 'dialog360', 'removal-log'];
+  const activeTab: AdminTab = (VALID_TABS.includes(tab as AdminTab) ? tab : 'dashboard') as AdminTab;
+  const setActiveTab = (t: AdminTab) => navigate(`/admin/${t}`);
   const [users, setUsers] = useState<User[]>([]);
   const [stats, setStats] = useState<SystemStats | null>(null);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
@@ -95,13 +104,20 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
   const [loadingConfig, setLoadingConfig] = useState(false);
 
   // Global default config for the auto-removal-from-group feature
-  interface RemovalConfigShape { enabled: boolean; keywords: string[]; message: string; }
+  interface RemovalConfigShape { enabled: boolean; keywords_he: string[]; message_he: string; keywords_en: string[]; message_en: string; }
+  interface RemovalLogEntry { _id: string; action: string; actor_email: string; details?: { keyword?: string }; createdAt: string; }
   const [removalConfig, setRemovalConfig] = useState<RemovalConfigShape | null>(null);
   const [removalDefaults, setRemovalDefaults] = useState<RemovalConfigShape | null>(null);
-  const [removalNewKeyword, setRemovalNewKeyword] = useState('');
+  const [removalNewKeywordHe, setRemovalNewKeywordHe] = useState('');
+  const [removalNewKeywordEn, setRemovalNewKeywordEn] = useState('');
   const [removalSaving, setRemovalSaving] = useState(false);
   const [removalSaved, setRemovalSaved] = useState(false);
   const [removalConfirmOpen, setRemovalConfirmOpen] = useState(false);
+  const [removalLog, setRemovalLog] = useState<RemovalLogEntry[]>([]);
+  const [removalLogLoading, setRemovalLogLoading] = useState(false);
+  const [removalLogPage, setRemovalLogPage] = useState(1);
+  const [removalLogTotal, setRemovalLogTotal] = useState(0);
+  const REMOVAL_LOG_PAGE_SIZE = 20;
   
   // Forms state
   const [newTemplateData, setNewTemplateData] = useState({ name: '', description: '', botId: '' });
@@ -183,6 +199,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
   const [deleteConfirmUserId, setDeleteConfirmUserId] = useState<string | null>(null);
   const [isDeletingUser, setIsDeletingUser] = useState(false);
 
+  // Expand/collapse sub-users per parent
+  const [expandedUserIds, setExpandedUserIds] = useState<Set<string>>(new Set());
+
   // Create User modal
   const [showCreateUserModal, setShowCreateUserModal] = useState(false);
   const [createUserForm, setCreateUserForm] = useState({ name: '', email: '', phone: '', password: '', account_type: 'Trial', user_type_id: '', manager_id: '', allowed_bot_ids: [] as string[] });
@@ -196,6 +215,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
     if (activeTab === 'users') fetchAllUsers();
     if (activeTab === 'templates') fetchTemplates();
     if (activeTab === 'settings') { fetchSystemConfig(); fetchRemovalConfig(); }
+    if (activeTab === 'removal-log') fetchRemovalConfigLog(1);
     if (activeTab === 'sessions') fetchAllSessions(1, sessionsSearch);
     if (activeTab === 'dialog360') fetchDialog360Templates();
     if (activeTab === 'users' || activeTab === 'user-types') fetchUserTypesForModal();
@@ -604,7 +624,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
         max_bots: limits.max_bots === '' ? null : limits.max_bots,
         max_versions: limits.max_versions === '' ? null : limits.max_versions,
         version_price: limits.version_price === '' ? null : limits.version_price,
-        bot_price: limits.bot_price === '' ? null : limits.bot_price
+        bot_price: limits.bot_price === '' ? null : limits.bot_price,
+        max_connected_numbers: limits.max_connected_numbers === '' ? null : limits.max_connected_numbers
       };
 
       const isRep = (editForm.role || selectedUser.role) === 'rep' || (editForm.role || selectedUser.role) === 'rep_manager';
@@ -708,7 +729,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
       if (!response.ok) throw new Error('Failed to fetch settings');
       const data = await response.json();
       // Ensure Trial plan exists in config (merge defaults if missing)
-      const defaultTrial = { maxBots: 1, maxVersions: 0, versionPrice: 0, botPrice: 0, canPublish: false, trialDays: 30 };
+      const defaultTrial = { maxBots: 1, maxVersions: 0, versionPrice: 0, botPrice: 0, canPublish: false, trialDays: 30, maxConnectedNumbers: 1 };
       setSystemConfig({ Trial: defaultTrial, ...data });
     } catch (err) {
       console.error(err);
@@ -742,18 +763,35 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
       });
       if (!res.ok) throw new Error('Failed to load removal config');
       const data = await res.json();
-      setRemovalConfig({
-        enabled: data.config?.enabled !== false,
-        keywords: Array.isArray(data.config?.keywords) ? data.config.keywords : [],
-        message: typeof data.config?.message === 'string' ? data.config.message : ''
+      const normShape = (c: any): RemovalConfigShape => ({
+        enabled: c?.enabled !== false,
+        keywords_he: Array.isArray(c?.keywords_he) ? c.keywords_he : [],
+        message_he: typeof c?.message_he === 'string' ? c.message_he : '',
+        keywords_en: Array.isArray(c?.keywords_en) ? c.keywords_en : [],
+        message_en: typeof c?.message_en === 'string' ? c.message_en : ''
       });
-      setRemovalDefaults({
-        enabled: data.defaults?.enabled !== false,
-        keywords: Array.isArray(data.defaults?.keywords) ? data.defaults.keywords : [],
-        message: typeof data.defaults?.message === 'string' ? data.defaults.message : ''
-      });
+      setRemovalConfig(normShape(data.config));
+      setRemovalDefaults(normShape(data.defaults));
     } catch (err) {
       console.error('[admin removal config]', err);
+    }
+  };
+
+  const fetchRemovalConfigLog = async (page: number) => {
+    setRemovalLogLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/admin/settings/removal/log?page=${page}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error('Failed to load removal log');
+      const data = await res.json();
+      setRemovalLog(Array.isArray(data.entries) ? data.entries : []);
+      setRemovalLogTotal(typeof data.total === 'number' ? data.total : 0);
+      setRemovalLogPage(page);
+    } catch (err) {
+      console.error('[admin removal log]', err);
+    } finally {
+      setRemovalLogLoading(false);
     }
   };
 
@@ -772,12 +810,15 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
       if (data.config) {
         setRemovalConfig({
           enabled: data.config.enabled !== false,
-          keywords: Array.isArray(data.config.keywords) ? data.config.keywords : [],
-          message: typeof data.config.message === 'string' ? data.config.message : ''
+          keywords_he: Array.isArray(data.config.keywords_he) ? data.config.keywords_he : [],
+          message_he: typeof data.config.message_he === 'string' ? data.config.message_he : '',
+          keywords_en: Array.isArray(data.config.keywords_en) ? data.config.keywords_en : [],
+          message_en: typeof data.config.message_en === 'string' ? data.config.message_en : ''
         });
       }
       setRemovalSaved(true);
       setTimeout(() => setRemovalSaved(false), 2500);
+      fetchRemovalConfigLog(1);
     } catch (err) {
       alert('שגיאה בשמירת הגדרות ההסרה');
     } finally {
@@ -786,29 +827,47 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
     }
   };
 
-  const addRemovalKeyword = () => {
-    const k = removalNewKeyword.trim();
+  const addRemovalKeywordHe = () => {
+    const k = removalNewKeywordHe.trim();
     if (!k || !removalConfig) return;
-    if (removalConfig.keywords.some(x => x.trim().toLowerCase() === k.toLowerCase())) {
-      setRemovalNewKeyword('');
+    if (removalConfig.keywords_he.some(x => x.trim().toLowerCase() === k.toLowerCase())) {
+      setRemovalNewKeywordHe('');
       return;
     }
-    setRemovalConfig({ ...removalConfig, keywords: [...removalConfig.keywords, k] });
-    setRemovalNewKeyword('');
+    setRemovalConfig({ ...removalConfig, keywords_he: [...removalConfig.keywords_he, k] });
+    setRemovalNewKeywordHe('');
   };
 
-  const removeRemovalKeyword = (idx: number) => {
+  const removeRemovalKeywordHe = (idx: number) => {
     if (!removalConfig) return;
-    setRemovalConfig({ ...removalConfig, keywords: removalConfig.keywords.filter((_, i) => i !== idx) });
+    setRemovalConfig({ ...removalConfig, keywords_he: removalConfig.keywords_he.filter((_, i) => i !== idx) });
+  };
+
+  const addRemovalKeywordEn = () => {
+    const k = removalNewKeywordEn.trim();
+    if (!k || !removalConfig) return;
+    if (removalConfig.keywords_en.some(x => x.trim().toLowerCase() === k.toLowerCase())) {
+      setRemovalNewKeywordEn('');
+      return;
+    }
+    setRemovalConfig({ ...removalConfig, keywords_en: [...removalConfig.keywords_en, k] });
+    setRemovalNewKeywordEn('');
+  };
+
+  const removeRemovalKeywordEn = (idx: number) => {
+    if (!removalConfig) return;
+    setRemovalConfig({ ...removalConfig, keywords_en: removalConfig.keywords_en.filter((_, i) => i !== idx) });
   };
 
   const resetRemovalConfigToDefaults = () => {
     if (!removalDefaults) return;
-    if (!window.confirm('לאפס את כל מילות המפתח וההודעה לערכי ברירת המחדל של המערכת?')) return;
+    if (!window.confirm('לאפס את כל מילות המפתח וההודעות לערכי ברירת המחדל של המערכת?')) return;
     setRemovalConfig({
       enabled: removalDefaults.enabled,
-      keywords: [...removalDefaults.keywords],
-      message: removalDefaults.message
+      keywords_he: [...removalDefaults.keywords_he],
+      message_he: removalDefaults.message_he,
+      keywords_en: [...removalDefaults.keywords_en],
+      message_en: removalDefaults.message_en
     });
   };
 
@@ -984,6 +1043,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
   };
 
   const filteredUsers = users.filter(user => {
+    // Exclude sub-users (reps/rep_managers linked to a parent) from the top-level list
+    if ((user.role === 'rep' || user.role === 'rep_manager') && user.manager_id) return false;
+
     const matchesSearch = 
       user.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       user.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -997,6 +1059,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
     
     return matchesSearch;
   });
+
+  // Returns sub-users linked to a given parent user id
+  const getSubUsers = (parentId: string) =>
+    users.filter(u => (u.role === 'rep' || u.role === 'rep_manager') && u.manager_id === parentId);
 
   // Render Component
   return (
@@ -1068,8 +1134,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
               { id: 'user-types', label: 'סוגי משתמשים', icon: Shield },
               { id: 'sessions', label: 'סשנים', icon: List },
               { id: 'dialog360', label: 'הודעות תבנית', icon: MessageSquare },
-              { id: 'templates', label: 'מאגר תבניות', icon: FileText },
+              { id: 'templates', label: 'מאגר תבניות בוט', icon: FileText },
               { id: 'settings', label: 'הגדרות מערכת', icon: Settings },
+              { id: 'removal-log', label: 'לוג פעילות הסרה', icon: Activity },
             ].map(item => (
               <button
                 key={item.id}
@@ -1115,6 +1182,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
               {activeTab === 'dialog360' && 'הודעות תבנית Dialog360'}
               {activeTab === 'templates' && 'ניהול תבניות'}
               {activeTab === 'settings' && 'הגדרות מערכת'}
+              {activeTab === 'removal-log' && 'לוג פעילות הסרה'}
             </h2>
             <p className="text-sm font-medium text-slate-400 mt-1">
               {activeTab === 'dashboard' && 'סקירה מקיפה על נתוני וביצועי המערכת'}
@@ -1124,6 +1192,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
               {activeTab === 'dialog360' && 'צפייה בהודעות תבנית מ-Dialog360'}
               {activeTab === 'templates' && 'ניהול ותחזוקת מאגר התבניות הגלובלי'}
               {activeTab === 'settings' && 'הגדרת מגבלות, מחירים ופרמטרים למערכת'}
+              {activeTab === 'removal-log' && 'היסטוריית שינויים בהגדרות ההסרה האוטומטית'}
             </p>
           </div>
 
@@ -1421,6 +1490,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                         const isBot = sender === 'bot';
                         const text = item.text ?? item.content ?? '';
                         const msgDate = item.created ? fmtMsgDate(item.created) : '';
+                        const isAudioUrl = /^https?:\/\/.+\.(oga|ogg|mp3|wav|m4a|aac|opus)(\?.*)?$/i.test((item.url || text));
                         return (
                           <div key={idx} className={`flex w-full ${isBot ? 'justify-start' : 'justify-end'}`}>
                             <div className={`flex gap-1.5 max-w-[90%] ${isBot ? 'flex-row-reverse' : 'flex-row'}`}>
@@ -1435,7 +1505,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                                     ? 'bg-white border border-slate-100 text-slate-900 rounded-tr-none'
                                     : 'bg-sky-500 text-white rounded-tl-none'
                                 }`}>
-                                  {(item.type === 'Text' || item.type === 'UserInput' || !item.type || item.type.startsWith('input_')) && text && (
+                                  {(item.type === 'Text' || item.type === 'UserInput' || !item.type || item.type.startsWith('input_')) && text && !isAudioUrl && (
                                     <p className="whitespace-pre-wrap leading-relaxed">{text}</p>
                                   )}
                                   {item.type === 'Image' && item.url && (
@@ -1456,6 +1526,12 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                                         <ExternalLink size={10} /> פתח מסמך
                                       </a>
                                       {text && <p className="whitespace-pre-wrap leading-relaxed">{text}</p>}
+                                    </>
+                                  )}
+                                  {(item.type === 'Audio' || isAudioUrl) && (item.url || text) && (
+                                    <>
+                                      <p className="text-[10px] font-semibold mb-1 opacity-70">🎙️ הקלטה</p>
+                                      <audio src={item.url || text} controls className="max-w-[200px] mb-1" />
                                     </>
                                   )}
                                   {item.type === 'URL' && (
@@ -1741,61 +1817,116 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                         <button onClick={() => {setSearchQuery(''); setFilterType('all');}} className="text-xs text-sky-600 font-bold mt-1 hover:underline">נקה סינון</button>
                      </div>
                   ) : (
-                    filteredUsers.map(user => (
-                      <div 
-                        key={user.id}
-                        onClick={() => fetchUserDetails(user.id)}
-                        className={`group p-3 rounded-xl cursor-pointer transition-all border relative overflow-hidden ${
-                          selectedUser?.id === user.id 
-                            ? 'bg-white border-sky-500 shadow-lg shadow-sky-100/50 z-10 ring-1 ring-sky-500/10' 
-                            : 'bg-white border-transparent hover:border-slate-300 hover:shadow-sm'
-                        }`}
-                      >
-                       {selectedUser?.id === user.id && <div className="absolute left-0 top-0 bottom-0 w-1 bg-sky-500"></div>}
-                        <div className="flex justify-between items-start mb-2">
-                          <div className="flex items-center gap-3">
-                             <div className={`w-9 h-9 rounded-lg flex items-center justify-center text-xs font-black shadow-sm ${selectedUser?.id === user.id ? 'bg-gradient-to-br from-sky-500 to-blue-600 text-white' : 'bg-slate-100 text-slate-600 group-hover:bg-slate-200'}`}>
-                                {user.name.charAt(0)}
-                             </div>
-                             <div>
-                                <h3 className={`font-bold text-sm leading-tight mb-0.5 ${selectedUser?.id === user.id ? 'text-sky-900' : 'text-slate-800'}`}>{user.name}</h3>
-                                <p className="text-[11px] text-slate-500 font-medium">{user.email}</p>
-                             </div>
-                          </div>
-                          {user.role === 'admin' && <div className="bg-sky-50 p-1 rounded text-sky-600" title="מנהל"><Shield size={12} fill="currentColor" className="opacity-40" /> </div>}
-                        </div>
-                        <div className="flex items-center justify-between mt-2 pl-2">
-                          <div className="flex gap-2 flex-wrap">
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${user.status === 'active' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-rose-50 text-rose-600 border border-rose-100'}`}>
-                                {user.status === 'active' ? 'פעיל' : 'חסום'}
-                            </span>
-                            {user.role !== 'rep' && user.role !== 'rep_manager' && (
-                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
-                                user.account_type === 'Premium' ? 'bg-amber-50 text-amber-600 border-amber-100'
-                                : user.account_type === 'Trial' ? 'bg-orange-50 text-orange-600 border-orange-100'
-                                : 'bg-slate-50 text-slate-500 border-slate-100'}`}>
-                                  {user.account_type === 'Trial' ? 'ניסיוני' : user.account_type}
-                              </span>
-                            )}
-                            {user.user_type_id?.name && (
-                              <span className="px-2 py-0.5 rounded text-[10px] font-bold border bg-purple-50 text-purple-600 border-purple-100 flex items-center gap-1">
-                                <UserCheck size={9} />{user.user_type_id.name}
-                              </span>
-                            )}
-                          </div>
-                          <ChevronRight size={14} className={`transition-transform duration-300 ${selectedUser?.id === user.id ? 'text-sky-500 translate-x-1' : 'text-slate-300 opacity-0 group-hover:opacity-100'}`} />
-                        </div>
-                        {(user.role === 'rep' || user.role === 'rep_manager') && user.manager_id && (() => {
-                          const parentUser = users.find(u => u.id === user.manager_id);
-                          return parentUser ? (
-                            <div className="mt-1.5 flex items-center gap-1 text-[10px] text-slate-400">
-                              <UserIcon size={10} className="shrink-0" />
-                              <span className="truncate">קשור ל: <span className="font-semibold text-slate-600">{parentUser.name}</span></span>
+                    filteredUsers.map(user => {
+                      const subUsers = getSubUsers(user.id);
+                      const hasSubUsers = subUsers.length > 0;
+                      const isExpanded = expandedUserIds.has(user.id);
+                      return (
+                        <div key={user.id}>
+                          {/* Parent user row */}
+                          <div 
+                            onClick={() => fetchUserDetails(user.id)}
+                            className={`group p-3 rounded-xl cursor-pointer transition-all border relative overflow-hidden ${
+                              selectedUser?.id === user.id 
+                                ? 'bg-white border-sky-500 shadow-lg shadow-sky-100/50 z-10 ring-1 ring-sky-500/10' 
+                                : 'bg-white border-transparent hover:border-slate-300 hover:shadow-sm'
+                            }`}
+                          >
+                           {selectedUser?.id === user.id && <div className="absolute left-0 top-0 bottom-0 w-1 bg-sky-500"></div>}
+                            <div className="flex justify-between items-start mb-2">
+                              <div className="flex items-center gap-3">
+                                 <div className={`w-9 h-9 rounded-lg flex items-center justify-center text-xs font-black shadow-sm ${selectedUser?.id === user.id ? 'bg-gradient-to-br from-sky-500 to-blue-600 text-white' : 'bg-slate-100 text-slate-600 group-hover:bg-slate-200'}`}>
+                                    {user.name.charAt(0)}
+                                 </div>
+                                 <div>
+                                    <h3 className={`font-bold text-sm leading-tight mb-0.5 ${selectedUser?.id === user.id ? 'text-sky-900' : 'text-slate-800'}`}>{user.name}</h3>
+                                    <p className="text-[11px] text-slate-500 font-medium">{user.email}</p>
+                                 </div>
+                              </div>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                {user.role === 'admin' && <div className="bg-sky-50 p-1 rounded text-sky-600" title="מנהל"><Shield size={12} fill="currentColor" className="opacity-40" /></div>}
+                                {hasSubUsers && (
+                                  <button
+                                    onClick={e => {
+                                      e.stopPropagation();
+                                      setExpandedUserIds(prev => {
+                                        const next = new Set(prev);
+                                        if (next.has(user.id)) next.delete(user.id);
+                                        else next.add(user.id);
+                                        return next;
+                                      });
+                                    }}
+                                    className="flex items-center gap-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded-lg text-[10px] font-bold transition-colors border border-indigo-100"
+                                    title={isExpanded ? 'סגור משתמשים משויכים' : 'הצג משתמשים משויכים'}
+                                  >
+                                    <Users size={10} />
+                                    {subUsers.length}
+                                    {isExpanded ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
+                                  </button>
+                                )}
+                              </div>
                             </div>
-                          ) : null;
-                        })()}
-                      </div>
-                    ))
+                            <div className="flex items-center justify-between mt-2 pl-2">
+                              <div className="flex gap-2 flex-wrap">
+                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${user.status === 'active' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-rose-50 text-rose-600 border border-rose-100'}`}>
+                                    {user.status === 'active' ? 'פעיל' : 'חסום'}
+                                </span>
+                                {user.role !== 'rep' && user.role !== 'rep_manager' && (
+                                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
+                                    user.account_type === 'Premium' ? 'bg-amber-50 text-amber-600 border-amber-100'
+                                    : user.account_type === 'Trial' ? 'bg-orange-50 text-orange-600 border-orange-100'
+                                    : 'bg-slate-50 text-slate-500 border-slate-100'}`}>
+                                      {user.account_type === 'Trial' ? 'ניסיוני' : user.account_type}
+                                  </span>
+                                )}
+                                {user.user_type_id?.name && (
+                                  <span className="px-2 py-0.5 rounded text-[10px] font-bold border bg-purple-50 text-purple-600 border-purple-100 flex items-center gap-1">
+                                    <UserCheck size={9} />{user.user_type_id.name}
+                                  </span>
+                                )}
+                              </div>
+                              <ChevronRight size={14} className={`transition-transform duration-300 ${selectedUser?.id === user.id ? 'text-sky-500 translate-x-1' : 'text-slate-300 opacity-0 group-hover:opacity-100'}`} />
+                            </div>
+                          </div>
+
+                          {/* Sub-users (collapsible) */}
+                          {hasSubUsers && isExpanded && (
+                            <div className="mr-4 mt-1 space-y-1 border-r-2 border-indigo-100 pr-2">
+                              {subUsers.map(sub => (
+                                <div
+                                  key={sub.id}
+                                  onClick={() => fetchUserDetails(sub.id)}
+                                  className={`group p-2.5 rounded-xl cursor-pointer transition-all border relative overflow-hidden ${
+                                    selectedUser?.id === sub.id
+                                      ? 'bg-white border-sky-500 shadow-md shadow-sky-100/40 ring-1 ring-sky-500/10'
+                                      : 'bg-white/80 border-transparent hover:border-slate-200 hover:shadow-sm'
+                                  }`}
+                                >
+                                  {selectedUser?.id === sub.id && <div className="absolute left-0 top-0 bottom-0 w-1 bg-sky-500 rounded-l"></div>}
+                                  <div className="flex items-center gap-2.5">
+                                    <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-[10px] font-black shadow-sm ${selectedUser?.id === sub.id ? 'bg-gradient-to-br from-sky-500 to-blue-600 text-white' : 'bg-indigo-50 text-indigo-500'}`}>
+                                      {sub.name.charAt(0)}
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                      <h4 className={`font-bold text-xs leading-tight truncate ${selectedUser?.id === sub.id ? 'text-sky-900' : 'text-slate-700'}`}>{sub.name}</h4>
+                                      <p className="text-[10px] text-slate-400 truncate">{sub.email}</p>
+                                    </div>
+                                    <div className="flex items-center gap-1 shrink-0">
+                                      <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${sub.status === 'active' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
+                                        {sub.status === 'active' ? 'פעיל' : 'חסום'}
+                                      </span>
+                                      <span className="text-[9px] text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded font-medium">
+                                        {sub.user_type_id?.name || (sub.role === 'rep_manager' ? 'מנהל נציגים' : 'נציג')}
+                                      </span>
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })
                   )}
                 </div>
               </div>
@@ -1931,7 +2062,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                         </div>
 
                          {/* Dialog360 Settings - Full Width */}
-                        <div className="col-span-12 bg-white p-8 rounded-3xl border border-slate-100 shadow-sm hover:shadow-md transition-shadow">
+                        {/* הוסר: שדה Bot ID לצורך שליחה לקבוצות - כעת הבוט נבחר אוטומטית לפי המספרים המחוברים לחשבון */}
+                        {/* <div className="col-span-12 bg-white p-8 rounded-3xl border border-slate-100 shadow-sm hover:shadow-md transition-shadow">
                             <h3 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-6 flex items-center gap-2 border-b border-slate-50 pb-4">
                                 <MessageSquare size={16} className="text-slate-400" /> הגדרות חיבור
                             </h3>
@@ -1955,7 +2087,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                                     </div>
                                 )}
                             </div>
-                        </div>
+                        </div> */}
 
                          {/* Right Column Layout */}
                         <div className="col-span-12 md:col-span-5 space-y-6 flex flex-col h-full">
@@ -2033,6 +2165,25 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                                             <div className="w-full bg-slate-50 px-4 py-3 rounded-xl border border-slate-100 text-slate-800 font-bold text-sm flex justify-between items-center">
                                                 {selectedUser.user_type_id?.name || '—'}
                                                 {selectedUser.user_type_id && <Shield size={14} className="text-purple-400" />}
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-400 mb-2 flex items-center gap-1"><MessageSquare size={12} /> לשונית SMS נכנס</label>
+                                        {isEditing ? (
+                                            <label className="w-full flex items-center gap-3 p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm cursor-pointer select-none">
+                                                <input
+                                                    type="checkbox"
+                                                    className="w-4 h-4 accent-sky-600 cursor-pointer"
+                                                    checked={editForm.sms_in_enabled === true}
+                                                    onChange={e => setEditForm(prev => ({ ...prev, sms_in_enabled: e.target.checked }))}
+                                                />
+                                                <span className="font-bold text-slate-700">הצג ללקוח את לשונית "SMS נכנס"</span>
+                                            </label>
+                                        ) : (
+                                            <div className={`w-full px-4 py-3 rounded-xl border font-bold text-sm flex justify-between items-center ${selectedUser.sms_in_enabled ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-slate-50 text-slate-400 border-slate-100'}`}>
+                                                {selectedUser.sms_in_enabled ? 'מוצג ללקוח' : 'מוסתר (ברירת מחדל)'}
+                                                {selectedUser.sms_in_enabled ? <CheckCircle size={14} /> : <EyeOff size={14} />}
                                             </div>
                                         )}
                                     </div>
@@ -2135,6 +2286,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                                       {[
                                         { k: 'max_bots', label: 'Max Bots', ph: 3 },
                                         { k: 'max_versions', label: 'Max Versions', ph: 5 },
+                                        { k: 'max_connected_numbers', label: 'Max Numbers', ph: 1 },
                                         { k: 'version_price', label: 'Version Cost', ph: 5 },
                                         { k: 'bot_price', label: 'Bot Cost', ph: 30 },
                                       ].map(field => (
@@ -2597,6 +2749,15 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                                 onChange={e => handleConfigChange(plan, 'maxVersions', e.target.value)}
                               />
                            </div>
+                           <div className="col-span-2">
+                             <label className="block text-[10px] font-bold text-slate-500 mb-1">מקסימום מספרים מחוברים</label>
+                             <input 
+                                type="number" 
+                                className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-black text-lg text-center focus:ring-2 focus:ring-sky-200 focus:border-sky-500 outline-none transition-all text-slate-800"
+                                value={systemConfig[plan]?.maxConnectedNumbers ?? 1}
+                                onChange={e => handleConfigChange(plan, 'maxConnectedNumbers', e.target.value)}
+                              />
+                           </div>
                          </div>
                          {plan === 'Trial' && (
                            <div>
@@ -2712,68 +2873,119 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                        </button>
                      </div>
 
-                     <div>
-                       <label className="block text-xs font-black text-slate-400 uppercase tracking-wider mb-3">מילות מפתח להסרה</label>
-                       <div className="flex gap-2 mb-4">
-                         <input
-                           type="text"
-                           value={removalNewKeyword}
-                           onChange={e => setRemovalNewKeyword(e.target.value)}
-                           onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addRemovalKeyword(); } }}
-                           placeholder="הוסף מילת מפתח (למשל: הסר, remove)"
-                           className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold outline-none focus:ring-2 focus:ring-rose-600/20 focus:border-rose-500 transition-all"
-                         />
-                         <button
-                           onClick={addRemovalKeyword}
-                           className="flex items-center gap-2 px-5 py-3 bg-slate-800 text-white rounded-2xl font-bold text-sm hover:bg-slate-900 transition-all"
-                         >
-                           <Plus size={14} /> הוסף
-                         </button>
+                     {/* ── Hebrew block ── */}
+                     <div className="bg-blue-50 border border-blue-100 rounded-2xl p-5 space-y-4">
+                       <div className="flex items-center gap-2 justify-end mb-1">
+                         <span className="text-sm font-black text-blue-800">עברית</span>
+                         <span className="text-base">🇮🇱</span>
                        </div>
-                       {removalConfig.keywords.length === 0 ? (
-                         <div className="text-center text-slate-400 text-sm py-8 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
-                           אין מילות מפתח. ללא מילות מפתח לא תתבצע הסרה אוטומטית.
+
+                       <div>
+                         <label className="block text-xs font-black text-blue-500 uppercase tracking-wider mb-3 text-right">מילות מפתח להסרה בעברית</label>
+                         <div className="flex gap-2 mb-3" dir="rtl">
+                           <input
+                             type="text"
+                             value={removalNewKeywordHe}
+                             onChange={e => setRemovalNewKeywordHe(e.target.value)}
+                             onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addRemovalKeywordHe(); } }}
+                             placeholder="למשל: הסר, הסרה, תסיר"
+                             className="flex-1 px-4 py-3 bg-white border border-blue-200 rounded-2xl text-sm font-bold outline-none focus:ring-2 focus:ring-blue-400/20 focus:border-blue-400 transition-all"
+                           />
+                           <button
+                             onClick={addRemovalKeywordHe}
+                             className="flex items-center gap-2 px-5 py-3 bg-blue-700 text-white rounded-2xl font-bold text-sm hover:bg-blue-800 transition-all"
+                           >
+                             <Plus size={14} /> הוסף
+                           </button>
                          </div>
-                       ) : (
-                         <div className="flex flex-wrap gap-2">
-                           {removalConfig.keywords.map((kw, idx) => (
-                             <span
-                               key={`${kw}-${idx}`}
-                               className="inline-flex items-center gap-2 bg-rose-50 text-rose-700 border border-rose-200 px-3 py-1.5 rounded-xl text-sm font-bold"
-                             >
-                               <span dir="auto">{kw}</span>
-                               <button
-                                 onClick={() => removeRemovalKeyword(idx)}
-                                 className="text-rose-400 hover:text-rose-700 transition-colors"
-                                 title="הסר מילה"
-                               >
-                                 <X size={14} />
-                               </button>
-                             </span>
-                           ))}
-                         </div>
-                       )}
-                       {removalDefaults && (
-                         <p className="text-[11px] text-slate-400 font-medium mt-3 text-right">
-                           ברירת המחדל המקורית של המערכת כוללת {removalDefaults.keywords.length} מילים בעברית ובאנגלית.
-                         </p>
-                       )}
+                         {removalConfig.keywords_he.length === 0 ? (
+                           <div className="text-center text-blue-300 text-sm py-6 bg-white rounded-2xl border border-dashed border-blue-200">אין מילות מפתח בעברית.</div>
+                         ) : (
+                           <div className="flex flex-wrap gap-2">
+                             {removalConfig.keywords_he.map((kw, idx) => (
+                               <span key={`he-${kw}-${idx}`} className="inline-flex items-center gap-2 bg-white text-blue-700 border border-blue-200 px-3 py-1.5 rounded-xl text-sm font-bold">
+                                 <span dir="rtl">{kw}</span>
+                                 <button onClick={() => removeRemovalKeywordHe(idx)} className="text-blue-300 hover:text-blue-700 transition-colors" title="הסר מילה"><X size={14} /></button>
+                               </span>
+                             ))}
+                           </div>
+                         )}
+                         {removalDefaults && (
+                           <p className="text-[11px] text-blue-400 font-medium mt-2 text-right">ברירת מחדל: {removalDefaults.keywords_he.length} מילים בעברית.</p>
+                         )}
+                       </div>
+
+                       <div>
+                         <label className="block text-xs font-black text-blue-500 uppercase tracking-wider mb-2 text-right">הודעת אישור לאחר ההסרה — עברית</label>
+                         <textarea
+                           value={removalConfig.message_he}
+                           onChange={e => setRemovalConfig({ ...removalConfig, message_he: e.target.value })}
+                           rows={2}
+                           dir="rtl"
+                           placeholder="הודעה שתישלח לנמען שכתב מילת מפתח עברית"
+                           className="w-full px-5 py-3 bg-white border border-blue-200 rounded-2xl text-sm font-bold outline-none focus:ring-2 focus:ring-blue-400/20 focus:border-blue-400 transition-all resize-none text-right"
+                         />
+                         {removalDefaults?.message_he && (
+                           <p className="text-[11px] text-blue-400 font-medium mt-1 text-right">ברירת מחדל: <span className="text-blue-500">"{removalDefaults.message_he}"</span></p>
+                         )}
+                       </div>
                      </div>
 
-                     <div>
-                       <label className="block text-xs font-black text-slate-400 uppercase tracking-wider mb-3">הודעת אישור לאחר ההסרה</label>
-                       <textarea
-                         value={removalConfig.message}
-                         onChange={e => setRemovalConfig({ ...removalConfig, message: e.target.value })}
-                         rows={3}
-                         placeholder="הודעה שתישלח לנמען אחרי שהוסר אוטומטית"
-                         className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold outline-none focus:ring-2 focus:ring-rose-600/20 focus:border-rose-500 transition-all resize-none text-right"
-                       />
-                       {removalDefaults && removalDefaults.message && (
-                         <p className="text-[11px] text-slate-400 font-medium mt-2 text-right">
-                           ברירת מחדל: <span className="text-slate-500">"{removalDefaults.message}"</span>
-                         </p>
-                       )}
+                     {/* ── English block ── */}
+                     <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-5 space-y-4">
+                       <div className="flex items-center gap-2 mb-1">
+                         <span className="text-base">🇺🇸</span>
+                         <span className="text-sm font-black text-emerald-800">English</span>
+                       </div>
+
+                       <div>
+                         <label className="block text-xs font-black text-emerald-600 uppercase tracking-wider mb-3">English Removal Keywords</label>
+                         <div className="flex gap-2 mb-3">
+                           <input
+                             type="text"
+                             value={removalNewKeywordEn}
+                             onChange={e => setRemovalNewKeywordEn(e.target.value)}
+                             onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addRemovalKeywordEn(); } }}
+                             placeholder="e.g. stop, remove, unsubscribe"
+                             className="flex-1 px-4 py-3 bg-white border border-emerald-200 rounded-2xl text-sm font-bold outline-none focus:ring-2 focus:ring-emerald-400/20 focus:border-emerald-400 transition-all"
+                           />
+                           <button
+                             onClick={addRemovalKeywordEn}
+                             className="flex items-center gap-2 px-5 py-3 bg-emerald-700 text-white rounded-2xl font-bold text-sm hover:bg-emerald-800 transition-all"
+                           >
+                             <Plus size={14} /> Add
+                           </button>
+                         </div>
+                         {removalConfig.keywords_en.length === 0 ? (
+                           <div className="text-center text-emerald-300 text-sm py-6 bg-white rounded-2xl border border-dashed border-emerald-200">No English keywords defined.</div>
+                         ) : (
+                           <div className="flex flex-wrap gap-2">
+                             {removalConfig.keywords_en.map((kw, idx) => (
+                               <span key={`en-${kw}-${idx}`} className="inline-flex items-center gap-2 bg-white text-emerald-700 border border-emerald-200 px-3 py-1.5 rounded-xl text-sm font-bold">
+                                 <span>{kw}</span>
+                                 <button onClick={() => removeRemovalKeywordEn(idx)} className="text-emerald-300 hover:text-emerald-700 transition-colors" title="Remove keyword"><X size={14} /></button>
+                               </span>
+                             ))}
+                           </div>
+                         )}
+                         {removalDefaults && (
+                           <p className="text-[11px] text-emerald-500 font-medium mt-2">Default: {removalDefaults.keywords_en.length} English keywords.</p>
+                         )}
+                       </div>
+
+                       <div>
+                         <label className="block text-xs font-black text-emerald-600 uppercase tracking-wider mb-2">Confirmation message after removal — English</label>
+                         <textarea
+                           value={removalConfig.message_en}
+                           onChange={e => setRemovalConfig({ ...removalConfig, message_en: e.target.value })}
+                           rows={2}
+                           placeholder="Message sent to contacts who used an English keyword"
+                           className="w-full px-5 py-3 bg-white border border-emerald-200 rounded-2xl text-sm font-bold outline-none focus:ring-2 focus:ring-emerald-400/20 focus:border-emerald-400 transition-all resize-none"
+                         />
+                         {removalDefaults?.message_en && (
+                           <p className="text-[11px] text-emerald-500 font-medium mt-1">Default: <span className="text-emerald-600">"{removalDefaults.message_en}"</span></p>
+                         )}
+                       </div>
                      </div>
 
                      {removalSaved && (
@@ -2784,6 +2996,78 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                    </div>
                  </div>
                )}
+
+            </div>
+          )}
+
+          {/* ── Removal Activity Log tab ── */}
+          {activeTab === 'removal-log' && (
+            <div className="space-y-6" dir="rtl">
+              <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-6">
+                {removalLogLoading ? (
+                  <div className="text-center py-10 text-slate-400 text-sm">טוען…</div>
+                ) : removalLog.length === 0 ? (
+                  <div className="text-center py-10 text-slate-400 text-sm">אין פעולות רשומות עדיין</div>
+                ) : (
+                  <>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b border-slate-100">
+                            <th className="text-right py-2 px-3 font-bold text-slate-500 text-xs">סוג פעולה</th>
+                            <th className="text-right py-2 px-3 font-bold text-slate-500 text-xs">מילת מפתח</th>
+                            <th className="text-right py-2 px-3 font-bold text-slate-500 text-xs">משתמש</th>
+                            <th className="text-right py-2 px-3 font-bold text-slate-500 text-xs">תאריך ושעה</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {removalLog.map(entry => {
+                            const actionMap: Record<string, { label: string; color: string }> = {
+                              REMOVAL_KEYWORD_HE_ADDED:   { label: 'נוספה מילה עברית',          color: 'text-blue-600 bg-blue-50' },
+                              REMOVAL_KEYWORD_HE_REMOVED: { label: 'הוסרה מילה עברית',          color: 'text-rose-600 bg-rose-50' },
+                              REMOVAL_KEYWORD_EN_ADDED:   { label: 'Added English keyword',      color: 'text-emerald-600 bg-emerald-50' },
+                              REMOVAL_KEYWORD_EN_REMOVED: { label: 'Removed English keyword',    color: 'text-rose-600 bg-rose-50' },
+                              REMOVAL_ENABLED:            { label: 'הסרה אוטומטית הופעלה',      color: 'text-emerald-600 bg-emerald-50' },
+                              REMOVAL_DISABLED:           { label: 'הסרה אוטומטית הושבתה',      color: 'text-rose-600 bg-rose-50' },
+                            };
+                            const meta = actionMap[entry.action] ?? { label: entry.action, color: 'text-slate-600 bg-slate-50' };
+                            const d = new Date(entry.createdAt);
+                            const dateStr = `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+                            return (
+                              <tr key={entry._id} className="border-b border-slate-50 hover:bg-slate-50/50">
+                                <td className="py-2 px-3">
+                                  <span className={`inline-block px-2 py-0.5 rounded-lg text-xs font-bold ${meta.color}`}>{meta.label}</span>
+                                </td>
+                                <td className="py-2 px-3 text-slate-700 font-mono text-xs">{entry.details?.keyword || '—'}</td>
+                                <td className="py-2 px-3 text-slate-500 text-xs">{entry.actor_email || '—'}</td>
+                                <td className="py-2 px-3 text-slate-400 text-xs whitespace-nowrap">{dateStr}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                    {/* Pagination */}
+                    {removalLogTotal > REMOVAL_LOG_PAGE_SIZE && (
+                      <div className="flex items-center justify-between mt-4 pt-4 border-t border-slate-100">
+                        <button
+                          onClick={() => fetchRemovalConfigLog(removalLogPage - 1)}
+                          disabled={removalLogPage <= 1 || removalLogLoading}
+                          className="px-4 py-2 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                        >הקודם</button>
+                        <span className="text-sm text-slate-500 font-medium">
+                          עמוד {removalLogPage} מתוך {Math.ceil(removalLogTotal / REMOVAL_LOG_PAGE_SIZE)}
+                        </span>
+                        <button
+                          onClick={() => fetchRemovalConfigLog(removalLogPage + 1)}
+                          disabled={removalLogPage >= Math.ceil(removalLogTotal / REMOVAL_LOG_PAGE_SIZE) || removalLogLoading}
+                          className="px-4 py-2 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                        >הבא</button>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
             </div>
           )}
 

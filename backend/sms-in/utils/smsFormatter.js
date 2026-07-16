@@ -18,14 +18,3 @@ export function formatSmsDocument(doc) {
 export function formatInsertedId(insertedId) {
   return formatObjectId(insertedId);
 }
-
-export function formatDemoMessage(doc, index) {
-  const hex = `demo${String(index).padStart(20, '0')}`;
-  return {
-    id_: formatObjectId(hex),
-    dest: doc.dest || '',
-    phone: doc.phone || '',
-    date: doc.date || '',
-    message: doc.message || '',
-  };
-}

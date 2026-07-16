@@ -3,12 +3,13 @@ import {
   Phone, Search, Users, LogOut, List, Shield, Settings, UserCog, Plus,
   Edit2, Trash2, X, Check, Bot, Send, UserPlus, UserMinus, Ban, Layers,
   ChevronRight, ChevronLeft, ArrowRight, MessageSquare, FileText, History,
-  Calendar, Eye, AlertTriangle, CheckCircle2, Clock, Paperclip, Image as ImageIcon, Video, File as FileLucide
+  Calendar, Eye, AlertTriangle, CheckCircle2, Clock, Paperclip, Image as ImageIcon, Video, File as FileLucide, RotateCcw, Copy, Download
 } from 'lucide-react';
 import ImpersonationBanner from './ImpersonationBanner';
 import { FileUploader } from './FileUploader';
 import { usePermission } from '../hooks/usePermission';
 import AppNav from './AppNav';
+import { useContactFields } from '../context/ContactFieldsContext';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -25,6 +26,7 @@ interface ContactRecord {
   full_name?: string;
   whatsapp_name?: string;
   email?: string;
+  custom_field_values?: Record<string, string>;
 }
 
 interface GroupDetail {
@@ -47,6 +49,7 @@ interface GroupsPageProps {
   onOpenSettings?: () => void;
   onOpenSubUsers?: () => void;
   onStopImpersonation?: () => void;
+  onGoHome?: () => void;
 }
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -58,8 +61,8 @@ const API_BASE = window.location.hostname === 'localhost'
 // ─── Component ────────────────────────────────────────────────────────────────
 
 const GroupsPage: React.FC<GroupsPageProps> = ({
-  token, currentUser, onBack, onLogout, onOpenContacts, onOpenSessions, onOpenSmsIn,
-  onOpenAdminPanel, onOpenSettings, onOpenSubUsers, onStopImpersonation,
+  token, currentUser, onBack, onLogout, onOpenContacts, onOpenSessions,onOpenSmsIn,
+  onOpenAdminPanel, onOpenSettings, onOpenSubUsers, onStopImpersonation, onGoHome,
 }) => {
   const [groups, setGroups] = useState<GroupSummary[]>([]);
   const [selectedGroup, setSelectedGroup] = useState<GroupDetail | null>(null);
@@ -83,13 +86,24 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
   const [addingMembers, setAddingMembers] = useState(false);
 
   // Send message modal
-  const [sendOpen, setSendOpen] = useState(false);
+  const [sendOpen, setSendOpen] = useState(false); 
   const [sendText, setSendText] = useState('');
-  const [sending, setSending] = useState(false);
+  const [sending, setSending] = useState(false); 
   const [sendResult, setSendResult] = useState<{ sent: number; failed: number; skipped: number; total: number } | null>(null);
+  const [excludeGroupId, setExcludeGroupId] = useState<string>('');
 
-  // Background broadcast progress / toast
-  const [activeBroadcast, setActiveBroadcast] = useState<{
+  // Recipients preview (export before send)
+  const [recipientsPreviewOpen, setRecipientsPreviewOpen] = useState(false);
+  const [recipientsPreviewList, setRecipientsPreviewList] = useState<ContactRecord[]>([]);
+  const [recipientsLoading, setRecipientsLoading] = useState(false);
+  const [copiedRecipients, setCopiedRecipients] = useState(false);
+
+  // Scheduled send
+  const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
+  const [scheduleDateTime, setScheduleDateTime] = useState<string>('');
+ 
+  // Background broadcast progress / toast — supports multiple concurrent monitors
+  interface ActiveBroadcastEntry {
     id: string;
     total: number;
     processed: number;
@@ -98,10 +112,13 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
     skipped: number;
     status: 'queued' | 'running' | 'completed' | 'failed';
     groupName: string;
-  } | null>(null);
-  const [completionToast, setCompletionToast] = useState<{
-    sent: number; failed: number; skipped: number; total: number; groupName: string;
-  } | null>(null);
+    queuedBehind: boolean; // true = waiting for another broadcast
+    queuePosition: number;
+  }
+  const [activeBroadcasts, setActiveBroadcasts] = useState<ActiveBroadcastEntry[]>([]);
+  const [completionToasts, setCompletionToasts] = useState<{
+    id: string; sent: number; failed: number; skipped: number; total: number; groupName: string;
+  }[]>([]);
 
   // Templates
   const [templates, setTemplates] = useState<any[]>([]);
@@ -116,11 +133,19 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
   const [templateSearch, setTemplateSearch] = useState('');
   const [showTemplatePicker, setShowTemplatePicker] = useState(false);
 
+  // Bot selector for broadcast
+  interface SendBot { id: string; name: string; display_phone_number: string; endpoint: string; }
+  const [sendBots, setSendBots] = useState<SendBot[]>([]);
+  const [sendBotsLoading, setSendBotsLoading] = useState(false);
+  const [selectedSendBotId, setSelectedSendBotId] = useState<string>('');
+
   // Broadcast history
   const [activeTab, setActiveTab] = useState<'members' | 'history' | 'removals'>('members');
   const [broadcasts, setBroadcasts] = useState<any[]>([]);
   const [broadcastsLoading, setBroadcastsLoading] = useState(false);
   const [selectedBroadcast, setSelectedBroadcast] = useState<any | null>(null);
+  const [cancellingBroadcastId, setCancellingBroadcastId] = useState<string | null>(null);
+  const [copiedBroadcastId, setCopiedBroadcastId] = useState<string | null>(null);
 
   // Remove-member confirmation + removals report
   const [removeTarget, setRemoveTarget] = useState<ContactRecord | null>(null);
@@ -130,6 +155,53 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
   const [removalsLoading, setRemovalsLoading] = useState(false);
 
   const authHeader = useMemo(() => ({ Authorization: `Bearer ${token}` }), [token]);
+
+  // ── Export group to Excel (CSV with BOM) ─────────────────────────────────
+  const exportGroupToExcel = () => {
+    if (!selectedGroup || selectedGroup.contacts.length === 0) return;
+
+    const baseHeaders = ['טלפון', 'שם מלא', 'שם וואטסאפ', 'מייל'];
+    const customHeaders = contactFields.map(f => f.label);
+    const headers = [...baseHeaders, ...customHeaders];
+
+    const escapeCell = (val: string): string => {
+      if (val.includes(',') || val.includes('"') || val.includes('\n')) {
+        return `"${val.replace(/"/g, '""')}"`;
+      }
+      return val;
+    };
+
+    const rows = selectedGroup.contacts.map(c => {
+      const base = [
+        `="${c.phone}"`,
+        c.full_name || '',
+        c.whatsapp_name || '',
+        c.email || '',
+      ];
+      const custom = contactFields.map(f => {
+        const val = c.custom_field_values?.[f._id];
+        return val != null ? String(val) : '';
+      });
+      return [...base, ...custom];
+    });
+
+    const BOM = '\uFEFF';
+    const csvContent =
+      BOM +
+      [headers, ...rows]
+        .map(row => row.map(escapeCell).join(','))
+        .join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${selectedGroup.name}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
 
   // ── Fetch groups list ────────────────────────────────────────────────────
   const fetchGroups = useCallback(async () => {
@@ -331,7 +403,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
   }, [selectedGroup, authHeader]);
 
   // ── Send broadcast (enqueues; processes in background) ─────────────────
-  const submitSend = async () => {
+  const submitSend = async (scheduledAtMs?: number) => {
     if (!selectedGroup) return;
     const message = sendText.trim();
     const usingTemplate = !!selectedTemplate;
@@ -341,6 +413,9 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
     setSendResult(null);
     try {
       const body: any = { message };
+      if (selectedSendBotId) body.bot_id = selectedSendBotId;
+      if (scheduledAtMs) body.scheduled_at = scheduledAtMs;
+      if (excludeGroupId) body.exclude_group_id = excludeGroupId;
       if (usingTemplate) {
         body.isTemplate = true;
         body.templateData = {
@@ -353,15 +428,15 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
       } else if (usingMedia) {
         body.media = { type: mediaType, url: mediaUrl, filename: mediaFilename || undefined };
       }
-      const res = await fetch(`${API_BASE}/groups/${selectedGroup._id}/send`, {
+      const res = await fetch(`${API_BASE}/groups/${selectedGroup._id}/broadcast`, {
         method: 'POST',
         headers: { ...authHeader, 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
       const data = await res.json();
       if (res.ok && data.broadcast_id) {
-        // Track in background, close modal, show floating progress toast
-        setActiveBroadcast({
+        // Add to active broadcast trackers (supports multiple concurrent)
+        setActiveBroadcasts(prev => [...prev, {
           id: data.broadcast_id,
           total: data.total || selectedGroup.contacts.length,
           processed: 0,
@@ -370,7 +445,9 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
           skipped: 0,
           status: 'queued',
           groupName: selectedGroup.name,
-        });
+          queuedBehind: data.queued_behind || false,
+          queuePosition: data.queue_position || 0,
+        }]);
         setSendOpen(false);
         setSendText('');
         setSelectedTemplate(null);
@@ -378,59 +455,78 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
         setMediaType(null);
         setMediaUrl('');
         setMediaFilename('');
+        setExcludeGroupId('');
       } else {
         alert(data.error || 'שגיאה בשליחה');
       }
-    } catch (e) {
-      alert('שגיאת רשת');
+    } catch (e: any) {
+      console.error('[submitSend] caught error:', e);
+      const msg = e?.message || String(e) || 'שגיאה לא ידועה';
+      alert(`שגיאת רשת: ${msg}\n\nURL: ${API_BASE}/groups/${selectedGroup?._id}/broadcast\n\nפרטים נוספים בקונסול (F12)`);
     } finally {
       setSending(false);
     }
   };
 
-  // Poll active broadcast every 2 seconds until completed/failed
+  // Poll all active broadcasts every 2 seconds until each is completed/failed
   useEffect(() => {
-    if (!activeBroadcast || activeBroadcast.status === 'completed' || activeBroadcast.status === 'failed') return;
+    const pendingIds = activeBroadcasts
+      .filter(b => b.status !== 'completed' && b.status !== 'failed')
+      .map(b => b.id);
+    if (pendingIds.length === 0) return;
+
     const interval = setInterval(async () => {
-      try {
-        const res = await fetch(`${API_BASE}/groups/broadcasts/${activeBroadcast.id}`, { headers: authHeader });
-        if (!res.ok) return;
-        const data = await res.json();
-        setActiveBroadcast(prev => prev ? {
-          ...prev,
-          processed: data.processed ?? prev.processed,
-          sent: data.sent ?? prev.sent,
-          failed: data.failed ?? prev.failed,
-          skipped: data.skipped ?? prev.skipped,
-          status: data.status || prev.status,
-        } : null);
-        if (data.status === 'completed' || data.status === 'failed') {
-          setCompletionToast({
-            sent: data.sent || 0,
-            failed: data.failed || 0,
-            skipped: data.skipped || 0,
-            total: data.total || 0,
-            groupName: activeBroadcast.groupName,
-          });
-          // refresh history list if user is viewing it
-          if (activeTab === 'history' && selectedGroup?._id === data.group_id) {
-            fetchBroadcasts();
+      for (const bid of pendingIds) {
+        try {
+          const res = await fetch(`${API_BASE}/groups/broadcasts/${bid}`, { headers: authHeader });
+          if (!res.ok) continue;
+          const data = await res.json();
+
+          setActiveBroadcasts(prev => prev.map(b => b.id !== bid ? b : {
+            ...b,
+            processed: data.processed ?? b.processed,
+            sent: data.sent ?? b.sent,
+            failed: data.failed ?? b.failed,
+            skipped: data.skipped ?? b.skipped,
+            status: data.status || b.status,
+            // Clear queue indicators once it starts running
+            queuedBehind: data.status === 'running' ? false : b.queuedBehind,
+            queuePosition: data.status === 'running' ? 0 : b.queuePosition,
+          }));
+
+          if (data.status === 'completed' || data.status === 'failed') {
+            const entry = activeBroadcasts.find(b => b.id === bid);
+            setCompletionToasts(prev => [...prev, {
+              id: bid,
+              sent: data.sent || 0,
+              failed: data.failed || 0,
+              skipped: data.skipped || 0,
+              total: data.total || 0,
+              groupName: entry?.groupName || '',
+            }]);
+            if (activeTab === 'history' && selectedGroup?._id === String(data.group_id)) {
+              fetchBroadcasts();
+            }
           }
+        } catch (e) {
+          console.error('Poll broadcast failed', e);
         }
-      } catch (e) {
-        console.error('Poll broadcast failed', e);
       }
     }, 2000);
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeBroadcast?.id, activeBroadcast?.status, authHeader, activeTab, selectedGroup?._id]);
+  }, [activeBroadcasts.map(b => b.id + b.status).join(','), authHeader, activeTab, selectedGroup?._id]);
 
-  // Auto-dismiss the completion toast after 8 seconds
+  // Auto-dismiss each completion toast after 8 seconds
   useEffect(() => {
-    if (!completionToast) return;
-    const t = setTimeout(() => { setCompletionToast(null); setActiveBroadcast(null); }, 8000);
+    if (completionToasts.length === 0) return;
+    const t = setTimeout(() => {
+      const doneIds = new Set(completionToasts.map(t => t.id));
+      setActiveBroadcasts(prev => prev.filter(b => !doneIds.has(b.id)));
+      setCompletionToasts([]);
+    }, 8000);
     return () => clearTimeout(t);
-  }, [completionToast]);
+  }, [completionToasts.length]);
 
   // ── Templates ───────────────────────────────────────────────────────────
   const fetchTemplates = useCallback(async () => {
@@ -501,6 +597,60 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
     } catch (e) { console.error(e); }
   };
 
+  const resumeBroadcastById = async (broadcastId: string, broadcastGroupName: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      const res = await fetch(`${API_BASE}/groups/broadcasts/${broadcastId}/resume`, {
+        method: 'POST',
+        headers: authHeader,
+      });
+      const data = await res.json();
+      if (!res.ok) { alert(data.error || 'שגיאה בהמשך שליחה'); return; }
+      // Add to active broadcast trackers
+      setActiveBroadcasts(prev => [
+        ...prev.filter(b => b.id !== broadcastId),
+        {
+          id: broadcastId,
+          total: data.total || 0,
+          processed: data.already_sent || 0,
+          sent: data.already_sent || 0,
+          failed: 0,
+          skipped: 0,
+          status: 'queued',
+          groupName: broadcastGroupName,
+          queuedBehind: data.queue_position > 0,
+          queuePosition: data.queue_position || 0,
+        },
+      ]);
+      // Refresh history
+      fetchBroadcasts();
+    } catch (e: any) {
+      alert('שגיאת רשת: ' + (e?.message || String(e)));
+       }
+  };
+
+  const cancelBroadcastHandler = async (e: React.MouseEvent, broadcastId: string) => {
+    e.stopPropagation(); // don't open the detail panel
+    if (!window.confirm('לבטל את השידור המתוזמן? הודעות שטרם נשלחו לא יגיעו לנמענים.')) return;
+    setCancellingBroadcastId(broadcastId);
+    try {
+      const res = await fetch(`${API_BASE}/groups/broadcasts/${broadcastId}/cancel`, {
+        method: 'DELETE',
+        headers: authHeader,
+      });
+      if (res.ok) {
+        setBroadcasts(prev => prev.map(b => b._id === broadcastId ? { ...b, status: 'cancelled' } : b));
+      } else {
+        const data = await res.json().catch(() => ({}));
+        alert(`שגיאה בביטול: ${data.error || res.status}`);
+      }
+    } catch (e) {
+      alert('שגיאת רשת — נסה שוב');
+    } finally {
+      setCancellingBroadcastId(null);
+    }
+  };
+
   // Reset to members tab when switching group; auto-load history when tab=history
   useEffect(() => {
     setActiveTab('members');
@@ -513,17 +663,97 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
     if (activeTab === 'removals' && selectedGroup) fetchRemovals();
   }, [activeTab, selectedGroup, fetchBroadcasts, fetchRemovals]);
 
+  // ── Recipients preview (export list before sending) ─────────────────────
+  const openRecipientsPreview = async () => {
+    if (!selectedGroup) return;
+    setRecipientsPreviewOpen(true);
+    setRecipientsLoading(true);
+    const excludedPhones = new Set<string>();
+
+    // Fetch blocklist contacts
+    const blocklistGroup = groups.find(g => g.is_blocklist);
+    if (blocklistGroup) {
+      try {
+        const res = await fetch(`${API_BASE}/groups/${blocklistGroup._id}`, { headers: authHeader });
+        const data = await res.json();
+        if (res.ok && data.contacts) {
+          (data.contacts as ContactRecord[]).forEach(c => excludedPhones.add(c.phone));
+        }
+      } catch (e) { console.error('Failed to load blocklist for preview', e); }
+    }
+
+    // Fetch excluded group contacts if one is selected
+    if (excludeGroupId) {
+      try {
+        const res = await fetch(`${API_BASE}/groups/${excludeGroupId}`, { headers: authHeader });
+        const data = await res.json();
+        if (res.ok && data.contacts) {
+          (data.contacts as ContactRecord[]).forEach(c => excludedPhones.add(c.phone));
+        }
+      } catch (e) { console.error('Failed to load excluded group for preview', e); }
+    }
+
+    const effectiveList = selectedGroup.contacts.filter(c => !excludedPhones.has(c.phone));
+    setRecipientsPreviewList(effectiveList);
+    setRecipientsLoading(false);
+  };
+
+  const copyRecipientsToExcel = () => {
+    const header = 'טלפון\tשם מלא\tשם וואטסאפ\tמייל';
+    const rows = recipientsPreviewList.map(c =>
+      `${c.phone}\t${c.full_name ?? ''}\t${c.whatsapp_name ?? ''}\t${c.email ?? ''}`
+    );
+    const tsv = [header, ...rows].join('\n');
+    navigator.clipboard.writeText(tsv).then(() => {
+      setCopiedRecipients(true);
+      setTimeout(() => setCopiedRecipients(false), 3000);
+    });
+  };
+
+  const downloadRecipientsAsExcel = () => {
+    const escape = (v: string) => `"${(v ?? '').replace(/"/g, '""')}"`;
+    const header = [escape('טלפון'), escape('שם מלא'), escape('שם וואטסאפ'), escape('מייל')].join(',');
+    const rows = recipientsPreviewList.map(c =>
+      [escape(c.phone), escape(c.full_name ?? ''), escape(c.whatsapp_name ?? ''), escape(c.email ?? '')].join(',')
+    );
+    // UTF-8 BOM so Excel opens Hebrew correctly
+    const csv = '\uFEFF' + [header, ...rows].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${selectedGroup?.name ?? 'recipients'}_${new Date().toISOString().slice(0,10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   const openSendModal = () => {
     setSendOpen(true);
     setSendResult(null);
     setSelectedTemplate(null);
     setTemplateParams({});
     setSendText('');
+    setExcludeGroupId('');
     if (templates.length === 0) fetchTemplates();
+    // Fetch bots with endpoints for number selection
+    setSendBotsLoading(true);
+    setSelectedSendBotId('');
+    fetch(`${API_BASE}/bots`, { headers: authHeader })
+      .then(r => r.ok ? r.json() : [])
+      .then((bots: any[]) => {
+        const eligible = (Array.isArray(bots) ? bots : []).filter((b: any) => b.endpoint && b.display_phone_number);
+        setSendBots(eligible);
+        if (eligible.length === 1) setSelectedSendBotId(eligible[0].id);
+      })
+      .catch(() => setSendBots([]))
+      .finally(() => setSendBotsLoading(false));
   };
 
   // ── Render helpers ──────────────────────────────────────────────────────
   const can = usePermission(currentUser as any);
+  const { fields: contactFields } = useContactFields();
   const firstName = currentUser?.name?.charAt(0)?.toUpperCase() ?? currentUser?.email?.charAt(0)?.toUpperCase() ?? '?';
   const blocklist = groups.find(g => g.is_blocklist);
   const regularGroups = groups.filter(g => !g.is_blocklist);
@@ -564,6 +794,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
         <AppNav
           mode="sidebar"
           activePage="groups"
+          onGoHome={onGoHome}
           onBots={can('bots.view_tab') ? onBack : undefined}
           onSessions={onOpenSessions ? () => onOpenSessions() : undefined}
           onContacts={onOpenContacts ? () => onOpenContacts() : undefined}
@@ -572,7 +803,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
           onUsers={onOpenSubUsers && can('users.view') ? onOpenSubUsers : undefined}
         />
         {/* Sidebar — list of groups */}
-        <aside className="w-96 border-l border-slate-100 bg-white flex flex-col flex-shrink-0">
+        <aside className="w-72 border-l border-slate-100 bg-white flex flex-col flex-shrink-0">
           <div className="p-6 border-b border-slate-100">
             <div className="flex items-center gap-3 mb-4">
               <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center">
@@ -732,6 +963,14 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                 </div>
 
                 <div className="flex items-center gap-2">
+                  <button
+                    onClick={exportGroupToExcel}
+                    disabled={selectedGroup.contacts.length === 0}
+                    title="יצא לאקסל"
+                    className="flex items-center gap-2 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200 rounded-2xl font-bold text-sm transition-colors disabled:opacity-40"
+                  >
+                    <Download size={16} /> יצוא לאקסל
+                  </button>
                   {can('groups.add_contact') && (
                   <button
                     onClick={openAddMembers}
@@ -855,42 +1094,111 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                   </div>
                 ) : (
                   <div className="bg-white border border-slate-100 rounded-2xl overflow-hidden shadow-sm">
-                    <div className="grid grid-cols-[10rem_1fr_5rem_5rem_5rem_5rem_3rem] gap-3 px-6 py-3 bg-slate-50 border-b border-slate-100 text-xs font-bold text-slate-400 uppercase tracking-wide">
+                    <div className="grid grid-cols-[9rem_6rem_1fr_4rem_4rem_4rem_4rem_6rem_5rem_3rem] gap-2 px-6 py-3 bg-slate-50 border-b border-slate-100 text-xs font-bold text-slate-400 uppercase tracking-wide">
                       <span>תאריך</span>
+                      <span>ID</span>
                       <span>תוכן</span>
                       <span>סה"כ</span>
                       <span>נשלחו</span>
                       <span>נכשלו</span>
                       <span>דולגו</span>
+                      <span>תזמון</span>
+                      <span>סטטוס</span>
                       <span></span>
                     </div>
-                    {broadcasts.map((b, idx) => (
+                    {broadcasts.map((b, idx) => {
+                      // isStopped: any non-completed broadcast that has sent some but not all
+                      // Includes status='running' — covers server-restart orphan (stuck in DB as running)
+                      const isPartial = b.processed > 0 && b.processed < b.total;
+                      const isStopped = (b.status === 'failed' || b.status === 'running' || (b.status === 'queued' && b.processed > 0)) && isPartial;
+                      return (
                       <div
                         key={b._id}
                         onClick={() => fetchBroadcastDetail(b._id)}
-                        className={`grid grid-cols-[10rem_1fr_5rem_5rem_5rem_5rem_3rem] gap-3 px-6 py-3.5 items-center hover:bg-slate-50/70 transition-colors cursor-pointer ${idx !== broadcasts.length - 1 ? 'border-b border-slate-100' : ''}`}
+                        className={`grid grid-cols-[9rem_6rem_1fr_4rem_4rem_4rem_4rem_6rem_5rem_3rem] gap-2 px-6 py-3.5 items-start hover:bg-slate-50/70 transition-colors cursor-pointer ${idx !== broadcasts.length - 1 ? 'border-b border-slate-100' : ''}`}
                       >
                         <div className="flex items-center gap-2 text-xs font-bold text-slate-600">
                           <Calendar size={13} className="text-slate-400" />
                           {new Date(b.createdAt).toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' })}
                         </div>
+                        <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+                          <span className="text-xs font-mono text-slate-400 truncate" title={b._id}>{b._id?.slice(-8)}</span>
+                          <button
+                            onClick={() => {
+                              navigator.clipboard.writeText(b._id);
+                              setCopiedBroadcastId(b._id);
+                              setTimeout(() => setCopiedBroadcastId(null), 2000);
+                            }}
+                            className="p-0.5 text-slate-300 hover:text-blue-500 transition-colors flex-shrink-0"
+                            title="העתק ID מלא"
+                          >
+                            {copiedBroadcastId === b._id ? <Check size={11} className="text-emerald-500" /> : <Copy size={11} />}
+                          </button>
+                        </div>
                         <div className="min-w-0">
                           {b.is_template ? (
-                            <div className="flex items-center gap-2">
-                              <span className="px-2 py-0.5 bg-purple-100 text-purple-700 rounded-md text-xs font-black">תבנית</span>
-                              <span className="text-sm font-bold text-slate-800 truncate">{b.template_name}</span>
+                            <div className="flex items-start gap-2 flex-wrap">
+                              <span className="px-2 py-0.5 bg-purple-100 text-purple-700 rounded-md text-xs font-black flex-shrink-0">תבנית</span>
+                              <span className="text-sm font-bold text-slate-800 break-words">{b.template_name}</span>
                             </div>
                           ) : (
-                            <p className="text-sm text-slate-700 truncate" title={b.message}>{b.message}</p>
+                            <p className="text-sm text-slate-700 break-words whitespace-pre-wrap">{b.message}</p>
                           )}
                         </div>
                         <span className="text-sm font-black text-slate-700">{b.total}</span>
                         <span className="text-sm font-black text-green-600">{b.sent}</span>
                         <span className="text-sm font-black text-red-500">{b.failed}</span>
                         <span className="text-sm font-black text-amber-500">{b.skipped}</span>
-                        <Eye size={16} className="text-slate-300" />
+                        <span>
+                          {b.scheduled_at
+                            ? (
+                              <div className="flex flex-col gap-0.5">
+                                <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-md text-xs font-black w-fit">מתוזמן</span>
+                                <span className="text-xs font-semibold text-blue-600 whitespace-nowrap">
+                                  {new Date(b.scheduled_at).toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' })}
+                                </span>
+                              </div>
+                            )
+                            : <span className="px-2 py-0.5 bg-slate-100 text-slate-500 rounded-md text-xs font-semibold">מיידי</span>
+                          }
+                        </span>
+                        <span>
+
+                                                  {b.status === 'cancelled' && <span className="px-2 py-0.5 bg-red-100 text-red-600 rounded-md text-xs font-black">בוטל</span>}
+                          {b.status === 'completed' && <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded-md text-xs font-black">הושלם</span>}
+                          {isStopped && <span className="px-2 py-0.5 bg-orange-100 text-orange-700 rounded-md text-xs font-black">הופסק ({b.processed}/{b.total})</span>}
+                          {!isStopped && b.status === 'running' && <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-md text-xs font-black animate-pulse">רץ</span>}
+                          {!isStopped && b.status === 'queued' && b.processed === 0 && <span className="px-2 py-0.5 bg-slate-100 text-slate-500 rounded-md text-xs font-black">בתור</span>}
+                          {!isStopped && b.status === 'failed' && <span className="px-2 py-0.5 bg-red-100 text-red-700 rounded-md text-xs font-black">נכשל</span>}
+                          {b.status === 'scheduled' && <span className="px-2 py-0.5 bg-blue-50 text-blue-500 rounded-md text-xs font-semibold">ממתין</span>}
+                        </span>
+                        {isStopped ? (
+                          <button
+                            onClick={(e) => resumeBroadcastById(b._id, b.group_name || selectedGroup.name, e)}
+                            title="המשך שליחה מהנקודה שנעצרה"
+                            className="flex items-center gap-1 px-2 py-1 bg-orange-500 hover:bg-orange-600 text-white rounded-lg text-xs font-black transition-colors"
+                          >
+                            <RotateCcw size={12} />
+                            המשך
+                          </button>
+                        ) : b.status === 'scheduled' ? (
+                          <button
+                            onClick={(e) => cancelBroadcastHandler(e, b._id)}
+                            disabled={cancellingBroadcastId === b._id}
+                            title="בטל שידור מתוזמן"
+                            className="p-1.5 rounded-lg text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors disabled:opacity-40"
+                          >
+                            {cancellingBroadcastId === b._id
+                              ? <div className="w-4 h-4 border-2 border-red-300 border-t-red-500 rounded-full animate-spin" />
+                              : <X size={16} />
+                            }
+                          </button>
+                        ) : (
+                          <Eye size={16} className="text-slate-300" />
+                        )}
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )
               )}
@@ -1039,6 +1347,74 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                 ההודעה תישלח אל {selectedGroup.contacts.length} אנשי קשר. אנשי קשר שנמצאים ברשימת ההסרה יסוננו אוטומטית.
               </p>
 
+              {/* Exclude group selector */}
+              {regularGroups.filter(g => g._id !== selectedGroup._id).length > 0 && (
+                <div className="mb-4 p-4 bg-orange-50 border border-orange-200 rounded-2xl">
+                  <label className="text-xs font-black text-orange-700 mb-2 block">החרגת קבוצה (אופציונלי):</label>
+                  <select
+                    value={excludeGroupId}
+                    onChange={e => setExcludeGroupId(e.target.value)}
+                    className="w-full px-3 py-2 bg-white border border-orange-200 rounded-xl text-sm outline-none focus:border-orange-500"
+                  >
+                    <option value="">ללא החרגה — שלח לכולם</option>
+                    {regularGroups.filter(g => g._id !== selectedGroup._id).map(g => (
+                      <option key={g._id} value={g._id}>{g.name} ({g.contact_count} אנשי קשר)</option>
+                    ))}
+                  </select>
+                  {excludeGroupId && (
+                    <p className="text-xs text-orange-600 font-semibold mt-2">
+                      ⛔ אנשי קשר שנמצאים ב-&quot;{regularGroups.find(g => g._id === excludeGroupId)?.name}&quot; לא יקבלו את ההודעה.
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* Bot / phone number selector */}
+              {sendBotsLoading ? (
+                <div className="mb-4 flex items-center gap-2 text-xs font-semibold text-slate-400">
+                  <div className="animate-spin w-4 h-4 border-2 border-slate-200 border-t-blue-500 rounded-full" />
+                  טוען מספרים מחוברים...
+                </div>
+              ) : sendBots.length === 0 ? (
+                <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs font-bold text-amber-700">
+                  ⚠️ לא נמצאו מספרים מחוברים עם endpoint מוגדר. ודא שהבוט מחובר ויש לו endpoint.
+                </div>
+              ) : sendBots.length === 1 ? (
+                <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-xl text-xs font-bold text-green-700 flex items-center gap-2">
+                  <Phone size={14} /> ישלח מ: {sendBots[0].display_phone_number} ({sendBots[0].name})
+                </div>
+              ) : (
+                <div className="mb-4">
+                  <label className="text-xs font-black text-slate-500 mb-2 block">בחר מספר שממנו תישלח ההודעה:</label>
+                  <div className="space-y-2">
+                    {sendBots.map(bot => (
+                      <label
+                        key={bot.id}
+                        className={`flex items-center gap-3 px-4 py-3 rounded-xl border cursor-pointer transition-colors ${
+                          selectedSendBotId === bot.id
+                            ? 'bg-blue-50 border-blue-400'
+                            : 'bg-white border-slate-200 hover:bg-slate-50'
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="sendBot"
+                          value={bot.id}
+                          checked={selectedSendBotId === bot.id}
+                          onChange={() => setSelectedSendBotId(bot.id)}
+                          className="accent-blue-600"
+                        />
+                        <div className="flex items-center gap-2 min-w-0">
+                          <Phone size={15} className="text-green-600 flex-shrink-0" />
+                          <span className="text-sm font-bold text-slate-900">{bot.display_phone_number}</span>
+                          <span className="text-xs text-slate-400 truncate">— {bot.name}</span>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Template chooser */}
               <div className="mb-4">
                 <div className="flex items-center justify-between mb-2">
@@ -1069,39 +1445,92 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                       </div>
                     ))}
 
-                    {/* Header media URL input */}
-                    {templateParams.header && (
-                      <div className="mt-3">
-                        <label className="text-xs font-bold text-slate-500 block mb-1">
-                          כתובת {templateParams.header.type === 'image' ? 'תמונה' : templateParams.header.type === 'video' ? 'וידאו' : 'מסמך'} (URL):
-                        </label>
-                        <input
-                          value={templateParams.header.url}
-                          onChange={e => setTemplateParams((p: any) => ({ ...p, header: { ...p.header, url: e.target.value } }))}
-                          placeholder="https://..."
-                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:border-purple-500"
-                          dir="ltr"
-                        />
-                      </div>
-                    )}
+                    {/* Header media uploader */}
+                    {templateParams.header && (() => {
+                      const headerComp = (selectedTemplate?.components || []).find((c: any) => c.type === 'HEADER');
+                      const sampleUrl: string | undefined =
+                        headerComp?.example?.header_url?.[0] ||
+                        headerComp?.example?.header_url ||
+                        (Array.isArray(headerComp?.example?.header_handle) ? headerComp.example.header_handle[0] : undefined) ||
+                        headerComp?.example?.header_handle ||
+                        undefined;
+                      return (
+                        <div className="mt-3">
+                          <label className="text-xs font-bold text-slate-500 block mb-1">
+                            {templateParams.header.type === 'image' ? '🖼️ תמונה' : templateParams.header.type === 'video' ? '🎥 וידאו' : '📄 מסמך'}
+                          </label>
+                          <FileUploader
+                            value={templateParams.header.url || ''}
+                            onChange={(url: string) => setTemplateParams((p: any) => ({ ...p, header: { ...p.header, url } }))}
+                            accept={
+                              templateParams.header.type === 'image' ? 'image/*' :
+                              templateParams.header.type === 'video' ? 'video/*' : '*/*'
+                            }
+                            label={templateParams.header.type === 'image' ? 'תמונה' : templateParams.header.type === 'video' ? 'וידאו' : 'מסמך'}
+                            mediaType={templateParams.header.type}
+                            token={token || ''}
+                            sampleUrl={sampleUrl}
+                          />
+                        </div>
+                      );
+                    })()}
 
                     {/* Body params */}
                     {Array.isArray(templateParams.body) && templateParams.body.length > 0 && (
-                      <div className="mt-3 space-y-2">
+                      <div className="mt-3 space-y-3">
                         <label className="text-xs font-bold text-slate-500 block">פרמטרים:</label>
-                        {templateParams.body.map((val: string, i: number) => (
-                          <input
-                            key={i}
-                            value={val}
-                            onChange={e => setTemplateParams((p: any) => {
-                              const body = [...(p.body || [])];
-                              body[i] = e.target.value;
-                              return { ...p, body };
-                            })}
-                            placeholder={`{{${i + 1}}}`}
-                            className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:border-purple-500"
-                          />
-                        ))}
+                        {templateParams.body.map((val: string, i: number) => {
+                          const isFieldMode = val.startsWith('__field:');
+                          const fieldRef = isFieldMode ? val.slice(8) : '';
+                          const stdFields = [
+                            { ref: 'full_name', label: 'שם מלא' },
+                            { ref: 'phone', label: 'טלפון' },
+                            { ref: 'whatsapp_name', label: 'שם וואטסאפ' },
+                            { ref: 'email', label: 'מייל' },
+                          ];
+                          return (
+                            <div key={i}>
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className="text-xs font-bold text-slate-500">{`{{${i + 1}}}`}</span>
+                                <div className="flex rounded-lg overflow-hidden border border-slate-200 text-xs font-bold">
+                                  <button
+                                    type="button"
+                                    onClick={() => setTemplateParams((p: any) => { const body = [...(p.body||[])]; body[i]=''; return {...p,body}; })}
+                                    className={`px-2 py-1 transition-colors ${!isFieldMode ? 'bg-purple-600 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}`}
+                                  >טקסט</button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setTemplateParams((p: any) => { const body = [...(p.body||[])]; body[i]='__field:full_name'; return {...p,body}; })}
+                                    className={`px-2 py-1 transition-colors ${isFieldMode ? 'bg-purple-600 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}`}
+                                  >שדה מאיש קשר</button>
+                                </div>
+                              </div>
+                              {isFieldMode ? (
+                                <select
+                                  value={fieldRef}
+                                  onChange={e => setTemplateParams((p: any) => { const body = [...(p.body||[])]; body[i]=`__field:${e.target.value}`; return {...p,body}; })}
+                                  className="w-full px-3 py-2 bg-white border border-purple-200 rounded-lg text-sm outline-none focus:border-purple-500"
+                                >
+                                  <optgroup label="שדות בסיסיים">
+                                    {stdFields.map(f => <option key={f.ref} value={f.ref}>{f.label}</option>)}
+                                  </optgroup>
+                                  {contactFields.length > 0 && (
+                                    <optgroup label="שדות מותאמים אישית">
+                                      {contactFields.map(f => <option key={f._id} value={`custom:${f._id}`}>{f.label}</option>)}
+                                    </optgroup>
+                                  )}
+                                </select>
+                              ) : (
+                                <input
+                                  value={val}
+                                  onChange={e => setTemplateParams((p: any) => { const body = [...(p.body||[])]; body[i]=e.target.value; return {...p,body}; })}
+                                  placeholder={`{{${i + 1}}}`}
+                                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:border-purple-500"
+                                />
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
                     )}
                   </div>
@@ -1200,18 +1629,198 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
               )}
             </div>
 
+            <div className="flex items-center justify-between gap-3 p-6 border-t border-slate-100">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setSendOpen(false)}
+                  className="px-5 py-2.5 text-slate-500 hover:text-slate-700 rounded-xl font-bold text-sm"
+                >סגור</button>
+                <button
+                  onClick={openRecipientsPreview}
+                  disabled={selectedGroup.contacts.length === 0}
+                  className="flex items-center gap-2 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-sm transition-colors disabled:opacity-50"
+                  title="יצוא רשימת נמענים לפני שליחה"
+                >
+                  <List size={15} /> יצוא רשימה
+                </button>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    const defaultDt = new Date(Date.now() + 60 * 60 * 1000);
+                    const pad = (n: number) => String(n).padStart(2, '0');
+                    setScheduleDateTime(
+                      `${defaultDt.getFullYear()}-${pad(defaultDt.getMonth()+1)}-${pad(defaultDt.getDate())}T${pad(defaultDt.getHours())}:${pad(defaultDt.getMinutes())}`
+                    );
+                    setScheduleDialogOpen(true);
+                  }}
+                  disabled={sending || (!selectedTemplate && !mediaUrl && !sendText.trim()) || (sendBots.length > 1 && !selectedSendBotId)}
+                  className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-sm disabled:opacity-50"
+                >
+                  <Calendar size={15} /> שלח בתזמון
+                </button>
+                <button
+                  onClick={() => submitSend()}
+                  disabled={sending || (!selectedTemplate && !mediaUrl && !sendText.trim()) || (sendBots.length > 1 && !selectedSendBotId)}
+                  className="flex items-center gap-2 px-6 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-xl font-bold text-sm disabled:opacity-50"
+                >
+                  <Send size={15} />
+                  {sending ? 'מתחיל שליחה...' : 'שלח במיידי'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Recipients preview modal */}
+      {recipientsPreviewOpen && selectedGroup && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[80] flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col" dir="rtl">
+            <div className="flex items-center justify-between p-6 border-b border-slate-100">
+              <div>
+                <h2 className="text-xl font-black text-slate-900 flex items-center gap-2">
+                  <List size={20} className="text-slate-500" />
+                  רשימת נמענים — {selectedGroup.name}
+                </h2>
+                {!recipientsLoading && (
+                  <p className="text-sm font-semibold text-slate-400 mt-0.5">
+                    {recipientsPreviewList.length} אנשי קשר יקבלו את ההודעה
+                    {selectedGroup.contacts.length - recipientsPreviewList.length > 0 && (
+                      <span className="text-red-400"> · {selectedGroup.contacts.length - recipientsPreviewList.length} יוחרגו (חסימה / קבוצת החרגה)</span>
+                    )}
+                  </p>
+                )}
+              </div>
+              <button
+                onClick={() => setRecipientsPreviewOpen(false)}
+                className="p-2 text-slate-300 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto">
+              {recipientsLoading ? (
+                <div className="flex items-center justify-center py-20 text-slate-300">
+                  <div className="animate-spin w-10 h-10 border-4 border-slate-200 border-t-blue-500 rounded-full" />
+                </div>
+              ) : recipientsPreviewList.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-20 text-slate-300">
+                  <Users size={48} strokeWidth={1} />
+                  <p className="text-lg font-bold mt-4">אין נמענים — כולם הוחרגו</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-slate-50 border-b border-slate-100 sticky top-0">
+                      <tr>
+                        <th className="px-5 py-3 text-right text-xs font-bold text-slate-400 uppercase tracking-wide">#</th>
+                        <th className="px-5 py-3 text-right text-xs font-bold text-slate-400 uppercase tracking-wide">טלפון</th>
+                        <th className="px-5 py-3 text-right text-xs font-bold text-slate-400 uppercase tracking-wide">שם מלא</th>
+                        <th className="px-5 py-3 text-right text-xs font-bold text-slate-400 uppercase tracking-wide">שם וואטסאפ</th>
+                        <th className="px-5 py-3 text-right text-xs font-bold text-slate-400 uppercase tracking-wide">מייל</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {recipientsPreviewList.map((c, idx) => (
+                        <tr key={c._id} className={`border-b border-slate-100 hover:bg-slate-50/70 ${idx % 2 === 0 ? '' : 'bg-slate-50/30'}`}>
+                          <td className="px-5 py-3 text-slate-300 text-xs font-semibold">{idx + 1}</td>
+                          <td className="px-5 py-3 font-bold text-slate-900 font-mono">{c.phone}</td>
+                          <td className="px-5 py-3 text-slate-700 font-semibold">{c.full_name || <span className="text-slate-300">—</span>}</td>
+                          <td className="px-5 py-3 text-slate-600">{c.whatsapp_name || <span className="text-slate-300">—</span>}</td>
+                          <td className="px-5 py-3 text-slate-500">{c.email || <span className="text-slate-300">—</span>}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-between gap-3 p-6 border-t border-slate-100">
+              <p className="text-xs font-semibold text-slate-400">
+                הרשימה כוללת החרגת חסומים{excludeGroupId ? ` ו-"${regularGroups.find(g => g._id === excludeGroupId)?.name}"` : ''}.
+                ניתן להדביק ישירות ל-Excel.
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setRecipientsPreviewOpen(false)}
+                  className="px-5 py-2.5 text-slate-500 hover:text-slate-700 rounded-xl font-bold text-sm"
+                >סגור</button>
+                <button
+                  onClick={copyRecipientsToExcel}
+                  disabled={recipientsPreviewList.length === 0}
+                  className="flex items-center gap-2 px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-sm transition-colors disabled:opacity-50"
+                  title="העתק לאקסל (TSV)"
+                >
+                  {copiedRecipients
+                    ? <><Check size={15} className="text-emerald-600" /> הועתק!</>
+                    : <><Copy size={15} /> העתק</>}
+                </button>
+                <button
+                  onClick={downloadRecipientsAsExcel}
+                  disabled={recipientsPreviewList.length === 0}
+                  className="flex items-center gap-2 px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-sm transition-colors disabled:opacity-50"
+                  title="הורד קובץ CSV לאקסל"
+                >
+                  <Download size={15} /> הורד Excel ({recipientsPreviewList.length})
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Schedule dialog */}
+      {scheduleDialogOpen && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[70] flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm" dir="rtl">
+            <div className="flex items-center justify-between p-6 border-b border-slate-100">
+              <h2 className="text-lg font-black text-slate-900 flex items-center gap-2"><Calendar size={18} /> שלח בתזמון</h2>
+              <button onClick={() => setScheduleDialogOpen(false)} className="p-2 text-slate-300 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-colors">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="p-6">
+              <label className="text-xs font-black text-slate-500 mb-2 block">בחר תאריך ושעה לשליחה:</label>
+              <input
+                type="datetime-local"
+                value={scheduleDateTime}
+                onChange={e => setScheduleDateTime(e.target.value)}
+                min={(() => {
+                  const now = new Date(Date.now() + 60000);
+                  const pad = (n: number) => String(n).padStart(2, '0');
+                  return `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
+                })()}
+                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm outline-none focus:ring-4 focus:ring-blue-600/10 focus:border-blue-600"
+              />
+              {scheduleDateTime && (
+                <p className="mt-2 text-xs font-semibold text-slate-500">
+                  ההודעה תישלח ב: {new Date(scheduleDateTime).toLocaleString('he-IL')}
+                </p>
+              )}
+            </div>
             <div className="flex items-center justify-end gap-3 p-6 border-t border-slate-100">
               <button
-                onClick={() => setSendOpen(false)}
+                onClick={() => setScheduleDialogOpen(false)}
                 className="px-5 py-2.5 text-slate-500 hover:text-slate-700 rounded-xl font-bold text-sm"
-              >סגור</button>
+              >ביטול</button>
               <button
-                onClick={submitSend}
-                disabled={sending || (!selectedTemplate && !mediaUrl && !sendText.trim())}
-                className="flex items-center gap-2 px-6 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-xl font-bold text-sm disabled:opacity-50"
+                onClick={() => {
+                  if (!scheduleDateTime) return;
+                  const ms = new Date(scheduleDateTime).getTime();
+                  if (isNaN(ms) || ms <= Date.now()) {
+                    alert('יש לבחור תאריך ושעה עתידיים');
+                    return;
+                  }
+                  setScheduleDialogOpen(false);
+                  submitSend(ms);
+                }}
+                disabled={!scheduleDateTime || sending}
+                className="flex items-center gap-2 px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-sm disabled:opacity-50"
               >
-                <Send size={15} />
-                {sending ? 'מתחיל שליחה...' : 'שלח'}
+                <Calendar size={15} /> אישור — תזמן שליחה
               </button>
             </div>
           </div>
@@ -1401,7 +2010,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                     {selectedGroup.is_blocklist ? ' מרשימת ההסרה' : ` מהקבוצה "${selectedGroup.name}"`}
                   </p>
                 </div>
-              </div>
+              </div> 
             </div>
             <div className="p-6">
               {selectedGroup.is_blocklist ? (
@@ -1445,16 +2054,26 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
         </div>
       )}
 
-      {activeBroadcast && !completionToast && (
-        <div className="fixed bottom-6 left-6 z-[70] bg-white border border-slate-200 shadow-2xl rounded-2xl p-4 w-80" dir="rtl">
+      {/* Active broadcast progress toasts (one per active send) */}
+      {activeBroadcasts.filter(b => b.status !== 'completed' && b.status !== 'failed').map((b, idx) => (
+        <div
+          key={b.id}
+          className="fixed left-6 z-[70] bg-white border border-slate-200 shadow-2xl rounded-2xl p-4 w-80"
+          style={{ bottom: `${1.5 + idx * 9}rem` }}
+          dir="rtl"
+        >
           <div className="flex items-center gap-3 mb-3">
             <div className="w-10 h-10 rounded-2xl bg-blue-100 text-blue-600 flex items-center justify-center flex-shrink-0">
               <Send size={18} />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-black text-slate-900 truncate">שולח ל-{activeBroadcast.groupName}</p>
+              <p className="text-sm font-black text-slate-900 truncate">שולח ל-{b.groupName}</p>
               <p className="text-xs font-bold text-slate-400">
-                {activeBroadcast.status === 'queued' ? 'בהמתנה...' : `${activeBroadcast.processed} מתוך ${activeBroadcast.total}`}
+                {b.status === 'queued' && b.queuedBehind
+                  ? `⏳ ממתין בתור (מיקום ${b.queuePosition})`
+                  : b.status === 'queued'
+                  ? 'מתחיל...'
+                  : `${b.processed} מתוך ${b.total}`}
               </p>
             </div>
             <div className="animate-spin w-5 h-5 border-2 border-blue-200 border-t-blue-500 rounded-full flex-shrink-0" />
@@ -1462,42 +2081,50 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
           <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
             <div
               className="h-full bg-blue-500 transition-all duration-300"
-              style={{ width: `${activeBroadcast.total > 0 ? (activeBroadcast.processed / activeBroadcast.total) * 100 : 0}%` }}
+              style={{ width: `${b.total > 0 ? (b.processed / b.total) * 100 : 0}%` }}
             />
           </div>
           <div className="flex items-center justify-between mt-2 text-xs font-bold">
-            <span className="text-green-600">✓ {activeBroadcast.sent}</span>
-            <span className="text-red-500">✗ {activeBroadcast.failed}</span>
-            <span className="text-amber-500">⊘ {activeBroadcast.skipped}</span>
+            <span className="text-green-600">✓ {b.sent}</span>
+            <span className="text-red-500">✗ {b.failed}</span>
+            <span className="text-amber-500">⊘ {b.skipped}</span>
           </div>
         </div>
-      )}
+      ))}
 
-      {/* Completion toast */}
-      {completionToast && (
-        <div className="fixed bottom-6 left-6 z-[70] bg-white border border-green-200 shadow-2xl rounded-2xl p-4 w-80" dir="rtl">
+      {/* Completion toasts (one per finished broadcast) */}
+      {completionToasts.map((ct, idx) => (
+        <div
+          key={ct.id}
+          className="fixed left-6 z-[70] bg-white border border-green-200 shadow-2xl rounded-2xl p-4 w-80"
+          style={{ bottom: `${1.5 + idx * 9}rem` }}
+          dir="rtl"
+        >
           <div className="flex items-start gap-3">
             <div className="w-10 h-10 rounded-2xl bg-green-100 text-green-600 flex items-center justify-center flex-shrink-0">
               <CheckCircle2 size={20} />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-black text-slate-900">השליחה ל-{completionToast.groupName} הושלמה</p>
+              <p className="text-sm font-black text-slate-900">השליחה ל-{ct.groupName} הושלמה</p>
               <p className="text-xs font-semibold text-slate-500 mt-1">
-                נשלחו בהצלחה: <span className="text-green-600 font-black">{completionToast.sent}</span>
-                {completionToast.failed > 0 && <> · נכשלו: <span className="text-red-500 font-black">{completionToast.failed}</span></>}
-                {completionToast.skipped > 0 && <> · דולגו: <span className="text-amber-500 font-black">{completionToast.skipped}</span></>}
+                נשלחו בהצלחה: <span className="text-green-600 font-black">{ct.sent}</span>
+                {ct.failed > 0 && <> · נכשלו: <span className="text-red-500 font-black">{ct.failed}</span></>}
+                {ct.skipped > 0 && <> · דולגו: <span className="text-amber-500 font-black">{ct.skipped}</span></>}
               </p>
-              <p className="text-xs font-bold text-slate-400 mt-0.5">סה"כ {completionToast.total} אנשי קשר</p>
+              <p className="text-xs font-bold text-slate-400 mt-0.5">סה"כ {ct.total} אנשי קשר</p>
             </div>
             <button
-              onClick={() => { setCompletionToast(null); setActiveBroadcast(null); }}
+              onClick={() => {
+                setCompletionToasts(prev => prev.filter(t => t.id !== ct.id));
+                setActiveBroadcasts(prev => prev.filter(b => b.id !== ct.id));
+              }}
               className="p-1 text-slate-300 hover:text-slate-600 rounded-lg flex-shrink-0"
             >
               <X size={16} />
             </button>
           </div>
         </div>
-      )}
+      ))}
     </div>
   );
 };

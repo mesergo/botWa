@@ -29,7 +29,12 @@ const userSchema = new mongoose.Schema({
       registered: { type: Boolean, default: false },
       pin: { type: String, default: '' },
       assigned_bot_id: { type: mongoose.Schema.Types.ObjectId, ref: 'BotFlow', default: null },
-      connected_at: { type: Date, default: Date.now }
+      connected_at: { type: Date, default: Date.now },
+      // Provider: 'facebook' (default) or 'dialog360'
+      provider: { type: String, default: 'facebook' },
+      // Dialog360-specific fields
+      token360: { type: String, default: '' },
+      link: { type: String, default: '' }
     }],
     default: []
   },
@@ -37,7 +42,8 @@ const userSchema = new mongoose.Schema({
     max_bots: { type: Number, default: null },
     max_versions: { type: Number, default: null },
     version_price: { type: Number, default: null },
-    bot_price: { type: Number, default: null }
+    bot_price: { type: Number, default: null },
+    max_connected_numbers: { type: Number, default: null }
   },
   trial_expires_at: { type: Date, default: null },
   rep_group_ids: [{ type: mongoose.Schema.Types.ObjectId, ref: 'RepGroup', default: [] }],
@@ -46,13 +52,18 @@ const userSchema = new mongoose.Schema({
   allowed_bot_ids: [{ type: mongoose.Schema.Types.ObjectId, ref: 'BotFlow', default: [] }],
   // Per-user override for the auto-removal-from-group feature.
   // When `customized=true`, these values override the global SystemSetting('removal_config').
+  // Keywords and messages are split by language: Hebrew (he) and English (en).
   removal_config: {
     customized: { type: Boolean, default: false },
     enabled: { type: Boolean, default: true },
-    keywords: { type: [String], default: [] },
-    message: { type: String, default: '' }
+    keywords_he: { type: [String], default: [] },
+    message_he: { type: String, default: '' },
+    keywords_en: { type: [String], default: [] },
+    message_en: { type: String, default: '' }
   },
   user_type_id: { type: mongoose.Schema.Types.ObjectId, ref: 'UserType', default: null },
+  // Per-client toggle (set by admin): show the "SMS נכנס" tab. Admins always see it.
+  sms_in_enabled: { type: Boolean, default: false },
 }, { 
   timestamps: true,
   collection: 'User'

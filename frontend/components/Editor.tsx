@@ -70,6 +70,10 @@ interface EditorProps {
   onNavigateToProcessResult?: (processId: string, nodeId: string) => void;
   /** Opens the bot settings modal (only shown if user has bots.settings permission) */
   onOpenBotSettings?: () => void;
+  /** Current autosave status to display in the navbar */
+  saveStatus?: 'idle' | 'saving' | 'saved';
+  /** Called when user renames the active fixed process */
+  onRenameProcess?: (processId: string, newName: string) => Promise<void>;
 }
 
 const HighlightedText: React.FC<{ text: string; query: string }> = ({ text, query }) => {
@@ -91,9 +95,11 @@ const Editor: React.FC<EditorProps> = ({
   onNodesChange, onEdgesChange, onConnect, onInit, onDrop, onSearchChange, onSearchNav, onTidy, onPublish,
   onCloseEditor, onHome, onSimulatorOpen, onSimulatorClose, onDuplicate, onChangeTemplate, sidebarProps,
   isEditingTemplate, onSaveTemplate, existingTemplateData, onOpenContacts, onOpenSessions, initialParams, onManageParams, onNodeFocus, onFixedProcessActive, isTransitioning,
-  globalSearchResults, onNavigateToProcessResult, onOpenBotSettings
+  globalSearchResults, onNavigateToProcessResult, onOpenBotSettings, saveStatus, onRenameProcess
 }) => {
   const [showSaveModal, setShowSaveModal] = React.useState(false);
+  const [isEditingProcessName, setIsEditingProcessName] = useState(false);
+  const [processNameInput, setProcessNameInput] = useState('');
   const [templateName, setTemplateName] = React.useState(existingTemplateData?.name || '');
   const [templateDescription, setTemplateDescription] = React.useState(existingTemplateData?.description || '');
   const [templateIsPublic, setTemplateIsPublic] = React.useState(existingTemplateData?.isPublic ?? true);
@@ -256,6 +262,56 @@ const Editor: React.FC<EditorProps> = ({
             <button onClick={onChangeTemplate} className="flex items-center gap-2 px-6 py-2.5 bg-white border border-orange-500 text-orange-500 rounded-full text-xs font-bold shadow-sm hover:bg-orange-50 transition-all"><AlertTriangle size={16} /> החלף תסריט</button>
           )}
           <button onClick={onTidy} className="flex items-center gap-2 px-6 py-2.5 bg-white border border-slate-200 rounded-full text-xs font-bold shadow-sm hover:border-blue-600 hover:text-blue-600 transition-all"><Wand2 size={16} /> סדר הכל</button>
+          <div className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs font-bold select-none border w-[130px] justify-center whitespace-nowrap transition-all duration-300 ${
+            saveStatus === 'saving' ? 'bg-slate-50 border-slate-200 text-slate-400' :
+            saveStatus === 'saved'  ? 'bg-green-50 border-green-200 text-green-600' :
+                                      'bg-white border-slate-200 text-slate-300'
+          }`}>
+            {saveStatus === 'saving' ? (
+              <svg className="animate-spin flex-shrink-0" width={13} height={13} viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeOpacity="0.3"/><path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round"/></svg>
+            ) : (
+              <svg className="flex-shrink-0" width={13} height={13} viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            )}
+            {saveStatus === 'saving' ? 'שומר...' : saveStatus === 'saved' ? 'נשמר' : 'שמירה אוטומטית'}
+          </div>
+           {viewMode === 'editing-process' && (() => {
+            const activeProcess = fixedProcesses.find(p => p.id.toString() === activeProcessId?.toString());
+            if (!activeProcess) return null;
+            return isEditingProcessName ? (
+              <input
+                className="px-3 py-2 bg-white border border-blue-400 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500/30 min-w-[100px] max-w-[200px] text-right shadow-sm"
+                dir="rtl"
+                value={processNameInput}
+                onChange={e => setProcessNameInput(e.target.value)}
+                onBlur={() => {
+                  setIsEditingProcessName(false);
+                  const trimmed = processNameInput.trim();
+                  if (trimmed && trimmed !== activeProcess.name && onRenameProcess) {
+                    onRenameProcess(activeProcess.id, trimmed);
+                  }
+                }}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                  else if (e.key === 'Escape') { setProcessNameInput(activeProcess.name); setIsEditingProcessName(false); }
+                }}
+                autoFocus
+              />
+            ) : (
+              <button
+                onClick={() => { setProcessNameInput(activeProcess.name); setIsEditingProcessName(true); }}
+                title="לחץ לשינוי שם התהליך"
+                className="px-3 py-2 bg-transparent border-none text-sm font-bold text-black hover:opacity-70 transition-all max-w-[200px] truncate"
+                dir="rtl"
+              >
+                {activeProcess.name}
+              </button>
+            );
+          })()}
+           {selectedBot?.name && (
+            <span className="px-3 py-1.5 text-base font-bold text-black max-w-[180px] truncate" title={selectedBot.name} dir="rtl">
+              {selectedBot.name}
+            </span>
+          )}
           <div className="h-8 w-px bg-slate-100 mx-1"></div>
           {/* User Avatar - navigates to bots page */}
           <button
@@ -304,7 +360,7 @@ const Editor: React.FC<EditorProps> = ({
                   {viewMode === 'main' ? (
                     <button 
                       onClick={onSimulatorOpen} 
-                      title="בדיקת תזרים"
+                      title="סימולטור"
                       className="w-16 h-16 bg-white rounded-full flex items-center justify-center shadow-2xl hover:scale-110 active:scale-95 transition-all overflow-hidden border-2 border-slate-100 group nodrag"
                     >
                       <img src="/images/go_favicon.png" alt="Simulator" className="w-full h-full object-cover" />
@@ -346,6 +402,7 @@ const Editor: React.FC<EditorProps> = ({
         initialParams={initialParams}
         onNodeFocus={onNodeFocus}
         onFixedProcessActive={onFixedProcessActive}
+        restartKeyword={selectedBot?.restart_keyword}
       />
     </div>
   );

@@ -7,6 +7,10 @@ import fetch from 'node-fetch';
 import jwt from 'jsonwebtoken';
 import { getEffectiveUserId, SECRET_KEY } from '../middleware/auth.js';
 
+// Fixed long-lived system-user access token used for ALL Meta Graph API calls
+// (phone number registration, phone_numbers fetch, WABA info, etc.).
+const FIXED_ACCESS_TOKEN = () => process.env.PHP_FB_API_KEY || 'EAAKM0vGZBqFkBRjoCVH2zlRVZBs7zcBKEjmVLY1ZCYpkfXNSsNx51MpZBzphLJTaXbidwVglUZB2ZCDuDSpX3MGDYrE9xvOye7TFbHkPeFtGb0fA6BBdOZCHj7y6VZC9h54fdr8iYbXD6Wdt6iSyiLUZCQI4iFVj4ZCcPOwCgm6wXps8CXGvz63q777yZALXSXxUQZDZD';
+
 const ACCOUNTS_CONFIG = {
   Basic: { maxBots: 3, maxVersions: 5, versionPrice: 5, botPrice: 30 },
   Premium: { maxBots: 6, maxVersions: 10, versionPrice: 5, botPrice: 30 }
@@ -71,9 +75,15 @@ export const getBots = async (req, res) => {
     const connected = (user && user.connected_numbers) || [];
     res.json(bots.map(b => {
       let phone = b.display_phone_number || '';
+      let provider = b.whatsapp_provider || 'facebook';
+      let dialog360Link = b.dialog360_link || '';
       if (!phone) {
         const match = connected.find(c => c.assigned_bot_id && String(c.assigned_bot_id) === String(b._id));
-        if (match) phone = match.display_phone_number || '';
+        if (match) {
+          phone = match.display_phone_number || '';
+          provider = match.provider || 'facebook';
+          dialog360Link = match.link || '';
+        }
       }
       return {
         id: b._id.toString(),
@@ -82,8 +92,11 @@ export const getBots = async (req, res) => {
         created_at: b.created_at,
         is_default: b.is_default || false,
         display_phone_number: phone,
+        whatsapp_provider: provider,
+        dialog360_link: dialog360Link,
         botParams: b.botParams ? Object.fromEntries(b.botParams) : {},
-        endpoint: b.endpoint || ''
+        endpoint: b.endpoint || '',
+        restart_keyword: b.restart_keyword || ''
       };
     }));
   } catch (err) {
@@ -356,13 +369,13 @@ export const facebookCallback = async (req, res) => {
       const phonesUrl =
         `https://graph.facebook.com/${graphVersion}/${encodeURIComponent(waba_id)}/phone_numbers` +
         `?fields=${encodeURIComponent(phoneFields)}` +
-        `&access_token=${encodeURIComponent(accessToken)}`;
+        `&access_token=${encodeURIComponent(FIXED_ACCESS_TOKEN())}`;
 
       console.log(`${tag} 🔁 Step 2: GET /{waba_id}/phone_numbers`);
       console.log(`${tag}    waba_id       = ${waba_id}`);
       console.log(`${tag}    graphVersion  = ${graphVersion}`);
       console.log(`${tag}    fields        = ${phoneFields}`);
-      console.log(`${tag}    URL           = ${phonesUrl.replace(accessToken, '***ACCESS_TOKEN***')}`);
+      console.log(`${tag}    URL           = ${phonesUrl.replace(FIXED_ACCESS_TOKEN(), '***FIXED_TOKEN***')}`);
 
       const t0 = Date.now();
       try {
@@ -432,7 +445,7 @@ export const facebookCallback = async (req, res) => {
     if (bot.phone_number_id) {
       registerResult = await registerWhatsappNumber({
         phoneNumberId: bot.phone_number_id,
-        accessToken,
+        accessToken: FIXED_ACCESS_TOKEN(),
         graphVersion,
         existingPin: bot.whatsapp_two_factor_pin,
         tag
@@ -479,7 +492,7 @@ export const facebookCallback = async (req, res) => {
  * Returns { success, pin, status, responseBody }
  */
 async function registerWhatsappNumber({ phoneNumberId, accessToken, graphVersion, existingPin, tag }) {
-  const pin = existingPin && /^\d{6}$/.test(existingPin)
+  const pin = (existingPin && /^\d{5,6}$/.test(existingPin))
     ? existingPin
     : String(Math.floor(100000 + Math.random() * 900000));
 
@@ -656,11 +669,29 @@ export const issueFacebookState = async (req, res) => {
   try {
     const bot = await BotFlow.findOne({ _id: id, user_id: userId });
     if (!bot) return res.status(404).json({ error: 'Bot not found' });
-    const state = jwt.sign({ botId: id, userId, kind: 'fb-signup' }, SECRET_KEY, { expiresIn: '20m' });
-    console.log(`[FB-Signup] 🎟  Issued state token for bot=${id} user=${userId} (exp=20m)`);
+    const state = jwt.sign({ botId: id, userId, kind: 'fb-signup' }, SECRET_KEY, { expiresIn: '2h' });
+    console.log(`[FB-Signup] 🎟  Issued state token for bot=${id} user=${userId} (exp=2h)`);
     res.json({ success: true, state });
   } catch (err) {
     console.error('[FB-Signup] ❌ Failed to issue state:', err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+/**
+ * Issue a state token WITHOUT a specific bot — the number will be saved to
+ * user.connected_numbers (unassigned) and the user can assign it to a bot later.
+ *
+ * GET /api/bots/facebook-redirect-state-free  (auth required)
+ */
+export const issueFacebookStateFree = async (req, res) => {
+  const userId = req.user.id;
+  try {
+    const state = jwt.sign({ botId: null, userId, kind: 'fb-signup' }, SECRET_KEY, { expiresIn: '2h' });
+    console.log(`[FB-Signup] 🎟  Issued FREE state token (no bot) user=${userId} (exp=2h)`);
+    res.json({ success: true, state });
+  } catch (err) {
+    console.error('[FB-Signup] ❌ Failed to issue free state:', err);
     res.status(500).json({ error: err.message });
   }
 };
@@ -683,18 +714,65 @@ export const facebookRedirect = async (req, res) => {
   console.log(`${tag}    state=${state ? state.substring(0, 20) + '…' : 'MISSING'}`);
   if (fbErr) console.log(`${tag} ⚠️  FB error=${fbErr} reason=${error_reason} desc=${error_description}`);
 
-  const renderClose = (title, message, ok, details = {}) => {
+  // hiddenDetails: included in postMessage but NOT shown in the visible display JSON
+  const renderClose = (title, message, ok, details = {}, hiddenDetails = {}) => {
     const color = ok ? '#10b981' : '#ef4444';
-    const payload = JSON.stringify({ event: 'fb-redirect-done', ok: !!ok, ...details });
-    console.log(`${tag} 🏁 Final response → HTML close page; postMessage payload = ${payload}`);
+    const bgBanner = ok ? '#ecfdf5' : '#fef2f2';
+    const payload = JSON.stringify({ event: 'fb-redirect-done', ok: !!ok, message, ...details, ...hiddenDetails });
+    // Pretty-print the full JSON for display (hide the postMessage event key and hidden fields)
+    const displayJson = JSON.stringify({ ok: !!ok, message, ...details }, null, 2);
+    console.log(`${tag} 🏁 Final response → HTML close page; ok=${ok}`);
+    console.log(`${tag}    postMessage payload = ${payload.replace(/"access_token"\s*:\s*"[^"]+"/g, '"access_token":"***"')}`);
+    console.log(`${tag}    details keys = ${Object.keys(details).join(', ')}`);
     res.set('Content-Type', 'text/html; charset=utf-8');
     res.send(`<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><title>${title}</title>
-<style>body{font-family:system-ui,Segoe UI,Arial;background:#f8fafc;color:#0f172a;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
-.card{background:#fff;border-radius:24px;padding:40px;box-shadow:0 10px 30px rgba(0,0,0,.08);max-width:420px;text-align:center}
-h1{color:${color};margin:0 0 12px;font-size:22px}p{color:#64748b;font-size:14px;line-height:1.6;margin:0 0 20px}
-button{background:#2563eb;color:#fff;border:0;padding:12px 28px;border-radius:14px;font-weight:700;cursor:pointer}</style></head>
-<body><div class="card"><h1>${title}</h1><p>${message}</p><button onclick="window.close()">סגור חלון</button></div>
-<script>try{if(window.opener){window.opener.postMessage(${payload},'*');}setTimeout(()=>window.close(),2500);}catch(e){}</script>
+<style>
+*{box-sizing:border-box}
+body{font-family:system-ui,Segoe UI,Arial;background:#f1f5f9;color:#0f172a;margin:0;padding:16px;min-height:100vh}
+.card{background:#fff;border-radius:20px;padding:28px 32px;box-shadow:0 8px 24px rgba(0,0,0,.09);max-width:680px;margin:0 auto}
+.banner{background:${bgBanner};border:1.5px solid ${color};border-radius:12px;padding:14px 18px;margin-bottom:20px;display:flex;align-items:center;gap:10px}
+.banner-icon{font-size:22px;flex-shrink:0}
+.banner-text h1{color:${color};margin:0 0 4px;font-size:18px}
+.banner-text p{color:#475569;font-size:13px;margin:0;line-height:1.5}
+.json-section{margin-top:8px}
+.json-label{font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}
+pre{background:#0f172a;color:#e2e8f0;border-radius:12px;padding:18px;font-size:12px;line-height:1.7;overflow:auto;max-height:380px;margin:0;direction:ltr;text-align:left;white-space:pre-wrap;word-break:break-all}
+.footer{margin-top:18px;display:flex;gap:10px;justify-content:flex-end}
+button{border:0;padding:10px 22px;border-radius:10px;font-weight:700;cursor:pointer;font-size:14px}
+.btn-copy{background:#f1f5f9;color:#334155}
+.btn-close{background:#2563eb;color:#fff}
+.log-section{margin-top:14px;background:#f8fafc;border-radius:10px;padding:12px 14px;font-size:11px;color:#64748b;direction:ltr;text-align:left;line-height:1.6;max-height:140px;overflow:auto}
+</style></head>
+<body><div class="card">
+<div class="banner"><span class="banner-icon">${ok ? '✅' : '❌'}</span><div class="banner-text"><h1>${title}</h1><p>${message.replace(/<[^>]+>/g, ' ')}</p></div></div>
+<div class="json-section"><div class="json-label">📦 JSON שהתקבל מ-redirect_uri</div>
+<pre id="jsonOut"></pre></div>
+<div class="log-section" id="logOut"></div>
+<div class="footer"><button class="btn-copy" onclick="copyJson()">📋 העתק JSON</button><button class="btn-close" onclick="window.close()">סגור חלון</button></div>
+</div>
+<script>
+var _payload = ${payload};
+var _displayJson = ${JSON.stringify(displayJson)};
+var _log = [];
+function log(msg){_log.push(new Date().toISOString().substring(11,23)+' '+msg);var el=document.getElementById('logOut');if(el)el.textContent=_log.join('\\n');}
+function copyJson(){navigator.clipboard&&navigator.clipboard.writeText(_displayJson).then(function(){log('✅ JSON הועתק ללוח');}).catch(function(e){log('⚠️ copy failed: '+e);});}
+document.addEventListener('DOMContentLoaded',function(){
+  var pre=document.getElementById('jsonOut');
+  if(pre) pre.textContent=_displayJson;
+  log('📥 redirect_uri page loaded — ok='+_payload.ok);
+  log('🔑 keys received: '+Object.keys(_payload).filter(function(k){return k!=='event';}).join(', '));
+  try{
+    if(window.opener){
+      log('📨 Sending postMessage to opener...');
+      window.opener.postMessage(_payload,'*');
+      log('✅ postMessage sent');
+    } else {
+      log('⚠️ window.opener is null — cannot postMessage (page opened directly?)');
+    }
+  }catch(e){log('❌ postMessage error: '+e.message);}
+  log('⏳ Window will NOT auto-close — close manually when done reviewing.');
+});
+</script>
 </body></html>`);
   };
 
@@ -703,19 +781,23 @@ button{background:#2563eb;color:#fff;border:0;padding:12px 28px;border-radius:14
     let decoded;
     try { decoded = jwt.verify(state, SECRET_KEY); }
     catch (e) { console.log(`${tag} ❌ state verify failed: ${e.message}`); return renderClose('שגיאה', 'state לא תקין או פג תוקף.', false); }
-    if (decoded.kind !== 'fb-signup' || !decoded.botId || !decoded.userId) {
+    if (decoded.kind !== 'fb-signup' || !decoded.userId) {
       console.log(`${tag} ❌ state payload invalid: ${JSON.stringify(decoded)}`);
       return renderClose('שגיאה', 'state אינו מתאים לתהליך זה.', false);
     }
-    console.log(`${tag} ✅ state verified: botId=${decoded.botId} userId=${decoded.userId}`);
+    const freeMode = !decoded.botId; // no specific bot → save to user.connected_numbers only
+    console.log(`${tag} ✅ state verified: botId=${decoded.botId ?? 'FREE'} userId=${decoded.userId} freeMode=${freeMode}`);
 
     if (fbErr || !code) {
       console.log(`${tag} ❌ FB returned error or no code`);
       return renderClose('הרישום בוטל', error_description || 'לא התקבל קוד אישור מפייסבוק.', false);
     }
 
-    const bot = await BotFlow.findOne({ _id: decoded.botId, user_id: decoded.userId });
-    if (!bot) { console.log(`${tag} ❌ bot not found`); return renderClose('שגיאה', 'הבוט לא נמצא.', false); }
+    let bot = null;
+    if (!freeMode) {
+      bot = await BotFlow.findOne({ _id: decoded.botId, user_id: decoded.userId });
+      if (!bot) { console.log(`${tag} ❌ bot not found`); return renderClose('שגיאה', 'הבוט לא נמצא.', false); }
+    }
 
     const appId = process.env.FB_APP_ID;
     const appSecret = process.env.FB_APP_SECRET;
@@ -725,7 +807,7 @@ button{background:#2563eb;color:#fff;border:0;padding:12px 28px;border-radius:14
       return renderClose('שגיאת הגדרה', 'משתני סביבה של פייסבוק לא מוגדרים בשרת.', false);
     }
     const redirectUri = `${req.protocol}://${req.get('host')}/api/bots/facebook-redirect`;
-    const t2 = `[FB-Redirect bot=${decoded.botId} user=${decoded.userId}]`;
+    const t2 = `[FB-Redirect bot=${decoded.botId ?? 'FREE'} user=${decoded.userId}]`;
 
     // Step 1: code → token
     const tokenUrl =
@@ -752,7 +834,7 @@ button{background:#2563eb;color:#fff;border:0;padding:12px 28px;border-radius:14
     console.log(`${t2} ✅ Got access_token (${accessToken.length} chars)`);
 
     // Step 2: list WABAs owned by the user to discover waba_id
-    let waba_id = bot.waba_id || '';
+    let waba_id = (bot && bot.waba_id) || '';
     if (!waba_id) {
       const wabasUrl = `https://graph.facebook.com/${graphVersion}/me/businesses?access_token=${encodeURIComponent(accessToken)}`;
       console.log(`${t2} 🔁 Step 2a: discover WABAs via /me/businesses`);
@@ -771,10 +853,13 @@ button{background:#2563eb;color:#fff;border:0;padding:12px 28px;border-radius:14
         console.log(`${t2} ⬅️  debug_token HTTP ${r.status} body: ${txt}`);
         const j = JSON.parse(txt);
         const granular = j?.data?.granular_scopes || [];
-        const wabaScope = granular.find(s => s.scope === 'whatsapp_business_management');
+        // Prefer whatsapp_business_management scope; fall back to whatsapp_business_messaging
+        const wabaScope =
+          granular.find(s => s.scope === 'whatsapp_business_management') ||
+          granular.find(s => s.scope === 'whatsapp_business_messaging');
         if (wabaScope && Array.isArray(wabaScope.target_ids) && wabaScope.target_ids.length > 0) {
           waba_id = wabaScope.target_ids[0];
-          console.log(`${t2} ✅ Discovered waba_id=${waba_id} from debug_token`);
+          console.log(`${t2} ✅ Discovered waba_id=${waba_id} from debug_token (scope=${wabaScope.scope})`);
         }
       } catch (e) { console.log(`${t2} ⚠️ debug_token failed: ${e.message}`); }
     }
@@ -784,9 +869,9 @@ button{background:#2563eb;color:#fff;border:0;padding:12px 28px;border-radius:14
     let allPhones = [];
     if (waba_id) {
       const phoneFields = 'id,verified_name,display_phone_number,quality_rating,status,code_verification_status,name_status,messaging_limit_tier';
-      const phonesUrl = `https://graph.facebook.com/${graphVersion}/${encodeURIComponent(waba_id)}/phone_numbers?fields=${encodeURIComponent(phoneFields)}&access_token=${encodeURIComponent(accessToken)}`;
+      const phonesUrl = `https://graph.facebook.com/${graphVersion}/${encodeURIComponent(waba_id)}/phone_numbers?fields=${encodeURIComponent(phoneFields)}&access_token=${encodeURIComponent(FIXED_ACCESS_TOKEN())}`;
       console.log(`${t2} 🔁 Step 3: GET /${waba_id}/phone_numbers`);
-      console.log(`${t2}    URL = ${phonesUrl.replace(accessToken, '***')}`);
+      console.log(`${t2}    URL = ${phonesUrl.replace(FIXED_ACCESS_TOKEN(), '***')}`);
       const tt = Date.now();
       try {
         const r = await fetch(phonesUrl, { method: 'GET', timeout: 30000 });
@@ -802,58 +887,147 @@ button{background:#2563eb;color:#fff;border:0;padding:12px 28px;border-radius:14
       console.log(`${t2} ⚠️ No waba_id available — cannot fetch phone numbers`);
     }
 
-    // Step 4: persist
-    bot.waba_id = waba_id || bot.waba_id;
-    bot.phone_number_id = (phoneInfo && phoneInfo.id) || bot.phone_number_id;
-    bot.whatsapp_access_token = accessToken;
-    bot.whatsapp_connected_at = new Date();
-    bot.whatsapp_all_phones = allPhones;
-    if (phoneInfo) {
-      bot.display_phone_number = phoneInfo.display_phone_number || '';
-      bot.whatsapp_verified_name = phoneInfo.verified_name || '';
-      bot.whatsapp_quality_rating = phoneInfo.quality_rating || '';
-      bot.whatsapp_status = phoneInfo.status || '';
-      bot.whatsapp_code_verification_status = phoneInfo.code_verification_status || '';
-      bot.whatsapp_name_status = phoneInfo.name_status || '';
-      bot.whatsapp_messaging_limit_tier = phoneInfo.messaging_limit_tier || '';
+    // Step 3.5: fetch WABA name and business ID
+    let wabaName = '';
+    let businessId = '';
+    if (waba_id) {
+      const wabaUrl = `https://graph.facebook.com/${graphVersion}/${encodeURIComponent(waba_id)}?fields=name,business&access_token=${encodeURIComponent(FIXED_ACCESS_TOKEN())}`;
+      console.log(`${t2} 🔁 Step 3.5: GET /${waba_id} (WABA name & business)`);
+      try {
+        const r = await fetch(wabaUrl, { method: 'GET', timeout: 30000 });
+        const txt = await r.text();
+        console.log(`${t2} ⬅️  WABA details HTTP ${r.status} body: ${txt}`);
+        const j = JSON.parse(txt);
+        wabaName = j.name || '';
+        businessId = (j.business && j.business.id) || '';
+        console.log(`${t2} ✅ wabaName=${wabaName} businessId=${businessId}`);
+      } catch (e) { console.log(`${t2} ⚠️ WABA details fetch failed: ${e.message}`); }
     }
-    await bot.save();
-    console.log(`${t2} 💾 Saved bot. waba_id=${bot.waba_id} phone_number_id=${bot.phone_number_id} display=${bot.display_phone_number}`);
+
+    // Step 4: persist to bot (only when a specific bot was selected)
+    const phone_number_id_final = (phoneInfo && phoneInfo.id) || (bot && bot.phone_number_id) || '';
+    const display_phone_number_final = (phoneInfo && phoneInfo.display_phone_number) || (bot && bot.display_phone_number) || '';
+    const verified_name_final = (phoneInfo && phoneInfo.verified_name) || (bot && bot.whatsapp_verified_name) || '';
+    const quality_rating_final = (phoneInfo && phoneInfo.quality_rating) || (bot && bot.whatsapp_quality_rating) || '';
+    const status_final = (phoneInfo && phoneInfo.status) || (bot && bot.whatsapp_status) || '';
+    const code_verification_status_final = (phoneInfo && phoneInfo.code_verification_status) || (bot && bot.whatsapp_code_verification_status) || '';
+    const name_status_final = (phoneInfo && phoneInfo.name_status) || (bot && bot.whatsapp_name_status) || '';
+    const messaging_limit_tier_final = (phoneInfo && phoneInfo.messaging_limit_tier) || (bot && bot.whatsapp_messaging_limit_tier) || '';
+
+    if (bot) {
+      bot.waba_id = waba_id || bot.waba_id;
+      bot.phone_number_id = phone_number_id_final;
+      bot.whatsapp_access_token = FIXED_ACCESS_TOKEN();
+      bot.whatsapp_connected_at = new Date();
+      bot.whatsapp_all_phones = allPhones;
+      if (phoneInfo) {
+        bot.display_phone_number = display_phone_number_final;
+        bot.whatsapp_verified_name = verified_name_final;
+        bot.whatsapp_quality_rating = quality_rating_final;
+        bot.whatsapp_status = status_final;
+        bot.whatsapp_code_verification_status = code_verification_status_final;
+        bot.whatsapp_name_status = name_status_final;
+        bot.whatsapp_messaging_limit_tier = messaging_limit_tier_final;
+      }
+      await bot.save();
+      console.log(`${t2} 💾 Saved bot. waba_id=${bot.waba_id} phone_number_id=${bot.phone_number_id} display=${bot.display_phone_number}`);
+    } else {
+      console.log(`${t2} ℹ️ freeMode — skipping bot.save()`);
+    }
+
+    // Step 4.5: upsert phone into connected_numbers
+    try {
+      const owner = await User.findById(decoded.userId);
+      const pnid = phone_number_id_final;
+      if (owner && pnid) {
+        const entry = {
+          phone_number_id: pnid,
+          waba_id: waba_id || '',
+          display_phone_number: display_phone_number_final,
+          verified_name: verified_name_final,
+          quality_rating: quality_rating_final,
+          whatsapp_status: status_final,
+          access_token: FIXED_ACCESS_TOKEN(),
+          registered: false,
+          // freeMode → no bot assigned yet; otherwise assign to the bot
+          assigned_bot_id: bot ? bot._id : null,
+        };
+        const existingIdx = (owner.connected_numbers || []).findIndex(n => String(n.phone_number_id) === String(pnid));
+        if (existingIdx >= 0) {
+          Object.assign(owner.connected_numbers[existingIdx], entry);
+          owner.markModified('connected_numbers');
+        } else {
+          owner.connected_numbers.push(entry);
+        }
+        await owner.save();
+        console.log(`${t2} 💾 Upserted phone_number_id=${pnid} into connected_numbers (assigned_bot_id=${bot ? bot._id : 'null'})`);
+      }
+    } catch (e) {
+      console.log(`${t2} ⚠️ Failed to update user.connected_numbers: ${e.message}`);
+    }
 
     // Step 5: auto-register
     let regResult = null;
-    if (bot.phone_number_id) {
+    if (phone_number_id_final) {
       regResult = await registerWhatsappNumber({
-        phoneNumberId: bot.phone_number_id,
-        accessToken,
+        phoneNumberId: phone_number_id_final,
+        accessToken: FIXED_ACCESS_TOKEN(),
         graphVersion,
-        existingPin: bot.whatsapp_two_factor_pin,
+        existingPin: bot ? bot.whatsapp_two_factor_pin : undefined,
         tag: t2
       });
-      bot.whatsapp_two_factor_pin = regResult.pin;
-      bot.whatsapp_registered = !!regResult.success;
-      bot.whatsapp_register_response = regResult.responseBody;
-      await bot.save();
+      if (bot) {
+        bot.whatsapp_two_factor_pin = regResult.pin;
+        bot.whatsapp_registered = !!regResult.success;
+        bot.whatsapp_register_response = regResult.responseBody;
+        await bot.save();
+      }
+      // Step 5.1: update registered field in connected_numbers if registration succeeded
+      if (regResult.success) {
+        try {
+          const owner = await User.findById(decoded.userId);
+          if (owner) {
+            const entry = (owner.connected_numbers || []).find(n => String(n.phone_number_id) === String(phone_number_id_final));
+            if (entry) {
+              entry.registered = true;
+              owner.markModified('connected_numbers');
+              await owner.save();
+              console.log(`${t2} 💾 Updated connected_numbers registered=true for phone_number_id=${phone_number_id_final}`);
+            }
+          }
+        } catch (e) {
+          console.log(`${t2} ⚠️ Failed to update registered in connected_numbers: ${e.message}`);
+        }
+      }
     } else {
       console.log(`${t2} ⚠️ Step 5 skipped — no phone_number_id`);
     }
     console.log(`${'='.repeat(80)}\n`);
 
-    const okMsg = `החיבור הושלם.<br>מספר: <strong>${bot.display_phone_number || '-'}</strong><br>שם עסק: <strong>${bot.whatsapp_verified_name || '-'}</strong><br>הפעלת מספר: <strong>${regResult && regResult.success ? 'הצליחה' : 'נכשלה / לא בוצעה'}</strong>`;
+    const freeModeNote = freeMode ? '<br><em>המספר נשמר ללא שיוך לבוט — שייך אותו מהגדרות → מספרים מחוברים.</em>' : '';
+    const okMsg = `החיבור הושלם.${freeModeNote}<br>מספר: <strong>${display_phone_number_final || '-'}</strong><br>שם עסק: <strong>${wabaName || verified_name_final || '-'}</strong><br>הפעלת מספר: <strong>${regResult && regResult.success ? 'הצליחה' : 'נכשלה / לא בוצעה'}</strong>`;
     return renderClose('החיבור הושלם בהצלחה', okMsg, true, {
-      bot_id: bot._id.toString(),
-      waba_id: bot.waba_id,
-      phone_number_id: bot.phone_number_id,
-      display_phone_number: bot.display_phone_number,
-      verified_name: bot.whatsapp_verified_name,
-      quality_rating: bot.whatsapp_quality_rating,
-      status: bot.whatsapp_status,
-      code_verification_status: bot.whatsapp_code_verification_status,
-      name_status: bot.whatsapp_name_status,
-      messaging_limit_tier: bot.whatsapp_messaging_limit_tier,
+      bot_id: bot ? bot._id.toString() : null,
+      free_mode: freeMode,
+      waba_id: waba_id,
+      phone_number_id: phone_number_id_final,
+      display_phone_number: display_phone_number_final,
+      verified_name: verified_name_final,
+      quality_rating: quality_rating_final,
+      status: status_final,
+      code_verification_status: code_verification_status_final,
+      name_status: name_status_final,
+      messaging_limit_tier: messaging_limit_tier_final,
+      wabaName,
+      wabaId: waba_id,
+      businessId,
       registered: !!(regResult && regResult.success),
       register_status_code: regResult ? regResult.status : null,
       register_error: regResult && !regResult.success ? (regResult.responseBody?.error || regResult.responseBody) : null
+    }, {
+      // hidden from display JSON but forwarded via postMessage so the frontend
+      // can call /activate-number with the token
+      access_token: accessToken || ''
     });
   } catch (err) {
     console.error(`${tag} ❌ Exception:`, err);
@@ -924,6 +1098,25 @@ export const updateBotEndpoint = async (req, res) => {
     bot.endpoint = trimmed;
     await bot.save();
     res.json({ success: true, endpoint: bot.endpoint });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+/**
+ * Update the bot's restart keyword (word that resets the conversation from anywhere).
+ */
+export const updateBotRestartKeyword = async (req, res) => {
+  const { id } = req.params;
+  const { restart_keyword } = req.body;
+  const userId = req.user.id;
+  const trimmed = String(restart_keyword ?? '').trim();
+  try {
+    const bot = await BotFlow.findOne({ _id: id, user_id: userId });
+    if (!bot) return res.status(404).json({ error: 'Bot not found' });
+    bot.restart_keyword = trimmed;
+    await bot.save();
+    res.json({ success: true, restart_keyword: bot.restart_keyword });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

@@ -8,9 +8,9 @@ import UserType from '../models/UserType.js';
 
 // Default configuration if DB is empty (used for fallback)
 const DEFAULT_ACCOUNTS_CONFIG = {
-  Trial: { maxBots: 1, maxVersions: 0, versionPrice: 0, botPrice: 0, canPublish: false, trialDays: 30 },
-  Basic: { maxBots: 3, maxVersions: 5, versionPrice: 5, botPrice: 30, canPublish: true },
-  Premium: { maxBots: 6, maxVersions: 10, versionPrice: 5, botPrice: 30, canPublish: true }
+  Trial: { maxBots: 1, maxVersions: 0, versionPrice: 0, botPrice: 0, canPublish: false, trialDays: 30, maxConnectedNumbers: 1 },
+  Basic: { maxBots: 3, maxVersions: 5, versionPrice: 5, botPrice: 30, canPublish: true, maxConnectedNumbers: 1 },
+  Premium: { maxBots: 6, maxVersions: 10, versionPrice: 5, botPrice: 30, canPublish: true, maxConnectedNumbers: 3 }
 };
 
 export const getSystemSettings = async (req, res) => {
@@ -64,13 +64,22 @@ export const updateRemovalConfig = async (req, res) => {
     }
     const cleaned = {
       enabled: typeof config.enabled === 'boolean' ? config.enabled : true,
-      keywords: Array.isArray(config.keywords)
-        ? config.keywords.map(k => String(k || '').trim()).filter(Boolean)
+      keywords_he: Array.isArray(config.keywords_he)
+        ? config.keywords_he.map(k => String(k || '').trim()).filter(Boolean)
         : [],
-      message: typeof config.message === 'string' ? config.message : ''
+      message_he: typeof config.message_he === 'string' ? config.message_he : '',
+      keywords_en: Array.isArray(config.keywords_en)
+        ? config.keywords_en.map(k => String(k || '').trim()).filter(Boolean)
+        : [],
+      message_en: typeof config.message_en === 'string' ? config.message_en : ''
     };
-    if (cleaned.keywords.length === 0) cleaned.keywords = DEFAULT_REMOVAL_CONFIG.keywords;
-    if (!cleaned.message.trim()) cleaned.message = DEFAULT_REMOVAL_CONFIG.message;
+    if (cleaned.keywords_he.length === 0) cleaned.keywords_he = DEFAULT_REMOVAL_CONFIG.keywords_he;
+    if (!cleaned.message_he.trim()) cleaned.message_he = DEFAULT_REMOVAL_CONFIG.message_he;
+    if (cleaned.keywords_en.length === 0) cleaned.keywords_en = DEFAULT_REMOVAL_CONFIG.keywords_en;
+    if (!cleaned.message_en.trim()) cleaned.message_en = DEFAULT_REMOVAL_CONFIG.message_en;
+
+    // Load current config before saving so we can diff it
+    const previous = await getGlobalRemovalConfig();
 
     await SystemSetting.findOneAndUpdate(
       { key: 'removal_config' },
@@ -78,10 +87,81 @@ export const updateRemovalConfig = async (req, res) => {
       { upsert: true, new: true }
     );
 
+    // Diff and write audit log entries
+    const actorId = req.user?.id;
+    const actorEmail = req.user?.email || '';
+    const logEntries = buildRemovalConfigDiff(previous, cleaned, actorId, actorEmail);
+    if (logEntries.length > 0) {
+      await AuditLog.insertMany(logEntries);
+    }
+
     res.json({ message: 'Removal config updated', config: cleaned });
   } catch (error) {
     res.status(500).json({ message: 'Error updating removal config', error: error.message });
   }
+};
+
+// GET /api/admin/settings/removal/log?page=1
+export const getRemovalConfigLog = async (req, res) => {
+  try {
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = 20;
+    const skip = (page - 1) * limit;
+    const [entries, total] = await Promise.all([
+      AuditLog.find({ target_type: 'RemovalConfig' })
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      AuditLog.countDocuments({ target_type: 'RemovalConfig' })
+    ]);
+    res.json({ entries, total, page, pages: Math.ceil(total / limit) });
+  } catch (error) {
+    res.status(500).json({ message: 'Error fetching removal config log', error: error.message });
+  }
+};
+
+// Helper: diff two removal configs and return AuditLog documents to insert
+export const buildRemovalConfigDiff = (previous, next, actorId, actorEmail) => {
+  const entries = [];
+
+  // Diff Hebrew keywords
+  const prevHe = Array.isArray(previous?.keywords_he) ? previous.keywords_he : [];
+  const nextHe = Array.isArray(next?.keywords_he) ? next.keywords_he : [];
+  const prevHeSet = new Set(prevHe.map(k => k.trim().toLowerCase()));
+  const nextHeSet = new Set(nextHe.map(k => k.trim().toLowerCase()));
+  for (const kw of nextHe) {
+    if (!prevHeSet.has(kw.trim().toLowerCase())) {
+      entries.push({ action: 'REMOVAL_KEYWORD_HE_ADDED', actor_id: actorId, actor_email: actorEmail, target_type: 'RemovalConfig', details: { keyword: kw } });
+    }
+  }
+  for (const kw of prevHe) {
+    if (!nextHeSet.has(kw.trim().toLowerCase())) {
+      entries.push({ action: 'REMOVAL_KEYWORD_HE_REMOVED', actor_id: actorId, actor_email: actorEmail, target_type: 'RemovalConfig', details: { keyword: kw } });
+    }
+  }
+
+  // Diff English keywords
+  const prevEn = Array.isArray(previous?.keywords_en) ? previous.keywords_en : [];
+  const nextEn = Array.isArray(next?.keywords_en) ? next.keywords_en : [];
+  const prevEnSet = new Set(prevEn.map(k => k.trim().toLowerCase()));
+  const nextEnSet = new Set(nextEn.map(k => k.trim().toLowerCase()));
+  for (const kw of nextEn) {
+    if (!prevEnSet.has(kw.trim().toLowerCase())) {
+      entries.push({ action: 'REMOVAL_KEYWORD_EN_ADDED', actor_id: actorId, actor_email: actorEmail, target_type: 'RemovalConfig', details: { keyword: kw } });
+    }
+  }
+  for (const kw of prevEn) {
+    if (!nextEnSet.has(kw.trim().toLowerCase())) {
+      entries.push({ action: 'REMOVAL_KEYWORD_EN_REMOVED', actor_id: actorId, actor_email: actorEmail, target_type: 'RemovalConfig', details: { keyword: kw } });
+    }
+  }
+
+  // Enabled toggle
+  if (previous?.enabled !== next?.enabled) {
+    entries.push({ action: next?.enabled ? 'REMOVAL_ENABLED' : 'REMOVAL_DISABLED', actor_id: actorId, actor_email: actorEmail, target_type: 'RemovalConfig', details: {} });
+  }
+  return entries;
 };
 import jwt from 'jsonwebtoken';
 import { SECRET_KEY, resolvePermissions } from '../middleware/auth.js';
@@ -168,6 +248,7 @@ export const getAllUsers = async (req, res) => {
         manager_id: user.manager_id || null,
         allowed_bot_ids: (user.allowed_bot_ids || []).map(id => id.toString()),
         user_type_id: user.user_type_id || null,
+        sms_in_enabled: user.sms_in_enabled === true,
         createdAt: user.createdAt,
         updatedAt: user.updatedAt,
         custom_limits: user.custom_limits,
@@ -214,6 +295,7 @@ export const getUserDetails = async (req, res) => {
         dialog360_bot_id: user.dialog360_bot_id,
         manager_id: user.manager_id || null,
         allowed_bot_ids: (user.allowed_bot_ids || []).map(id => id.toString()),
+        sms_in_enabled: user.sms_in_enabled === true,
         custom_limits: user.custom_limits,
         limits_in_effect: limits,
         createdAt: user.createdAt,
@@ -234,7 +316,7 @@ export const getUserDetails = async (req, res) => {
 export const updateUser = async (req, res) => {
   try {
     const { userId } = req.params;
-    const { name, email, phone, password, status, account_type, custom_limits, dialog360_bot_id, user_type_id, manager_id, allowed_bot_ids } = req.body;
+    const { name, email, phone, password, status, account_type, custom_limits, dialog360_bot_id, user_type_id, manager_id, allowed_bot_ids, sms_in_enabled } = req.body;
     
     console.log('[Admin] Updating user:', userId, 'with data:', { ...req.body, password: password ? '***' : undefined });
     
@@ -253,6 +335,7 @@ export const updateUser = async (req, res) => {
     if (dialog360_bot_id !== undefined) user.dialog360_bot_id = dialog360_bot_id;
     if (manager_id !== undefined) user.manager_id = manager_id || null;
     if (Array.isArray(allowed_bot_ids)) user.allowed_bot_ids = allowed_bot_ids;
+    if (sms_in_enabled !== undefined) user.sms_in_enabled = sms_in_enabled === true;
     
     // Update user type / permissions
     if (user_type_id !== undefined) {
@@ -306,6 +389,7 @@ export const updateUser = async (req, res) => {
         user_type_id: user.user_type_id || null,
         manager_id: user.manager_id || null,
         allowed_bot_ids: (user.allowed_bot_ids || []).map(id => id.toString()),
+        sms_in_enabled: user.sms_in_enabled === true,
         custom_limits: user.custom_limits,
         limits_in_effect: limits,
         createdAt: user.createdAt,

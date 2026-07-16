@@ -99,6 +99,15 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ form, errors, onFormChange, onA
               <p className="text-red-600 text-sm font-bold">{errors.general}</p>
             </div>
           )}
+          <label className="flex items-center gap-2 cursor-pointer select-none justify-end">
+            <span className="text-sm text-slate-500">זכור אותי במחשב זה</span>
+            <input
+              type="checkbox"
+              checked={!!form.rememberMe}
+              onChange={e => onFormChange({ ...form, rememberMe: e.target.checked })}
+              className="w-4 h-4 accent-blue-600 cursor-pointer"
+            />
+          </label>
           <button onClick={onAuth} className="w-full bg-blue-600 text-white py-5 rounded-2xl font-bold shadow-lg shadow-blue-600/20 uppercase tracking-widest hover:bg-blue-700 transition-all">כניסה</button>
 
           {onGoogleLogin && (

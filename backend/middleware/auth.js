@@ -125,6 +125,14 @@ export { SECRET_KEY };
  * to the built-in role defaults (backward compatibility with existing users).
  */
 export const resolvePermissions = async (user) => {
+  const base = await resolveBasePermissions(user);
+  // Per-user gate for the "SMS נכנס" tab: admins always see it,
+  // other users only when the admin enabled it on their account (User.sms_in_enabled).
+  const smsInView = user?.role === 'admin' ? true : user?.sms_in_enabled === true;
+  return { ...base, sms_in: { view: smsInView } };
+};
+
+async function resolveBasePermissions(user) {
   if (user.user_type_id) {
     const userType = await UserType.findById(user.user_type_id).lean();
     if (userType) return userType.permissions || {};
@@ -138,7 +146,7 @@ export const resolvePermissions = async (user) => {
   }
   // Final fallback: hardcoded defaults (legacy backward-compat)
   return getDefaultPermissionsForRole(user.role);
-};
+}
 
 /**
  * Returns a permission sub-object for a dot-separated key, e.g. 'sessions.view_all'.

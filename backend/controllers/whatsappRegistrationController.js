@@ -23,6 +23,7 @@
 import fetch from 'node-fetch';
 import User from '../models/User.js';
 import BotFlow from '../models/BotFlow.js';
+import { getUserLimits } from '../utils/limits.js';
 
 const GRAPH_VERSION = () => process.env.FB_GRAPH_VERSION || 'v20.0';
 const PHP_CREATE_URL = () => process.env.PHP_CREATE_URL || 'https://wa.message.co.il/facebook-create.php';
@@ -31,11 +32,13 @@ const PHP_CREATE_TOKEN = () => process.env.PHP_CREATE_TOKEN || '356fa9e5eb6da01a
 const PHP_GRAPH_VERSION = () => process.env.PHP_GRAPH_VERSION || 'v22.0';
 // Long-lived FB system-user token used by the PHP side as `fbApiKey`.
 const PHP_FB_API_KEY = () => process.env.PHP_FB_API_KEY || 'EAAKM0vGZBqFkBRjoCVH2zlRVZBs7zcBKEjmVLY1ZCYpkfXNSsNx51MpZBzphLJTaXbidwVglUZB2ZCDuDSpX3MGDYrE9xvOye7TFbHkPeFtGb0fA6BBdOZCHj7y6VZC9h54fdr8iYbXD6Wdt6iSyiLUZCQI4iFVj4ZCcPOwCgm6wXps8CXGvz63q777yZALXSXxUQZDZD';
+// Fixed 2-step-verification PIN for WhatsApp number registration.
+const FIXED_PIN = process.env.WA_FIXED_PIN || '93066';
 
 function resolvePin(provided, existing) {
-  if (provided && /^\d{6}$/.test(provided)) return provided;
-  if (existing && /^\d{6}$/.test(existing)) return existing;
-  return String(Math.floor(100000 + Math.random() * 900000));
+  if (provided && /^\d{5,6}$/.test(provided)) return provided;
+  if (existing && /^\d{5,6}$/.test(existing)) return existing;
+  return FIXED_PIN;
 }
   
 async function callMetaRegister({ phoneNumberId, accessToken, pin, tag }) {
@@ -100,16 +103,32 @@ export const activateNumber = async (req, res) => {
   const userId = req.user?.id;
   const b = req.body || {};
   const phone_number_id = b.phone_number_id || b.id;
-  const access_token = b.access_token;
   const tag = `[WA-Activate user=${userId} pnid=${phone_number_id}]`;
 
   if (!phone_number_id) return res.status(400).json({ error: 'missing_phone_number_id' });
-  if (!access_token) return res.status(400).json({ error: 'missing_access_token' });
 
   try {
     const user = await User.findById(userId);
     if (!user) return res.status(404).json({ error: 'user_not_found' });
     const existingEntry = (user.connected_numbers || []).find(n => n.phone_number_id === phone_number_id);
+
+    // access_token: always use fixed system-user token for Meta API calls
+    const access_token = PHP_FB_API_KEY();
+    if (!access_token) return res.status(400).json({ error: 'missing_access_token' });
+
+    // Quota check — only when adding a NEW number (not re-activating an existing one)
+    if (!existingEntry) {
+      const limits = await getUserLimits(user);
+      const currentCount = (user.connected_numbers || []).length;
+      if (currentCount >= limits.maxConnectedNumbers) {
+        return res.status(403).json({
+          error: 'quota_exceeded',
+          message: 'המכסה נגמרה. יש ליצור קשר עם המשרד לתשלום להוספת מספר.',
+          current: currentCount,
+          max: limits.maxConnectedNumbers
+        });
+      }
+    }
 
     const pin = resolvePin(b.pin, existingEntry?.pin || null);
     const result = await callMetaRegister({
@@ -122,7 +141,7 @@ export const activateNumber = async (req, res) => {
     const payload = {
       phone_number_id,
       waba_id: b.waba_id || b.wabaId || existingEntry?.waba_id || '',
-      display_phone_number: b.display_phone_number ?? existingEntry?.display_phone_number ?? '',
+      display_phone_number: normalizePhone(b.display_phone_number ?? existingEntry?.display_phone_number ?? ''),
       verified_name: b.verified_name ?? existingEntry?.verified_name ?? '',
       quality_rating: b.quality_rating ?? existingEntry?.quality_rating ?? '',
       whatsapp_status: b.status ?? existingEntry?.whatsapp_status ?? '',
@@ -199,7 +218,78 @@ export const activateNumber = async (req, res) => {
  */
 export const linkNumber = async (req, res) => {
   const userId = req.user?.id;
-  const b = normalizeLinkBody(req.body || {});
+  const raw = req.body || {};
+
+  // ── Dialog360 path ──────────────────────────────────────────────────────────
+  if (raw.type === 'dialog360') {
+    const { token360, link } = raw;
+    if (!token360) return res.status(400).json({ error: 'missing_token360' });
+    if (!link) return res.status(400).json({ error: 'missing_link' });
+
+    // token360 is unique per channel; link (base URL) is shared across all channels
+    const phone_number_id = token360;
+    const tag = `[WA-Link-D360 user=${userId} token=${token360.slice(0, 8)}...]`;
+
+    try {
+      const user = await User.findById(userId);
+      if (!user) return res.status(404).json({ error: 'user_not_found' });
+
+      const existing = (user.connected_numbers || []).find(n => n.phone_number_id === phone_number_id);
+
+      if (!existing) {
+        const limits = await getUserLimits(user);
+        const currentCount = (user.connected_numbers || []).length;
+        if (currentCount >= limits.maxConnectedNumbers) {
+          return res.status(403).json({
+            error: 'quota_exceeded',
+            message: 'המכסה נגמרה. יש ליצור קשר עם המשרד לתשלום להוספת מספר.',
+            current: currentCount,
+            max: limits.maxConnectedNumbers
+          });
+        }
+      }
+
+      const payload = {
+        phone_number_id,
+        provider: 'dialog360',
+        token360,
+        link,
+        display_phone_number: raw.display_phone_number || existing?.display_phone_number || '',
+        verified_name: raw.verified_name || existing?.verified_name || '',
+        waba_id: existing?.waba_id || '',
+        quality_rating: existing?.quality_rating || '',
+        whatsapp_status: existing?.whatsapp_status || 'CONNECTED',
+        access_token: '',
+        registered: true,
+        pin: '',
+        assigned_bot_id: existing?.assigned_bot_id || null,
+        connected_at: existing?.connected_at || new Date()
+      };
+
+      if (existing) {
+        Object.assign(existing, payload);
+        console.log(`${tag} updated existing dialog360 entry`);
+      } else {
+        user.connected_numbers.push(payload);
+        console.log(`${tag} added new dialog360 entry`);
+      }
+
+      await user.save();
+      return res.json({
+        success: true,
+        user_id: userId,
+        user_status: user.status,
+        connected_number: sanitizeNumber(payload),
+        total_connected: user.connected_numbers.length
+      });
+    } catch (err) {
+      console.error(`${tag} exception:`, err);
+      return res.status(500).json({ error: err.message });
+    }
+  }
+
+  // ── Facebook / default path ──────────────────────────────────────────────────
+  const b = normalizeLinkBody(raw);
   const phone_number_id = b.phone_number_id;
   const tag = `[WA-Link user=${userId} pnid=${phone_number_id}]`;
 
@@ -214,10 +304,25 @@ export const linkNumber = async (req, res) => {
       n => n.phone_number_id === phone_number_id
     );
 
+    // Quota check — only when adding a NEW number
+    if (!existing) {
+      const limits = await getUserLimits(user);
+      const currentCount = (user.connected_numbers || []).length;
+      if (currentCount >= limits.maxConnectedNumbers) {
+        return res.status(403).json({
+          error: 'quota_exceeded',
+          message: 'המכסה נגמרה. יש ליצור קשר עם המשרד לתשלום להוספת מספר.',
+          current: currentCount,
+          max: limits.maxConnectedNumbers
+        });
+      }
+    }
+
     const payload = {
       phone_number_id,
+      provider: 'facebook',
       waba_id: b.waba_id || existing?.waba_id || '',
-      display_phone_number: b.display_phone_number ?? existing?.display_phone_number ?? '',
+      display_phone_number: normalizePhone(b.display_phone_number ?? existing?.display_phone_number ?? ''),
       verified_name: b.verified_name ?? existing?.verified_name ?? '',
       quality_rating: b.quality_rating ?? existing?.quality_rating ?? '',
       whatsapp_status: b.status ?? existing?.whatsapp_status ?? '',
@@ -304,6 +409,12 @@ export const assignToBot = async (req, res) => {
     bot.whatsapp_two_factor_pin = entry.pin || bot.whatsapp_two_factor_pin;
     bot.whatsapp_registered = entry.registered;
     bot.whatsapp_connected_at = new Date();
+    // Provider-specific fields
+    bot.whatsapp_provider = entry.provider || 'facebook';
+    if (entry.provider === 'dialog360') {
+      bot.dialog360_token = entry.token360 || bot.dialog360_token;
+      bot.dialog360_link = entry.link || bot.dialog360_link;
+    }
     await bot.save();
 
     entry.assigned_bot_id = bot._id;
@@ -341,6 +452,63 @@ export const unassignFromBot = async (req, res) => {
     await user.save();
     return res.json({ success: true, connected_number: sanitizeNumber(entry) });
   } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+};
+
+/**
+ * POST /api/whatsapp-registration/remove-connected-number
+ * Body: { phone_number_id }
+ * Permanently removes a connected number from the user's account.
+ */
+export const removeConnectedNumber = async (req, res) => {
+  const userId = req.user?.id;
+  const { phone_number_id } = req.body || {};
+  const tag = `[WA-Remove user=${userId} pnid=${phone_number_id}]`;
+  if (!phone_number_id) return res.status(400).json({ error: 'missing_phone_number_id' });
+  try {
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ error: 'user_not_found' });
+    const before = (user.connected_numbers || []).length;
+    user.connected_numbers = user.connected_numbers.filter(
+      n => n.phone_number_id !== phone_number_id
+    );
+    if (user.connected_numbers.length === before) {
+      return res.status(404).json({ error: 'connected_number_not_found' });
+    }
+    user.markModified('connected_numbers');
+    await user.save();
+    console.log(`${tag} → removed`);
+    return res.json({ success: true, total_connected: user.connected_numbers.length });
+  } catch (err) {
+    console.error(`${tag} exception:`, err);
+    return res.status(500).json({ error: err.message });
+  }
+};
+
+/**
+ * POST /api/whatsapp-registration/mark-registered
+ * Body: { phone_number_id }
+ * Marks an existing connected number as registered=true in the DB without
+ * contacting Meta. Useful for numbers activated via old code or external tools.
+ */
+export const markRegistered = async (req, res) => {
+  const userId = req.user?.id;
+  const { phone_number_id } = req.body || {};
+  const tag = `[WA-MarkRegistered user=${userId} pnid=${phone_number_id}]`;
+  if (!phone_number_id) return res.status(400).json({ error: 'missing_phone_number_id' });
+  try {
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ error: 'user_not_found' });
+    const entry = (user.connected_numbers || []).find(n => n.phone_number_id === phone_number_id);
+    if (!entry) return res.status(404).json({ error: 'connected_number_not_found' });
+    entry.registered = true;
+    user.markModified('connected_numbers');
+    await user.save();
+    console.log(`${tag} → marked as registered`);
+    return res.json({ success: true, connected_number: sanitizeNumber(entry) });
+  } catch (err) {
+    console.error(`${tag} exception:`, err);
     return res.status(500).json({ error: err.message });
   }
 };
@@ -400,12 +568,17 @@ export const createPhpAccount = async (req, res) => {
 
     // Mirror the Laravel implementation: apiPrefix points at the phone-number
     // node on Graph v22.0 (without `/messages`); the PHP side appends paths.
-    const apiPrefix = `https://graph.facebook.com/${PHP_GRAPH_VERSION()}/${encodeURIComponent(phone_number_id)}`;
+    const apiPrefix = `https://graph.facebook.com/${PHP_GRAPH_VERSION()}/${encodeURIComponent(phone_number_id)}/`;
 
-    // botToken = id of the bot assigned to this number (if any).
-    // botUserId = id of the account that owns the bot/number.
-    const botToken = b.botToken || (entry.assigned_bot_id ? String(entry.assigned_bot_id) : '');
-    const botUserId = b.botUserId || String(userId || '');
+    // botToken = the bot's public_id (shown in bot settings).
+    // botUserId = the user's public_id (shown in user settings).
+    let botPublicId = '';
+    if (entry.assigned_bot_id) {
+      const assignedBot = await BotFlow.findById(entry.assigned_bot_id).select('public_id');
+      botPublicId = assignedBot?.public_id || '';
+    }
+    const botToken = b.botToken || botPublicId || '';
+    const botUserId = b.botUserId || user.public_id || String(userId || '');
 
     const params = {
       token: PHP_CREATE_TOKEN(),
@@ -414,7 +587,7 @@ export const createPhpAccount = async (req, res) => {
       apiPrefix,
       phone,
       exportUrl: b.exportUrl || '',
-      countriesPrefix: b.countriesPrefix || '972|1',
+      countriesPrefix: b.countriesPrefix || '972',
       firstname: b.firstname || '',
       lastname: b.lastname || '',
       username: b.username || '',
@@ -440,27 +613,59 @@ export const createPhpAccount = async (req, res) => {
       phpStatus = r.status;
       const text = await r.text();
       try { phpBody = JSON.parse(text); } catch (_) { phpBody = { raw: text }; }
-      if (phpStatus === 401) {
-        console.log(`${tag} ← HTTP 401 (invalid/missing token)`);
-        return res.status(401).json({ error: 'invalid_token', php_response: phpBody });
+      // phpOk: true only when the PHP returns a real success JSON (not HTML, not error)
+      const isHtmlResponse = typeof phpBody?.raw === 'string' && phpBody.raw.trim().startsWith('<');
+      if (isHtmlResponse) {
+        console.log(`${tag} ← HTTP ${phpStatus} non-JSON (HTML) response — treating as failure`);
+        phpBody = { success: false, error: 'php_returned_html', raw: phpBody.raw.slice(0, 200) };
       }
-      if (phpStatus === 500) {
-        console.log(`${tag} ← HTTP 500 ${JSON.stringify(phpBody).slice(0, 200)}`);
-        return res.status(502).json({
-          error: phpBody?.error_description || 'php_internal_error',
-          php_response: phpBody
-        });
-      }
-      phpOk = r.ok && (phpBody?.success === true || (!phpBody?.error && !phpBody?.error_description));
+      phpOk = !isHtmlResponse && phpStatus >= 200 && phpStatus < 300 &&
+        phpBody?.success === true && !phpBody?.error && !phpBody?.error_description;
       console.log(`${tag} ← HTTP ${phpStatus} in ${Date.now() - t0}ms ok=${phpOk}`);
     } catch (e) {
       console.log(`${tag} ← threw after ${Date.now() - t0}ms: ${e.message}`);
-      return res.status(502).json({ error: 'php_request_failed', detail: e.message });
+      // Return 200 with success:false — avoid nginx HTML error pages
+      return res.status(200).json({ success: false, error: 'php_request_failed', detail: e.message, logs: [`❌ שגיאת רשת: ${e.message}`] });
     }
 
-    return res.status(phpOk ? 200 : 502).json({
+    const logs = [];
+    let savedEndpoint = null;
+
+    if (phpOk) {
+      logs.push(`✅ החשבון נוצר בהצלחה`);
+      if (phpBody.webhook) logs.push(`🔗 Webhook: ${phpBody.webhook}`);
+
+      // Extract the MongoDB id returned by PHP and save it as the bot's endpoint
+      const returnedOid = phpBody?.id?.['$oid'] || phpBody?.id?.$oid || (typeof phpBody?.id === 'string' ? phpBody.id : null);
+      if (returnedOid && entry.assigned_bot_id) {
+        try {
+          const assignedBot = await BotFlow.findById(entry.assigned_bot_id);
+          if (assignedBot) {
+            assignedBot.endpoint = returnedOid;
+            await assignedBot.save();
+            savedEndpoint = returnedOid;
+            console.log(`${tag} 💾 Saved bot.endpoint=${returnedOid} for bot=${assignedBot._id}`);
+            logs.push(`🆔 Endpoint שמור לבוט: ${returnedOid}`);
+          }
+        } catch (e) {
+          console.log(`${tag} ⚠️ Failed to save endpoint to bot: ${e.message}`);
+          logs.push(`⚠️ לא הצלחנו לשמור את ה-endpoint לבוט: ${e.message}`);
+        }
+      } else if (phpBody.id) {
+        logs.push(`🆔 ID: ${JSON.stringify(phpBody.id)}`);
+      }
+    } else {
+      logs.push(`❌ הפעולה נכשלה (HTTP ${phpStatus})`);
+      const errDesc = phpBody?.error_description || phpBody?.error || phpBody?.message || '';
+      if (errDesc) logs.push(`פרטים: ${errDesc}`);
+    }
+
+    return res.status(200).json({
       success: phpOk,
       phone_number_id,
+      logs,
+      webhook: phpBody?.webhook || null,
+      endpoint: savedEndpoint,
       sent: {
         apiPrefix,
         waba_id: String(waba_id),
@@ -470,7 +675,7 @@ export const createPhpAccount = async (req, res) => {
         botUserId
       },
       php_status: phpStatus,
-      php_response: phpBody
+      php_response: phpOk ? phpBody : undefined
     });
   } catch (err) {
     console.error(`${tag} exception:`, err);
@@ -480,13 +685,151 @@ export const createPhpAccount = async (req, res) => {
 
 function sanitizeNumber(n) {
   const o = (typeof n.toObject === 'function') ? n.toObject() : n;
-  const { access_token, pin, ...rest } = o;
+  const { access_token, pin, token360, ...rest } = o;
   return {
     ...rest,
+    provider: o.provider || 'facebook',
     has_access_token: !!access_token,
-    has_pin: !!pin
+    has_pin: !!pin,
+    has_token360: !!token360,
+    // Expose the dialog360 link (not sensitive) for display
+    link: o.link || ''
   };
 }
+
+/** Strip all spaces, dashes and dots from a phone number string, keeping the leading '+'. */
+function normalizePhone(phone) {
+  if (!phone) return phone;
+  return phone.replace(/[\s\-\.]/g, '');
+}
+
+/**
+ * POST /api/whatsapp-registration/fetch-and-activate
+ *
+ * Two-step helper called from the dashboard "activate number" button:
+ *   1. GET /{waba_id}/phone_numbers from Meta to discover the phone_number_id.
+ *   2. For every phone found, call Meta POST /{phone_number_id}/register and
+ *      upsert the number intocted_numbers (auto-assign to the bot
+ *      that was passed as `bot_id`, if provided).
+ *
+ * Body:
+ *   { waba_id, access_token, bot_id? }
+ *
+ * Returns:
+ *   { success, logs[], phones[], activated[] }
+ */
+export const fetchAndActivate = async (req, res) => {
+  const userId = req.user?.id;
+  const b = req.body || {};
+  const waba_id = b.waba_id || b.wabaId;
+  const bot_id = b.bot_id || null;
+  const tag = `[WA-FetchActivate user=${userId} waba=${waba_id}]`;
+  const logs = [];
+  const addLog = (msg) => { logs.push(msg); console.log(`${tag} ${msg}`); };
+
+  if (!waba_id) return res.status(400).json({ error: 'missing_waba_id', logs });
+
+  // Always use fixed system-user token for Meta API calls
+  const access_token = PHP_FB_API_KEY();
+
+  try {
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ error: 'user_not_found', logs });
+
+    // Step 1: fetch phone numbers for WABA
+    const phoneFields = 'id,verified_name,display_phone_number,quality_rating,status,code_verification_status,name_status,messaging_limit_tier';
+    const phonesUrl = `https://graph.facebook.com/${GRAPH_VERSION()}/${encodeURIComponent(waba_id)}/phone_numbers?fields=${encodeURIComponent(phoneFields)}&access_token=${encodeURIComponent(access_token)}`;
+    addLog(`שלב 1: קבלת מספרי טלפון מ-Meta עבור WABA ${waba_id}`);
+
+    let phones = [];
+    try {
+      const r = await fetch(phonesUrl, { method: 'GET', timeout: 30000 });
+      const txt = await r.text();
+      addLog(`Meta GET phone_numbers → HTTP ${r.status}`);
+      const j = JSON.parse(txt);
+      if (!r.ok || j.error) {
+        addLog(`שגיאה מ-Meta: ${JSON.stringify(j.error || j)}`);
+        return res.status(502).json({ success: false, logs, phones: [], activated: [], meta_error: j.error || j });
+      }
+      phones = Array.isArray(j.data) ? j.data : [];
+      addLog(`נמצאו ${phones.length} מספרים: ${phones.map(p => p.display_phone_number || p.id).join(', ')}`);
+    } catch (e) {
+      addLog(`חריגה בבקשת phone_numbers: ${e.message}`);
+      return res.status(502).json({ success: false, logs, phones: [], activated: [] });
+    }
+
+    if (phones.length === 0) {
+      addLog('לא נמצאו מספרים עבור WABA זה.');
+      return res.json({ success: false, logs, phones: [], activated: [] });
+    }
+
+    const limits = await getUserLimits(user);
+    const activated = [];
+
+    // Step 2: activate each phone
+    for (const phone of phones) {
+      const pnid = phone.id;
+      addLog(`שלב 2: הפעלת מספר ${phone.display_phone_number || pnid}`);
+
+      const existingEntry = (user.connected_numbers || []).find(n => n.phone_number_id === pnid);
+      // Quota check for new numbers only
+      if (!existingEntry) {
+        const currentCount = (user.connected_numbers || []).length;
+        if (currentCount >= limits.maxConnectedNumbers) {
+          addLog(`מכסה מלאה (${currentCount}/${limits.maxConnectedNumbers}) — דילוג על ${pnid}`);
+          continue;
+        }
+      }
+
+      const pin = resolvePin(null, existingEntry?.pin || null);
+      const regResult = await callMetaRegister({ phoneNumberId: pnid, accessToken: access_token, pin, tag });
+      addLog(`הפעלת מספר ${phone.display_phone_number || pnid}: ${regResult.success ? '✅ הצליחה' : `❌ נכשלה (HTTP ${regResult.status})`}`);
+      if (!regResult.success && regResult.body?.error) {
+        addLog(`  שגיאה: ${JSON.stringify(regResult.body.error)}`);
+      }
+
+      // Upsert connected_numbers entry
+      const payload = {
+        phone_number_id: pnid,
+        waba_id: waba_id || '',
+        display_phone_number: normalizePhone(phone.display_phone_number || existingEntry?.display_phone_number || ''),
+        verified_name: phone.verified_name || existingEntry?.verified_name || '',
+        quality_rating: phone.quality_rating || existingEntry?.quality_rating || '',
+        whatsapp_status: phone.status || existingEntry?.whatsapp_status || '',
+        access_token,
+        registered: !!regResult.success || (existingEntry?.registered || false),
+        pin,
+        assigned_bot_id: existingEntry?.assigned_bot_id || (bot_id || null),
+        connected_at: existingEntry?.connected_at || new Date()
+      };
+
+      if (existingEntry) {
+        Object.assign(existingEntry, payload);
+        user.markModified('connected_numbers');
+      } else {
+        user.connected_numbers.push(payload);
+      }
+
+      addLog(`שמירת מספר ${phone.display_phone_number || pnid} למשתמש (registered=${payload.registered}, bot=${payload.assigned_bot_id || 'ללא'})`);
+      activated.push({ phone_number_id: pnid, success: regResult.success, display_phone_number: phone.display_phone_number || '', registered: payload.registered });
+    }
+
+    await user.save();
+    addLog('✅ כל המספרים עודכנו בהצלחה.');
+
+    const allOk = activated.length > 0 && activated.every(a => a.success);
+    return res.status(allOk ? 200 : 207).json({
+      success: allOk,
+      logs,
+      phones,
+      activated
+    });
+  } catch (err) {
+    addLog(`חריגה: ${err.message}`);
+    console.error(`${tag} exception:`, err);
+    return res.status(500).json({ error: err.message, logs, phones: [], activated: [] });
+  }
+};
 
 // Flattens a WhatsApp webhook payload (entry[].changes[].value) into the flat
 // shape linkNumber works with. Pass-through for already-flat bodies.

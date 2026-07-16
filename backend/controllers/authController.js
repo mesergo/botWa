@@ -11,6 +11,8 @@ import {
   getGlobalRemovalConfig,
   getEffectiveRemovalConfig
 } from '../utils/removalConfig.js';
+import AuditLog from '../models/AuditLog.js';
+import { buildRemovalConfigDiff } from './adminController.js';
 
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
@@ -241,8 +243,25 @@ export const getTemplates = async (req, res) => {
     
     console.log('[Dialog360] User found:', user.email);
     console.log('[Dialog360] Bot ID from DB:', user.dialog360_bot_id);
-     
-    if (!user.dialog360_bot_id) {
+
+    let botId = user.dialog360_bot_id;
+
+    // Fallback: if user has no dialog360_bot_id, use the first bot's endpoint field
+    if (!botId) {
+      const firstBot = await BotFlow.findOne({
+        user_id: userId.toString(),
+        endpoint: { $exists: true, $ne: '' }
+      }).sort({ created_at: 1 });
+
+      if (firstBot && firstBot.endpoint) {
+        const raw = firstBot.endpoint;
+        // endpoint stored as bare ID or "dialog360/{id}"
+        botId = raw.includes('/') ? raw.split('/').pop() : raw;
+        console.log('[Dialog360] Fallback to first bot endpoint, botId:', botId);
+      }
+    }
+
+    if (!botId) {
       console.warn('[Dialog360] Bot ID not configured for user:', user.email);
       return res.status(400).json({ 
         error: 'Dialog360 Bot ID not configured. Please set Bot ID in user settings.',
@@ -251,7 +270,6 @@ export const getTemplates = async (req, res) => {
     }
     
     // Build endpoint URL and token from bot_id
-    const botId = user.dialog360_bot_id;
     const endpoint = `https://app.chatgo.live/api/dialog360/${botId}/message_templates`;
     
     // Generate SHA1 token: SHA1(bot_id + "moomoo")
@@ -310,12 +328,15 @@ export const getProfile = async (req, res) => {
     ]);
     if (!user) return res.status(404).json({ error: 'User not found' });
     const limits_in_effect = await getUserLimits(user);
+    const permissions = await resolvePermissions(user);
     res.json({
       id: user._id.toString(),
       name: user.name,
       email: user.email,
       phone: user.phone || '',
       role: user.role,
+      user_type_id: user.user_type_id || null,
+      permissions,
       public_id: user.public_id,
       account_type: user.account_type,
       status: user.status,
@@ -328,6 +349,7 @@ export const getProfile = async (req, res) => {
         max_versions: user.custom_limits?.max_versions ?? null,
         version_price: user.custom_limits?.version_price ?? null,
         bot_price: user.custom_limits?.bot_price ?? null,
+        max_connected_numbers: user.custom_limits?.max_connected_numbers ?? null,
       },
       limits_in_effect,
       active_bots_count,
@@ -376,6 +398,7 @@ export const updateProfile = async (req, res) => {
         max_versions: user.custom_limits?.max_versions ?? null,
         version_price: user.custom_limits?.version_price ?? null,
         bot_price: user.custom_limits?.bot_price ?? null,
+        max_connected_numbers: user.custom_limits?.max_connected_numbers ?? null,
       },
       limits_in_effect,
     });
@@ -475,7 +498,7 @@ export const getUserRemovalConfig = async (req, res) => {
 };
 
 // PUT /api/auth/removal-config
-// Body: { customized: boolean, enabled?: boolean, keywords?: string[], message?: string }
+// Body: { customized: boolean, enabled?: boolean, keywords_he?: string[], message_he?: string, keywords_en?: string[], message_en?: string }
 // When customized=false, the user reverts to the global default (override cleared).
 export const updateUserRemovalConfig = async (req, res) => {
   try {
@@ -483,29 +506,49 @@ export const updateUserRemovalConfig = async (req, res) => {
     if (!user) return res.status(404).json({ error: 'User not found' });
 
     const body = req.body || {};
+
+    // Snapshot current effective config for diffing
+    const previousEffective = await getEffectiveRemovalConfig(user);
+
     if (body.customized === false) {
       user.removal_config = {
         customized: false,
         enabled: true,
-        keywords: [],
-        message: ''
+        keywords_he: [],
+        message_he: '',
+        keywords_en: [],
+        message_en: ''
       };
     } else {
-      const keywords = Array.isArray(body.keywords)
-        ? body.keywords.map(k => String(k || '').trim()).filter(Boolean)
+      const keywords_he = Array.isArray(body.keywords_he)
+        ? body.keywords_he.map(k => String(k || '').trim()).filter(Boolean)
+        : [];
+      const keywords_en = Array.isArray(body.keywords_en)
+        ? body.keywords_en.map(k => String(k || '').trim()).filter(Boolean)
         : [];
       user.removal_config = {
         customized: true,
         enabled: typeof body.enabled === 'boolean' ? body.enabled : true,
-        keywords,
-        message: typeof body.message === 'string' ? body.message : ''
+        keywords_he,
+        message_he: typeof body.message_he === 'string' ? body.message_he : '',
+        keywords_en,
+        message_en: typeof body.message_en === 'string' ? body.message_en : ''
       };
     }
     user.markModified('removal_config');
     await user.save();
 
+    // Diff and write audit log entries
+    const actorId = req.userId;
+    const actorEmail = user.email || '';
+    const nextEffective = await getEffectiveRemovalConfig(user);
+    const logEntries = buildRemovalConfigDiff(previousEffective, nextEffective, actorId, actorEmail);
+    if (logEntries.length > 0) {
+      await AuditLog.insertMany(logEntries);
+    } 
+
     const global = await getGlobalRemovalConfig();
-    const effective = await getEffectiveRemovalConfig(user);
+    const effective = nextEffective;
     res.json({
       message: 'Removal config saved',
       config: effective,

@@ -2,10 +2,13 @@ import express from 'express';
 import { authenticateJwtOrApiToken } from '../middleware/auth.js';
 import {
   activateNumber,
+  fetchAndActivate,
   linkNumber,
   listConnectedNumbers,
   assignToBot,
   unassignFromBot,
+  markRegistered,
+  removeConnectedNumber,
   createPhpAccount
 } from '../controllers/whatsappRegistrationController.js';
 
@@ -17,6 +20,9 @@ const router = express.Router();
 // Stage 2: activate phone number on Meta (no DB writes).
 router.post('/activate-number', authenticateJwtOrApiToken, activateNumber);
 
+// Fetch WABA phone numbers from Meta then activate + upsert each one.
+router.post('/fetch-and-activate', authenticateJwtOrApiToken, fetchAndActivate);
+
 // Stage 3: link an activated number to the user's account (no bot yet).
 router.post('/link-number', authenticateJwtOrApiToken, linkNumber);
 
@@ -24,6 +30,8 @@ router.post('/link-number', authenticateJwtOrApiToken, linkNumber);
 router.get('/connected-numbers', authenticateJwtOrApiToken, listConnectedNumbers);
 router.post('/assign-to-bot', authenticateJwtOrApiToken, assignToBot);
 router.post('/unassign-from-bot', authenticateJwtOrApiToken, unassignFromBot);
+router.post('/mark-registered', authenticateJwtOrApiToken, markRegistered);
+router.post('/remove-connected-number', authenticateJwtOrApiToken, removeConnectedNumber);
 
 // Stage 5: provision external dialog360/accounts/users via facebook-create.php.
 // Can be called standalone or chained after Stage 4 from the frontend.

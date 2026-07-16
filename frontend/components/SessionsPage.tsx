@@ -1,9 +1,11 @@
 ﻿import React, { useState, useEffect, useRef } from 'react';
-import { Clock, MessageSquare, Search, Bot, LogOut, User, Phone, List, Users, ExternalLink, X, Headphones, RefreshCw, Shield, Settings, UserCog, Layers, Plus, UserPlus, Check, Paperclip, ChevronRight } from 'lucide-react';
+import { WhatsAppText } from '../utils/whatsappFormat';
+import { Clock, MessageSquare, Search, Bot, LogOut, User, Phone, List, Users, ExternalLink, X, Headphones, RefreshCw, Shield, Settings, UserCog, Layers, Plus, UserPlus, Check, Paperclip, ChevronRight, Bell, MoreVertical, Ban } from 'lucide-react';
 import ImpersonationBanner from './ImpersonationBanner';
 import { FileUploader } from './FileUploader';
 import { usePermission } from '../hooks/usePermission';
 import AppNav from './AppNav';
+import { useContactFields } from '../context/ContactFieldsContext';
  
 interface Session {
   id: string;
@@ -17,7 +19,7 @@ interface Session {
   process_history: any[];
   is_agent?: boolean;
   agent_since?: string | null;
-  status?: 'bot' | 'waiting' | 'handling' | 'closed';
+  status?: 'bot' | 'waiting' | 'handling' | 'closed' | 'resolved';
 }
 
 interface Contact {
@@ -27,7 +29,10 @@ interface Contact {
   bots: { id: string; name: string }[];
   botPhones?: string[];
   assigned_to?: string[];
-  status?: 'bot' | 'waiting' | 'handling' | 'closed';
+  status?: 'bot' | 'waiting' | 'handling' | 'closed' | 'resolved';
+  wants_phone?: boolean;
+  whatsapp_name?: string;
+  full_name?: string;
 }
 
 interface SessionsPageProps {
@@ -43,6 +48,7 @@ interface SessionsPageProps {
   onOpenSubUsers?: () => void;
   onStopImpersonation?: () => void;
   onUpdateAvailability?: (status: 'available' | 'unavailable' | 'on_break') => Promise<void>;
+  onGoHome?: () => void;
   ownOnly?: boolean;
   initialPhone?: string | null;
 }
@@ -51,7 +57,13 @@ const API_BASE = window.location.hostname === 'localhost'
   ? 'http://localhost:3001/api'
   : `${window.location.origin}/api`;
 
-const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack, onLogout, onOpenContacts, onOpenGroups, onOpenSmsIn, onOpenAdminPanel, onOpenSettings, onOpenSubUsers, onStopImpersonation, onUpdateAvailability, initialPhone }) => {
+const WhatsAppIcon = ({ size = 12, className = '' }: { size?: number; className?: string }) => (
+  <svg viewBox="0 0 24 24" fill="currentColor" width={size} height={size} className={className} style={{ display: 'inline', flexShrink: 0 }}>
+    <path d="M12.04 2c-5.46 0-9.91 4.45-9.91 9.91 0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38c1.45.79 3.08 1.21 4.74 1.21 5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.816 9.816 0 0012.04 2m.01 1.67c2.2 0 4.26.86 5.82 2.42a8.22 8.22 0 012.41 5.83c0 4.54-3.7 8.23-8.24 8.23-1.48 0-2.93-.39-4.19-1.15l-.3-.17-3.12.82.83-3.04-.2-.32a8.188 8.188 0 01-1.26-4.38c.01-4.54 3.7-8.24 8.25-8.24M8.53 7.33c-.16 0-.43.06-.66.31-.22.25-.87.86-.87 2.07 0 1.22.89 2.39 1 2.56.14.17 1.76 2.67 4.25 3.73.59.27 1.05.42 1.41.53.59.19 1.13.16 1.56.1.48-.07 1.46-.6 1.67-1.18.21-.58.21-1.07.15-1.18-.07-.1-.23-.16-.48-.27-.25-.14-1.47-.74-1.69-.82-.23-.08-.37-.12-.56.12-.16.25-.64.82-.78.99-.15.17-.29.19-.53.07-.26-.13-1.06-.39-2-1.23-.74-.66-1.23-1.47-1.38-1.72-.12-.24-.01-.39.11-.5.11-.11.27-.29.37-.44.13-.14.17-.25.25-.41.08-.17.04-.31-.02-.43-.06-.11-.56-1.35-.77-1.84-.2-.48-.4-.42-.56-.43-.14 0-.3-.01-.47-.01z"/>
+  </svg>
+);
+
+const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack, onLogout, onOpenContacts, onOpenGroups, onOpenAdminPanel,onOpenSmsIn, onOpenSettings, onOpenSubUsers, onStopImpersonation, onUpdateAvailability, onGoHome, initialPhone }) => {
   // Contacts panel state
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [contactsLoading, setContactsLoading] = useState(true);
@@ -70,6 +82,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
   const [agentSending, setAgentSending] = useState(false);
   const [agentWaFailed, setAgentWaFailed] = useState(false);
   const [agentWaError, setAgentWaError] = useState<string | null>(null);
+  const [agentWaRetryable, setAgentWaRetryable] = useState(false);
   const [attachedFile, setAttachedFile] = useState<{type: 'image'|'video'|'document'; url: string; name: string} | null>(null);
   const [fileUploadError, setFileUploadError] = useState<string | null>(null);
   const [fileUploading, setFileUploading] = useState(false);
@@ -85,6 +98,10 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
   // Template parameters modal
   const [showTemplateParamsModal, setShowTemplateParamsModal] = useState(false);
   const [templateParams, setTemplateParams] = useState<Record<string, any>>({});
+  // Full contact record (with custom_field_values) fetched when modal opens
+  const [contactRecord, setContactRecord] = useState<Record<string, any> | null>(null);
+
+  const { fields: contactFieldDefs } = useContactFields();
 
   // New conversation modal state
   const [showNewConvModal, setShowNewConvModal] = useState(false);
@@ -100,6 +117,12 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
   const [assignLoading, setAssignLoading] = useState(false);
   const [subUsers, setSubUsers] = useState<{ id: string; name: string }[]>([]);
 
+  // Actions dropdown (transfer + blocklist)
+  const [showActionsMenu, setShowActionsMenu] = useState(false);
+  const [addingToBlocklist, setAddingToBlocklist] = useState(false);
+  const [blocklistSuccess, setBlocklistSuccess] = useState(false);
+  const actionsMenuRef = useRef<HTMLDivElement>(null);
+
   // Transfer conversation modal state
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [transferTargetType, setTransferTargetType] = useState<'group' | 'rep' | 'shift_manager'>('group');
@@ -107,6 +130,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
   // For admin/rep_manager: an optional specific rep within the chosen group
   // ('' = "כל נציג זמין" / any available rep in the group).
   const [transferGroupRepId, setTransferGroupRepId] = useState('');
+  const [transferWantsPhone, setTransferWantsPhone] = useState(false);
   const [transferLoading, setTransferLoading] = useState(false);
   const [transferError, setTransferError] = useState<string | null>(null);
   const [transferTargets, setTransferTargets] = useState<{
@@ -115,6 +139,19 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
     shiftManagers: { id: string; name: string; email?: string }[];
     myGroupIds: string[] | null;
   }>({ groups: [], reps: [], shiftManagers: [], myGroupIds: null });
+
+  // ── Pending transfer notifications ──────────────────────────────────────────
+  interface PendingNotification {
+    _id: string;
+    session_id: string;
+    session_phone: string;
+    from_user_name: string;
+    target_label: string;
+    is_simulator: boolean;
+    wants_phone?: boolean;
+    createdAt: string;
+  }
+  const [pendingNotifications, setPendingNotifications] = useState<PendingNotification[]>([]);
 
   // Bot picker state
   interface BotEntry { id: string; name: string; display_phone_number: string; }
@@ -125,6 +162,9 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
   const [showBotPicker, setShowBotPicker] = useState<boolean>(!initialPhone);
 
   const chatScrollRef = useRef<HTMLDivElement>(null);
+  const [visibleMsgLimit, setVisibleMsgLimit] = useState(50);
+  const [loadingMoreMsgs, setLoadingMoreMsgs] = useState(false);
+  const prevScrollHeightRef = useRef(0);
 
   // Fetch contacts (sorted most-recent-first by backend)
   const fetchContacts = React.useCallback(() => {
@@ -171,20 +211,29 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
       headers: { Authorization: `Bearer ${token}` }
     })
       .then(r => r.ok ? r.json() : Promise.reject(r))
-      .then(data => setPhoneSessions(data))
+      .then(data => setPhoneSessions(sortSessionsAsc(data)))
       .catch(e => console.error('Failed to load sessions for phone', e))
       .finally(() => setPhoneSessionsLoading(false));
   }, [selectedPhone, token, activeBotFilter]);
 
-  // Real-time polling: every 4s re-fetch sessions for the selected phone so that
-  // incoming WhatsApp messages (saved server-side to process_history) show up
-  // for the agent without needing a manual refresh. Skip the update when the
-  // total message count hasn't changed to avoid unnecessary re-renders.
+  // ── Real-time updates: SSE (instant) + 4s polling fallback ─────────────────
+  //
+  // SSE handles contact-list updates and instant session refreshes.
+  // The 4s polling is a safety net for when the SSE connection drops or an
+  // event is missed (e.g. the connection was closed mid-emit).
+
+  // Refs so SSE handler always reads current values without causing reconnects
+  const selectedPhoneRef = useRef<string | null>(selectedPhone);
+  const activeBotFilterRef = useRef(activeBotFilter);
+  useEffect(() => { selectedPhoneRef.current = selectedPhone; }, [selectedPhone]);
+  useEffect(() => { activeBotFilterRef.current = activeBotFilter; }, [activeBotFilter]);
+
+  // Stable fetch helper for the open conversation (used by both SSE and polling)
+  const fetchPhoneSessionsRef = useRef<(phone: string, botFilter: typeof activeBotFilter) => void>(() => {});
   useEffect(() => {
-    if (!selectedPhone || !token) return;
-    const interval = setInterval(() => {
-      const botParam = activeBotFilter ? `&botId=${encodeURIComponent(activeBotFilter.id)}` : '';
-      fetch(`${API_BASE}/sessions/by-phone?phone=${encodeURIComponent(selectedPhone)}${botParam}`, {
+    fetchPhoneSessionsRef.current = (phone: string, botFilter: typeof activeBotFilter) => {
+      const botParam = botFilter ? `&botId=${encodeURIComponent(botFilter.id)}` : '';
+      fetch(`${API_BASE}/sessions/by-phone?phone=${encodeURIComponent(phone)}${botParam}`, {
         headers: { Authorization: `Bearer ${token}` }
       })
         .then(r => r.ok ? r.json() : Promise.reject(r))
@@ -193,21 +242,101 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
             const prevMsgs = prev.reduce((acc, s) => acc + (s.process_history?.length || 0), 0);
             const newMsgs = data.reduce((acc, s) => acc + (s.process_history?.length || 0), 0);
             if (prev.length === data.length && prevMsgs === newMsgs) return prev;
-            return data;
+            return sortSessionsAsc(data);
           });
         })
         .catch(() => { /* swallow polling errors */ });
+    };
+  }, [token]);
+
+  // SSE — opens once per token, never recreated on conversation switch
+  useEffect(() => {
+    if (!token) return;
+    const es = new EventSource(`${API_BASE}/sessions/stream?token=${encodeURIComponent(token)}`);
+    es.onmessage = (e) => {
+      try {
+        const eventData = JSON.parse(e.data);
+        if (eventData.type === 'session_update') {
+          fetchContacts();
+          const phone = selectedPhoneRef.current;
+          if (phone) {
+            fetchPhoneSessionsRef.current(phone, activeBotFilterRef.current);
+          }
+        } else if (eventData.type === 'notification' && eventData.notification) {
+          setPendingNotifications(prev => {
+            // Avoid duplicates
+            if (prev.some(n => n._id === eventData.notification._id)) return prev;
+            return [eventData.notification, ...prev];
+          });
+        }
+      } catch { /* ignore malformed events */ }
+    };
+    return () => es.close();
+  }, [token, fetchContacts]);
+
+  // Fetch pending notifications once on mount
+  useEffect(() => {
+    if (!token) return;
+    fetch(`${API_BASE}/notifications`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.ok ? r.json() : Promise.reject())
+      .then(data => setPendingNotifications(data.notifications || []))
+      .catch(() => {});
+  }, [token]);
+
+  const dismissNotification = (id: string) => {
+    fetch(`${API_BASE}/notifications/${id}/dismiss`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${token}` }
+    }).catch(() => {});
+    setPendingNotifications(prev => prev.filter(n => n._id !== id));
+  };
+
+  const dismissAllNotifications = () => {
+    fetch(`${API_BASE}/notifications/dismiss-all`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${token}` }
+    }).catch(() => {});
+    setPendingNotifications([]);
+  };
+
+  // Mark a phone-request session as resolved directly from the notification
+  const markNotifPhoneHandled = async (notif: PendingNotification) => {
+    if (notif.session_id) {
+      try {
+        const r = await fetch(`${API_BASE}/sessions/${notif.session_id}/mark-resolved`, {
+          method: 'PATCH',
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (r.ok) {
+          // Update contacts list — clear wants_phone flag and set resolved status
+          setContacts(prev => prev.map(c =>
+            c.phone === notif.session_phone
+              ? { ...c, status: 'resolved' as const, wants_phone: false }
+              : c
+          ));
+          // If this contact is currently open, update its sessions too
+          if (selectedPhone === notif.session_phone) {
+            setPhoneSessions(prev => prev.map((s, i) =>
+              i === prev.length - 1 ? { ...s, status: 'resolved' as const } : s
+            ));
+          }
+        }
+      } catch (e) {
+        console.error('Failed to mark phone call handled', e);
+      }
+    }
+    dismissNotification(notif._id);
+  };
+
+  // 4s polling fallback — only for the currently open conversation.
+  // Cheap: one DB query per 4s. Catches cases where SSE dropped/missed an event.
+  useEffect(() => {
+    if (!selectedPhone || !token) return;
+    const interval = setInterval(() => {
+      fetchPhoneSessionsRef.current(selectedPhone, activeBotFilterRef.current);
     }, 4000);
     return () => clearInterval(interval);
   }, [selectedPhone, token]);
-
-  // Real-time polling: refresh contacts list every 15s so sidebar timestamps,
-  // statuses and unread indicators stay up-to-date.
-  useEffect(() => {
-    if (!token) return;
-    const interval = setInterval(() => { fetchContacts(); }, 15000);
-    return () => clearInterval(interval);
-  }, [token, fetchContacts]);
 
   // Auto-scroll to bottom only when new messages arrive AND the user is already
   // near the bottom (so we don't yank them away while they scroll up to read).
@@ -232,7 +361,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
     lastMsgCountRef.current = 0;
   }, [selectedPhone]);
 
-  // Clear message input when switching contacts
+  // Clear message input + pagination when switching contacts
   useEffect(() => {
     setAgentMessage('');
     setAttachedFile(null);
@@ -241,7 +370,21 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
     setSelectedTemplate(null);
     setTemplateParams({});
     setShowTemplateParamsModal(false);
+    setVisibleMsgLimit(50);
+    setLoadingMoreMsgs(false);
+    prevScrollHeightRef.current = 0;
   }, [selectedPhone]);
+
+  // Restore scroll position after loading older messages
+  useEffect(() => {
+    if (prevScrollHeightRef.current === 0) return;
+    const el = chatScrollRef.current;
+    if (el) {
+      el.scrollTop = el.scrollHeight - prevScrollHeightRef.current;
+    }
+    prevScrollHeightRef.current = 0;
+    setLoadingMoreMsgs(false);
+  }, [visibleMsgLimit]);
 
   // Detect agent mode from last session
   useEffect(() => {
@@ -269,6 +412,24 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
     if (isNaN(d.getTime())) return 'לא ידוע';
     return d.toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
   };
+
+  // Extract millisecond timestamp from a session — uses created_at if available,
+  // otherwise falls back to the MongoDB ObjectId embedded timestamp.
+  const getSessionTimestamp = (s: Session): number => {
+    if (s.created_at) {
+      const t = new Date(s.created_at).getTime();
+      if (!isNaN(t)) return t;
+    }
+    // ObjectId: first 8 hex chars = Unix seconds
+    if (s.id && s.id.length >= 8) {
+      const ts = parseInt(s.id.substring(0, 8), 16);
+      if (!isNaN(ts)) return ts * 1000;
+    }
+    return 0;
+  };
+
+  const sortSessionsAsc = (arr: Session[]): Session[] =>
+    [...arr].sort((a, b) => getSessionTimestamp(a) - getSessionTimestamp(b));
 
   const formatContactTime = (dateStr: string | null): string => {
     if (!dateStr) return '';
@@ -303,18 +464,20 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
     phone === 'Simulated' || phone === 'simulator' || phone.toLowerCase() === 'simulated';
 
   // ── Conversation status helpers ───────────────────────────────────────────
-  type ConvStatus = 'bot' | 'waiting' | 'handling' | 'closed';
+  type ConvStatus = 'bot' | 'waiting' | 'handling' | 'closed' | 'resolved';
   const STATUS_LABELS: Record<ConvStatus, string> = {
     bot: 'בוט',
     waiting: 'ממתין למענה',
     handling: 'בטיפול',
-    closed: 'סיום שיחה'
+    closed: 'סיום שיחה',
+    resolved: 'טופל'
   };
   const STATUS_STYLES: Record<ConvStatus, string> = {
     bot: 'bg-sky-100 text-sky-700 border-sky-200',
     waiting: 'bg-amber-100 text-amber-700 border-amber-200',
     handling: 'bg-purple-100 text-purple-700 border-purple-200',
-    closed: 'bg-slate-200 text-slate-600 border-slate-300'
+    closed: 'bg-slate-200 text-slate-600 border-slate-300',
+    resolved: 'bg-emerald-100 text-emerald-700 border-emerald-200'
   };
   const renderStatusBadge = (status?: ConvStatus | string | null) => {
     const s = (status as ConvStatus) || 'bot';
@@ -330,6 +493,39 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
   const currentStatus: ConvStatus = (phoneSessions.length > 0
     ? ((phoneSessions[phoneSessions.length - 1].status as ConvStatus) || 'bot')
     : 'bot');
+
+  // ── Mark resolved handler ────────────────────────────────────────────────
+  const markResolved = async () => {
+    const sid = agentSessionId || (phoneSessions.length > 0 ? phoneSessions[phoneSessions.length - 1].id : null);
+    if (!sid) return;
+    try {
+      const r = await fetch(`${API_BASE}/sessions/${sid}/mark-resolved`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (r.ok) {
+        const data = await r.json().catch(() => ({}));
+        const sysEntry = data.historyEntry || {
+          type: 'System',
+          text: 'השיחה סומנה כטופלה',
+          sender: 'system',
+          name: 'מערכת',
+          event: 'conversation_resolved',
+          created: new Date().toISOString()
+        };
+        setPhoneSessions(prev => prev.map((s, i) =>
+          i === prev.length - 1
+            ? { ...s, status: 'resolved', process_history: [...s.process_history, sysEntry] }
+            : s
+        ));
+        setContacts(prev => prev.map(c =>
+          c.phone === selectedPhone ? { ...c, status: 'resolved' } : c
+        ));
+      }
+    } catch (e) {
+      console.error('Failed to mark resolved', e);
+    }
+  };
 
   const closeConversation = async () => {
     const sid = agentSessionId || (phoneSessions.length > 0 ? phoneSessions[phoneSessions.length - 1].id : null);
@@ -372,6 +568,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
     setTransferTargetId('');
     setTransferGroupRepId('');
     setTransferTargetType('group');
+    setTransferWantsPhone(false);
     setShowTransferModal(true);
     try {
       const r = await fetch(`${API_BASE}/sessions/transfer-targets`, {
@@ -404,9 +601,10 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
     // targetType='rep' + groupId so the backend pins both fields.
     const role = currentUser?.role;
     const isManagerSide = role === 'user' || role === 'admin' || role === 'rep_manager';
-    const payload: { targetType: 'group' | 'rep' | 'shift_manager'; targetId: string; groupId?: string } = {
+    const payload: { targetType: 'group' | 'rep' | 'shift_manager'; targetId: string; groupId?: string; wantsPhone?: boolean } = {
       targetType: transferTargetType,
-      targetId: transferTargetId
+      targetId: transferTargetId,
+      wantsPhone: transferWantsPhone
     };
     if (isManagerSide && transferTargetType === 'group' && transferGroupRepId) {
       payload.targetType = 'rep';
@@ -459,11 +657,35 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
 
   // ── New conversation handler ────────────────────────────────────────────────
 
+  const validatePhoneInput = (phone: string): string | null => {
+    if (!phone.trim()) return 'יש להזין מספר טלפון';
+    const stripped = phone.replace(/[\s\-\(\)]/g, '');
+    const hasPlus = stripped.startsWith('+');
+    const withoutPlus = hasPlus ? stripped.slice(1) : stripped;
+    if (!/^\d+$/.test(withoutPlus)) return 'מספר טלפון יכול להכיל ספרות, +, מקף, רווחים וסוגריים בלבד';
+    if (withoutPlus.length < 10) return 'מספר טלפון קצר מדי (מינימום 10 ספרות, לדוגמה: 0501234567)';
+    if (withoutPlus.length > 15) return 'מספר טלפון ארוך מדי (מקסימום 15 ספרות)';
+    // מספר בן 10 ספרות חייב להתחיל ב-0 (פורמט מקומי, לדוגמה 0501234567)
+    // מספר בינלאומי (11+ ספרות) מתחיל בקידומת מדינה — חייב להתחיל בספרה 1-9 שאינה 0
+    if (withoutPlus.length === 10 && !withoutPlus.startsWith('0')) {
+      return 'מספר בן 10 ספרות חייב להתחיל ב-0 (לדוגמה: 0501234567)';
+    }
+    if (withoutPlus.length > 10 && withoutPlus.startsWith('0')) {
+      return 'מספר בינלאומי לא מתחיל ב-0 — הזן קידומת מדינה (לדוגמה: 972501234567)';
+    }
+    return null;
+  };
+
   const handleNewConvConfirm = async () => {
+    const validationError = validatePhoneInput(newConvPhone);
+    if (validationError) {
+      setNewConvError(validationError);
+      return;
+    }
     const sanitized = newConvPhone.replace(/[+\-\s()]/g, '');
     const digits = sanitized.replace(/\D/g, '');
-    if (digits.length < 7) {
-      setNewConvError('מספר טלפון לא תקין');
+    if (digits.length < 10) {
+      setNewConvError('מספר טלפון קצר מדי (מינימום 10 ספרות)');
       return;
     }
     const exists = contacts.some(c => c.phone.replace(/[+\-\s()]/g, '') === sanitized);
@@ -626,7 +848,8 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
               if (!msgData.waSent) {
                 setAgentWaFailed(true);
                 setAgentWaError(msgData.waError || null);
-                setTimeout(() => { setAgentWaFailed(false); setAgentWaError(null); }, 8000);
+                setAgentWaRetryable(msgData.waRetryable === true);
+                setTimeout(() => { setAgentWaFailed(false); setAgentWaError(null); setAgentWaRetryable(false); }, 12000);
               }
             }
           } catch (msgError) {
@@ -775,7 +998,8 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
           } else {
             setAgentWaFailed(true);
             setAgentWaError(data.waError || null);
-            setTimeout(() => { setAgentWaFailed(false); setAgentWaError(null); }, 8000);
+            setAgentWaRetryable(data.waRetryable === true);
+            setTimeout(() => { setAgentWaFailed(false); setAgentWaError(null); setAgentWaRetryable(false); }, 12000);
           }
         }
       } catch (e) {
@@ -855,7 +1079,8 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
         if (!data.waSent) {
           setAgentWaFailed(true);
           setAgentWaError(data.waError || null);
-          setTimeout(() => { setAgentWaFailed(false); setAgentWaError(null); }, 8000);
+          setAgentWaRetryable(data.waRetryable === true);
+          setTimeout(() => { setAgentWaFailed(false); setAgentWaError(null); setAgentWaRetryable(false); }, 12000);
         }
       }
     } catch (e) {
@@ -935,7 +1160,14 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
       if (template.components && Array.isArray(template.components)) {
         template.components.forEach((comp: any) => {
           if (comp.type === 'HEADER' && ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(comp.format)) {
-            initialParams.header = { type: comp.format.toLowerCase(), url: '' };
+            // Pre-fill with the template's example image so it's sent automatically if the user doesn't upload a new one
+            const exampleUrl: string =
+              comp.example?.header_url?.[0] ||
+              comp.example?.header_url ||
+              (Array.isArray(comp.example?.header_handle) ? comp.example.header_handle[0] : undefined) ||
+              comp.example?.header_handle ||
+              '';
+            initialParams.header = { type: comp.format.toLowerCase(), url: exampleUrl };
           }
           if (comp.type === 'BODY' && comp.text) {
             // Extract {{1}}, {{2}} etc from body text
@@ -948,6 +1180,18 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
       }
       setTemplateParams(initialParams);
       setShowTemplateParamsModal(true);
+      // Fetch full contact record so we can resolve contact-field values
+      if (selectedPhone && token) {
+        fetch(`${API_BASE}/contacts?search=${encodeURIComponent(selectedPhone)}&limit=1`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+          .then(r => r.ok ? r.json() : null)
+          .then(data => {
+            const rec = data?.contacts?.[0] ?? null;
+            setContactRecord(rec);
+          })
+          .catch(() => setContactRecord(null));
+      }
     }
   };
   
@@ -1001,6 +1245,46 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
     return () => document.removeEventListener('mousedown', handler);
   }, [availabilityOpen]);
 
+  useEffect(() => {
+    if (!showActionsMenu) return;
+    const handler = (e: MouseEvent) => {
+      if (actionsMenuRef.current && !actionsMenuRef.current.contains(e.target as Node)) setShowActionsMenu(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showActionsMenu]);
+
+  const addContactToBlocklist = async () => {
+    if (!selectedPhone || addingToBlocklist) return;
+    setShowActionsMenu(false);
+    setAddingToBlocklist(true);
+    try {
+      const groupsRes = await fetch(`${API_BASE}/groups`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!groupsRes.ok) throw new Error('שגיאה בטעינת הקבוצות');
+      const groupsData = await groupsRes.json();
+      const blocklist = (groupsData.groups || []).find((g: any) => g.is_blocklist);
+      if (!blocklist) throw new Error('לא נמצאה רשימת הסרה במערכת');
+      const addRes = await fetch(`${API_BASE}/groups/${blocklist._id}/members`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phones: [selectedPhone] })
+      });
+      if (!addRes.ok) {
+        const err = await addRes.json().catch(() => ({}));
+        throw new Error(err.error || 'שגיאה בהוספה לרשימת הסרה');
+      }
+      setBlocklistSuccess(true);
+      setTimeout(() => setBlocklistSuccess(false), 4000);
+    } catch (e: any) {
+      console.error('Failed to add to blocklist', e);
+      alert(e.message || 'שגיאה בהוספה לרשימת הסרה');
+    } finally {
+      setAddingToBlocklist(false);
+    }
+  };
+
   const handleAvailabilitySelect = async (s: 'available' | 'unavailable' | 'on_break') => {
     if (!onUpdateAvailability) return;
     if (s === (currentUser?.availability_status || 'available')) { setAvailabilityOpen(false); return; }
@@ -1013,8 +1297,106 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
     }
   };
 
+  const openAdvancedSearch = () => {
+    const today = new Date().toISOString().split('T')[0];
+    const sixMonthsAgo = new Date(Date.now() - 183 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    setAdvancedQuery(contactSearch || '');
+    setAdvancedFrom(sixMonthsAgo);
+    setAdvancedTo(today);
+    setAdvancedResults([]);
+    setAdvancedSearchError(null);
+    setAdvancedDateError(null);
+    setShowAdvancedSearch(true);
+  };
+
+  const setAdvancedRange = (days: number) => {
+    setAdvancedTo(new Date().toISOString().split('T')[0]);
+    setAdvancedFrom(new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
+    setAdvancedDateError(null);
+  };
+
+  const runAdvancedSearch = async () => {
+    if (advancedQuery.trim().length < 2) { setAdvancedSearchError('יש להזין לפחות 2 תווים לחיפוש'); return; }
+    if (advancedFrom && advancedTo) {
+      const from = new Date(advancedFrom);
+      const to = new Date(advancedTo + 'T23:59:59');
+      if (from >= to) { setAdvancedDateError('תאריך התחלה חייב להיות לפני תאריך סיום'); return; }
+      if ((to.getTime() - from.getTime()) > 184 * 24 * 60 * 60 * 1000) { setAdvancedDateError('טווח תאריכים מקסימלי הוא 6 חודשים'); return; }
+    }
+    setAdvancedDateError(null);
+    setAdvancedSearchError(null);
+    setAdvancedSearchLoading(true);
+    try {
+      const params = new URLSearchParams({ q: advancedQuery.trim(), mode: 'advanced' });
+      if (advancedFrom) params.set('from', advancedFrom);
+      if (advancedTo) params.set('to', advancedTo + 'T23:59:59');
+      const r = await fetch(`${API_BASE}/sessions/search-messages?${params}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!r.ok) { const e = await r.json().catch(() => ({})); setAdvancedSearchError(e.error || `שגיאה ${r.status}`); return; }
+      setAdvancedResults(await r.json());
+    } catch { setAdvancedSearchError('שגיאת רשת'); }
+    finally { setAdvancedSearchLoading(false); }
+  };
+
+  const [statusFilter, setStatusFilter] = useState<ConvStatus | 'all'>('all');
+
+  // Content search state
+  const [contentSearchResults, setContentSearchResults] = useState<{ phone: string; snippet: string; whatsapp_name?: string; full_name?: string; matchCount: number }[]>([]);
+  const [contentSearchLoading, setContentSearchLoading] = useState(false);
+  const [showContentResults, setShowContentResults] = useState(false);
+  const contentSearchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Advanced message search state
+  const [showAdvancedSearch, setShowAdvancedSearch] = useState(false);
+  const [advancedQuery, setAdvancedQuery] = useState('');
+  const [advancedFrom, setAdvancedFrom] = useState('');
+  const [advancedTo, setAdvancedTo] = useState('');
+  const [advancedResults, setAdvancedResults] = useState<{ phone: string; snippet: string; whatsapp_name?: string; full_name?: string; matchCount: number }[]>([]);
+  const [advancedSearchLoading, setAdvancedSearchLoading] = useState(false);
+  const [advancedSearchError, setAdvancedSearchError] = useState<string | null>(null);
+  const [advancedDateError, setAdvancedDateError] = useState<string | null>(null);
+
+  // Contacts list pagination
+  const [visibleContactsLimit, setVisibleContactsLimit] = useState(50);
+  const [loadingMoreContacts, setLoadingMoreContacts] = useState(false);
+  const contactsScrollRef = useRef<HTMLDivElement>(null);
+
+  // Trigger content search with debounce when contactSearch changes
+  useEffect(() => {
+    if (contentSearchTimerRef.current) clearTimeout(contentSearchTimerRef.current);
+    if (!contactSearch || contactSearch.length < 2) {
+      setContentSearchResults([]);
+      setShowContentResults(false);
+      return;
+    }
+    contentSearchTimerRef.current = setTimeout(() => {
+      if (!token) return;
+      setContentSearchLoading(true);
+      fetch(`${API_BASE}/sessions/search-messages?q=${encodeURIComponent(contactSearch)}&mode=basic`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+        .then(r => r.ok ? r.json() : Promise.reject(r))
+        .then(data => setContentSearchResults(data))
+        .catch(e => console.error('Content search failed', e))
+        .finally(() => setContentSearchLoading(false));
+    }, 450);
+  }, [contactSearch, token]);
+
+  // Reset contacts pagination when search or filters change
+  useEffect(() => {
+    setVisibleContactsLimit(50);
+    setLoadingMoreContacts(false);
+  }, [contactSearch, statusFilter, activeBotFilter]);
+
   const filteredContacts = contacts.filter(c => {
-    if (!c.phone.toLowerCase().includes(contactSearch.toLowerCase())) return false;
+    if (contactSearch) {
+      const q = contactSearch.toLowerCase();
+      const matchesPhone = c.phone.toLowerCase().includes(q);
+      const matchesName = (c.whatsapp_name || '').toLowerCase().includes(q) || (c.full_name || '').toLowerCase().includes(q);
+      if (!matchesPhone && !matchesName) return false;
+    }
+    if (statusFilter !== 'all' && c.status !== statusFilter) return false;
     if (activeBotFilter) {
       // Match by bot flow id (widget-based sessions)
       if (c.bots.some(b => b.id === activeBotFilter.id)) return true;
@@ -1025,6 +1407,26 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
     }
     return true;
   });
+
+  // Return only the last visibleMsgLimit messages across all sessions
+  const getVisibleSessions = (): Session[] => {
+    const totalMsgs = phoneSessions.reduce((acc, s) => acc + (s.process_history?.length || 0), 0);
+    if (totalMsgs <= visibleMsgLimit) return phoneSessions;
+    let toSkip = totalMsgs - visibleMsgLimit;
+    const result: Session[] = [];
+    for (const session of phoneSessions) {
+      const count = session.process_history?.length || 0;
+      if (toSkip >= count) {
+        toSkip -= count;
+      } else if (toSkip > 0) {
+        result.push({ ...session, process_history: session.process_history.slice(toSkip) });
+        toSkip = 0;
+      } else {
+        result.push(session);
+      }
+    }
+    return result;
+  };
 
   const selectedContact = contacts.find(c => c.phone === selectedPhone) ?? null;
 
@@ -1059,22 +1461,30 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
   const renderSessionMessages = (session: Session) => {
     if (!session.process_history.length) return null;
 
+    const sortedHistory = [...session.process_history].sort((a, b) => {
+      if (!a.created) return -1;
+      if (!b.created) return 1;
+      return new Date(a.created).getTime() - new Date(b.created).getTime();
+    });
+
     const grouped: any[] = [];
     let hi = 0;
-    while (hi < session.process_history.length) {
-      const cur = session.process_history[hi];
+    while (hi < sortedHistory.length) {
+      const cur = sortedHistory[hi];
       if (cur.type === 'waitingwebservice') { hi++; continue; }
       if (cur.type === 'SendItem') {
         const cards: any[] = [];
         const created = cur.created;
-        while (hi < session.process_history.length && session.process_history[hi].type === 'SendItem') {
-          cards.push(session.process_history[hi]); hi++;
+        while (hi < sortedHistory.length && sortedHistory[hi].type === 'SendItem') {
+          cards.push(sortedHistory[hi]); hi++;
         }
         grouped.push({ type: '_carousel', carouselItems: cards, created });
       } else {
         grouped.push(cur); hi++;
       }
     }
+
+
 
     return grouped.map((item: any, idx: number) => {
       const senderType: 'bot' | 'user' | 'agent' | 'system' =
@@ -1089,13 +1499,14 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
       const isSystem = senderType === 'system';
       const text = item.text ?? item.content ?? '';
       const msgDate = item.created ? formatMessageDate(item.created) : '';
+      const isAudioUrl = /^https?:\/\/.+\.(oga|ogg|mp3|wav|m4a|aac|opus)(\?.*)?$/i.test(item.url || text);
 
       // System message — centered divider (e.g. "השיחה הסתיימה", "השיחה הועברה לנציג")
       if (isSystem) {
         const isClosed = item.event === 'conversation_closed' || /הסתיימה/.test(text);
         return (
-          <div key={`${session.id}-${idx}`} className="flex w-full justify-center py-2">
-            <div className={`flex items-center gap-2 px-3 py-1 rounded-full border text-[11px] font-black
+          <div key={`${session.id}-${idx}`} className="flex w-full justify-center py-1">
+            <div className={`flex items-center gap-2 px-3 py-0.5 rounded-full border text-[11px] font-black
               ${isClosed
                 ? 'bg-slate-100 border-slate-300 text-slate-600'
                 : 'bg-amber-50 border-amber-200 text-amber-700'}`}>
@@ -1111,16 +1522,19 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
       if (isAgent) {
         return (
           <div key={`${session.id}-${idx}`} className="flex w-full justify-start">
-            <div className="flex gap-2 max-w-[88%] flex-row-reverse">
-              <div className="w-8 h-8 rounded-xl flex-shrink-0 flex items-center justify-center shadow-sm bg-purple-100 border border-purple-200 text-purple-700">
-                <Headphones size={15} />
+            <div className="flex gap-1.5 max-w-[88%] flex-row-reverse">
+              <div className="flex flex-col items-center gap-0.5 flex-shrink-0">
+                <div className="w-6 h-6 rounded-lg flex items-center justify-center shadow-sm bg-purple-100 border border-purple-200 text-purple-700">
+                  <Headphones size={12} />
+                </div>
+                {msgDate && <span className="text-[9px] text-slate-400 font-semibold">{msgDate}</span>}
               </div>
-              <div className="flex flex-col gap-1 items-end">
-                <div className="px-4 py-2.5 rounded-3xl text-sm font-semibold shadow-sm text-right bg-purple-50 border border-purple-200 text-purple-900 rounded-tr-none">
-                  <p className="text-[9px] text-purple-400 font-black mb-1 uppercase tracking-widest">נציג</p>
+              <div className="flex flex-col gap-0.5 items-end">
+                <div className="px-3 py-1.5 rounded-2xl text-sm font-semibold shadow-sm text-right bg-purple-50 border border-purple-200 text-purple-900 rounded-tr-none">
+                  <p className="text-[9px] text-purple-400 font-black mb-0.5 uppercase tracking-widest">נציג</p>
                   {item.type === 'Image' && item.url && (
                     <img src={item.url} alt="תמונה" className="rounded-xl max-w-[200px] h-auto mb-2" />
-                  )}
+                  )} 
                   {item.type === 'Video' && item.url && (
                     <video src={item.url} controls className="rounded-xl max-w-[200px] mb-2" />
                   )}
@@ -1130,7 +1544,28 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                       <ExternalLink size={13} /> פתח מסמך
                     </a>
                   )}
-                  {text && <p className="whitespace-pre-wrap leading-relaxed">{text}</p>}
+                  {text && <WhatsAppText text={text} className="leading-snug" />}
+                  {Array.isArray(item.template_buttons) && item.template_buttons.length > 0 && (
+                    <div className="flex flex-col gap-1 mt-2 pt-2 border-t border-purple-200">
+                      {item.template_buttons.map((btn: any, bi: number) =>
+                        btn.type === 'URL' && btn.url ? (
+                          <a key={bi} href={btn.url} target="_blank" rel="noopener noreferrer"
+                            className="flex items-center justify-center gap-1.5 px-3 py-1.5 text-center text-xs font-bold rounded-xl border border-sky-300 bg-sky-50 text-sky-600 hover:bg-sky-100 transition-colors">
+                            <ExternalLink size={11} />{btn.text}
+                          </a>
+                        ) : btn.type === 'PHONE_NUMBER' && btn.phone_number ? (
+                          <a key={bi} href={`tel:${btn.phone_number}`}
+                            className="flex items-center justify-center gap-1.5 px-3 py-1.5 text-center text-xs font-bold rounded-xl border border-emerald-300 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition-colors">
+                            <Phone size={11} />{btn.text}
+                          </a>
+                        ) : (
+                          <div key={bi} className="px-3 py-1.5 text-center text-xs font-bold rounded-xl border border-purple-300 bg-white text-purple-600 cursor-default select-none">
+                            {btn.text}
+                          </div>
+                        )
+                      )}
+                    </div>
+                  )}
                 </div>
                 {item.wa_sent === false && (
                   <div className="flex items-center gap-1.5 px-1 flex-wrap" dir="rtl">
@@ -1150,7 +1585,6 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                     </button>
                   </div>
                 )}
-                {msgDate && <span className="text-[10px] text-slate-400 font-semibold px-1">{msgDate}</span>}
               </div>
             </div>
           </div>
@@ -1162,30 +1596,39 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
           key={`${session.id}-${idx}`}
           className={`flex w-full ${isBot ? 'justify-start' : 'justify-end'}`}
         >
-          <div className={`flex gap-2 max-w-[88%] ${isBot ? 'flex-row-reverse' : 'flex-row'}`}>
-            <div className={`w-8 h-8 rounded-xl flex-shrink-0 flex items-center justify-center shadow-sm
-              ${isBot ? 'bg-white border border-slate-100 text-slate-700' : 'bg-sky-500 text-white'}`}>
-              {isBot ? <Bot size={15} /> : <User size={15} />}
+          <div className={`flex gap-1.5 max-w-[88%] ${isBot ? 'flex-row-reverse' : 'flex-row'}`}>
+            <div className="flex flex-col items-center gap-0.5 flex-shrink-0">
+              <div className={`w-6 h-6 rounded-lg flex items-center justify-center shadow-sm
+                ${isBot ? 'bg-white border border-slate-100 text-slate-700' : 'bg-sky-500 text-white'}`}>
+                {isBot ? <Bot size={12} /> : <User size={12} />}
+              </div>
+              {msgDate && <span className="text-[9px] text-slate-400 font-semibold">{msgDate}</span>}
             </div>
-            <div className={`flex flex-col gap-1 ${isBot ? 'items-end' : 'items-start'}`}>
-              <div className={`px-4 py-2.5 rounded-3xl text-sm font-semibold shadow-sm text-right
+            <div className={`flex flex-col gap-0.5 ${isBot ? 'items-end' : 'items-start'}`}>
+              <div className={`px-3 py-1.5 rounded-2xl text-sm font-semibold shadow-sm text-right
                 ${isBot
                   ? 'bg-white border border-slate-100 text-slate-900 rounded-tr-none'
                   : 'bg-sky-500 text-white rounded-tl-none'}`}
               >
-                {(item.type === 'Text' || item.type === 'UserInput' || !item.type || item.type.startsWith('input_')) && text && (
-                  <p className="whitespace-pre-wrap leading-relaxed">{text}</p>
+                {(item.type === 'Text' || item.type === 'UserInput' || !item.type || item.type.startsWith('input_')) && text && !isAudioUrl && (
+                  <WhatsAppText text={text} className="leading-snug" />
+                )}
+                {(item.type === 'Audio' || isAudioUrl) && (item.url || text) && (
+                  <>
+                    <p className="text-[10px] font-semibold mb-1 opacity-70">🎙️ הקלטה</p>
+                    <audio src={item.url || text} controls className="max-w-[220px] mb-1" />
+                  </>
                 )}
                 {item.type === 'Image' && item.url && (
                   <>
-                    <img src={item.url} alt="תמונה" className="rounded-xl max-w-[200px] h-auto mb-2" />
-                    {text && <p className="whitespace-pre-wrap leading-relaxed">{text}</p>}
+                    <img src={item.url} alt="תמונה" className="rounded-xl max-w-[200px] h-auto mb-1" />
+                    {text && <WhatsAppText text={text} className="leading-snug" />}
                   </>
                 )}
                 {item.type === 'Video' && item.url && (
                   <>
-                    <video src={item.url} controls className="rounded-xl max-w-[200px] mb-2" />
-                    {text && <p className="whitespace-pre-wrap leading-relaxed">{text}</p>}
+                    <video src={item.url} controls className="rounded-xl max-w-[200px] mb-1" />
+                    {text && <WhatsAppText text={text} className="leading-snug" />}
                   </>
                 )}
                 {item.type === 'Document' && item.url && (
@@ -1210,14 +1653,14 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 )}
                 {item.type === 'Options' && (
                   <div>
-                    {text && <p className="mb-2 text-slate-400 text-[10px] uppercase tracking-widest font-black">{text}</p>}
+                    {text && <p className="mb-1 text-slate-400 text-[10px] uppercase tracking-widest font-black">{text}</p>}
                     {Array.isArray(item.options) && (
-                      <div className="flex flex-col gap-1.5 mt-1">
+                      <div className="flex flex-col gap-1 mt-0.5">
                         {item.options
                           .map((o: any) => (typeof o === 'object' && o !== null) ? (o.label ?? o.value ?? o.text ?? '') : String(o))
                           .filter((o: string) => o !== 'default' && o !== '')
                           .map((opt: string, i: number) => (
-                            <div key={i} className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700">{opt}</div>
+                            <div key={i} className="px-2 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-700">{opt}</div>
                           ))}
                       </div>
                     )}
@@ -1252,9 +1695,6 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                   </div>
                 )}
               </div>
-              {msgDate && (
-                <span className="text-[10px] text-slate-400 font-semibold px-1">{msgDate}</span>
-              )}
             </div>
           </div>
         </div>
@@ -1345,10 +1785,11 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
       {/* ── Bot Picker ─────────────────────────────────────────────────────── */}
       {showBotPicker ? (
         <div className="flex-1 flex overflow-hidden">
-          {currentUser?.role !== 'rep' && (
+          {(onGoHome || onBack) && (
             <AppNav
               mode="sidebar"
               activePage="sessions"
+              onGoHome={onGoHome}
               onBots={onBack && can('bots.view_tab') ? onBack : undefined}
               onContacts={onOpenContacts ? () => onOpenContacts() : undefined}
               onGroups={onOpenGroups}
@@ -1414,10 +1855,11 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
         </div>
       ) : (
       <div className="flex-1 flex overflow-hidden">
-        {currentUser?.role !== 'rep' && (
+        {(onGoHome || onBack) && (
           <AppNav
             mode="sidebar"
             activePage="sessions"
+            onGoHome={onGoHome}
             onBots={onBack && can('bots.view_tab') ? onBack : undefined}
             onSessions={botList.length > 1 ? () => { setActiveBotFilter(null); setSelectedPhone(null); setShowBotPicker(true); } : undefined}
             onContacts={onOpenContacts ? () => onOpenContacts() : undefined}
@@ -1473,57 +1915,222 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 onChange={e => setContactSearch(e.target.value)}
               />
             </div>
+            {/* Status filter pills */}
+            <div className="flex gap-1 mt-2 flex-wrap">
+              {(['all', 'waiting', 'handling', 'resolved', 'bot', 'closed'] as const).map(s => (
+                <button
+                  key={s}
+                  onClick={() => setStatusFilter(s)}
+                  className={`text-[9px] font-black px-2 py-0.5 rounded-full border transition-colors ${
+                    statusFilter === s
+                      ? s === 'all' ? 'bg-slate-700 text-white border-slate-700'
+                        : s === 'waiting' ? 'bg-amber-500 text-white border-amber-500'
+                        : s === 'handling' ? 'bg-purple-500 text-white border-purple-500'
+                        : s === 'resolved' ? 'bg-emerald-500 text-white border-emerald-500'
+                        : s === 'bot' ? 'bg-sky-500 text-white border-sky-500'
+                        : 'bg-slate-500 text-white border-slate-500'
+                      : 'bg-white text-slate-500 border-slate-200 hover:border-slate-400'
+                  }`}
+                >
+                  {s === 'all' ? 'הכל' : s === 'waiting' ? 'ממתין' : s === 'handling' ? 'בטיפול' : s === 'resolved' ? 'טופל' : s === 'bot' ? 'בוט' : 'סיום'}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Scrollable contacts list */}
-          <div className="flex-1 overflow-y-auto">
+          <div
+            ref={contactsScrollRef}
+            className="flex-1 overflow-y-auto"
+            onScroll={() => {
+              const el = contactsScrollRef.current;
+              if (!el || loadingMoreContacts) return;
+              if (el.scrollHeight - el.scrollTop - el.clientHeight < 100) {
+                if (visibleContactsLimit < filteredContacts.length) {
+                  setLoadingMoreContacts(true);
+                  setTimeout(() => {
+                    setVisibleContactsLimit(prev => prev + 50);
+                    setLoadingMoreContacts(false);
+                  }, 200);
+                }
+              }
+            }}
+          >
             {contactsLoading ? (
               <div className="flex items-center justify-center py-12">
                 <div className="animate-spin w-7 h-7 border-2 border-slate-200 border-t-sky-500 rounded-full" />
               </div>
-            ) : filteredContacts.length === 0 ? (
+            ) : filteredContacts.length === 0 && !contactSearch ? (
               <div className="flex flex-col items-center justify-center py-16 gap-3 text-slate-300 px-6 text-center">
                 <Users size={36} strokeWidth={1} />
                 <p className="text-sm font-bold">אין אנשי קשר</p>
               </div>
             ) : (
-              filteredContacts.map(contact => {
-                const sim = isSimulator(contact.phone);
-                const isSelected = selectedPhone === contact.phone;
-                return (
-                  <button
-                    key={contact.phone}
-                    onClick={() => setSelectedPhone(contact.phone)}
-                    className={`w-full px-4 py-3.5 flex items-center gap-3 text-right transition-colors border-b border-slate-50 relative
-                      ${isSelected ? 'bg-sky-50' : 'hover:bg-slate-50'}`}
-                  >
-                    {isSelected && (
-                      <span className="absolute right-0 top-0 bottom-0 w-1 bg-sky-500 rounded-l-full" />
-                    )}
-                    <div className={`w-10 h-10 rounded-2xl flex-shrink-0 flex items-center justify-center text-sm font-black
-                      ${isSelected ? 'bg-sky-500 text-white' : sim ? 'bg-blue-50 text-blue-400' : 'bg-slate-100 text-slate-500'}`}>
-                      {sim ? <MessageSquare size={16} /> : contact.phone.charAt(0)}
-                    </div>
-                    <div className="flex-1 min-w-0 flex items-center justify-between gap-2">
-                      <div className="min-w-0">
-                        <p className={`text-sm font-black truncate ${isSelected ? 'text-sky-700' : 'text-slate-800'}`}>
-                          {sim ? 'סימולטור' : contact.phone}
-                        </p>
-                        <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                          <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-full
-                            ${isSelected ? 'bg-sky-200 text-sky-700' : 'bg-slate-100 text-slate-500'}`}>
-                            {contact.sessionCount} שיחות
+              <>
+                {filteredContacts.length === 0 && contactSearch && (
+                  <div className="flex flex-col items-center justify-center py-10 gap-2 text-slate-300 px-6 text-center">
+                    <Users size={28} strokeWidth={1} />
+                    <p className="text-xs font-bold">לא נמצאו תוצאות לפי שם / מספר</p>
+                  </div>
+                )}
+                {filteredContacts.slice(0, visibleContactsLimit).map(contact => {
+                  const sim = isSimulator(contact.phone);
+                  const isSelected = selectedPhone === contact.phone;
+                  return (
+                    <button
+                      key={contact.phone}
+                      onClick={() => setSelectedPhone(contact.phone)}
+                      className={`w-full px-4 py-3.5 flex items-center gap-3 text-right transition-colors border-b border-slate-50 relative
+                        ${isSelected ? 'bg-sky-50' : 'hover:bg-slate-50'}`}
+                    >
+                      {isSelected && (
+                        <span className="absolute right-0 top-0 bottom-0 w-1 bg-sky-500 rounded-l-full" />
+                      )}
+                      <div className={`w-10 h-10 rounded-2xl flex-shrink-0 flex items-center justify-center text-sm font-black
+                        ${isSelected ? 'bg-sky-500 text-white' : sim ? 'bg-blue-50 text-blue-400' : 'bg-slate-100 text-slate-500'}`}>
+                        {sim ? <MessageSquare size={16} /> : (contact.whatsapp_name || contact.full_name || contact.phone).charAt(0).toUpperCase()}
+                      </div>
+                      <div className="flex-1 min-w-0 flex items-center justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className={`text-sm font-black truncate flex items-center gap-1 ${isSelected ? 'text-sky-700' : 'text-slate-800'}`}>
+                            {sim ? 'סימולטור' : contact.phone}
+                            {!sim && !contact.full_name && contact.whatsapp_name && (
+                              <span className={`text-sm font-semibold flex items-center gap-0.5 mr-1 ${isSelected ? 'text-sky-600' : 'text-slate-500'}`}>
+                                · <WhatsAppIcon size={11} className="text-slate-400" /> {contact.whatsapp_name}
+                              </span>
+                            )}
+                            {!sim && contact.full_name && (
+                              <span className={`text-sm font-semibold flex items-center gap-0.5 mr-1 ${isSelected ? 'text-sky-600' : 'text-slate-500'}`}>
+                                · {contact.full_name}
+                              </span>
+                            )}
+                          </p>
+                          {!sim && contact.full_name && contact.whatsapp_name && (
+                            <p className="text-[10px] font-medium truncate text-slate-400 flex items-center gap-0.5">
+                              <WhatsAppIcon size={10} className="text-slate-400 flex-shrink-0" /> {contact.whatsapp_name}
+                            </p>
+                          )}
+                          <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                            <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-full
+                              ${isSelected ? 'bg-sky-200 text-sky-700' : 'bg-slate-100 text-slate-500'}`}>
+                              {contact.sessionCount} שיחות
+                            </span>
+                            {!sim && renderStatusBadge(contact.status)}
+                            {contact.wants_phone && (
+                              <span className="flex items-center gap-0.5 text-[9px] font-black px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 ring-1 ring-green-400/60 animate-pulse">
+                                <Phone size={9} />טלפוני
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                          <span className="text-[11px] text-slate-400 font-semibold">
+                            {formatContactTime(contact.lastSeen)}
                           </span>
-                          {!sim && renderStatusBadge(contact.status)}
+                          {!sim && onOpenContacts && (
+                            <button
+                              onClick={e => { e.stopPropagation(); onOpenContacts(contact.phone); }}
+                              title="פתח פרטי איש קשר"
+                              className="p-1 text-slate-300 hover:text-sky-500 hover:bg-sky-50 rounded-lg transition-colors"
+                            >
+                              <User size={13} />
+                            </button>
+                          )}
                         </div>
                       </div>
-                      <span className="text-[11px] text-slate-400 font-semibold flex-shrink-0">
-                        {formatContactTime(contact.lastSeen)}
-                      </span>
+                    </button>
+                  );
+                })}
+                {loadingMoreContacts && (
+                  <div className="flex items-center justify-center gap-2 py-3">
+                    <div className="animate-spin w-4 h-4 border-2 border-slate-200 border-t-sky-500 rounded-full" />
+                    <span className="text-xs text-slate-400 font-semibold">טוען...</span>
+                  </div>
+                )}
+                {!loadingMoreContacts && visibleContactsLimit < filteredContacts.length && (
+                  <p className="text-center text-[10px] text-slate-300 font-semibold py-2">גלול למטה לצפייה בעוד {filteredContacts.length - visibleContactsLimit} אנשי קשר</p>
+                )}
+
+                {/* Content search results section */}
+                {contactSearch.length >= 2 && (
+                  <div className="border-t border-slate-100 mt-1">
+                    <div className="px-3 py-2 flex items-center justify-between gap-1 bg-slate-50/80">
+                      <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                        <Search size={11} className="text-slate-400 flex-shrink-0" />
+                        {contentSearchLoading ? (
+                          <span className="text-[10px] text-slate-400 font-semibold">מחפש...</span>
+                        ) : (
+                          <span className="text-[10px] text-slate-500 font-semibold truncate">
+                            <span className="font-black text-sky-600">{contentSearchResults.length}</span> תוצאות (50 הודעות אחרונות)
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        {!contentSearchLoading && contentSearchResults.length > 0 && (
+                          <label className="flex items-center gap-1 cursor-pointer select-none">
+                            <input
+                              type="checkbox"
+                              checked={showContentResults}
+                              onChange={e => setShowContentResults(e.target.checked)}
+                              className="w-3 h-3 accent-sky-500 cursor-pointer"
+                            />
+                            <span className="text-[9px] font-black text-slate-600">הצג</span>
+                          </label>
+                        )}
+                        <button
+                          onClick={openAdvancedSearch}
+                          className="text-[9px] font-black text-indigo-500 hover:text-indigo-700 transition-colors"
+                          title="חיפוש מתקדם - עד 6 חודשים"
+                        >
+                          מתקדם →
+                        </button>
+                      </div>
                     </div>
-                  </button>
-                );
-              })
+
+                    {showContentResults && contentSearchResults.length > 0 && (
+                      <>
+                        {contentSearchResults
+                          .filter(cr => !filteredContacts.some(c => c.phone === cr.phone))
+                          .map(cr => {
+                            const isSelected = selectedPhone === cr.phone;
+                            const displayName = cr.whatsapp_name || cr.full_name || cr.phone;
+                            return (
+                              <button
+                                key={`content-${cr.phone}`}
+                                onClick={() => setSelectedPhone(cr.phone)}
+                                className={`w-full px-4 py-3 flex items-center gap-3 text-right transition-colors border-b border-slate-50 relative
+                                  ${isSelected ? 'bg-sky-50' : 'hover:bg-amber-50/60'}`}
+                              >
+                                {isSelected && (
+                                  <span className="absolute right-0 top-0 bottom-0 w-1 bg-sky-500 rounded-l-full" />
+                                )}
+                                <div className={`w-9 h-9 rounded-2xl flex-shrink-0 flex items-center justify-center text-sm font-black
+                                  ${isSelected ? 'bg-sky-500 text-white' : 'bg-amber-100 text-amber-600'}`}>
+                                  {displayName.charAt(0).toUpperCase()}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <p className={`text-sm font-black truncate ${isSelected ? 'text-sky-700' : 'text-slate-800'}`}>
+                                    {cr.phone}
+                                    {cr.whatsapp_name && (
+                                      <span className={`text-sm font-semibold mr-1.5 ${isSelected ? 'text-sky-600' : 'text-slate-500'}`}>
+                                        · {cr.whatsapp_name}
+                                      </span>
+                                    )}
+                                  </p>
+                                  {cr.snippet && (
+                                    <p className="text-[10px] text-amber-700 font-medium truncate mt-0.5 bg-amber-50 px-1.5 py-0.5 rounded">
+                                      {cr.snippet}
+                                    </p>
+                                  )}
+                                </div>
+                              </button>
+                            );
+                          })}
+                      </>
+                    )}
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>
@@ -1546,8 +2153,18 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 </div>
                 <div className="flex-1">
                   <div className="flex items-center gap-2">
-                    <p className="text-base font-black text-slate-900">
+                    <p className="text-base font-black text-slate-900 flex items-center gap-1.5 flex-wrap">
                       {isSimulator(selectedPhone) ? 'סימולטור' : selectedPhone}
+                      {!isSimulator(selectedPhone) && !selectedContact?.full_name && selectedContact?.whatsapp_name && (
+                        <span className="flex items-center gap-0.5 text-sm font-semibold text-slate-500">
+                          · <WhatsAppIcon size={13} className="text-slate-400" /> {selectedContact.whatsapp_name}
+                        </span>
+                      )}
+                      {!isSimulator(selectedPhone) && selectedContact?.full_name && (
+                        <span className="flex items-center gap-0.5 text-sm font-semibold text-slate-500">
+                          · {selectedContact.full_name}
+                        </span>
+                      )}
                     </p>
                     {!isSimulator(selectedPhone) && onOpenContacts && (
                       <button
@@ -1555,10 +2172,15 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                         title="פתח פרטי איש קשר"
                         className="p-1 text-slate-400 hover:text-sky-500 transition-colors rounded-lg hover:bg-sky-50"
                       >
-                        <ExternalLink size={14} />
+                        <User size={14} />
                       </button>
                     )}
                   </div>
+                  {!isSimulator(selectedPhone) && selectedContact?.full_name && selectedContact?.whatsapp_name && (
+                    <p className="text-xs text-slate-400 font-semibold flex items-center gap-0.5 mt-0.5">
+                      <WhatsAppIcon size={11} className="text-slate-400" /> {selectedContact.whatsapp_name}
+                    </p>
+                  )}
                   <p className="text-xs text-slate-400 font-semibold mt-0.5">
                     {selectedContact?.sessionCount ?? 0} שיחות
                     {selectedContact?.bots && selectedContact.bots.length > 0 && (
@@ -1570,33 +2192,107 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 {!isSimulator(selectedPhone) && phoneSessions.length > 0 && (
                   <div className="flex-shrink-0">{renderStatusBadge(currentStatus)}</div>
                 )}
-                {/* End conversation button — for rep when conversation is active with agent */}
-                {!isSimulator(selectedPhone) && (currentStatus === 'waiting' || currentStatus === 'handling') && (
-                  <button
-                    onClick={closeConversation}
-                    className="flex items-center gap-2 px-4 py-2 rounded-2xl bg-slate-600 text-white text-xs font-black hover:bg-slate-700 transition-colors shadow-sm"
-                    title="סמן שיחה כסיומה"
-                  >
-                    <X size={14} /> סיום שיחה
-                  </button>
+                {/* Phone callback tag + handled button */}
+                {selectedContact?.wants_phone && (
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    <span className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-green-100 text-green-700 text-[11px] font-black ring-1 ring-green-400/50">
+                      <Phone size={11} /> טלפוני
+                    </span>
+                    {(currentStatus === 'waiting' || currentStatus === 'handling' || currentStatus === 'resolved') && (
+                      <button
+                        onClick={async () => {
+                          const sid = agentSessionId || (phoneSessions.length > 0 ? phoneSessions[phoneSessions.length - 1].id : null);
+                          if (!sid) return;
+                          try {
+                            const r = await fetch(`${API_BASE}/sessions/${sid}/mark-resolved`, {
+                              method: 'PATCH',
+                              headers: { Authorization: `Bearer ${token}` }
+                            });
+                            if (r.ok) {
+                              setContacts(prev => prev.map(c =>
+                                c.phone === selectedPhone ? { ...c, status: 'resolved' as const, wants_phone: false } : c
+                              ));
+                              setPhoneSessions(prev => prev.map((s, i) =>
+                                i === prev.length - 1 ? { ...s, status: 'resolved' as const } : s
+                              ));
+                            }
+                          } catch (e) { console.error(e); }
+                        }}
+                        className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-green-600 text-white text-[11px] font-black hover:bg-green-700 transition-colors"
+                        title="סמן שיחת טלפון כטופלה"
+                      >
+                        <Check size={11} /> טופל
+                      </button>
+                    )}
+                  </div>
                 )}
-                {/* Transfer conversation button — available on any active (non-closed) conversation */}
-                {!isSimulator(selectedPhone) && phoneSessions.length > 0 && currentStatus !== 'closed' && (
-                  <button
-                    onClick={openTransferModal}
-                    className="flex items-center gap-2 px-4 py-2 rounded-2xl bg-indigo-500 text-white text-xs font-black hover:bg-indigo-600 transition-colors shadow-sm"
-                    title="העברת שיחה לקבוצה / מנהל משמרת / נציג אחר"
-                  >
-                    <Headphones size={14} /> העברת שיחה
-                  </button>
+                {/* Actions dropdown — all conversation actions */}
+                {phoneSessions.length > 0 && currentStatus !== 'closed' && (
+                  <div className="relative flex-shrink-0" ref={actionsMenuRef}>
+                    <button
+                      onClick={() => setShowActionsMenu(v => !v)}
+                      className="w-9 h-9 flex items-center justify-center rounded-2xl text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition-colors"
+                      title="פעולות שיחה"
+                    >
+                      <MoreVertical size={18} />
+                    </button>
+                    {showActionsMenu && (
+                      <div className="absolute top-full mt-1 left-0 bg-white rounded-2xl shadow-xl border border-slate-100 py-1.5 z-50 min-w-[200px]">
+                        {!isSimulator(selectedPhone!) && (currentStatus === 'bot' || currentStatus === 'waiting' || currentStatus === 'handling') && (
+                          <button
+                            onClick={() => { setShowActionsMenu(false); markResolved(); }}
+                            className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-emerald-50 hover:text-emerald-700 transition-colors text-right"
+                            title="סמן כטופל — השיחה תיפתח מחדש אם הלקוח יכתוב"
+                          >
+                            <Check size={15} />
+                            טופל
+                          </button>
+                        )}
+                        {!isSimulator(selectedPhone!) && isAgentMode && (
+                          <button
+                            onClick={() => { setShowActionsMenu(false); deactivateAgent(); }}
+                            className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-emerald-50 hover:text-emerald-700 transition-colors text-right"
+                          >
+                            <RefreshCw size={15} />
+                            החזרת השיחה לבוט
+                          </button>
+                        )}
+                        {!isSimulator(selectedPhone!) && (currentStatus === 'waiting' || currentStatus === 'handling' || currentStatus === 'resolved') && (
+                          <button
+                            onClick={() => { setShowActionsMenu(false); closeConversation(); }}
+                            className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-100 hover:text-slate-800 transition-colors text-right"
+                            title="סמן שיחה כסיומה"
+                          >
+                            <X size={15} />
+                            סיום שיחה
+                          </button>
+                        )}
+                        <button
+                          onClick={() => { setShowActionsMenu(false); openTransferModal(); }}
+                          className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 transition-colors text-right"
+                        >
+                          <Headphones size={15} />
+                          העברת שיחה{isSimulator(selectedPhone!) ? ' (סימולטור)' : ''}
+                        </button>
+                        {!isSimulator(selectedPhone!) && (
+                          <button
+                            onClick={addContactToBlocklist}
+                            disabled={addingToBlocklist}
+                            className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-red-50 hover:text-red-600 transition-colors text-right disabled:opacity-60"
+                          >
+                            <Ban size={15} />
+                            {addingToBlocklist ? 'מוסיף...' : 'הוספה לרשימת הסרה'}
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 )}
-                {!isSimulator(selectedPhone) && isAgentMode && (
-                  <button
-                    onClick={deactivateAgent}
-                    className="flex items-center gap-2 px-4 py-2 rounded-2xl bg-emerald-500 text-white text-xs font-black hover:bg-emerald-600 transition-colors shadow-sm"
-                  >
-                    <RefreshCw size={14} /> החזרת השיחה לבוט
-                  </button>
+                {/* Blocklist success toast */}
+                {blocklistSuccess && (
+                  <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-black flex-shrink-0">
+                    <Check size={13} /> נוסף לרשימת הסרה
+                  </span>
                 )}
                 {/* {currentUser?.role !== 'rep' && !isSimulator(selectedPhone) && (
                   <button
@@ -1635,12 +2331,13 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 <div className="flex-shrink-0 px-6 py-2.5 bg-red-50 border-b border-red-200 flex items-center gap-3" dir="rtl">
                   <div className="w-2 h-2 rounded-full bg-red-500 flex-shrink-0" />
                   <p className="text-xs font-black text-red-700 flex-1">
-                    ⚠️ ההודעה נשמרה בהיסטוריה אך <strong>לא נשלחה ללקוח</strong> — בעיה ב-WhatsApp API
-                    {agentWaError && (
-                      <span className="font-normal text-red-500 mr-1">({agentWaError.length > 80 ? agentWaError.slice(0, 80) + '…' : agentWaError})</span>
-                    )}
+                    ⚠️ ההודעה נשמרה בהיסטוריה אך <strong>לא נשלחה ללקוח</strong>
+                    {agentWaRetryable
+                      ? <span className="font-normal text-red-600"> — שגיאת שער (502): השרת עמוס זמנית. <span className="underline cursor-pointer" onClick={() => { setAgentWaFailed(false); setAgentWaError(null); setAgentWaRetryable(false); sendAgentMsg(); }}>נסה שוב</span></span>
+                      : <span className="font-normal text-red-500 mr-1"> — {agentWaError ? (agentWaError.length > 100 ? agentWaError.slice(0, 100) + '…' : agentWaError) : 'בעיה ב-WhatsApp API'}</span>
+                    }
                   </p>
-                  <button onClick={() => { setAgentWaFailed(false); setAgentWaError(null); }} className="text-red-400 hover:text-red-600">
+                  <button onClick={() => { setAgentWaFailed(false); setAgentWaError(null); setAgentWaRetryable(false); }} className="text-red-400 hover:text-red-600">
                     <X size={14} />
                   </button>
                 </div>
@@ -1653,14 +2350,39 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 <div className="flex-1 flex flex-col items-center justify-center gap-3 text-slate-300">
                   <MessageSquare size={48} strokeWidth={1} />
                   <p className="text-base font-bold">אין שיחות לאיש קשר זה</p>
-                </div>
-              ) : (
+                </div> 
+              ) : ( 
                 /* Sessions ordered oldest (top) → newest (bottom) */
-                <div ref={chatScrollRef} className="flex-1 overflow-y-auto p-6" dir="rtl">
-                  {phoneSessions.map(session => (
+                <div
+                  ref={chatScrollRef}
+                  className="flex-1 overflow-y-auto p-3"
+                  dir="rtl"
+                  onScroll={() => {
+                    const el = chatScrollRef.current;
+                    if (!el || loadingMoreMsgs) return;
+                    if (el.scrollTop < 80) {
+                      const total = phoneSessions.reduce((acc, s) => acc + (s.process_history?.length || 0), 0);
+                      if (visibleMsgLimit < total) {
+                        prevScrollHeightRef.current = el.scrollHeight;
+                        setLoadingMoreMsgs(true);
+                        setVisibleMsgLimit(prev => prev + 50);
+                      }
+                    }
+                  }}
+                >
+                  {loadingMoreMsgs && (
+                    <div className="flex items-center justify-center gap-2 py-3">
+                      <div className="animate-spin w-4 h-4 border-2 border-slate-200 border-t-sky-500 rounded-full" />
+                      <span className="text-xs text-slate-400 font-semibold">טוען הודעות קודמות...</span>
+                    </div>
+                  )}
+                  {!loadingMoreMsgs && phoneSessions.reduce((acc, s) => acc + (s.process_history?.length || 0), 0) > visibleMsgLimit && (
+                    <p className="text-center text-[10px] text-slate-300 font-semibold py-2">גלול למעלה לצפייה בהודעות קודמות</p>
+                  )}
+                  {getVisibleSessions().map(session => (
                     <React.Fragment key={session.id}>
                       {/* Thin divider with session date and bot name */}
-                      <div className="flex items-center gap-3 py-3">
+                      <div className="flex items-center gap-3 py-1.5">
                         <hr className="flex-1 border-slate-200" />
                         <div className="flex items-center gap-1.5 flex-shrink-0">
                           <Clock size={10} className="text-slate-400" />
@@ -1675,7 +2397,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                       </div>
 
                       {/* Messages for this session */}
-                      <div className="space-y-3 mb-2">
+                      <div className="space-y-1 mb-1">
                         {renderSessionMessages(session) ?? (
                           <p className="text-center text-xs text-slate-300 font-semibold py-2">אין הודעות בשיחה זו</p>
                         )}
@@ -1871,6 +2593,122 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
       </div>
       )}
 
+      {/* Advanced message search modal */}
+      {showAdvancedSearch && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" dir="rtl">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-xl w-full flex flex-col max-h-[88vh] overflow-hidden">
+            {/* Header */}
+            <div className="px-6 pt-6 pb-4 border-b border-slate-100 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center">
+                  <Search size={18} />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900">חיפוש מתקדם בהודעות</h3>
+                  <p className="text-xs text-slate-400 font-semibold">טווח תאריכים מקסימלי 6 חודשים</p>
+                </div>
+              </div>
+              <button onClick={() => setShowAdvancedSearch(false)} className="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-slate-100 text-slate-400 transition-colors">
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Search controls */}
+            <div className="px-6 py-4 border-b border-slate-100 space-y-3">
+              <div className="relative">
+                <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-300" size={15} />
+                <input
+                  type="text"
+                  className="w-full pr-9 pl-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all text-right font-medium"
+                  placeholder="חיפוש בתוכן הודעות..."
+                  value={advancedQuery}
+                  onChange={e => { setAdvancedQuery(e.target.value); setAdvancedSearchError(null); }}
+                  onKeyDown={e => e.key === 'Enter' && runAdvancedSearch()}
+                  autoFocus
+                />
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[10px] font-bold text-slate-400">טווח מהיר:</span>
+                {[{ label: 'חודש', days: 30 }, { label: '3 חודשים', days: 90 }, { label: 'חצי שנה', days: 183 }].map(opt => (
+                  <button key={opt.days} onClick={() => setAdvancedRange(opt.days)}
+                    className="text-[10px] font-black px-2.5 py-1 rounded-full border border-indigo-200 text-indigo-600 hover:bg-indigo-50 transition-colors">
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-end gap-2">
+                <div className="flex-1">
+                  <label className="text-[10px] font-black text-slate-500 block mb-1">מתאריך</label>
+                  <input type="date" value={advancedFrom} max={advancedTo || new Date().toISOString().split('T')[0]}
+                    onChange={e => { setAdvancedFrom(e.target.value); setAdvancedDateError(null); }}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all" />
+                </div>
+                <span className="text-slate-400 font-bold pb-2">—</span>
+                <div className="flex-1">
+                  <label className="text-[10px] font-black text-slate-500 block mb-1">עד תאריך</label>
+                  <input type="date" value={advancedTo} min={advancedFrom} max={new Date().toISOString().split('T')[0]}
+                    onChange={e => { setAdvancedTo(e.target.value); setAdvancedDateError(null); }}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all" />
+                </div>
+                <button onClick={runAdvancedSearch} disabled={advancedSearchLoading || advancedQuery.trim().length < 2}
+                  className="px-4 py-2 bg-indigo-500 text-white rounded-xl text-sm font-black hover:bg-indigo-600 transition-colors disabled:opacity-50 flex items-center gap-2 flex-shrink-0">
+                  {advancedSearchLoading ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : 'חפש'}
+                </button>
+              </div>
+              {advancedDateError && <p className="text-xs text-red-500 font-semibold">{advancedDateError}</p>}
+              {advancedSearchError && <p className="text-xs text-red-500 font-semibold">{advancedSearchError}</p>}
+            </div>
+
+            {/* Results */}
+            <div className="flex-1 overflow-y-auto">
+              {advancedSearchLoading ? (
+                <div className="flex items-center justify-center py-16">
+                  <div className="animate-spin w-8 h-8 border-2 border-slate-200 border-t-indigo-500 rounded-full" />
+                </div>
+              ) : advancedResults.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-14 gap-3 text-slate-300">
+                  <Search size={36} strokeWidth={1} />
+                  <p className="text-sm font-bold">{advancedQuery.trim().length >= 2 ? 'לא נמצאו תוצאות' : 'הזן טקסט ולחץ חפש'}</p>
+                </div>
+              ) : (
+                <>
+                  <p className="text-[10px] text-slate-400 font-semibold px-4 py-2 bg-slate-50 border-b border-slate-100">
+                    נמצאו <span className="font-black text-indigo-600">{advancedResults.length}</span> אנשי קשר עם הודעות תואמות
+                  </p>
+                  {advancedResults.map(cr => {
+                    const isSel = selectedPhone === cr.phone;
+                    const display = cr.whatsapp_name || cr.full_name || cr.phone;
+                    return (
+                      <button key={cr.phone}
+                        onClick={() => { setSelectedPhone(cr.phone); setShowAdvancedSearch(false); }}
+                        className={`w-full px-4 py-3.5 flex items-center gap-3 text-right transition-colors border-b border-slate-50 relative ${isSel ? 'bg-indigo-50' : 'hover:bg-slate-50'}`}>
+                        {isSel && <span className="absolute right-0 top-0 bottom-0 w-1 bg-indigo-500 rounded-l-full" />}
+                        <div className={`w-10 h-10 rounded-2xl flex-shrink-0 flex items-center justify-center text-sm font-black ${isSel ? 'bg-indigo-500 text-white' : 'bg-indigo-100 text-indigo-600'}`}>
+                          {display.charAt(0).toUpperCase()}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 justify-between">
+                            <p className={`text-sm font-black truncate ${isSel ? 'text-indigo-700' : 'text-slate-800'}`}>
+                              {cr.phone}{cr.whatsapp_name && <span className="font-semibold text-slate-500 mr-1.5"> · {cr.whatsapp_name}</span>}
+                            </p>
+                            {cr.matchCount > 1 && (
+                              <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-600 flex-shrink-0">{cr.matchCount} התאמות</span>
+                            )}
+                          </div>
+                          {cr.snippet && (
+                            <p className="text-[11px] text-slate-500 font-medium truncate mt-0.5 bg-amber-50 border border-amber-100 px-1.5 py-0.5 rounded">{cr.snippet}</p>
+                          )}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* New conversation modal */}
       {showNewConvModal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" dir="rtl">
@@ -1886,14 +2724,19 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
               <input
                 type="tel"
                 dir="ltr"
-                placeholder="הזן מספר טלפון..."
+                placeholder="לדוגמה: 972501234567 או 0501234567"
                 value={newConvPhone}
                 onChange={e => {
-                  setNewConvPhone(e.target.value);
-                  setNewConvError(null);
+                  const val = e.target.value.replace(/[^\d+\-\s()]/g, '');
+                  setNewConvPhone(val);
+                  setNewConvError(val ? validatePhoneInput(val) : null);
                 }}
                 onKeyDown={e => e.key === 'Enter' && !newConvLoading && handleNewConvConfirm()}
-                className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-400 transition-all"
+                className={`w-full px-4 py-2.5 border rounded-xl text-sm outline-none focus:ring-2 transition-all ${
+                  newConvError && newConvPhone
+                    ? 'border-red-400 focus:ring-red-500/20 focus:border-red-400'
+                    : 'border-slate-200 focus:ring-sky-500/20 focus:border-sky-400'
+                }`}
                 autoFocus
               />
               {newConvError && (
@@ -1909,7 +2752,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
               </button>
               <button
                 onClick={handleNewConvConfirm}
-                disabled={newConvLoading || newConvError === 'איש קשר קיים במערכת'}
+                disabled={newConvLoading || (!!newConvPhone && !!validatePhoneInput(newConvPhone)) || newConvError === 'איש קשר קיים במערכת'}
                 className="px-5 py-2.5 rounded-2xl bg-sky-500 text-white text-sm font-bold hover:bg-sky-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {newConvLoading ? '...' : 'אישור'}
@@ -2026,22 +2869,72 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                         </div>
                         {matches.map((match: string, varIdx: number) => {
                           const varNum = match.match(/\d+/)?.[0];
+
+                          const baseFields = [
+                            { key: 'base:phone',        label: 'טלפון' },
+                            { key: 'base:full_name',     label: 'שם מלא' },
+                            { key: 'base:whatsapp_name', label: 'שם וואטסאפ' },
+                            { key: 'base:email',         label: 'כתובת מייל' },
+                          ];
+
+                          const resolveField = (optKey: string): string => {
+                            if (!contactRecord) return '';
+                            if (optKey.startsWith('base:')) return String(contactRecord[optKey.slice(5)] ?? '');
+                            if (optKey.startsWith('custom:')) return String(contactRecord.custom_field_values?.[optKey.slice(7)] ?? '');
+                            return '';
+                          };
+
+                          const hasContactFields = baseFields.length > 0 || contactFieldDefs.length > 0;
+
                           return (
                             <div key={varIdx}>
-                              <label className="block text-xs font-semibold text-slate-600 mb-1">
+                              <label className="block text-xs font-semibold text-slate-600 mb-1 text-right">
                                 {match} - משתנה מספר {varNum}
                               </label>
-                              <input
-                                type="text"
-                                value={templateParams.body?.[varIdx] || ''}
-                                onChange={(e) => {
-                                  const newBody = [...(templateParams.body || [])];
-                                  newBody[varIdx] = e.target.value;
-                                  setTemplateParams(prev => ({ ...prev, body: newBody }));
-                                }}
-                                placeholder={`הזן ערך ל-${match}`}
-                                className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-sky-500/20 focus:border-sky-400 outline-none"
-                              />
+                              <div className="flex items-center border border-slate-200 rounded-xl overflow-hidden focus-within:ring-2 focus-within:ring-sky-500/20 focus-within:border-sky-400 transition-all bg-white">
+                                <input
+                                  type="text"
+                                  dir="rtl"
+                                  value={templateParams.body?.[varIdx] || ''}
+                                  onChange={(e) => {
+                                    const newBody = [...(templateParams.body || [])];
+                                    newBody[varIdx] = e.target.value;
+                                    setTemplateParams(prev => ({ ...prev, body: newBody }));
+                                  }}
+                                  placeholder={`הזן ערך ל-${match}`}
+                                  className="flex-1 px-3 py-2 text-sm outline-none bg-transparent text-slate-800"
+                                />
+                                {hasContactFields && (
+                                  <div className="relative flex-shrink-0">
+                                    <select
+                                      dir="rtl"
+                                      className="appearance-none h-full px-2 py-2 bg-slate-50 border-r border-slate-200 text-slate-400 text-xs cursor-pointer hover:bg-indigo-50 hover:text-indigo-600 transition-colors outline-none pr-6 pl-1"
+                                      value=""
+                                      onChange={(e) => {
+                                        if (!e.target.value) return;
+                                        const resolved = resolveField(e.target.value);
+                                        const newBody = [...(templateParams.body || [])];
+                                        newBody[varIdx] = resolved;
+                                        setTemplateParams(prev => ({ ...prev, body: newBody }));
+                                        e.target.value = '';
+                                      }}
+                                      title="בחר שדה מאיש קשר"
+                                    >
+                                      <option value="">שדה מאיש קשר ▾</option>
+                                      {baseFields.map(f => (
+                                        <option key={f.key} value={f.key}>
+                                          {f.label}{contactRecord ? ` — ${resolveField(f.key) || '—'}` : ''}
+                                        </option>
+                                      ))}
+                                      {contactFieldDefs.map(f => (
+                                        <option key={f._id} value={`custom:${f._id}`}>
+                                          {f.label}{contactRecord ? ` — ${resolveField(`custom:${f._id}`) || '—'}` : ''}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                )}
+                              </div>
                             </div>
                           );
                         })}
@@ -2296,7 +3189,9 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
               </button>
             </div>
             <p className="text-xs text-slate-500 mb-4">
-              שיחה: <span className="font-bold text-slate-700">{selectedPhone}</span>
+              שיחה: <span className="font-bold text-slate-700">
+                {selectedPhone && isSimulator(selectedPhone) ? '📱 סימולטור (לבדיקות)' : selectedPhone}
+              </span>
             </p>
 
             {/* Target type tabs */}
@@ -2366,6 +3261,19 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
               </div>
             )}
 
+            {/* Wants phone checkbox */}
+            <label className="flex items-center gap-2.5 mb-4 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={transferWantsPhone}
+                onChange={e => setTransferWantsPhone(e.target.checked)}
+                className="w-4 h-4 accent-green-600 cursor-pointer"
+              />
+              <span className="flex items-center gap-1.5 text-sm font-bold text-slate-700">
+                <Phone size={14} className="text-green-600" />
+לקוח מעוניין בשיחת טלפון חוזרת              </span>
+            </label>
+
             <div className="flex gap-2 justify-end">
               <button
                 onClick={() => setShowTransferModal(false)}
@@ -2383,6 +3291,96 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ── Transfer notifications toast stack ─────────────────────────────── */}
+      {pendingNotifications.length > 0 && (
+        <div
+          className="fixed bottom-5 left-5 z-[100] flex flex-col gap-2 max-w-xs w-full"
+          dir="rtl"
+          style={{ maxHeight: '80vh', overflowY: 'auto' }}
+        >
+          {/* Dismiss-all button when more than one */}
+          {pendingNotifications.length > 1 && (
+            <button
+              onClick={dismissAllNotifications}
+              className="self-end text-xs text-slate-400 hover:text-slate-600 font-bold px-2 py-1 bg-white/90 rounded-lg shadow border border-slate-100 mb-1 transition-colors"
+            >
+              נקה הכל ({pendingNotifications.length})
+            </button>
+          )}
+          {pendingNotifications.map(notif => (
+            <div
+              key={notif._id}
+              className={`rounded-2xl shadow-lg px-4 py-3 flex gap-3 items-start animate-fade-in border ${
+                notif.wants_phone
+                  ? 'bg-green-50 border-green-200'
+                  : 'bg-white border-indigo-100'
+              }`}
+            >
+              <div className={`mt-0.5 flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
+                notif.wants_phone ? 'bg-green-100' : 'bg-indigo-50'
+              }`}>
+                {notif.wants_phone
+                  ? <Phone size={16} className="text-green-600" />
+                  : <Bell size={16} className="text-indigo-500" />
+                }
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className={`text-xs font-black leading-snug ${notif.wants_phone ? 'text-green-900' : 'text-slate-800'}`}>
+                  {notif.wants_phone ? '📞 בקשת שיחה טלפונית!' : 'שיחה חדשה הועברה אליך'}
+                </p>
+                <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">
+                  {notif.from_user_name && <span>מאת <span className="font-bold">{notif.from_user_name}</span> · </span>}
+                  {notif.target_label}
+                </p>
+                {(notif.session_phone || notif.is_simulator) && (
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    {notif.is_simulator ? '📱 סימולטור' : notif.session_phone}
+                  </p>
+                )}
+                {notif.wants_phone && (
+                  <span className="inline-flex items-center gap-1 mt-1 text-[10px] font-black px-2 py-0.5 rounded-full bg-green-200 text-green-800 ring-1 ring-green-400/50">
+                    <Phone size={10} /> טלפוני
+                  </span>
+                )}
+                <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                  {!notif.is_simulator && notif.session_phone && (
+                    <button
+                      onClick={() => {
+                        setSelectedPhone(notif.session_phone);
+                        dismissNotification(notif._id);
+                      }}
+                      className={`text-[11px] font-black underline underline-offset-2 transition-colors ${
+                        notif.wants_phone
+                          ? 'text-green-700 hover:text-green-900'
+                          : 'text-indigo-600 hover:text-indigo-800'
+                      }`}
+                    >
+                      פתח שיחה ←
+                    </button>
+                  )}
+                  {notif.wants_phone && (
+                    <button
+                      onClick={() => markNotifPhoneHandled(notif)}
+                      className="flex items-center gap-1 text-[11px] font-black px-2 py-0.5 rounded-full bg-green-600 text-white hover:bg-green-700 transition-colors"
+                      title="סמן שיחה טלפונית כטופלה"
+                    >
+                      <Check size={10} /> טופל
+                    </button>
+                  )}
+                </div>
+              </div>
+              <button
+                onClick={() => dismissNotification(notif._id)}
+                className="flex-shrink-0 p-1 hover:bg-slate-100 rounded-lg text-slate-300 hover:text-slate-500 transition-colors mt-0.5"
+                title="הסתר"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          ))}
         </div>
       )}
     </div>

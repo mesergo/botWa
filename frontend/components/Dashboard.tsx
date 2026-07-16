@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, Bot, ArrowLeft, Trash2, Calendar, LogOut, Shield, UserCog, Users, List, Settings, Save, User as UserIcon, Phone, Mail, Star, Copy, Check, Wifi, Gauge, MessageSquare, Globe, Layers, CheckCircle, Eye, EyeOff, X, Image as ImageIcon, Link as LinkIcon, Unlink, UserMinus, AlertTriangle, RefreshCcw, ToggleLeft, ToggleRight } from 'lucide-react';
+import { Plus, Bot, ArrowLeft, Trash2, Calendar, LogOut, Shield, UserCog, Users, List, Settings, Save, User as UserIcon, Phone, Mail, Star, Copy, Check, Wifi, Gauge, MessageSquare, Globe, Layers, CheckCircle, Eye, EyeOff, X, Image as ImageIcon, Link as LinkIcon, Unlink, UserMinus, AlertTriangle, RefreshCcw, ToggleLeft, ToggleRight, Zap } from 'lucide-react';
 import ImpersonationBanner from './ImpersonationBanner';
 import { BotFlow, User } from '../types';
 import SubUsersTab from './SubUsersTab';
@@ -28,7 +28,9 @@ interface DashboardProps {
   onConnectFacebook?: (bot: BotFlow) => Promise<void>;
   onUpdateBotPublicId?: (id: string, publicId: string) => Promise<void>;
   onUpdateBotEndpoint?: (id: string, endpoint: string) => Promise<void>;
+  onUpdateBotRestartKeyword?: (id: string, keyword: string) => Promise<void>;
   onUpdateAvailability?: (status: 'available' | 'unavailable' | 'on_break') => Promise<void>;
+  onGoHome?: () => void;
   token?: string | null;
   initialTab?: 'bots' | 'settings' | 'users';
 }
@@ -50,6 +52,7 @@ interface UserProfile {
     max_versions: number | null;
     version_price: number | null;
     bot_price: number | null;
+    max_connected_numbers: number | null;
   };
   limits_in_effect?: {
     maxBots: number;
@@ -57,6 +60,7 @@ interface UserProfile {
     versionPrice: number;
     botPrice: number;
     canPublish?: boolean;
+    maxConnectedNumbers: number;
   };
   active_bots_count?: number;
   flows_count?: number;
@@ -145,13 +149,19 @@ const AvailabilityBadge: React.FC<{
   );
 };
 
-const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, onDeleteBot, onSetDefaultBot, onLogout, currentUser, onOpenAdminPanel, onStopImpersonation, onOpenContacts, onOpenSessions, onOpenGroups, onOpenSmsIn, onConnectFacebook, onUpdateBotPublicId, onUpdateBotEndpoint, onUpdateAvailability, token, initialTab }) => {
+const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, onDeleteBot, onSetDefaultBot, onLogout, currentUser, onOpenAdminPanel, onStopImpersonation, onOpenContacts, onOpenSessions, onOpenGroups, onConnectFacebook, onUpdateBotPublicId, onUpdateBotEndpoint, onUpdateBotRestartKeyword, onUpdateAvailability, onGoHome,onOpenSmsIn, token, initialTab }) => {
   const can = usePermission(currentUser as User | null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newBotName, setNewBotName] = useState('');
   const [facebookConfirmBot, setFacebookConfirmBot] = useState<BotFlow | null>(null);
   const [facebookSending, setFacebookSending] = useState(false);
   const [facebookDone, setFacebookDone] = useState(false);
+  const [fbConnectBot, setFbConnectBot] = useState<BotFlow | null>(null);
+  const [fbConnecting, setFbConnecting] = useState(false);
+  const [fbResult, setFbResult] = useState<{ ok: boolean; message: string; raw?: any; accessToken?: string } | null>(null);
+  const [fbActivating, setFbActivating] = useState(false);
+  const [fbActivateLogs, setFbActivateLogs] = useState<string[]>([]);
+  const [fbActivateDone, setFbActivateDone] = useState(false);
   const [activeTab, setActiveTab] = useState<'bots' | 'settings' | 'users'>(() => {
     const requested = initialTab ?? 'bots';
     if (requested === 'bots' && !can('bots.view_tab')) {
@@ -193,26 +203,43 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
     quality_rating?: string;
     whatsapp_status?: string;
     registered?: boolean;
+    has_access_token?: boolean;
+    has_token360?: boolean;
     assigned_bot_id?: string | null;
     connected_at?: string;
+    provider?: 'facebook' | 'dialog360';
+    link?: string;
   }
   const [connectedNumbers, setConnectedNumbers] = useState<ConnectedNumber[]>([]);
   const [cnLoading, setCnLoading] = useState(false);
   const [assigningPnid, setAssigningPnid] = useState<string | null>(null);
   const [assignSelection, setAssignSelection] = useState<Record<string, string>>({});
-
+  const [activatingPnid, setActivatingPnid] = useState<string | null>(null);
+  const [activateListLogs, setActivateListLogs] = useState<Record<string, string[]>>({});
+  const [markingPnid, setMarkingPnid] = useState<string | null>(null);
+  const [removingPnid, setRemovingPnid] = useState<string | null>(null);
+  const [phpCreatingPnid, setPhpCreatingPnid] = useState<string | null>(null);
+  const [phpCreateResults, setPhpCreateResults] = useState<Record<string, { success: boolean; logs: string[]; webhook?: string | null; endpoint?: string | null }>>({});
+  // Dialog360 add-number form
+  const [d360FormOpen, setD360FormOpen] = useState(false);
+  const [d360Token, setD360Token] = useState('');
+  const [d360Link, setD360Link] = useState('');
+  const [d360Saving, setD360Saving] = useState(false);
+  const [d360Error, setD360Error] = useState<string | null>(null);
   // Auto-removal-from-group config (per-user override of admin default)
-  interface RemovalCfg { enabled: boolean; keywords: string[]; message: string; }
+  interface RemovalCfg { enabled: boolean; keywords_he: string[]; message_he: string; keywords_en: string[]; message_en: string; }
   const [removalEffective, setRemovalEffective] = useState<RemovalCfg | null>(null);
   const [removalGlobal, setRemovalGlobal] = useState<RemovalCfg | null>(null);
   const [removalDefaults, setRemovalDefaults] = useState<RemovalCfg | null>(null);
   const [removalCustomized, setRemovalCustomized] = useState(false);
   const [removalDraft, setRemovalDraft] = useState<RemovalCfg | null>(null);
-  const [removalKwInput, setRemovalKwInput] = useState('');
+  const [removalKwInputHe, setRemovalKwInputHe] = useState('');
+  const [removalKwInputEn, setRemovalKwInputEn] = useState('');
   const [removalLoading, setRemovalLoading] = useState(false);
   const [removalSaving, setRemovalSaving] = useState(false);
   const [removalSaved, setRemovalSaved] = useState(false);
   const [removalConfirmOpen, setRemovalConfirmOpen] = useState<null | 'save' | 'revert'>(null);
+  const [removalDisableConfirmOpen, setRemovalDisableConfirmOpen] = useState(false);
 
   const loadProfile = async () => {
     if (!token) return;
@@ -376,11 +403,209 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
     }
   };
 
+  const handleRemoveConnectedNumber = async (phone_number_id: string) => {
+    if (!token) return;
+    if (!window.confirm('למחוק מספר מחובר זה לצמיתות?')) return;
+    setRemovingPnid(phone_number_id);
+    try {
+      const res = await fetch(`${API_BASE}/whatsapp-registration/remove-connected-number`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ phone_number_id }),
+      });
+      const data = await res.json();
+      if (data.success) await loadConnectedNumbers();
+      else alert(`שגיאה: ${data.error || 'לא ידוע'}`);
+    } catch (e: any) {
+      alert(`שגיאת רשת: ${e.message}`);
+    } finally {
+      setRemovingPnid(null);
+    }
+  };
+
+  const handleAddDialog360 = async () => {
+    if (!token || !d360Token.trim() || !d360Link.trim()) return;
+    setD360Saving(true);
+    setD360Error(null);
+    try {
+      const res = await fetch(`${API_BASE}/whatsapp-registration/link-number`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ type: 'dialog360', token360: d360Token.trim(), link: d360Link.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        setD360Error(data.message || data.error || 'שגיאה בשמירת המספר');
+      } else {
+        setD360Token('');
+        setD360Link('');
+        setD360FormOpen(false);
+        await loadConnectedNumbers();
+      }
+    } catch (e: any) {
+      setD360Error(`שגיאת רשת: ${e.message}`);
+    } finally {
+      setD360Saving(false);
+    }
+  };
+
+  const handleOpenFbOAuth = async (bot: BotFlow) => {
+    if (!token) return;
+    console.log(`[FB-OAuth] 🚀 Opening Facebook OAuth for bot: id=${bot.id} name=${bot.name}`);
+    setFbConnecting(true);
+    setFbResult(null);
+    try {
+      const stateRes = await fetch(`${API_BASE}/bots/${bot.id}/facebook-redirect-state`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      console.log(`[FB-OAuth] 🎟 facebook-redirect-state HTTP ${stateRes.status}`);
+      if (!stateRes.ok) {
+        console.warn('[FB-OAuth] ❌ Failed to get state token');
+        setFbResult({ ok: false, message: 'שגיאה בקבלת קוד אבטחה. נסה שוב.' });
+        setFbConnecting(false);
+        return;
+      }
+      const { state } = await stateRes.json();
+      console.log(`[FB-OAuth] ✅ state token received (${state?.length} chars)`);
+
+      const redirectUri = `${window.location.origin}/api/bots/facebook-redirect`;
+      console.log(`[FB-OAuth] 🔗 redirect_uri = ${redirectUri}`);
+      openFbOAuthPopup(state, redirectUri);
+    } catch (err: any) {
+      setFbResult({ ok: false, message: err.message || 'שגיאה בפתיחת חיבור פייסבוק' });
+      setFbConnecting(false);
+    }
+  };
+
+  /** Open Facebook OAuth WITHOUT tying it to a specific bot.
+   *  The number is saved tcted_numbers (unassigned) and can be
+   *  assigned to a bot later via the dropdown in the Numbers section. */
+  const handleOpenFbOAuthFree = async () => {
+    if (!token) return;
+    console.log('[FB-OAuth] 🚀 Opening Facebook OAuth in FREE mode (no bot)');
+    setFbConnecting(true);
+    setFbResult(null);
+    try {
+      const stateRes = await fetch(`${API_BASE}/bots/facebook-redirect-state-free`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      console.log(`[FB-OAuth] 🎟 facebook-redirect-state-free HTTP ${stateRes.status}`);
+      if (!stateRes.ok) {
+        const errBody = await stateRes.json().catch(() => ({}));
+        console.warn('[FB-OAuth] ❌ Failed to get free state token', errBody);
+        setFbResult({ ok: false, message: errBody.error || 'שגיאה בקבלת קוד אבטחה. נסה שוב.' });
+        setFbConnecting(false);
+        return;
+      }
+      const { state } = await stateRes.json();
+      console.log(`[FB-OAuth] ✅ free state token received (${state?.length} chars)`);
+
+      const redirectUri = `${window.location.origin}/api/bots/facebook-redirect`;
+      console.log(`[FB-OAuth] 🔗 redirect_uri = ${redirectUri}`);
+      openFbOAuthPopup(state, redirectUri);
+    } catch (err: any) {
+      setFbResult({ ok: false, message: err.message || 'שגיאה בפתיחת חיבור פייסבוק' });
+      setFbConnecting(false);
+    }
+  };
+
+  /** Shared: build the Facebook URL, open the popup and listen for postMessage. */
+  const openFbOAuthPopup = (state: string, redirectUri: string) => {
+      const extrasObj = { featureType: 'whatsapp_business_app_onboarding', sessionInfoVersion: '3', version: 'v4' };
+      const fbUrl =
+        `https://www.facebook.com/v25.0/dialog/oauth` +
+        `?display=popup` +
+        `&client_id=717787580246105` +
+        `&redirect_uri=${encodeURIComponent(redirectUri)}` +
+        `&config_id=333254912651363` +
+        `&response_type=code` +
+        `&fallback_redirect_uri=${encodeURIComponent(redirectUri)}` +
+        `&override_default_response_type=true` +
+        `&state=${encodeURIComponent(state)}` +
+        `&extras=${encodeURIComponent(JSON.stringify(extrasObj))}`;
+
+      const w = 600; const h = 700;
+      const left = window.screenX + (window.outerWidth - w) / 2;
+      const top = window.screenY + (window.outerHeight - h) / 2;
+      console.log(`[FB-OAuth] 🌐 Opening popup → ${fbUrl.replace(/&state=[^&]+/, '&state=***').replace(/&code=[^&]+/, '&code=***')}`);
+      const popup = window.open(fbUrl, 'facebookOAuth',
+        `width=${w},height=${h},left=${left},top=${top},resizable=yes,scrollbars=yes,status=yes`);
+
+      if (!popup) {
+        setFbResult({ ok: false, message: 'הדפדפן חסם את החלונית הקופצת. אנא אפשר חלונות קופצים ונסה שוב.' });
+        setFbConnecting(false);
+        return;
+      }
+      popup.focus();
+
+      let settled = false;
+      const msgHandler = (e: MessageEvent) => {
+        if (!e.data || e.data.event !== 'fb-redirect-done') return;
+        settled = true;
+        window.removeEventListener('message', msgHandler);
+        clearInterval(closeTimer);
+
+        console.group('[FB-OAuth] 📨 postMessage received from redirect_uri popup');
+        console.log('full payload:', e.data);
+        console.log('ok:', e.data.ok);
+        console.log('message:', e.data.message);
+        console.log('bot_id:', e.data.bot_id);
+        console.log('free_mode:', e.data.free_mode);
+        console.log('waba_id:', e.data.waba_id);
+        console.log('wabaName:', e.data.wabaName);
+        console.log('phone_number_id:', e.data.phone_number_id);
+        console.log('display_phone_number:', e.data.display_phone_number);
+        console.log('verified_name:', e.data.verified_name);
+        console.log('quality_rating:', e.data.quality_rating);
+        console.log('status:', e.data.status);
+        console.log('code_verification_status:', e.data.code_verification_status);
+        console.log('name_status:', e.data.name_status);
+        console.log('messaging_limit_tier:', e.data.messaging_limit_tier);
+        console.log('businessId:', e.data.businessId);
+        console.log('registered:', e.data.registered);
+        console.log('register_status_code:', e.data.register_status_code);
+        console.log('register_error:', e.data.register_error);
+        console.log('JSON.stringify(full):', JSON.stringify(e.data, null, 2));
+        console.groupEnd();
+
+        if (e.data.ok) {
+          const num = e.data.display_phone_number || '-';
+          const waba = e.data.wabaName ? ` (${e.data.wabaName})` : '';
+          const freeNote = e.data.free_mode ? ' — ניתן לשייך לבוט בהגדרות → מספרים מחוברים' : '';
+          console.log(`[FB-OAuth] ✅ Success — phone: ${num}${waba}${freeNote}`);
+          const { access_token: at, ...rawDisplay } = e.data;
+          const alreadyRegistered = e.data.registered === true;
+          setFbResult({ ok: true, message: `החיבור הושלם בהצלחה! מספר: ${num}${waba}${freeNote}`, raw: rawDisplay, accessToken: at });
+          setFbActivateLogs(alreadyRegistered ? ['✅ המספר הופעל בהצלחה במהלך החיבור'] : []);
+          setFbActivateDone(alreadyRegistered);
+          setFbConnectBot(null);
+          loadConnectedNumbers();
+        } else {
+          const raw = e.data.register_error || e.data.message || 'שגיאה לא ידועה';
+          const errMsg = typeof raw === 'object' ? JSON.stringify(raw) : String(raw);
+          console.warn('[FB-OAuth] ❌ Failed:', errMsg);
+          setFbResult({ ok: false, message: `החיבור נכשל: ${errMsg}`, raw: e.data });
+        }
+        setFbConnecting(false);
+      };
+      window.addEventListener('message', msgHandler);
+
+      const closeTimer = setInterval(() => {
+        if (popup.closed) {
+          clearInterval(closeTimer);
+          if (!settled) window.removeEventListener('message', msgHandler);
+          setFbConnecting(false);
+        }
+      }, 500);
+  };
+
   // ── Auto-removal-from-group (per-user) ────────────────────────────────
   const normalizeCfg = (c: any): RemovalCfg => ({
     enabled: c?.enabled !== false,
-    keywords: Array.isArray(c?.keywords) ? c.keywords : [],
-    message: typeof c?.message === 'string' ? c.message : ''
+    keywords_he: Array.isArray(c?.keywords_he) ? c.keywords_he : [],
+    message_he: typeof c?.message_he === 'string' ? c.message_he : '',
+    keywords_en: Array.isArray(c?.keywords_en) ? c.keywords_en : [],
+    message_en: typeof c?.message_en === 'string' ? c.message_en : ''
   });
 
   const loadRemovalConfig = async () => {
@@ -416,8 +641,10 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
         body: JSON.stringify({
           customized: true,
           enabled: removalDraft.enabled,
-          keywords: removalDraft.keywords,
-          message: removalDraft.message
+          keywords_he: removalDraft.keywords_he,
+          message_he: removalDraft.message_he,
+          keywords_en: removalDraft.keywords_en,
+          message_en: removalDraft.message_en
         }),
       });
       if (!res.ok) throw new Error('Failed');
@@ -461,20 +688,36 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
     }
   };
 
-  const addRemovalDraftKeyword = () => {
-    const k = removalKwInput.trim();
+  const addRemovalDraftKeywordHe = () => {
+    const k = removalKwInputHe.trim();
     if (!k || !removalDraft) return;
-    if (removalDraft.keywords.some(x => x.trim().toLowerCase() === k.toLowerCase())) {
-      setRemovalKwInput('');
+    if (removalDraft.keywords_he.some(x => x.trim().toLowerCase() === k.toLowerCase())) {
+      setRemovalKwInputHe('');
       return;
     }
-    setRemovalDraft({ ...removalDraft, keywords: [...removalDraft.keywords, k] });
-    setRemovalKwInput('');
+    setRemovalDraft({ ...removalDraft, keywords_he: [...removalDraft.keywords_he, k] });
+    setRemovalKwInputHe('');
   };
 
-  const removeRemovalDraftKeyword = (idx: number) => {
+  const removeRemovalDraftKeywordHe = (idx: number) => {
     if (!removalDraft) return;
-    setRemovalDraft({ ...removalDraft, keywords: removalDraft.keywords.filter((_, i) => i !== idx) });
+    setRemovalDraft({ ...removalDraft, keywords_he: removalDraft.keywords_he.filter((_, i) => i !== idx) });
+  };
+
+  const addRemovalDraftKeywordEn = () => {
+    const k = removalKwInputEn.trim();
+    if (!k || !removalDraft) return;
+    if (removalDraft.keywords_en.some(x => x.trim().toLowerCase() === k.toLowerCase())) {
+      setRemovalKwInputEn('');
+      return;
+    }
+    setRemovalDraft({ ...removalDraft, keywords_en: [...removalDraft.keywords_en, k] });
+    setRemovalKwInputEn('');
+  };
+
+  const removeRemovalDraftKeywordEn = (idx: number) => {
+    if (!removalDraft) return;
+    setRemovalDraft({ ...removalDraft, keywords_en: removalDraft.keywords_en.filter((_, i) => i !== idx) });
   };
 
   const isRep = currentUser?.role === 'rep' || currentUser?.role === 'rep_manager';
@@ -565,7 +808,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
             <div
               title={currentUser?.name || currentUser?.email || ''}
               className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-sm shadow-md select-none cursor-pointer hover:scale-105 transition-transform"
-              onClick={() => setActiveTab('bots')}
+              onClick={() => { setSettingsSection('profile'); setActiveTab('settings'); }}
             >
               {(currentUser?.name?.charAt(0) || currentUser?.email?.charAt(0) || '?').toUpperCase()}
             </div>
@@ -590,6 +833,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
         <AppNav
           mode="sidebar"
           activePage={activeTab}
+          onGoHome={onGoHome}
           onBots={can('bots.view_tab') ? () => setActiveTab('bots') : undefined}
           onSessions={onOpenSessions && can('sessions.view') ? onOpenSessions : undefined}
           onContacts={onOpenContacts && can('contacts.view') ? onOpenContacts : undefined}
@@ -785,6 +1029,10 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                   </h2>
                   <div className="space-y-5">
                     <div className="flex items-center justify-between py-1">
+                      <span className="text-xs font-bold text-slate-400">מקסימום מספרים מחוברים</span>
+                      <span className="text-slate-700 font-bold text-sm">{profile.limits_in_effect?.maxConnectedNumbers ?? '-'}</span>
+                    </div>
+                    <div className="flex items-center justify-between py-1">
                       <span className="text-xs font-bold text-slate-400">מקסימום בוטים</span>
                       <span className="text-slate-700 font-bold text-sm">{profile.limits_in_effect?.maxBots ?? '-'}</span>
                     </div>
@@ -804,12 +1052,175 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                 </div>
               )}
 
-              {/* ── מספרים מחוברים ── */}
               {settingsSection === 'numbers' && (
               <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-8">
-                <h2 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-6 flex items-center gap-2 border-b border-slate-100 pb-4">
-                  <Phone size={14} /> מספרים מחוברים
-                </h2>
+                <div className="flex items-center justify-between border-b border-slate-100 pb-4 mb-6">
+                  <h2 className="text-xs font-black text-slate-400 uppercase tracking-wider flex items-center gap-2">
+                    <Phone size={14} /> מספרים מחוברים
+                  </h2>
+                  {onConnectFacebook && (() => {
+                    const maxNums = profile?.limits_in_effect?.maxConnectedNumbers ?? 1;
+                    const atQuota = connectedNumbers.length >= maxNums;
+                    return atQuota ? (
+                      <div className="flex items-center gap-2 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-2xl text-amber-800 text-xs font-bold max-w-xs text-right">
+                        <AlertTriangle size={14} className="shrink-0 text-amber-500" />
+                        נגמרה המכסה ({connectedNumbers.length}/{maxNums}). להוספת מספר יש ליצור קשר עם המשרד לתשלום.
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => { setD360FormOpen(v => !v); setD360Error(null); }}
+                          className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 text-white rounded-2xl font-bold text-sm hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-600/20"
+                        >
+                          <span className="text-xs font-black">360</span>
+                          הוסף Dialog360
+                        </button>
+                        <button
+                          onClick={handleOpenFbOAuthFree}
+                          disabled={fbConnecting}
+                          className="flex items-center gap-2 px-5 py-2.5 bg-[#1877F2] text-white rounded-2xl font-bold text-sm hover:bg-[#166FE5] transition-all disabled:opacity-60 shadow-lg shadow-blue-600/20"
+                        >
+                          <FacebookIcon size={16} />
+                          {fbConnecting ? 'מתחבר...' : 'הוסף Facebook'}
+                        </button>
+                      </div>
+                    );
+                  })()}
+                </div>
+
+                {/* ── Dialog360 add form ── */}
+                {d360FormOpen && (
+                  <div className="mb-6 p-5 bg-emerald-50 border border-emerald-200 rounded-2xl">
+                    <div className="flex items-center justify-between mb-4">
+                      <p className="text-sm font-bold text-emerald-800">חיבור מספר Dialog360</p>
+                      <button onClick={() => { setD360FormOpen(false); setD360Error(null); }} className="text-slate-400 hover:text-slate-600 transition-colors"><X size={16} /></button>
+                    </div>
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-xs font-bold text-slate-500 mb-1">Token360 *</label>
+                        <input
+                          type="text"
+                          value={d360Token}
+                          onChange={e => setD360Token(e.target.value)}
+                          placeholder="הדבק את ה-token של ה-channel ב-Dialog360"
+                          className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-mono outline-none focus:ring-2 focus:ring-emerald-600/20 focus:border-emerald-600 transition-all text-left"
+                          dir="ltr"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-slate-500 mb-1">Link (Webhook URL) *</label>
+                        <input
+                          type="url"
+                          value={d360Link}
+                          onChange={e => setD360Link(e.target.value)}
+                          placeholder="https://waba.360dialog.io/..."
+                          className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-mono outline-none focus:ring-2 focus:ring-emerald-600/20 focus:border-emerald-600 transition-all text-left"
+                          dir="ltr"
+                        />
+                      </div>
+                      {d360Error && (
+                        <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-2.5 text-red-600 text-xs font-bold">{d360Error}</div>
+                      )}
+                      <button
+                        onClick={handleAddDialog360}
+                        disabled={d360Saving || !d360Token.trim() || !d360Link.trim()}
+                        className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 text-white rounded-xl font-bold text-sm hover:bg-emerald-700 transition-all disabled:opacity-50 active:scale-95"
+                      >
+                        {d360Saving ? <><span className="animate-spin inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full" /> שומר...</> : 'שמור מספר Dialog360'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {fbConnectBot && (
+                  <div className="mb-5 p-4 bg-blue-50 border border-blue-200 rounded-2xl flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                      <FacebookIcon size={18} className="text-[#1877F2] shrink-0" />
+                      <div>
+                        <p className="text-sm font-bold text-slate-800">חיבור לפייסבוק עבור הבוט: <strong>{fbConnectBot.name}</strong></p>
+                        <p className="text-xs text-slate-500 mt-0.5">לחץ על "הוסף Facebook" להמשך תהליך הרישום.</p>
+                      </div>
+                    </div>
+                    <button onClick={() => { setFbConnectBot(null); setFbResult(null); setFbActivateLogs([]); setFbActivateDone(false); }} className="text-slate-400 hover:text-slate-600 transition-colors shrink-0">
+                      <X size={16} />
+                    </button>
+                  </div>
+                )}
+
+                {fbResult && (
+                  <div className={`mb-5 rounded-2xl border ${fbResult.ok ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200'}`}>
+                    {/* Header */}
+                    <div className={`flex items-start gap-3 p-4 ${fbResult.ok ? 'text-emerald-800' : 'text-red-800'}`}>
+                      <div className="shrink-0 mt-0.5">{fbResult.ok ? <CheckCircle size={16} /> : <AlertTriangle size={16} />}</div>
+                      <p className="text-sm font-bold flex-1" dangerouslySetInnerHTML={{ __html: fbResult.message }} />
+                      <button onClick={() => { setFbResult(null); setFbActivateLogs([]); setFbActivateDone(false); }} className="text-slate-400 hover:text-slate-600 transition-colors shrink-0"><X size={14} /></button>
+                    </div>
+
+                    {/* Raw JSON */}
+                    {fbResult.raw && (
+                      <div className="px-4 pb-3">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">JSON שהתקבל מפייסבוק</p>
+                        <pre className="bg-slate-900 text-emerald-300 rounded-xl p-3 text-[11px] leading-relaxed overflow-auto max-h-52 ltr text-left whitespace-pre-wrap break-all">{JSON.stringify(fbResult.raw, null, 2)}</pre>
+                      </div>
+                    )}
+
+                    {/* Activate button — only when ok=true and not yet fully activated */}
+                    {fbResult.ok && fbResult.accessToken && fbResult.raw?.waba_id && !fbActivateDone && (
+                      <div className="px-4 pb-4">
+                        <button
+                          disabled={fbActivating}
+                          onClick={async () => {
+                            setFbActivating(true);
+                            setFbActivateLogs(['מתחיל תהליך הפעלת מספר...']);
+                            try {
+                              const r = await fetch(`${API_BASE}/whatsapp-registration/fetch-and-activate`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                                body: JSON.stringify({
+                                  waba_id: fbResult.raw.waba_id,
+                                  bot_id: fbResult.raw.bot_id || null
+                                })
+                              });
+                              const data = await r.json();
+                              setFbActivateLogs(Array.isArray(data.logs) ? data.logs : [String(data.error || 'שגיאה לא ידועה')]);
+                              if (data.success || (Array.isArray(data.activated) && data.activated.length > 0)) {
+                                setFbActivateDone(true);
+                                loadConnectedNumbers();
+                              }
+                            } catch (e: any) {
+                              setFbActivateLogs([`שגיאת רשת: ${e.message}`]);
+                            } finally {
+                              setFbActivating(false);
+                            }
+                          }}
+                          className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-700 transition-all disabled:opacity-50 active:scale-95"
+                        >
+                          {fbActivating ? <><span className="animate-spin inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full" /> מפעיל מספר...</> : <><Zap size={14} /> הפעל מספר</>}
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Activation done */}
+                    {fbActivateDone && (
+                      <div className="px-4 pb-3 flex items-center gap-2 text-emerald-700 text-sm font-bold">
+                        <CheckCircle size={14} /> המספר הופעל ושויך לחשבון בהצלחה
+                      </div>
+                    )}
+
+                    {/* Step-by-step logs */}
+                    {fbActivateLogs.length > 0 && (
+                      <div className="px-4 pb-4">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">לוג הפעלה</p>
+                        <div className="bg-slate-900 text-slate-300 rounded-xl p-3 text-[11px] leading-relaxed max-h-44 overflow-auto ltr text-left space-y-0.5">
+                          {fbActivateLogs.map((log, i) => (
+                            <div key={i} className={log.includes('✅') || log.includes('הצליחה') ? 'text-emerald-400' : log.includes('❌') || log.includes('נכשל') || log.includes('שגיאה') ? 'text-red-400' : 'text-slate-300'}>{log}</div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {cnLoading ? (
                   <div className="flex items-center justify-center py-10">
                     <div className="animate-spin rounded-full h-7 w-7 border-b-2 border-blue-600"></div>
@@ -823,11 +1234,19 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                     {connectedNumbers.map((n) => {
                       const assignedBot = n.assigned_bot_id ? bots.find(b => b.id === String(n.assigned_bot_id)) : null;
                       const isBusy = assigningPnid === n.phone_number_id;
+                      const isActivating = activatingPnid === n.phone_number_id;
+                      const listLogs = activateListLogs[n.phone_number_id] || [];
                       return (
                         <div key={n.phone_number_id} className="border border-slate-100 rounded-2xl p-5 bg-slate-50/50">
-                          <div className="flex items-start justify-between gap-4 flex-wrap">
+                          <div className="flex items-start justify-between gap-6 flex-wrap">
                             <div className="flex-1 min-w-[220px]">
-                              <div className="flex items-center gap-2 mb-2">
+                              <div className="flex items-center gap-3 flex-wrap mb-3">
+                                {/* Provider badge */}
+                                {(n.provider === 'dialog360') ? (
+                                  <span className="px-2 py-0.5 rounded-lg text-[10px] font-black bg-emerald-600 text-white">360</span>
+                                ) : (
+                                  <span className="px-2 py-0.5 rounded-lg text-[10px] font-black bg-[#1877F2] text-white">FB</span>
+                                )}
                                 <span className="text-base font-black text-slate-800" dir="ltr">
                                   {n.display_phone_number || n.phone_number_id}
                                 </span>
@@ -838,24 +1257,147 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                                     : 'bg-slate-400 text-white'
                                   }`}>{n.whatsapp_status}</span>
                                 )}
-                                {n.registered && (
+                                {n.registered ? (
                                   <span className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-blue-500 text-white flex items-center gap-1">
                                     <CheckCircle size={10} /> פעיל
+                                  </span>
+                                ) : (
+                                  <span className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-amber-100 text-amber-700 border border-amber-200 flex items-center gap-1">
+                                    <AlertTriangle size={10} /> מחובר — טרם הופעל
                                   </span>
                                 )}
                               </div>
                               <div className="text-xs text-slate-500 font-mono" dir="ltr">
-                                <div>phone_number_id: {n.phone_number_id}</div>
-                                {n.waba_id && <div>waba_id: {n.waba_id}</div>}
-                                {n.verified_name && <div>name: {n.verified_name}</div>}
+                                {n.provider === 'dialog360' ? (
+                                  <>
+                                    <div>link: {n.link || n.phone_number_id}</div>
+                                    <div>token360: {n.has_token360 ? '✓ שמור' : '—'}</div>
+                                  </>
+                                ) : (
+                                  <>
+                                    <div>phone_number_id: {n.phone_number_id}</div>
+                                    {n.waba_id && <div>waba_id: {n.waba_id}</div>}
+                                    {n.verified_name && <div>name: {n.verified_name}</div>}
+                                  </>
+                                )}
                               </div>
                             </div>
+
+                            {/* Right-side actions */}
                             <div className="flex items-center gap-2">
-                              {assignedBot ? (
+                              {!n.registered ? (
+                                /* ── Not activated: show activate + force-mark buttons ── */
                                 <>
-                                  <span className="inline-flex items-center gap-2 px-3 py-2 bg-emerald-50 text-emerald-700 border border-emerald-100 rounded-xl text-xs font-bold">
-                                    <LinkIcon size={12} /> משויך לבוט: {assignedBot.name}
+                                  <button
+                                    disabled={isActivating || !n.has_access_token}
+                                    title={!n.has_access_token ? 'אין access_token שמור — חבר מחדש דרך פייסבוק' : 'הפעל מספר זה'}
+                                    onClick={async () => {
+                                      setActivatingPnid(n.phone_number_id);
+                                      setActivateListLogs(prev => ({ ...prev, [n.phone_number_id]: ['מפעיל מספר...'] }));
+                                      try {
+                                        const r = await fetch(`${API_BASE}/whatsapp-registration/activate-number`, {
+                                          method: 'POST',
+                                          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                                          body: JSON.stringify({ phone_number_id: n.phone_number_id })
+                                        });
+                                        const data = await r.json();
+                                        const ok = data.success === true;
+                                        setActivateListLogs(prev => ({
+                                          ...prev,
+                                          [n.phone_number_id]: ok
+                                            ? ['✅ הופעל בהצלחה']
+                                            : [`❌ נכשל: ${JSON.stringify(data.meta_response?.error || data.error || data)}`]
+                                        }));
+                                        if (ok) loadConnectedNumbers();
+                                      } catch (e: any) {
+                                        setActivateListLogs(prev => ({ ...prev, [n.phone_number_id]: [`שגיאת רשת: ${e.message}`] }));
+                                      } finally {
+                                        setActivatingPnid(null);
+                                      }
+                                    }}
+                                    className="flex items-center gap-2 px-4 py-2 bg-amber-500 text-white rounded-xl text-xs font-bold hover:bg-amber-600 transition-all disabled:opacity-50 active:scale-95"
+                                  >
+                                    {isActivating
+                                      ? <><span className="animate-spin inline-block w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full" /> מפעיל...</>
+                                      : <><Zap size={12} /> הפעל מספר</>}
+                                  </button>
+                                  <button
+                                    disabled={markingPnid === n.phone_number_id}
+                                    title="סמן מספר זה כמופעל ידנית (ללא קריאה ל-Meta)"
+                                    onClick={async () => {
+                                      if (!window.confirm('לסמן מספר זה כמופעל ללא קריאה ל-Meta?\nפעולה זו מתאימה כאשר המספר כבר מופעל בפועל.')) return;
+                                      setMarkingPnid(n.phone_number_id);
+                                      try {
+                                        const r = await fetch(`${API_BASE}/whatsapp-registration/mark-registered`, {
+                                          method: 'POST',
+                                          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                                          body: JSON.stringify({ phone_number_id: n.phone_number_id })
+                                        });
+                                        const data = await r.json();
+                                        if (data.success) loadConnectedNumbers();
+                                        else alert(`שגיאה: ${data.error || 'לא ידוע'}`);
+                                      } catch (e: any) {
+                                        alert(`שגיאת רשת: ${e.message}`);
+                                      } finally {
+                                        setMarkingPnid(null);
+                                      }
+                                    }}
+                                    className="flex items-center gap-1 px-3 py-2 bg-slate-100 text-slate-600 border border-slate-200 rounded-xl text-xs font-bold hover:bg-slate-200 transition-all disabled:opacity-50 active:scale-95"
+                                  >
+                                    {markingPnid === n.phone_number_id
+                                      ? <span className="animate-spin inline-block w-3 h-3 border-2 border-slate-400 border-t-transparent rounded-full" />
+                                      : <CheckCircle size={12} />}
+                                    סמן כמופעל
+                                  </button>
+                                </>
+                              ) : assignedBot ? (
+                                /* ── Activated + assigned to bot ── */
+                                <>
+                                  <span className={`inline-flex items-center gap-2 px-3 py-2 border rounded-xl text-xs font-bold ${n.provider === 'dialog360' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-emerald-50 text-emerald-700 border-emerald-100'}`}>
+                                    <LinkIcon size={12} />
+                                    {n.provider === 'dialog360' ? '360 • ' : 'FB • '}
+                                    משויך לבוט: {assignedBot.name}
                                   </span>
+                                  {n.provider !== 'dialog360' && (
+                                  <button
+                                    disabled={phpCreatingPnid === n.phone_number_id}
+                                    title="עדכן נתונים בשרת החיצוני (facebook-create.php)"
+                                    onClick={async () => {
+                                      setPhpCreatingPnid(n.phone_number_id);
+                                      setPhpCreateResults(prev => ({ ...prev, [n.phone_number_id]: { success: false, logs: ['⏳ שולח בקשה לשרת...'] } }));
+                                      try {
+                                        const r = await fetch(`${API_BASE}/whatsapp-registration/php-create`, {
+                                          method: 'POST',
+                                          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                                          body: JSON.stringify({ phone_number_id: n.phone_number_id })
+                                        });
+                                        const data = await r.json();
+                                        setPhpCreateResults(prev => ({
+                                          ...prev,
+                                          [n.phone_number_id]: {
+                                            success: !!data.success,
+                                            logs: Array.isArray(data.logs) ? data.logs : [data.success ? '✅ הצליח' : `❌ נכשל: ${data.error || 'שגיאה לא ידועה'}`],
+                                            webhook: data.webhook || null,
+                                            endpoint: data.endpoint || null
+                                          }
+                                        }));
+                                        // Sync the new endpoint into the parent bots state immediately
+                                        if (data.success && data.endpoint && n.assigned_bot_id && onUpdateBotEndpoint) {
+                                          onUpdateBotEndpoint(String(n.assigned_bot_id), data.endpoint).catch(() => {});
+                                        }
+                                      } catch (e: any) {
+                                        setPhpCreateResults(prev => ({ ...prev, [n.phone_number_id]: { success: false, logs: [`❌ שגיאת רשת: ${e.message}`] } }));
+                                      } finally {
+                                        setPhpCreatingPnid(null);
+                                      }
+                                    }}
+                                    className="flex items-center gap-1.5 px-3 py-2 bg-indigo-600 text-white rounded-xl text-xs font-bold hover:bg-indigo-700 transition-all disabled:opacity-50 active:scale-95"
+                                  >
+                                    {phpCreatingPnid === n.phone_number_id
+                                      ? <><span className="animate-spin inline-block w-3 h-3 border-2 border-white border-t-transparent rounded-full" /> שולח...</>
+                                      : <><Globe size={12} /> הגדר בשרת</>}
+                                  </button>
+                                  )}
                                   <button
                                     onClick={() => handleUnassign(n.phone_number_id)}
                                     disabled={isBusy}
@@ -866,6 +1408,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                                   </button>
                                 </>
                               ) : (
+                                /* ── Activated + not yet assigned ── */
                                 <>
                                   <select
                                     value={assignSelection[n.phone_number_id] || ''}
@@ -884,10 +1427,52 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                                   >
                                     <LinkIcon size={12} /> {isBusy ? 'משייך...' : 'שייך לבוט'}
                                   </button>
+                                  <button
+                                    onClick={() => handleRemoveConnectedNumber(n.phone_number_id)}
+                                    disabled={removingPnid === n.phone_number_id}
+                                    className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all disabled:opacity-50"
+                                    title="מחק מספר מחובר"
+                                  >
+                                    {removingPnid === n.phone_number_id
+                                      ? <span className="animate-spin inline-block w-3.5 h-3.5 border-2 border-red-400 border-t-transparent rounded-full" />
+                                      : <Trash2 size={15} />}
+                                  </button>
                                 </>
                               )}
                             </div>
                           </div>
+
+                          {/* Per-number activation log */}
+                          {listLogs.length > 0 && (
+                            <div className="mt-3 rounded-xl bg-slate-900 text-[11px] px-3 py-2 space-y-0.5">
+                              {listLogs.map((lg, i) => (
+                                <div key={i} className={lg.includes('✅') ? 'text-emerald-400' : lg.includes('❌') || lg.includes('נכשל') ? 'text-red-400' : 'text-slate-400'}>{lg}</div>
+                              ))}
+                            </div>
+                          )}
+
+                          {/* php-create result log */}
+                          {phpCreateResults[n.phone_number_id] && (
+                            <div className={`mt-3 rounded-xl border px-3 py-2.5 ${phpCreateResults[n.phone_number_id].success ? 'bg-indigo-50 border-indigo-200' : 'bg-red-50 border-red-200'}`}>
+                              <div className="flex items-center justify-between mb-1.5">
+                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">הגדרת שרת חיצוני</span>
+                                <button onClick={() => setPhpCreateResults(prev => { const n2 = {...prev}; delete n2[n.phone_number_id]; return n2; })} className="text-slate-400 hover:text-slate-600">
+                                  <X size={12} />
+                                </button>
+                              </div>
+                              <div className="space-y-0.5">
+                                {phpCreateResults[n.phone_number_id].logs.map((lg, i) => (
+                                  <div key={i} className={`text-[11px] font-mono ${lg.includes('✅') ? 'text-indigo-700 font-bold' : lg.includes('❌') ? 'text-red-600 font-bold' : lg.includes('🔗') ? 'text-blue-600' : lg.includes('🆔') ? 'text-emerald-700 font-bold' : 'text-slate-600'}`}>{lg}</div>
+                                ))}
+                              </div>
+                              {phpCreateResults[n.phone_number_id].endpoint && (
+                                <div className="mt-2 flex items-center gap-2 pt-2 border-t border-indigo-100">
+                                  <span className="text-[10px] font-bold text-slate-400">Endpoint בבוט:</span>
+                                  <code className="text-[11px] font-mono text-indigo-700 bg-indigo-100 px-2 py-0.5 rounded-lg">{phpCreateResults[n.phone_number_id].endpoint}</code>
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </div>
                       );
                     })}
@@ -1058,7 +1643,13 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                         <div className="text-[11px] text-slate-500 font-medium">בעת ביטול — לא תתבצע הסרה אוטומטית בבוטים שלך, גם אם המילה הוגדרה.</div>
                       </div>
                       <button
-                        onClick={() => setRemovalDraft({ ...removalDraft, enabled: !removalDraft.enabled })}
+                        onClick={() => {
+                          if (removalDraft.enabled) {
+                            setRemovalDisableConfirmOpen(true);
+                          } else {
+                            setRemovalDraft({ ...removalDraft, enabled: true });
+                          }
+                        }}
                         className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-xs transition-all border ${
                           removalDraft.enabled
                             ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
@@ -1070,68 +1661,131 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                       </button>
                     </div>
 
-                    <div>
-                      <label className="block text-xs font-black text-slate-400 uppercase tracking-wider mb-3">מילות מפתח להסרה</label>
-                      <div className="flex gap-2 mb-4">
-                        <input
-                          type="text"
-                          value={removalKwInput}
-                          onChange={e => setRemovalKwInput(e.target.value)}
-                          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addRemovalDraftKeyword(); } }}
-                          placeholder="הוסף מילת מפתח (למשל: הסר, remove)"
-                          className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold outline-none focus:ring-2 focus:ring-rose-600/20 focus:border-rose-500 transition-all"
-                        />
-                        <button
-                          onClick={addRemovalDraftKeyword}
-                          className="flex items-center gap-2 px-5 py-3 bg-slate-800 text-white rounded-2xl font-bold text-sm hover:bg-slate-900 transition-all"
-                        >
-                          <Plus size={14} /> הוסף
-                        </button>
+                    {/* ── Hebrew block ── */}
+                    <div className="bg-blue-50 border border-blue-100 rounded-2xl p-5 space-y-4">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-base">🇮🇱</span>
+                        <span className="text-sm font-black text-blue-800">עברית</span>
                       </div>
-                      {removalDraft.keywords.length === 0 ? (
-                        <div className="text-center text-slate-400 text-sm py-8 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
-                          אין מילות מפתח. ללא מילות מפתח לא תתבצע הסרה אוטומטית.
+
+                      <div>
+                        <label className="block text-xs font-black text-blue-500 uppercase tracking-wider mb-3">מילות מפתח להסרה בעברית</label>
+                        <div className="flex gap-2 mb-3" dir="rtl">
+                          <input
+                            type="text"
+                            value={removalKwInputHe}
+                            onChange={e => setRemovalKwInputHe(e.target.value)}
+                            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addRemovalDraftKeywordHe(); } }}
+                            placeholder="למשל: הסר, הסרה, תסיר"
+                            className="flex-1 px-4 py-3 bg-white border border-blue-200 rounded-2xl text-sm font-bold outline-none focus:ring-2 focus:ring-blue-400/20 focus:border-blue-400 transition-all"
+                          />
+                          <button
+                            onClick={addRemovalDraftKeywordHe}
+                            className="flex items-center gap-2 px-5 py-3 bg-blue-700 text-white rounded-2xl font-bold text-sm hover:bg-blue-800 transition-all"
+                          >
+                            <Plus size={14} /> הוסף
+                          </button>
                         </div>
-                      ) : (
-                        <div className="flex flex-wrap gap-2">
-                          {removalDraft.keywords.map((kw, idx) => (
-                            <span
-                              key={`${kw}-${idx}`}
-                              className="inline-flex items-center gap-2 bg-rose-50 text-rose-700 border border-rose-200 px-3 py-1.5 rounded-xl text-sm font-bold"
-                            >
-                              <span dir="auto">{kw}</span>
-                              <button
-                                onClick={() => removeRemovalDraftKeyword(idx)}
-                                className="text-rose-400 hover:text-rose-700 transition-colors"
-                                title="הסר מילה"
-                              >
-                                <X size={14} />
-                              </button>
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                      {removalGlobal && (
-                        <p className="text-[11px] text-slate-400 font-medium mt-3">
-                          ברירת המחדל הכללית של המערכת מוגדרת כעת עם {removalGlobal.keywords.length} מילים בעברית ובאנגלית{removalCustomized ? '' : ' — והיא ההגדרה הפעילה אצלך כרגע'}.
-                        </p>
-                      )}
+                        {removalDraft.keywords_he.length === 0 ? (
+                          <div className="text-center text-blue-300 text-sm py-6 bg-white rounded-2xl border border-dashed border-blue-200">
+                            אין מילות מפתח בעברית.
+                          </div>
+                        ) : (
+                          <div className="flex flex-wrap gap-2">
+                            {removalDraft.keywords_he.map((kw, idx) => (
+                              <span key={`he-${kw}-${idx}`} className="inline-flex items-center gap-2 bg-white text-blue-700 border border-blue-200 px-3 py-1.5 rounded-xl text-sm font-bold">
+                                <span dir="rtl">{kw}</span>
+                                <button onClick={() => removeRemovalDraftKeywordHe(idx)} className="text-blue-300 hover:text-blue-700 transition-colors" title="הסר מילה"><X size={14} /></button>
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        {removalGlobal && (
+                          <p className="text-[11px] text-blue-400 font-medium mt-2">
+                            ברירת מחדל: {removalGlobal.keywords_he.length} מילים בעברית{removalCustomized ? '' : ' — פעילה כרגע'}.
+                          </p>
+                        )}
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-black text-blue-500 uppercase tracking-wider mb-2">הודעת אישור לאחר ההסרה — עברית</label>
+                        <textarea
+                          value={removalDraft.message_he}
+                          onChange={e => setRemovalDraft({ ...removalDraft, message_he: e.target.value })}
+                          rows={2}
+                          dir="rtl"
+                          placeholder="הודעה שתישלח לנמען שכתב מילת מפתח עברית"
+                          className="w-full px-5 py-3 bg-white border border-blue-200 rounded-2xl text-sm font-bold outline-none focus:ring-2 focus:ring-blue-400/20 focus:border-blue-400 transition-all resize-none"
+                        />
+                        {removalGlobal?.message_he && (
+                          <p className="text-[11px] text-blue-400 font-medium mt-1">
+                            ברירת מחדל: <span className="text-blue-500">"{removalGlobal.message_he}"</span>
+                          </p>
+                        )}
+                      </div>
                     </div>
 
-                    <div>
-                      <label className="block text-xs font-black text-slate-400 uppercase tracking-wider mb-3">הודעת אישור לאחר ההסרה</label>
-                      <textarea
-                        value={removalDraft.message}
-                        onChange={e => setRemovalDraft({ ...removalDraft, message: e.target.value })}
-                        rows={3}
-                        placeholder="הודעה שתישלח לנמען אחרי שהוסר אוטומטית"
-                        className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold outline-none focus:ring-2 focus:ring-rose-600/20 focus:border-rose-500 transition-all resize-none"
-                      />
-                      {removalGlobal && removalGlobal.message && (
-                        <p className="text-[11px] text-slate-400 font-medium mt-2">
-                          ברירת מחדל מערכתית: <span className="text-slate-500">"{removalGlobal.message}"</span>
-                        </p>
-                      )}
+                    {/* ── English block ── */}
+                    <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-5 space-y-4">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-base">🇺🇸</span>
+                        <span className="text-sm font-black text-emerald-800">English</span>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-black text-emerald-600 uppercase tracking-wider mb-3">English Removal Keywords</label>
+                        <div className="flex gap-2 mb-3">
+                          <input
+                            type="text"
+                            value={removalKwInputEn}
+                            onChange={e => setRemovalKwInputEn(e.target.value)}
+                            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addRemovalDraftKeywordEn(); } }}
+                            placeholder="e.g. stop, remove, unsubscribe"
+                            className="flex-1 px-4 py-3 bg-white border border-emerald-200 rounded-2xl text-sm font-bold outline-none focus:ring-2 focus:ring-emerald-400/20 focus:border-emerald-400 transition-all"
+                          />
+                          <button
+                            onClick={addRemovalDraftKeywordEn}
+                            className="flex items-center gap-2 px-5 py-3 bg-emerald-700 text-white rounded-2xl font-bold text-sm hover:bg-emerald-800 transition-all"
+                          >
+                            <Plus size={14} /> Add
+                          </button>
+                        </div>
+                        {removalDraft.keywords_en.length === 0 ? (
+                          <div className="text-center text-emerald-300 text-sm py-6 bg-white rounded-2xl border border-dashed border-emerald-200">
+                            No English keywords defined.
+                          </div>
+                        ) : (
+                          <div className="flex flex-wrap gap-2">
+                            {removalDraft.keywords_en.map((kw, idx) => (
+                              <span key={`en-${kw}-${idx}`} className="inline-flex items-center gap-2 bg-white text-emerald-700 border border-emerald-200 px-3 py-1.5 rounded-xl text-sm font-bold">
+                                <span>{kw}</span>
+                                <button onClick={() => removeRemovalDraftKeywordEn(idx)} className="text-emerald-300 hover:text-emerald-700 transition-colors" title="Remove keyword"><X size={14} /></button>
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        {removalGlobal && (
+                          <p className="text-[11px] text-emerald-500 font-medium mt-2">
+                            Default: {removalGlobal.keywords_en.length} English keywords{removalCustomized ? '' : ' — currently active'}.
+                          </p>
+                        )}
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-black text-emerald-600 uppercase tracking-wider mb-2">Confirmation message after removal — English</label>
+                        <textarea
+                          value={removalDraft.message_en}
+                          onChange={e => setRemovalDraft({ ...removalDraft, message_en: e.target.value })}
+                          rows={2}
+                          placeholder="Message sent to the contact after an English keyword match"
+                          className="w-full px-5 py-3 bg-white border border-emerald-200 rounded-2xl text-sm font-bold outline-none focus:ring-2 focus:ring-emerald-400/20 focus:border-emerald-400 transition-all resize-none"
+                        />
+                        {removalGlobal?.message_en && (
+                          <p className="text-[11px] text-emerald-500 font-medium mt-1">
+                            Default: <span className="text-emerald-600">"{removalGlobal.message_en}"</span>
+                          </p>
+                        )}
+                      </div>
                     </div>
 
                     {removalSaved && (
@@ -1208,6 +1862,11 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                     <p className="text-slate-500 text-sm font-bold flex items-center justify-end gap-2 mt-1">
                       <span dir="ltr">{bot.display_phone_number}</span>
                       <span>בוט משויך למספר</span>
+                      {bot.whatsapp_provider === 'dialog360' ? (
+                        <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-emerald-600 text-white">360</span>
+                      ) : (
+                        <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-[#1877F2] text-white">FB</span>
+                      )}
                     </p>
                   )}
                 </div>
@@ -1284,31 +1943,9 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                     ביטול
                   </button>
                   <button
-                    onClick={() => {
-                      setFacebookSending(true);
-                      try {
-                        // ── פתיחת חלונית רישום/חיבור לפייסבוק (OAuth popup) ──
-                        const fbUrl = 'https://business.facebook.com/messaging/whatsapp/onboard/?app_id=717787580246105&config_id=333254912651363&extras=%7B%22sessionInfoVersion%22%3A%223%22%2C%22version%22%3A%22v4%22%7D';
-
-                        const width = 600;
-                        const height = 700;
-                        const left = window.screenX + (window.outerWidth - width) / 2;
-                        const top = window.screenY + (window.outerHeight - height) / 2;
-                        const popup = window.open(
-                          fbUrl,
-                          'facebookLogin',
-                          `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes,status=yes`
-                        );
-
-                        if (!popup) {
-                          alert('הדפדפן חסם את החלונית הקופצת. אנא אפשר חלונות קופצים ונסה שוב.');
-                          return;
-                        }
-                        popup.focus();
-                        setFacebookDone(true);
-                      } finally {
-                        setFacebookSending(false);
-                      }
+                    onClick={async () => {
+                      setFacebookDone(true);
+                      handleOpenFbOAuth(facebookConfirmBot!);
                     }}
                     className="flex-1 py-4 bg-blue-600 text-white rounded-2xl font-bold text-xs uppercase shadow-lg shadow-blue-600/20 hover:bg-blue-700 disabled:opacity-60"
                     disabled={facebookSending}
@@ -1336,10 +1973,18 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
             await onUpdateBotEndpoint(id, endpoint);
             setSettingsBot(prev => prev ? { ...prev, endpoint } : null);
           } : undefined}
-          onConnectFacebook={onConnectFacebook ? (bot) => {
+          onUpdateBotRestartKeyword={onUpdateBotRestartKeyword ? async (id, keyword) => {
+            await onUpdateBotRestartKeyword(id, keyword);
+            setSettingsBot(prev => prev ? { ...prev, restart_keyword: keyword } : null);
+          } : undefined}
+          onConnectFacebook={onConnectFacebook ? (_bot) => {
             setSettingsBot(null);
-            setFacebookConfirmBot(bot);
-            setFacebookDone(false);
+            setActiveTab('settings');
+            setSettingsSection('numbers');
+            setFbConnectBot(_bot);
+            setFbResult(null);
+            setFbActivateLogs([]);
+            setFbActivateDone(false);
           } : undefined}
         />
       )}
@@ -1487,6 +2132,50 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
           </div>
         );
       })()}
+
+      {/* ── Legal warning: disabling auto-removal ── */}
+      {removalDisableConfirmOpen && removalDraft && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center p-6" dir="rtl">
+          <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl border border-slate-100 p-8">
+            <div className="flex items-start gap-4 mb-6">
+              <div className="w-12 h-12 bg-red-50 text-red-600 rounded-2xl flex items-center justify-center flex-shrink-0 shrink-0">
+                <AlertTriangle size={24} />
+              </div>
+              <div className="text-right">
+                <h4 className="text-lg font-black text-slate-900 mb-2">אזהרה חוקית — ביטול הסרה אוטומטית</h4>
+                <p className="text-sm text-slate-700 font-bold leading-relaxed mb-2">
+                  לפי חוק הספאם ותקנות הגנת הפרטיות, חובה לאפשר לנמענים להסיר את עצמם מרשימות תפוצה.
+                </p>
+                <p className="text-sm text-slate-500 font-medium leading-relaxed">
+                  השבתת ההסרה האוטומטית פוטרת את המערכת מאחריות — האחריות לטיפול בבקשות הסרה עוברת אליך באופן מלא ואישי.
+                </p>
+              </div>
+            </div>
+            <div className="bg-red-50 border border-red-200 rounded-2xl px-4 py-3 mb-6 text-right">
+              <p className="text-red-700 text-xs font-bold leading-relaxed">
+                בלחיצה על &quot;אני מודע/ת ומקבל/ת אחריות&quot; אתה מאשר/ת שקראת את האזהרה לעיל ומקבל/ת על עצמך את מלוא האחריות החוקית לניהול בקשות הסרה.
+              </p>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setRemovalDisableConfirmOpen(false)}
+                className="flex-1 py-3 border border-slate-200 text-slate-600 rounded-2xl font-bold text-xs hover:bg-slate-50 transition-all"
+              >
+                ביטול — השאר פעיל
+              </button>
+              <button
+                onClick={() => {
+                  setRemovalDraft({ ...removalDraft, enabled: false });
+                  setRemovalDisableConfirmOpen(false);
+                }}
+                className="flex-1 py-3 bg-red-600 text-white rounded-2xl font-bold text-xs hover:bg-red-700 transition-all shadow-lg shadow-red-200"
+              >
+                אני מודע/ת ומקבל/ת אחריות
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Confirm removal-config change ── */}
       {removalConfirmOpen && (

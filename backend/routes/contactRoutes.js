@@ -13,6 +13,7 @@ import {
   upsertContactByPhone,
   importContacts,
   assignRep,
+  getContactGroupsMap,
 } from '../controllers/contactController.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -41,6 +42,7 @@ const router = express.Router();
 router.use(authenticateToken);
 
 // Specific routes before parametric /:id routes
+router.get('/groups-map', getContactGroupsMap);
 router.post('/upsert-by-phone', upsertContactByPhone);
 router.post('/import', upload.single('file'), importContacts);
 router.patch('/assign-rep', assignRep);

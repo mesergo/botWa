@@ -47,47 +47,40 @@
    - שילוב עם Filament
    - דוגמאות PHP/JavaScript
 
-8. **[SIMULATOR-ID-GUIDE.md](./SIMULATOR-ID-GUIDE.md)** ⭐ NEW
-   - מזהה סימולטור ייחודי
-   - שליחה לסימולטור ספציפי
-   - מספר סימולטורים בו-זמנית
-   - דוגמאות ושאלות נפוצות
-
 ### 🔧 מידע טכני
-9. **[IMPLEMENTATION-SUMMARY.md](./IMPLEMENTATION-SUMMARY.md)**
+8. **[IMPLEMENTATION-SUMMARY.md](./IMPLEMENTATION-SUMMARY.md)**
    - סיכום כל השינויים
    - קבצים שנוצרו
    - קבצים שעודכנו
    - מפת דרכים טכנית
 
 ### 📝 קבצי README קיימים
-10. **[README.md](./README.md)**
+9. **[README.md](./README.md)**
    - README ראשי של הפרויקט
    - עודכן עם מידע על ה-API החדש
 
-11. **[DEPLOYMENT.md](./DEPLOYMENT.md)**
+10. **[DEPLOYMENT.md](./DEPLOYMENT.md)**
    - מדריך העלאה לשרת
    - הגדרות production
 
-12. **[PRODUCTION-CHECKLIST.md](./PRODUCTION-CHECKLIST.md)**
+11. **[PRODUCTION-CHECKLIST.md](./PRODUCTION-CHECKLIST.md)**
    - רשימה לפני העלאה
 
-13. **[SETUP-INSTRUCTIONS.md](./SETUP-INSTRUCTIONS.md)**
+12. **[SETUP-INSTRUCTIONS.md](./SETUP-INSTRUCTIONS.md)**
     - הוראות התקנה
 
 ### 🧪 קבצי דוגמה וקוד
-14. **[backend/examples/external-message-example.js](./backend/examples/external-message-example.js)** ⭐ NEW
+13. **[backend/examples/external-message-example.js](./backend/examples/external-message-example.js)** ⭐ NEW
     - דוגמאות JavaScript מלאות
     - שילוב עם Web Services
     - פונקציות עזר
-    - תמיכה במזהה סימולטור
 
-15. **[backend/examples/filament-integration-example.php](./backend/examples/filament-integration-example.php)** ⭐ NEW
+14. **[backend/examples/filament-integration-example.php](./backend/examples/filament-integration-example.php)** ⭐ NEW
     - דוגמאות PHP/Laravel
     - שילוב עם Filament
     - Observers ו-Webhooks
 
-16. **[backend/test-external-messages.js](./backend/test-external-messages.js)** ⭐ NEW
+15. **[backend/test-external-messages.js](./backend/test-external-messages.js)** ⭐ NEW
     - קובץ בדיקות אוטומטי
     - 10 test cases
     - הרץ: `node backend/test-external-messages.js`
@@ -171,17 +164,15 @@ project-bots/
 ---
 
 ## 📊 סטטיסטיקות
-6 קבצים (4 חדשים!)
+
+- **קבצי תיעוד**: 15 קבצים (3 חדשים!)
 - **קבצי קוד חדשים**: 8 קבצים (3 חדשים!)
-- **קבצי קוד מעודכנים**: 7 קבצים (4 חדשים!)
-- **שורות קוד חדשות**: ~1,800 (+200)
-- **שורות תיעוד**: ~4,200 (+700)
-- **דוגמאות**: 6 מקרי שימוש מלאים + דוגמאות חיצוניות + תמיכה במזהה סימולטור
+- **קבצי קוד מעודכנים**: 5 קבצים (2 חדשים!)
+- **שורות קוד חדשות**: ~1,600 (+400)
+- **שורות תיעוד**: ~3,500 (+1,000)
+- **דוגמאות**: 6 מקרי שימוש מלאים + דוגמאות חיצוניות
 
 ### תכונות חדשות (21/04/2026)
-- ✅ **External Message API** - שליחת הודעות מפרויקטים חיצוניים
-- ✅ **Simulator ID** - מזהה ייחודי לכל סימולטור ⭐ NEW
-- ✅ **Targeted Messages** - שליחה לסימולטור ספציפי או broadcast ⭐ NEW
 - ✅ **External Message API** - שליחת הודעות מפרויקטים חיצוניים
 - ✅ **Polling Mechanism** - עדכון הודעות בזמן אמת (3 שניות)
 - ✅ **PHP/Filament Integration** - דוגמאות לשילוב עם Laravel

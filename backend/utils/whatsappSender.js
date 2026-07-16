@@ -81,42 +81,56 @@ const splitText = (text, maxLen = WA_MAX_TEXT) => {
 };
 
 export const pushMessagesToWhatsApp = async (phone, messages, user = null, bot = null) => {
-  if (!messages || !messages.length) return false;
+  if (!messages || !messages.length) return { anySuccess: false, wamidPerMsg: [] };
 
   const { endpoint, waToken } = buildWACredentials(user, bot);
-  if (!endpoint) return false;
+  if (!endpoint) return { anySuccess: false, wamidPerMsg: [] };
 
   const normalizedPhone = normalizePhone(phone);
 
   console.log(`[WA-PUSH] 📞 Sending to phone=${normalizedPhone} via endpoint=${endpoint}${bot?.endpoint ? ' (bot.endpoint)' : user?.dialog360_bot_id ? ' (user dialog360_bot_id)' : ' (fallback)'}`);
 
   const sendOne = async (body) => {
+    const fullPayload = { ...body, phone: normalizedPhone, fromMe: 1 };
+    const url = `https://wa.message.co.il/api/${endpoint}/send`;
+    console.log(`[WA-PUSH] 📤 REQUEST → ${url}`);
+    console.log(`[WA-PUSH] 📤 TOKEN: ${waToken}`);
+    console.log(`[WA-PUSH] 📤 PAYLOAD:\n${JSON.stringify(fullPayload, null, 2)}`);
     try {
-      const res = await fetch(`https://wa.message.co.il/api/${endpoint}/send`, {
+      const res = await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json; charset=utf-8',
           'Accept': 'application/json',
           'token': waToken,
         },
-        body: JSON.stringify({ ...body, phone: normalizedPhone, fromMe: 1 }),
+        body: JSON.stringify(fullPayload),
       });
+      const respText = await res.text().catch(() => '');
+      console.log(`[WA-PUSH] ⬅️  RESPONSE HTTP ${res.status} | body: ${respText}`);
       if (!res.ok) {
-        const errText = await res.text().catch(() => '');
-        console.error(`[WA-PUSH] ❌ HTTP ${res.status} | body: ${JSON.stringify(body).substring(0, 100)} | resp: ${errText.substring(0, 200)}`);
-        return false;
+        console.error(`[WA-PUSH] ❌ HTTP ${res.status} | resp: ${respText}`);
+        return { success: false, wamid: null };
       }
+      let wamid = null;
+      try {
+        const respJson = JSON.parse(respText);
+        wamid = respJson?.messages?.[0]?.id || null;
+      } catch {}
       const kind = body.image ? 'image' : body.video ? 'video' : body.file ? 'file' : body.buttons ? 'buttons' : 'text';
-      console.log(`[WA-PUSH] ✅ Sent ${kind} to ${normalizedPhone}`);
-      return true;
+      console.log(`[WA-PUSH] ✅ Sent ${kind} to ${normalizedPhone}${wamid ? ' | wamid=' + wamid.substring(0, 20) + '…' : ''}`);
+      return { success: true, wamid };
     } catch (err) {
       console.error('[WA-PUSH] ❌ Exception:', err.message);
-      return false;
+      return { success: false, wamid: null };
     }
   };
 
+  const wamidPerMsg = new Array(messages.length).fill(null);
   let textBuffer = '';
+  let textBufIndices = []; // which message indices contributed to textBuffer
   let sendItemBuffer = []; // צובר SendItem-ים ללא כפתורים לשליחה בהודעה אחת
+  let sendItemIndices = []; // which message indices are in sendItemBuffer
   let anySuccess = false;
 
   const SEND_ITEM_SEPARATOR = '─────────────────────';
@@ -127,26 +141,40 @@ export const pushMessagesToWhatsApp = async (phone, messages, user = null, bot =
     const combined = sendItemBuffer
       .map(item => [item.title, item.subtitle].filter(Boolean).join('\n'))
       .join(`\n${SEND_ITEM_SEPARATOR}\n`);
+    const indices = [...sendItemIndices];
+    sendItemBuffer = [];
+    sendItemIndices = [];
     for (const chunk of splitText(combined)) {
-      if (await sendOne({ text: chunk })) anySuccess = true;
+      const { success, wamid } = await sendOne({ text: chunk });
+      if (success) {
+        anySuccess = true;
+        if (wamid) indices.forEach(idx => { wamidPerMsg[idx] = wamid; });
+      }
       await _sleep(300);
     }
-    sendItemBuffer = [];
     await _sleep(100);
   };
 
   // עוזר לשטוף את textBuffer כהודעות טקסט
   const flushTextBuffer = async () => {
-    if (!textBuffer.trim()) return;
-    for (const chunk of splitText(textBuffer.trim())) {
-      if (await sendOne({ text: chunk })) anySuccess = true;
+    if (!textBuffer.trim()) { textBuffer = ''; textBufIndices = []; return; }
+    const buf = textBuffer.trim();
+    const indices = [...textBufIndices];
+    textBuffer = '';
+    textBufIndices = [];
+    for (const chunk of splitText(buf)) {
+      const { success, wamid } = await sendOne({ text: chunk });
+      if (success) {
+        anySuccess = true;
+        if (wamid) indices.forEach(idx => { wamidPerMsg[idx] = wamid; });
+      }
       await _sleep(300);
     }
-    textBuffer = '';
     await _sleep(100);
   };
 
-  for (const msg of messages) {
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i];
     // לפני כל סוג הודעה שאינו SendItem, שטוף את בופר ה-SendItem-ים
     if (msg.type !== 'SendItem') await flushSendItems();
 
@@ -154,7 +182,10 @@ export const pushMessagesToWhatsApp = async (phone, messages, user = null, bot =
       case 'Text': {
         // שטוף כל טקסט צבור קודם לפני הוספת הטקסט החדש, כדי שכל הודעת טקסט תישלח בנפרד
         await flushTextBuffer();
-        if (msg.text) textBuffer += msg.text + '\n';
+        if (msg.text) {
+          textBuffer += msg.text + '\n';
+          textBufIndices.push(i);
+        }
         break;
       }
 
@@ -168,25 +199,42 @@ export const pushMessagesToWhatsApp = async (phone, messages, user = null, bot =
         }
 
         const headerText = textBuffer.trim() || msgText;
+        const bufferedIndices = [...textBufIndices];
+        textBuffer = '';
+        textBufIndices = [];
         // הודעות אינטראקטיביות (טקסט + כפתורים) מוגבלות ל-1024 תווים בגוף
         // אם הטקסט ארוך מדי, שלח אותו כטקסט רגיל קודם ואז שלח את הכפתורים
         if (headerText.length > WA_MAX_INTERACTIVE_BODY) {
           for (const chunk of splitText(headerText)) {
-            if (await sendOne({ text: chunk })) anySuccess = true;
+            const { success, wamid } = await sendOne({ text: chunk });
+            if (success) {
+              anySuccess = true;
+              if (wamid) bufferedIndices.forEach(idx => { wamidPerMsg[idx] = wamid; });
+            }
             await _sleep(300);
           }
           const btnBodyText = msgText ? msgText.substring(0, WA_MAX_INTERACTIVE_BODY) : null;
           if (btnBodyText) {
-            if (await sendOne({ text: btnBodyText, buttons: msg.options })) anySuccess = true;
+            const { success, wamid } = await sendOne({ text: btnBodyText, buttons: msg.options });
+            if (success) { anySuccess = true; if (wamid) wamidPerMsg[i] = wamid; }
           }
         } else if (headerText) {
-          if (await sendOne({ text: headerText, buttons: msg.options })) anySuccess = true;
+          const { success, wamid } = await sendOne({ text: headerText, buttons: msg.options });
+          if (success) {
+            anySuccess = true;
+            if (wamid) {
+              bufferedIndices.forEach(idx => { wamidPerMsg[idx] = wamid; });
+              wamidPerMsg[i] = wamid;
+            }
+          }
         } else {
           // אין טקסט — וואטסאפ דורש גוף לא ריק; שלח את האפשרויות כרשימת טקסט
           const fallbackText = msg.options.join('\n');
-          if (fallbackText && await sendOne({ text: fallbackText })) anySuccess = true;
+          if (fallbackText) {
+            const { success, wamid } = await sendOne({ text: fallbackText });
+            if (success) { anySuccess = true; if (wamid) wamidPerMsg[i] = wamid; }
+          }
         }
-        textBuffer = '';
         await _sleep(400);
         break;
       }
@@ -194,7 +242,8 @@ export const pushMessagesToWhatsApp = async (phone, messages, user = null, bot =
       case 'Image': {
         await flushTextBuffer();
         console.log(`[WA-PUSH] 🖼  Sending IMAGE | url=${msg.url?.substring(0, 80)} | caption=${msg.text?.substring(0, 40) || '(none)'}`);
-        if (await sendOne({ image: msg.url, text: msg.text || '' })) anySuccess = true;
+        const { success: imgOk, wamid: imgWamid } = await sendOne({ image: msg.url, text: msg.text || '' });
+        if (imgOk) { anySuccess = true; if (imgWamid) wamidPerMsg[i] = imgWamid; }
         await _sleep(600);
         break;
       }
@@ -202,7 +251,8 @@ export const pushMessagesToWhatsApp = async (phone, messages, user = null, bot =
       case 'Video': {
         await flushTextBuffer();
         console.log(`[WA-PUSH] 🎬 Sending VIDEO | url=${msg.url?.substring(0, 80)} | caption=${msg.text?.substring(0, 40) || '(none)'}`);
-        if (await sendOne({ video: msg.url, text: msg.text || '' })) anySuccess = true;
+        const { success: vidOk, wamid: vidWamid } = await sendOne({ video: msg.url, text: msg.text || '' });
+        if (vidOk) { anySuccess = true; if (vidWamid) wamidPerMsg[i] = vidWamid; }
         await _sleep(600);
         break;
       }
@@ -210,7 +260,8 @@ export const pushMessagesToWhatsApp = async (phone, messages, user = null, bot =
       case 'Document': {
         await flushTextBuffer();
         console.log(`[WA-PUSH] 📄 Sending DOCUMENT | url=${msg.url?.substring(0, 80)} | filename=${msg.filename || 'file'}`);
-        if (await sendOne({ file: msg.url, filename: msg.filename || 'file', text: msg.text || '' })) anySuccess = true;
+        const { success: docOk, wamid: docWamid } = await sendOne({ file: msg.url, filename: msg.filename || 'file', text: msg.text || '' });
+        if (docOk) { anySuccess = true; if (docWamid) wamidPerMsg[i] = docWamid; }
         await _sleep(600);
         break;
       }
@@ -218,6 +269,7 @@ export const pushMessagesToWhatsApp = async (phone, messages, user = null, bot =
       case 'URL':
         // Append URL to text buffer — dialog360 linkifies plain URLs in text
         textBuffer += `${msg.text ? msg.text + '\n' : ''}${msg.url}\n`;
+        textBufIndices.push(i);
         break;
 
       case 'SendItem': {
@@ -230,11 +282,13 @@ export const pushMessagesToWhatsApp = async (phone, messages, user = null, bot =
           // יש כפתורים — שלח מיד כהודעה אינטראקטיבית (שטוף sendItemBuffer קודם)
           await flushSendItems();
           const itemText = [msg.title, msg.subtitle].filter(Boolean).join('\n');
-          if (await sendOne({ text: itemText, buttons: btnList })) anySuccess = true;
+          const { success: siOk, wamid: siWamid } = await sendOne({ text: itemText, buttons: btnList });
+          if (siOk) { anySuccess = true; if (siWamid) wamidPerMsg[i] = siWamid; }
           await _sleep(400);
         } else {
           // אין כפתורים — צבור עם שאר ה-SendItem-ים לשליחה כהודעה אחת
           sendItemBuffer.push(msg);
+          sendItemIndices.push(i);
         }
         break;
       }
@@ -247,13 +301,21 @@ export const pushMessagesToWhatsApp = async (phone, messages, user = null, bot =
   // שטוף שאריות
   await flushSendItems();
   if (textBuffer.trim()) {
-    const chunks = splitText(textBuffer.trim());
-    for (let i = 0; i < chunks.length; i++) {
-      if (await sendOne({ text: chunks[i] })) anySuccess = true;
-      if (i < chunks.length - 1) await _sleep(300);
+    const buf = textBuffer.trim();
+    const indices = [...textBufIndices];
+    textBuffer = '';
+    textBufIndices = [];
+    const chunks = splitText(buf);
+    for (let ci = 0; ci < chunks.length; ci++) {
+      const { success, wamid } = await sendOne({ text: chunks[ci] });
+      if (success) {
+        anySuccess = true;
+        if (wamid) indices.forEach(idx => { wamidPerMsg[idx] = wamid; });
+      }
+      if (ci < chunks.length - 1) await _sleep(300);
     }
   }
 
   console.log(`[WA-PUSH] 🏁 anySuccess=${anySuccess}`);
-  return anySuccess;
+  return { anySuccess, wamidPerMsg };
 };

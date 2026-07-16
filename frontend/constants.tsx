@@ -13,16 +13,17 @@ import {
   PlayCircle,
   Users,
   UserMinus,
-  UserCheck
+  UserCheck,
+  Zap
 } from 'lucide-react';
 import { NodeType } from './types';
-
+ 
 export const COMPONENT_GROUPS = [
   {
     title: 'קלט (משתמש)',
     items: [
       { type: NodeType.INPUT_TEXT, label: 'שדה טקסט', icon: <Type size={18} /> },
-      { type: NodeType.INPUT_DATE, label: 'בחירת תאריך', icon: <Calendar size={18} /> },
+      { type: NodeType.INPUT_DATE, label: 'בחירת תאריך/שעה', icon: <Calendar size={18} /> },
       { type: NodeType.INPUT_FILE, label: 'העלאת קובץ', icon: <Upload size={18} /> },
     ]
   },
@@ -43,6 +44,7 @@ export const COMPONENT_GROUPS = [
       { type: NodeType.ACTION_TIME_ROUTING, label: 'ניתוב לפי שעה/תאריך', icon: <Clock size={18} /> },
       { type: NodeType.ACTION_ADD_TO_GROUP, label: 'הוספה/הסרה מקבוצה', icon: <Users size={18} /> },
       { type: NodeType.ACTION_TRANSFER_TO_AGENT, label: 'העברה לנציג', icon: <UserCheck size={18} /> },
+      { type: NodeType.ACTION_SET_PARAMETER, label: 'הגדרת פרמטר', icon: <Zap size={18} /> },
     ]
   }
 ];

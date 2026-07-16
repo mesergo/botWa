@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
+import { WhatsAppText } from '../utils/whatsappFormat';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Send, X, RotateCcw, User, Bot, ExternalLink, FileText, ChevronLeft, ChevronRight, Maximize2, Share2, Check, GitBranch, Upload, History, Globe } from 'lucide-react';
 import { ChatMessage, NodeType, FixedProcess, CarouselItem, User as UserType, Version } from '../types';
@@ -23,6 +24,8 @@ interface SimulatorProps {
   onNodeFocus?: (nodeId: string | null) => void;
   /** Called when the simulator enters/exits a fixed-process sub-flow (passes the FixedProcess node ID from the main flow, or null when back in main flow) */
   onFixedProcessActive?: (fixedProcessNodeId: string | null) => void;
+  /** Global restart keyword — if set, typing it from anywhere in the chat resets the session */
+  restartKeyword?: string;
 }
 
 interface StackItem {
@@ -129,7 +132,7 @@ const Carousel: React.FC<{ items: CarouselItem[], onSelect: (text: string, idx: 
   );
 };
 
-const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, nodes, edges, fixedProcesses, versions, token, isStandalone, currentUser, flowId, initialParams, onNodeFocus, onFixedProcessActive }) => {
+const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, nodes, edges, fixedProcesses, versions, token, isStandalone, currentUser, flowId, initialParams, onNodeFocus, onFixedProcessActive, restartKeyword }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [userInput, setUserInput] = useState('');
   const [dateInput, setDateInput] = useState('');
@@ -682,7 +685,20 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
           if (token) headers['Authorization'] = `Bearer ${token}`;
           const wsAbortCtrl = new AbortController();
           wsAbortControllerRef.current = wsAbortCtrl;
-          const wsBody = JSON.stringify({ url: interpolate(node.data.url), payload: payload });
+
+          // Build proxy request body with optional method/headers/body from node settings
+          const apiMethod: string = node.data.apiMethod || 'POST';
+          const apiHeaders: Array<{ key: string; value: string }> = node.data.apiHeaders || [];
+          const rawApiBody: string | undefined = node.data.apiBody;
+          const interpolatedApiBody = rawApiBody ? interpolate(rawApiBody) : undefined;
+
+          const wsBody = JSON.stringify({
+            url: interpolate(node.data.url),
+            payload: payload,
+            method: apiMethod,
+            customHeaders: apiHeaders,
+            ...(interpolatedApiBody ? { body: interpolatedApiBody } : {}),
+          });
 
           const response = await fetch(`${API_BASE}/xc/call`, { 
             method: 'POST', 
@@ -780,8 +796,19 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
         return processNext(findNextNodeId(nodeId, instance), instance, depth + 1, stack);
       }
       case NodeType.OUTPUT_MENU: { setIsBotTyping(true); await new Promise(r => setTimeout(r, 400)); if (cancelled()) return; menuInstanceMapRef.current[nodeId] = instance; const menuOpts = (node.data.options || []).filter((o: any) => o !== 'default'); const menuImgs = (node.data.optionImages || []).filter((_: any, i: number) => (node.data.options || [])[i] !== 'default'); addMessage({ sender: 'bot', type: 'menu', content: node.data.content, options: menuOpts, optionImages: menuImgs, sourceNodeId: nodeId }); setIsBotTyping(false); break; }
-      case NodeType.INPUT_TEXT: case NodeType.INPUT_DATE: case NodeType.INPUT_FILE: setIsBotTyping(true); await new Promise(r => setTimeout(r, 300)); if (cancelled()) return; if (node.data.label) { addMessage({ sender: 'bot', type: node.type as any, content: node.data.label }); } setIsBotTyping(false); break;
+      case NodeType.INPUT_TEXT: case NodeType.INPUT_FILE: setIsBotTyping(true); await new Promise(r => setTimeout(r, 300)); if (cancelled()) return; if (node.data.label) { addMessage({ sender: 'bot', type: node.type as any, content: node.data.label }); } setIsBotTyping(false); break;
+      case NodeType.INPUT_DATE: setIsBotTyping(true); await new Promise(r => setTimeout(r, 300)); if (cancelled()) return; if (node.data.label) { addMessage({ sender: 'bot', type: 'input_date', content: node.data.label, dateTimeMode: node.data.dateTimeMode || 'date' }); } setIsBotTyping(false); break;
       case NodeType.ACTION_WAIT: await new Promise(r => setTimeout(r, (node.data.waitTime || 1) * 1000)); return processNext(findNextNodeId(nodeId, instance), instance, depth + 1, stack);
+      case NodeType.ACTION_SET_PARAMETER: {
+        const paramName = String(node.data.parameterName || '').trim();
+        const rawValue = String(node.data.parameterValue ?? '');
+        const resolvedValue = rawValue.replace(/--([^-]+)--/g, (_: string, name: string) => sessionParamsRef.current[name] ?? '');
+        if (paramName) {
+          sessionParamsRef.current = { ...sessionParamsRef.current, [paramName]: resolvedValue };
+          setSessionParameters({ ...sessionParamsRef.current });
+        }
+        return processNext(findNextNodeId(nodeId, instance), instance, depth + 1, stack);
+      }
       case NodeType.ACTION_TIME_ROUTING: {
         // Get current date/time in Israel timezone
         const now = new Date();
@@ -836,7 +863,22 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
 
   const handleSend = async () => {
     if (!userInput.trim()) return;
-    
+
+    // Global restart keyword — wins over everything, including menu matching.
+    // Two triggers: system keyword 'wastart' and the custom per-bot restartKeyword.
+    const rkw = (restartKeyword || '').trim().toLowerCase();
+    const inputLower = userInput.trim().toLowerCase();
+    if (inputLower === 'wastart' || (rkw && inputLower === rkw)) {
+      addMessage({ sender: 'user', type: 'text', content: userInput.trim() });
+      setUserInput('');
+      setIsBotTyping(true);
+      await new Promise(r => setTimeout(r, 400));
+      setIsBotTyping(false);
+      addMessage({ sender: 'bot', type: 'text', content: 'השיחה אופסה 🔄 שלח הודעה כלשהי להתחיל מחדש' });
+      await resetChat();
+      return;
+    }
+
     // Check if we reached the end of flow (no current node or current node has no next edge)
     if (!currentNodeId || !currentInstance) {
       // Reset and start fresh
@@ -919,7 +961,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
     }
 
     if (node && node.data.variableName) updateParam(node.data.variableName, text);
-    updateParam('open', text);
+    updateParam('openWa', text);
     
     if (node.type === NodeType.AUTOMATIC_RESPONSES) {
        await processNext(currentNodeId, currentInstance, 0, executionStack, newValue, null);
@@ -929,9 +971,27 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
       // Find matching option; fall back to option-default if none match
       const menuOpts = (node.data.options || []).filter((o: any) => o !== 'default');
       const matchedIdx = menuOpts.findIndex((o: any) => String(o).trim().toLowerCase() === text.trim().toLowerCase());
-      const handle = matchedIdx !== -1 ? `option-${matchedIdx}` : 'option-default';
-      if (node.data.variableName && matchedIdx !== -1) updateParam(node.data.variableName, text);
-      await processNext(findNextNodeId(currentNodeId, currentInstance, handle), currentInstance, 0, executionStack);
+      if (matchedIdx !== -1) {
+        if (node.data.variableName) updateParam(node.data.variableName, text);
+        await processNext(findNextNodeId(currentNodeId, currentInstance, `option-${matchedIdx}`), currentInstance, 0, executionStack);
+      } else {
+        const defaultNextId = findNextNodeId(currentNodeId, currentInstance, 'option-default');
+        if (defaultNextId) {
+          await processNext(defaultNextId, currentInstance, 0, executionStack);
+        } else {
+          // No default edge — show validation message and re-display the menu
+          setIsBotTyping(true);
+          await new Promise(r => setTimeout(r, 350));
+          setIsBotTyping(false);
+          addMessage({ sender: 'bot', type: 'text', content: 'בחר רק מהאפשרויות' });
+          const menuImgs = (node.data.optionImages || []).filter((_: any, i: number) => (node.data.options || [])[i] !== 'default');
+          setIsBotTyping(true);
+          await new Promise(r => setTimeout(r, 400));
+          setIsBotTyping(false);
+          addMessage({ sender: 'bot', type: 'menu', content: node.data.content, options: menuOpts, optionImages: menuImgs, sourceNodeId: currentNodeId });
+          // Stay on the same node — currentNodeId remains unchanged
+        }
+      }
     } else if (isInputNode && !nextNodeId) {
       // Last node in this (sub-)flow is an input — param already saved above.
       // processNext(null) will pop executionStack and continue in parent flow if any,
@@ -944,14 +1004,24 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
 
   const handleDateSend = async () => {
     if (!dateInput || !currentNodeId || !currentInstance) return;
-    const [year, month, day] = dateInput.split('-');
-    const formattedDate = `${day}/${month}/${year}`;
-    setDateInput('');
     const nodesList = currentInstance.getNodes() || [];
     const node = nodesList.find((n: any) => n.id === currentNodeId);
-    if (node && node.data.variableName) updateParam(node.data.variableName, formattedDate);
-    addMessage({ sender: 'user', type: 'text', content: formattedDate });
-    updateParam('open', formattedDate);
+    const mode = node?.data?.dateTimeMode || 'date';
+    let formattedValue: string;
+    if (mode === 'time') {
+      formattedValue = dateInput; // HH:MM from <input type="time">
+    } else if (mode === 'datetime') {
+      const [datePart, timePart] = dateInput.split('T');
+      const [year, month, day] = datePart.split('-');
+      formattedValue = `${day}/${month}/${year} ${timePart}`;
+    } else {
+      const [year, month, day] = dateInput.split('-');
+      formattedValue = `${day}/${month}/${year}`;
+    }
+    setDateInput('');
+    if (node && node.data.variableName) updateParam(node.data.variableName, formattedValue);
+    addMessage({ sender: 'user', type: 'text', content: formattedValue });
+    updateParam('openWa', formattedValue);
     await processNext(findNextNodeId(currentNodeId, currentInstance), currentInstance, 0, executionStack);
   };
 
@@ -961,7 +1031,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
     
     const fileName = file.name;
     addMessage({ sender: 'user', type: 'text', content: `קובץ הועלה: ${fileName}` });
-    updateParam('open', fileName);
+    updateParam('openWa', fileName);
     
     const nodesList = currentInstance.getNodes() || [];
     const node = nodesList.find((n: any) => n.id === currentNodeId);
@@ -981,7 +1051,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
         // Show a visual separator so the user understands the context switched
         addMessage({ sender: 'bot', type: 'separator', content: '↩ חזרת לתפריט' });
         addMessage({ sender: 'user', type: 'text', content: option });
-        updateParam('open', option);
+        updateParam('openWa', option);
         setLastUserValue({ string: option, number: null });
         setIsWaitingForWebserviceResponse(false);
         // Save the newly selected option to session parameters
@@ -1013,7 +1083,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
     console.log('[Simulator] 🔘 Current node:', { id: node?.id, type: node?.type });
     
     addMessage({ sender: 'user', type: 'text', content: option });
-    updateParam('open', option);
+    updateParam('openWa', option);
     if (isWaitingForWebserviceResponse && node.type === NodeType.ACTION_WEB_SERVICE) {
       console.log('[Simulator] 🔘 Responding to webservice with option');
       const cmd = optionValue || option; setCurrentCommand(cmd);
@@ -1125,7 +1195,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
                   {msg.sender === 'bot' ? <Bot size={18} /> : <User size={18} />}
                 </div>
                 <div className={`p-4 rounded-3xl shadow-sm text-sm font-bold text-right ${msg.sender === 'bot' ? 'bg-white text-black border border-slate-100 rounded-tr-none' : 'bg-blue-600 text-white rounded-tl-none'}`}>
-                  {msg.type === 'text' && <div className="whitespace-pre-wrap">{msg.content}</div>}
+                  {msg.type === 'text' && <div><WhatsAppText text={msg.content || ''} /></div>}
                   {msg.type === 'image' && <img src={msg.url} className="rounded-xl w-full h-auto mt-2" alt="Bot message" />}
                   {msg.type === 'video' && <video src={msg.url} controls className="rounded-xl w-full h-auto mt-2" />}
                   {msg.type === 'document' && (
@@ -1161,25 +1231,29 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
                       </div>
                     </div>
                   )}
-                  {msg.type === 'input_date' && (
-                    <div className="flex flex-col items-end gap-3">
-                      <div className="text-slate-900">{msg.content}</div>
-                      <input
-                        type="date"
-                        value={dateInput}
-                        onChange={e => setDateInput(e.target.value)}
-                        className="border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold text-slate-900 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        dir="ltr"
-                      />
-                      <button
-                        onClick={handleDateSend}
-                        disabled={!dateInput}
-                        className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-xs transition-all shadow-lg active:scale-95 ${dateInput ? 'bg-blue-600 text-white shadow-blue-600/20 hover:bg-blue-700' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`}
-                      >
-                        <Check size={14} /> אשר תאריך
-                      </button>
-                    </div>
-                  )}
+                  {msg.type === 'input_date' && (() => {
+                    const _bubbleInputType = msg.dateTimeMode === 'time' ? 'time' : msg.dateTimeMode === 'datetime' ? 'datetime-local' : 'date';
+                    const _bubbleLabel = msg.dateTimeMode === 'time' ? 'אשר שעה' : msg.dateTimeMode === 'datetime' ? 'אשר תאריך ושעה' : 'אשר תאריך';
+                    return (
+                      <div className="flex flex-col items-end gap-3">
+                        <div className="text-slate-900">{msg.content}</div>
+                        <input
+                          type={_bubbleInputType}
+                          value={dateInput}
+                          onChange={e => setDateInput(e.target.value)}
+                          className="border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold text-slate-900 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          dir="ltr"
+                        />
+                        <button
+                          onClick={handleDateSend}
+                          disabled={!dateInput}
+                          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-xs transition-all shadow-lg active:scale-95 ${dateInput ? 'bg-blue-600 text-white shadow-blue-600/20 hover:bg-blue-700' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`}
+                        >
+                          <Check size={14} /> {_bubbleLabel}
+                        </button>
+                      </div>
+                    );
+                  })()}
                   {msg.type === 'input_file' && (
                     <div className="flex flex-col items-end gap-3">
                        <div className="flex items-center justify-end gap-2 italic text-slate-400">{msg.content} <FileText size={16} /></div>
@@ -1209,10 +1283,12 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
           const _activeNodes = currentInstance?.getNodes() || [];
           const _currentNode = _activeNodes.find((n: any) => n.id === currentNodeId);
           const _isWaitingForDate = _currentNode?.type === NodeType.INPUT_DATE;
+          const _dateTimeMode = _currentNode?.data?.dateTimeMode || 'date';
+          const _inputType = _dateTimeMode === 'time' ? 'time' : _dateTimeMode === 'datetime' ? 'datetime-local' : 'date';
           return _isWaitingForDate ? (
             <div className="flex items-center gap-3 bg-slate-50 rounded-[1.5rem] p-2.5 pr-4 border border-slate-100 flex-row-reverse">
               <input
-                type="date"
+                type={_inputType}
                 dir="ltr"
                 className="flex-1 bg-transparent border-none outline-none text-sm font-bold text-black h-10"
                 value={dateInput}

@@ -1,20 +1,23 @@
 
 import React, { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Handle, Position, useReactFlow, useEdges } from 'reactflow';
-import { 
-  Type, Calendar, Upload, MessageSquare, 
+import {
+  Type, Calendar, Upload, MessageSquare,
   Image as ImageIcon, ExternalLink, List, Globe, Clock, PlayCircle, Plus, Layers, X, GitBranch, Trash2, ChevronDown, Zap,
-  Mail, Phone, CreditCard, Link, Users, UserMinus, UserCheck
+  Mail, Phone, CreditCard, Link, Users, UserMinus, UserCheck, Settings, Pencil
 } from 'lucide-react';
 import BaseNode from './BaseNode';
 import { NodeType } from '../../types';
+import { useContactFields } from '../../context/ContactFieldsContext';
+import ApiNodeSettingsModal from '../ApiNodeSettingsModal';
 
 const HighlightedText = ({ text, highlight, isCurrent }: { text: string; highlight: string; isCurrent: boolean }) => {
   if (!highlight.trim()) return <>{text}</>;
   const parts = text.split(new RegExp(`(${highlight})`, 'gi'));
   return (
     <>
-      {parts.map((part, i) => 
+      {parts.map((part, i) =>
         part.toLowerCase() === highlight.toLowerCase() ? (
           <mark key={i} className={`${isCurrent ? 'bg-yellow-400' : 'bg-yellow-200'} text-slate-900 rounded-sm px-0.5`}>{part}</mark>
         ) : part
@@ -23,9 +26,367 @@ const HighlightedText = ({ text, highlight, isCurrent }: { text: string; highlig
   );
 };
 
-const SearchableInput = ({ value, onChange, placeholder, type = "text", searchQuery, isCurrentMatch, isTextArea = false, disabled = false }: any) => {
+// Convert WhatsApp syntax → HTML for the rich editor
+function _waToHtml(text: string): string {
+  if (!text) return '';
+  const esc = (s: string) => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const inlineToHtml = (raw: string): string => {
+    let s = esc(raw);
+    s = s.replace(/```([\s\S]+?)```/g, '<code data-wa="mblock" style="font-family:monospace;background:#f1f5f9;border-radius:4px;padding:2px 6px">$1</code>');
+    s = s.replace(/`([^`\n]+)`/g, '<code data-wa="icode" style="font-family:monospace;background:#f1f5f9;border-radius:3px;padding:1px 4px">$1</code>');
+    s = s.replace(/\*([^*\n]+)\*/g, '<strong>$1</strong>');
+    s = s.replace(/_([^_\n]+)_/g, '<em>$1</em>');
+    s = s.replace(/~~([^~\n]+)~~/g, '<s>$1</s>');
+    return s;
+  };
+  const lines = text.split('\n');
+  const html: string[] = [];
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    if (line.trim() === '```') {
+      const mono: string[] = [];
+      i++;
+      while (i < lines.length && lines[i].trim() !== '```') { mono.push(esc(lines[i])); i++; }
+      i++;
+      html.push(`<div><code data-wa="mblock" style="display:block;font-family:monospace;background:#f1f5f9;border-radius:6px;padding:4px 10px">${mono.join('<br>')}</code></div>`);
+      continue;
+    }
+    const im = line.match(/^```(.+)```$/);
+    if (im) { html.push(`<div><code data-wa="mblock" style="display:block;font-family:monospace;background:#f1f5f9;border-radius:6px;padding:4px 10px">${esc(im[1])}</code></div>`); i++; continue; }
+    if (/^> /.test(line)) {
+      html.push(`<blockquote style="border-right:4px solid #94a3b8;margin:1px 0;padding:2px 10px 2px 0;color:#475569;font-style:italic">${inlineToHtml(line.slice(2))}</blockquote>`);
+      i++; continue;
+    }
+    if (/^[-*] /.test(line)) {
+      const items: string[] = [];
+      while (i < lines.length && /^[-*] /.test(lines[i])) { items.push(`<li>${inlineToHtml(lines[i].slice(2))}</li>`); i++; }
+      html.push(`<ul style="list-style-type:disc;padding-right:20px;margin:2px 0">${items.join('')}</ul>`);
+      continue;
+    }
+    if (/^\d+\. /.test(line)) {
+      const items: string[] = [];
+      while (i < lines.length && /^\d+\. /.test(lines[i])) { items.push(`<li>${inlineToHtml(lines[i].replace(/^\d+\. /,''))}</li>`); i++; }
+      html.push(`<ol style="list-style-type:decimal;padding-right:20px;margin:2px 0">${items.join('')}</ol>`);
+      continue;
+    }
+    html.push(`<div>${inlineToHtml(line) || '<br>'}</div>`);
+    i++;
+  }
+  return html.join('');
+}
+
+// Convert contentEditable HTML → WhatsApp syntax
+function _htmlToWa(container: HTMLElement): string {
+  // Wrap each non-empty line with before/after markers (handles multi-line inline elements)
+  function wrapLines(inner: string, before: string, after: string): string {
+    if (!inner) return '';
+    if (!inner.includes('\n')) {
+      const trimmed = inner.trim();
+      return trimmed ? `${before}${trimmed}${after}` : '';
+    }
+    return inner.split('\n').map(l => { const t = l.trim(); return t ? `${before}${t}${after}` : ''; }).join('\n');
+  }
+
+  function walk(node: Node): string {
+    if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? '';
+    if (node.nodeType !== Node.ELEMENT_NODE) return '';
+    const el = node as HTMLElement;
+    const tag = el.tagName.toLowerCase();
+    const ch = () => Array.from(el.childNodes).map(walk).join('');
+    const needsNewlineBefore = !!el.previousSibling;
+    switch (tag) {
+      case 'strong': case 'b': return wrapLines(ch(), '*', '*');
+      case 'em':     case 'i': return wrapLines(ch(), '_', '_');
+      case 's': case 'strike': case 'del': return wrapLines(ch(), '~~', '~~');
+      case 'code': {
+        const wa = el.dataset.wa;
+        const inner = (el.textContent ?? '').replace(/\u200B/g, '');
+        return (wa === 'mblock') ? `\`\`\`${inner}\`\`\`` : `\`${inner}\``;
+      }
+      case 'pre': return `\`\`\`${el.textContent ?? ''}\`\`\``;
+      case 'blockquote': {
+        const content = ch().split('\n').map((l: string) => `> ${l}`).join('\n');
+        return (needsNewlineBefore ? '\n' : '') + content;
+      }
+      case 'ul': {
+        const items = Array.from(el.querySelectorAll(':scope > li')).map(li => `- ${walk(li)}`).join('\n');
+        return (needsNewlineBefore ? '\n' : '') + items;
+      }
+      case 'ol': {
+        const items = Array.from(el.querySelectorAll(':scope > li')).map((li, idx) => `${idx + 1}. ${walk(li)}`).join('\n');
+        return (needsNewlineBefore ? '\n' : '') + items;
+      }
+      case 'li': return ch();
+      case 'br': return '\n';
+      case 'span': {
+        const fw = el.style.fontWeight;
+        const fs = el.style.fontStyle;
+        const td = el.style.textDecoration;
+        const inner = ch();
+        if (fw === 'bold' || fw === '700') return wrapLines(inner, '*', '*');
+        if (fs === 'italic') return wrapLines(inner, '_', '_');
+        if (td.includes('line-through')) return wrapLines(inner, '~~', '~~');
+        return inner;
+      }
+      case 'div': case 'p': {
+        const hasPrev = !!el.previousElementSibling;
+        const onlyBr = el.childNodes.length === 1 && el.childNodes[0].nodeName === 'BR';
+        return (hasPrev ? '\n' : '') + (onlyBr ? '' : ch());
+      }
+      default: return ch();
+    }
+  }
+  return Array.from(container.childNodes).map(walk).join('').trim().replace(/\n{3,}/g, '\n\n');
+}
+
+const ExpandTextModal = ({ value, onChange, onClose }: {
+  value: string;
+  onChange: (v: string) => void;
+  onClose: () => void;
+}) => {
+  const editorRef = useRef<HTMLDivElement>(null);
+  const [activeFormats, setActiveFormats] = useState<Set<string>>(new Set());
+
+  const updateActiveFormats = () => {
+    const active = new Set<string>();
+    try {
+      const sel = window.getSelection();
+      if (!sel || sel.rangeCount === 0) { setActiveFormats(active); return; }
+
+      // Check if inside <code> via DOM walk
+      let node: Node | null = sel.getRangeAt(0).commonAncestorContainer;
+      if (node.nodeType === Node.TEXT_NODE) node = node.parentNode;
+      let insideCode = false;
+      let n: Node | null = node;
+      while (n && n !== editorRef.current) {
+        if ((n as HTMLElement).tagName?.toLowerCase() === 'code') { insideCode = true; break; }
+        n = n.parentNode;
+      }
+
+      if (insideCode) {
+        active.add('code');
+        // When inside code: no other formats
+      } else {
+        // queryCommandState correctly reflects both pending state AND applied state
+        if (document.queryCommandState('bold'))                active.add('bold');
+        if (document.queryCommandState('italic'))              active.add('italic');
+        if (document.queryCommandState('strikeThrough'))       active.add('strikeThrough');
+        if (document.queryCommandState('insertUnorderedList')) active.add('insertUnorderedList');
+        if (document.queryCommandState('insertOrderedList'))   active.add('insertOrderedList');
+        // Blockquote via DOM walk (queryCommandValue is more reliable here)
+        let nb: Node | null = node;
+        while (nb && nb !== editorRef.current) {
+          if ((nb as HTMLElement).tagName?.toLowerCase() === 'blockquote') { active.add('blockquote'); break; }
+          nb = nb.parentNode;
+        }
+      }
+    } catch { /* ignore */ }
+    setActiveFormats(active);
+  };
+
+  useEffect(() => {
+    document.addEventListener('selectionchange', updateActiveFormats);
+    return () => document.removeEventListener('selectionchange', updateActiveFormats);
+  }, []);
+
+  // Init: convert WhatsApp syntax → visual HTML
+  useEffect(() => {
+    if (editorRef.current) {
+      editorRef.current.innerHTML = _waToHtml(value);
+      editorRef.current.focus();
+      const range = document.createRange();
+      range.selectNodeContents(editorRef.current);
+      range.collapse(false);
+      const sel = window.getSelection();
+      sel?.removeAllRanges();
+      sel?.addRange(range);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const getWaText = () => editorRef.current ? _htmlToWa(editorRef.current) : '';
+
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+      else if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { onChange(getWaText()); onClose(); }
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [onClose, onChange]);
+
+  const execFmt = (cmd: string, val?: string) => { editorRef.current?.focus(); document.execCommand(cmd, false, val); requestAnimationFrame(updateActiveFormats); };
+
+  const toggleCode = () => {
+    editorRef.current?.focus();
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return;
+
+    // Check if cursor/selection is inside a <code> element
+    let node: Node | null = sel.getRangeAt(0).commonAncestorContainer;
+    let codeEl: HTMLElement | null = null;
+    while (node && node !== editorRef.current) {
+      if ((node as HTMLElement).tagName?.toLowerCase() === 'code') { codeEl = node as HTMLElement; break; }
+      node = node.parentNode;
+    }
+
+    if (codeEl) {
+      const hasSelection = sel.toString().length > 0;
+      if (hasSelection) {
+        // User selected text inside code → unwrap the whole code element
+        const rawText = (codeEl.textContent ?? '').replace(/\u200B/g, '');
+        const text = document.createTextNode(rawText);
+        codeEl.replaceWith(text);
+        const r = document.createRange();
+        r.setStartAfter(text);
+        r.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(r);
+      } else {
+        // No selection — just move cursor to after the <code> element
+        let after = codeEl.nextSibling;
+        if (!after || after.nodeType !== Node.TEXT_NODE) {
+          after = document.createTextNode('\u200B');
+          codeEl.after(after);
+        }
+        const r = document.createRange();
+        r.setStart(after, after.nodeType === Node.TEXT_NODE ? (after as Text).length : 0);
+        r.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(r);
+        // Reset stale browser pending-format states after direct DOM manipulation
+        // (browser can keep ghost state from before entering code)
+        try {
+          if (document.queryCommandState('strikeThrough')) document.execCommand('strikeThrough', false);
+          if (document.queryCommandState('bold'))          document.execCommand('bold', false);
+          if (document.queryCommandState('italic'))        document.execCommand('italic', false);
+        } catch { /* ignore */ }
+      }
+    } else {
+      // Wrap selection (or placeholder) in <code>
+      const range = sel.getRangeAt(0);
+      const selected = range.toString();
+      const code = document.createElement('code');
+      Object.assign(code.style, { fontFamily: 'monospace', background: '#f1f5f9', borderRadius: '3px', padding: '1px 4px' });
+      code.dataset.wa = 'icode';
+      code.textContent = selected || '\u200B'; // zero-width space so cursor can enter
+      range.deleteContents();
+      range.insertNode(code);
+      const r = document.createRange();
+      r.selectNodeContents(code);
+      sel.removeAllRanges();
+      sel.addRange(r);
+    }
+    requestAnimationFrame(updateActiveFormats);
+  };
+
+  const toggleBlockquote = () => {
+    editorRef.current?.focus();
+    const isQuote = document.queryCommandValue('formatBlock').toLowerCase() === 'blockquote';
+    document.execCommand('formatBlock', false, isQuote ? 'div' : 'blockquote');
+    requestAnimationFrame(updateActiveFormats);
+  };
+
+  const FORMAT_BUTTONS = [
+    { symbol: 'B',  label: 'מודגש',  action: () => execFmt('bold'),                       ss: 'font-bold',    cmd: 'bold' },
+    { symbol: 'I',  label: 'נטוי',   action: () => execFmt('italic'),                     ss: 'italic',       cmd: 'italic' },
+    { symbol: 'S',  label: 'חוצה',   action: () => execFmt('strikeThrough'),               ss: 'line-through', cmd: 'strikeThrough' },
+    { symbol: '`',  label: 'קוד',    action: toggleCode,                                    ss: 'font-mono',    cmd: 'code' },
+    { symbol: '•',  label: 'תבליט', action: () => execFmt('insertUnorderedList'),          ss: '',             cmd: 'insertUnorderedList' },
+    { symbol: '1.', label: 'ממוספר',action: () => execFmt('insertOrderedList'),            ss: '',             cmd: 'insertOrderedList' },
+    { symbol: '>',  label: 'ציטוט', action: toggleBlockquote,                              ss: '',             cmd: 'blockquote' },
+  ];
+
+  return createPortal(
+    <>
+      <style>{`
+        [data-wysiwyg] ul { list-style-type: disc !important; padding-right: 22px !important; margin: 3px 0 !important; }
+        [data-wysiwyg] ol { list-style-type: decimal !important; padding-right: 22px !important; margin: 3px 0 !important; }
+        [data-wysiwyg] li { display: list-item !important; margin: 1px 0 !important; }
+        [data-wysiwyg] blockquote { border-right: 4px solid #94a3b8 !important; margin: 3px 0 !important; padding: 3px 10px 3px 0 !important; color: #475569 !important; font-style: italic !important; background: #f8fafc !important; border-radius: 0 4px 4px 0 !important; }
+      `}</style>
+      <div
+      className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/50 backdrop-blur-sm"
+      onMouseDown={onClose}
+    >
+      <div
+        className="bg-white rounded-2xl shadow-2xl flex flex-col p-5 gap-3"
+        style={{ width: 640, maxWidth: '95vw', maxHeight: '90vh' }}
+        onMouseDown={e => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <button onClick={onClose} className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors">
+            <X size={18} className="text-slate-400" />
+          </button>
+          <span className="text-sm font-bold text-slate-500">עריכה מורחבת</span>
+        </div>
+
+        {/* WYSIWYG editor */}
+        <div
+          ref={editorRef}
+          contentEditable
+          suppressContentEditableWarning
+          data-wysiwyg
+          className="p-4 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 overflow-y-auto"
+          style={{
+            fontFamily: 'Heebo, sans-serif',
+            fontSize: '1.05rem',
+            textAlign: 'right',
+            direction: 'rtl',
+            minHeight: 280,
+            lineHeight: '1.8',
+          }}
+          onKeyUp={updateActiveFormats}
+          onMouseUp={updateActiveFormats}
+          onKeyDown={e => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'b') { e.preventDefault(); execFmt('bold'); }
+            if ((e.ctrlKey || e.metaKey) && e.key === 'i') { e.preventDefault(); execFmt('italic'); }
+          }}
+        />
+
+        {/* Toolbar at bottom */}
+        <div className="flex flex-wrap gap-1.5 p-2 bg-slate-50 border border-slate-200 rounded-xl" dir="rtl">
+          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider self-center ml-auto">עיצוב:</span>
+          {FORMAT_BUTTONS.map(btn => {
+            const isActive = activeFormats.has(btn.cmd);
+            return (
+              <button
+                key={btn.symbol}
+                type="button"
+                onMouseDown={e => { e.preventDefault(); btn.action(); }}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border transition-all select-none shadow-sm ${
+                  isActive
+                    ? 'bg-blue-100 border-blue-400 text-blue-700'
+                    : 'bg-white border-slate-200 hover:border-blue-400 hover:bg-blue-50 hover:text-blue-700'
+                }`}
+              >
+                <span className={`text-[12px] font-mono leading-none ${btn.ss} ${isActive ? 'text-blue-600' : 'text-slate-500'}`}>{btn.symbol}</span>
+                <span className={`text-[11px] font-bold ${isActive ? 'text-blue-700' : 'text-slate-600'}`}>{btn.label}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-between">
+          <span className="text-[11px] text-slate-400">Ctrl+Enter לשמירה · Esc לביטול · Ctrl+B מודגש · Ctrl+I נטוי</span>
+          <div className="flex gap-2">
+            <button onClick={onClose} className="px-4 py-2 border border-slate-200 rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-50 transition-colors">ביטול</button>
+            <button onClick={() => { onChange(getWaText()); onClose(); }} className="px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-700 transition-colors">שמור</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    </>,
+    document.body
+  );
+};
+
+const SearchableInput = ({ value, onChange, placeholder, type = "text", searchQuery, isCurrentMatch, isTextArea = false, disabled = false, expandable = true }: any) => {
   const [isFocused, setIsFocused] = React.useState(false);
-  
+  const [modalOpen, setModalOpen] = useState(false);
+ 
   const fontStyles: React.CSSProperties = {
     fontFamily: 'Heebo, sans-serif',
     fontSize: '1rem',
@@ -37,43 +398,64 @@ const SearchableInput = ({ value, onChange, placeholder, type = "text", searchQu
   };
 
   const showHighlight = !isFocused && searchQuery && value && value.toLowerCase().includes(searchQuery.toLowerCase());
+  const showExpandBtn = expandable && !disabled && type !== 'number';
 
   return (
-    <div className={`relative w-full transition-all rounded-xl overflow-hidden ${isCurrentMatch ? 'ring-2 ring-blue-600 border-transparent shadow-md' : 'border border-slate-200'} ${disabled ? 'bg-slate-50 opacity-70 cursor-not-allowed' : ''}`}>
-      {showHighlight && (
-        <div 
-          className="absolute inset-0 pointer-events-none pr-4 pl-4 pt-2.5 whitespace-pre-wrap break-words overflow-hidden bg-white z-0"
-          style={fontStyles}
+    <>
+      {modalOpen && (
+        <ExpandTextModal
+          value={value || ''}
+          onChange={onChange}
+          onClose={() => setModalOpen(false)}
+        />
+      )}
+      {showExpandBtn && (
+        <button
+          type="button"
+          onMouseDown={e => { e.preventDefault(); e.stopPropagation(); setModalOpen(true); }}
+          className="absolute top-0 left-1 z-10 w-6 h-6 flex items-center justify-center rounded-md text-slate-400 hover:text-blue-500 hover:bg-blue-50 transition-all nodrag"
+          title="פתח עורך מורחב"
+          tabIndex={-1}
         >
-          <HighlightedText text={value} highlight={searchQuery} isCurrent={isCurrentMatch} />
-        </div>
+          <Pencil size={13} />
+        </button>
       )}
-      
-      {isTextArea ? (
-        <textarea
-          disabled={disabled}
-          className={`relative z-10 w-full border-none outline-none transition-all text-right focus:ring-2 focus:ring-blue-600 nodrag h-20 resize-none text-slate-900 px-4 py-2 ${showHighlight ? 'bg-transparent text-transparent' : (disabled ? 'bg-transparent' : 'bg-white')}`}
-          value={value || ''}
-          onChange={(e) => onChange(e.target.value)}
-          onFocus={() => !disabled && setIsFocused(true)}
-          onBlur={() => setIsFocused(false)}
-          placeholder={placeholder}
-          style={fontStyles}
-        />
-      ) : (
-        <input
-          disabled={disabled}
-          type={type}
-          className={`relative z-10 w-full border-none outline-none transition-all text-right focus:ring-2 focus:ring-blue-600 nodrag text-slate-900 h-12 px-4 ${showHighlight ? 'bg-transparent text-transparent' : (disabled ? 'bg-transparent' : 'bg-white')}`}
-          value={value || ''}
-          onChange={(e) => onChange(e.target.value)}
-          onFocus={() => !disabled && setIsFocused(true)}
-          onBlur={() => setIsFocused(false)}
-          placeholder={placeholder}
-          style={fontStyles}
-        />
-      )}
-    </div>
+      <div className={`relative w-full transition-all rounded-xl overflow-hidden ${isCurrentMatch ? 'ring-2 ring-blue-600 border-transparent shadow-md' : 'border border-slate-200'} ${disabled ? 'bg-slate-50 opacity-70 cursor-not-allowed' : ''}`}>
+        {showHighlight && (
+          <div
+            className="absolute inset-0 pointer-events-none pr-4 pl-4 pt-2.5 whitespace-pre-wrap break-words overflow-hidden bg-white z-0"
+            style={fontStyles}
+          >
+            <HighlightedText text={value} highlight={searchQuery} isCurrent={isCurrentMatch} />
+          </div>
+        )}
+       
+        {isTextArea ? (
+          <textarea
+            disabled={disabled}
+            className={`relative z-10 w-full border-none outline-none transition-all text-right focus:ring-2 focus:ring-blue-600 nodrag h-20 resize-none text-slate-900 px-4 py-2 ${showHighlight ? 'bg-transparent text-transparent' : (disabled ? 'bg-transparent' : 'bg-white')}`}
+            value={value || ''}
+            onChange={(e) => onChange(e.target.value)}
+            onFocus={() => !disabled && setIsFocused(true)}
+            onBlur={() => setIsFocused(false)}
+            placeholder={placeholder}
+            style={fontStyles}
+          />
+        ) : (
+          <input
+            disabled={disabled}
+            type={type}
+            className={`relative z-10 w-full border-none outline-none transition-all text-right focus:ring-2 focus:ring-blue-600 nodrag text-slate-900 h-12 px-4 ${showHighlight ? 'bg-transparent text-transparent' : (disabled ? 'bg-transparent' : 'bg-white')}`}
+            value={value || ''}
+            onChange={(e) => onChange(e.target.value)}
+            onFocus={() => !disabled && setIsFocused(true)}
+            onBlur={() => setIsFocused(false)}
+            placeholder={placeholder}
+            style={fontStyles}
+          />
+        )}
+      </div>
+    </>
   );
 };
 
@@ -124,7 +506,7 @@ const DeletableHandle = ({ nodeId, handleId, style }: { nodeId: string; handleId
 };
 
 const InputFieldWrapper = ({ label, children }: any) => (
-  <div className="mb-4 p-1 text-right">
+  <div className="relative mb-4 p-1 text-right">
     <label className="block text-[14px] font-bold text-slate-400 uppercase mb-2 tracking-wider">
       {label}
     </label>
@@ -142,10 +524,10 @@ const RESPONSE_OPERATORS = [
 const ResponseOperatorSelector = ({ value, onChange, disabled = false }: { value: string, onChange: (op: string) => void, disabled?: boolean }) => {
   const [isOpen, setIsOpen] = useState(false);
   const currentOp = RESPONSE_OPERATORS.find(o => o.id === value) || RESPONSE_OPERATORS[0];
-  
+ 
   return (
     <div className="relative">
-      <button 
+      <button
         disabled={disabled}
         onClick={() => setIsOpen(!isOpen)}
         className={`flex items-center justify-center w-10 h-10 border rounded-lg transition-all text-slate-900 font-bold nodrag ${disabled ? 'bg-slate-100 border-slate-100 text-slate-400 cursor-not-allowed' : 'bg-slate-50 border-slate-100 hover:border-blue-600'}`}
@@ -153,7 +535,7 @@ const ResponseOperatorSelector = ({ value, onChange, disabled = false }: { value
       >
         <span className="text-xs">{currentOp.icon}</span>
       </button>
-      
+     
       {!disabled && isOpen && (
         <div className="absolute right-0 top-full mt-1 w-48 bg-white border border-slate-100 rounded-xl shadow-2xl z-[100] overflow-hidden animate-in fade-in slide-in-from-top-1 duration-150">
           {RESPONSE_OPERATORS.map((op) => (
@@ -234,17 +616,17 @@ const OPERATORS = [
 const OperatorSelector = ({ value, onChange }: { value: string, onChange: (op: string) => void }) => {
   const [isOpen, setIsOpen] = useState(false);
   const currentOp = OPERATORS.find(o => o.id === value) || OPERATORS[0];
-  
+ 
   return (
     <div className="relative">
-      <button 
+      <button
         onClick={() => setIsOpen(!isOpen)}
         className="flex items-center justify-center w-12 h-12 bg-white border border-slate-200 rounded-xl hover:border-blue-600 transition-all text-slate-900 font-bold nodrag"
         title={currentOp.label}
       >
         {currentOp.icon}
       </button>
-      
+     
       {isOpen && (
         <div className="absolute right-0 top-full mt-2 w-48 bg-white border border-slate-100 rounded-2xl shadow-2xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
           {OPERATORS.map((op) => (
@@ -263,70 +645,173 @@ const OperatorSelector = ({ value, onChange }: { value: string, onChange: (op: s
   );
 };
 
-export const StartNode = (props: any) => (
-  <div className={`bg-white border-2 border-slate-200 rounded-2xl shadow-xl overflow-hidden transition-all duration-400 w-[160px] ${
-    props.selected ? 'ring-8 ring-slate-900/10 !border-slate-400 scale-[1.01]' : ''
-  }`}>
-    <div className="h-1.5 w-full bg-slate-900" />
-    <div className="flex items-center justify-end gap-2 px-3 py-2 bg-white text-slate-900 border-b border-slate-100">
-      <span className="text-[12px] font-black px-1.5 py-0.5 rounded-md bg-slate-50 border border-slate-100 text-slate-900">
-        {props.data.serialId}
-      </span>
-      <span className="text-[16px] font-bold uppercase tracking-tight">התחלה</span>
-      <PlayCircle size={16} className="text-blue-600" />
-    </div>
-    <div className="p-3 text-center">
-      <p className="text-[12px] text-slate-400 font-bold">תחילת שיחה</p>
-    </div>
-    <Handle
-      type="source"
-      position={Position.Right}
-      className="w-3 h-3 bg-slate-400 border-2 border-white rounded-full -right-[6px] shadow-md"
-    />
-  </div>
-);
+export const StartNode = (props: any) => {
+  const [isSourceHovered, setIsSourceHovered] = useState(false);
+  const { setEdges } = useReactFlow();
+  const edges = useEdges();
+  const hasSourceEdge = edges.some(e => e.source === props.id);
 
-export const InputTextNode = (props: any) => (
-  <BaseNode id={props.id} title="קלט: טקסט" icon={<Type size={20} />} type={NodeType.INPUT_TEXT} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} isSearchMatch={props.data.isSearchMatch}>
-    <InputFieldWrapper label="שאלה מהבוט">
-      <SearchableInput value={props.data.label} onChange={(v: string) => props.data.onChange({ label: v })} placeholder="מה השם שלך?" searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
-    </InputFieldWrapper>
-    <InputFieldWrapper label="שם משתנה לאחסון">
-      <SearchableInput value={props.data.variableName} onChange={(v: string) => props.data.onChange({ variableName: v })} placeholder="user_name" searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
-    </InputFieldWrapper>
-    <div className="mb-3 p-1">
-      <div className="flex items-center justify-between">
-        <ValidationTypeSelector
-          value={props.data.validationType}
-          onChange={(v: string) => props.data.onChange({ validationType: v || undefined })}
-        />
-        <label className="text-[14px] font-bold text-slate-400 uppercase tracking-wider">סוג ולידציה</label>
-      </div>
-    </div>
-    <div className="mb-2 p-1">
-      <div className="flex items-center justify-end gap-2">
-        <label className="text-[14px] font-bold text-slate-400 uppercase tracking-wider">שמור בפרטי איש קשר</label>
-        <input
-          type="checkbox"
-          className="w-4 h-4 cursor-pointer accent-blue-500"
-          checked={!!props.data.saveToContact}
-          onChange={(e) => props.data.onChange({ saveToContact: e.target.checked })}
-        />
-      </div>
-    </div>
-  </BaseNode>
-);
+  const handleDeleteSourceEdge = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEdges(eds => eds.filter(edge => edge.source !== props.id));
+    setIsSourceHovered(false);
+  };
 
-export const InputDateNode = (props: any) => (
-  <BaseNode id={props.id} title="קלט: תאריך" icon={<Calendar size={20} />} type={NodeType.INPUT_DATE} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} isSearchMatch={props.data.isSearchMatch}>
-    <InputFieldWrapper label="בקשת תאריך">
-      <SearchableInput value={props.data.label} onChange={(v: string) => props.data.onChange({ label: v })} placeholder="מתי תרצה להגיע?" searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
-    </InputFieldWrapper>
-    <InputFieldWrapper label="שם משתנה לאחסון">
-      <SearchableInput value={props.data.variableName} onChange={(v: string) => props.data.onChange({ variableName: v })} placeholder="selected_date" searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
-    </InputFieldWrapper>
-  </BaseNode>
-);
+  return (
+    <div className={`relative bg-white border-2 border-slate-200 rounded-2xl shadow-xl overflow-visible transition-all duration-400 w-[160px] ${
+      props.selected ? 'ring-8 ring-slate-900/10 !border-slate-400 scale-[1.01]' : ''
+    }`}>
+      <div className="h-1.5 w-full bg-slate-900" />
+      <div className="flex items-center justify-end gap-2 px-3 py-2 bg-white text-slate-900 border-b border-slate-100">
+        <span className="text-[12px] font-black px-1.5 py-0.5 rounded-md bg-slate-50 border border-slate-100 text-slate-900">
+          {props.data.serialId}
+        </span>
+        <span className="text-[16px] font-bold uppercase tracking-tight">התחלה</span>
+        <PlayCircle size={16} className="text-blue-600" />
+      </div>
+      <div className="p-3 text-center">
+        <p className="text-[12px] text-slate-400 font-bold">תחילת שיחה</p>
+      </div>
+      <Handle
+        type="source"
+        position={Position.Right}
+        className={`w-5 h-5 border-2 border-white rounded-full -right-[10px] shadow-lg transition-colors duration-200 ${isSourceHovered ? 'bg-red-500' : 'bg-slate-400'}`}
+      />
+      {hasSourceEdge && (
+        <div
+          className="absolute -right-[10px] top-1/2 -translate-y-1/2 w-5 h-5 flex items-center justify-center cursor-pointer rounded-full"
+          style={{ zIndex: 1000 }}
+          onMouseEnter={() => setIsSourceHovered(true)}
+          onMouseLeave={() => setIsSourceHovered(false)}
+          onClick={handleDeleteSourceEdge}
+        >
+          {isSourceHovered && (
+            <X size={12} className="text-white pointer-events-none" strokeWidth={3} />
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+export const InputTextNode = (props: any) => {
+  const { fields: contactFields } = useContactFields();
+  const hasFields = contactFields.length > 0;
+
+  return (
+    <BaseNode id={props.id} title="קלט: טקסט" icon={<Type size={20} />} type={NodeType.INPUT_TEXT} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} isSearchMatch={props.data.isSearchMatch}>
+      <InputFieldWrapper label="שאלה מהבוט">
+        <SearchableInput value={props.data.label} onChange={(v: string) => props.data.onChange({ label: v })} placeholder="מה השם שלך?" searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
+      </InputFieldWrapper>
+      <InputFieldWrapper label="שם משתנה לאחסון">
+        <SearchableInput value={props.data.variableName} onChange={(v: string) => props.data.onChange({ variableName: v })} placeholder="user_name" searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
+        {['waPhone', 'waOpen', 'waName'].includes(props.data.variableName) && (
+          <p className="text-[11px] text-red-500 text-right mt-1">⚠ "{props.data.variableName}" הוא שם שמור במערכת ולא ניתן להשתמש בו</p>
+        )}
+      </InputFieldWrapper>
+      <div className="mb-3 p-1">
+        <div className="flex items-center justify-between">
+          <ValidationTypeSelector
+            value={props.data.validationType}
+            onChange={(v: string) => props.data.onChange({ validationType: v || undefined })}
+          />
+          <label className="text-[14px] font-bold text-slate-400 uppercase tracking-wider">סוג ולידציה</label>
+        </div>
+      </div>
+      <div className="mb-2 p-1">
+        <div className="flex items-center justify-end gap-2">
+          <label className="text-[14px] font-bold text-slate-400 uppercase tracking-wider">שמור בפרטי איש קשר</label>
+          <input
+            type="checkbox"
+            className="w-4 h-4 cursor-pointer accent-blue-500 disabled:opacity-40"
+            checked={!!props.data.saveToContact}
+            disabled={!hasFields}
+            title={!hasFields ? 'יש להגדיר שדות מוגדרים אישית בדף אנשי קשר תחילה' : undefined}
+            onChange={(e) => {
+              if (!e.target.checked) {
+                props.data.onChange({ saveToContact: false, contactFieldKey: undefined });
+              } else {
+                props.data.onChange({ saveToContact: true, contactFieldKey: undefined });
+              }
+            }}
+          />
+        </div>
+        {!hasFields && (
+          <p className="text-[11px] text-slate-400 text-right mt-1">
+            הגדר שדות בדף <strong>אנשי קשר</strong> → ניהול שדות
+          </p>
+        )}
+        {props.data.saveToContact && hasFields && (
+          <div className="mt-2 flex flex-col gap-1">
+            <label className="text-[12px] font-bold text-right" style={{ color: !props.data.contactFieldKey ? '#ef4444' : '#94a3b8' }}>
+              {!props.data.contactFieldKey ? '⚠ חובה לבחור שדה לשמירה' : 'בחר שדה לשמירה *'}
+            </label>
+            <select
+              className="w-full px-3 py-2 rounded-lg text-sm text-right outline-none focus:ring-2 bg-white font-semibold"
+              style={{
+                border: !props.data.contactFieldKey ? '2px solid #ef4444' : '1px solid #bfdbfe',
+                color: !props.data.contactFieldKey ? '#9ca3af' : '#334155',
+                boxShadow: !props.data.contactFieldKey ? '0 0 0 3px rgba(239,68,68,0.1)' : undefined,
+              }}
+              value={props.data.contactFieldKey ?? ''}
+              onChange={(e) => props.data.onChange({ contactFieldKey: e.target.value || undefined })}
+              dir="rtl"
+            >
+              <option value="" disabled>בחר שדה...</option>
+              {contactFields.map((f: any) => (
+                <option key={f._id} value={f.key}>{f.label}</option>
+              ))}
+            </select>
+          </div>
+        )}
+      </div>
+    </BaseNode>
+  );
+};
+
+export const InputDateNode = (props: any) => {
+  const mode: 'date' | 'time' | 'datetime' = props.data.dateTimeMode || 'date';
+
+  const MODES = [
+    { id: 'date',     label: 'תאריך' },
+    { id: 'time',     label: 'שעה' },
+    { id: 'datetime', label: 'תאריך ושעה' },
+  ] as const;
+
+  const modeTitle       = mode === 'time' ? 'קלט: שעה' : mode === 'datetime' ? 'קלט: תאריך ושעה' : 'קלט: תאריך';
+  const modeIcon        = mode === 'time' ? <Clock size={20} /> : <Calendar size={20} />;
+  const modePlaceholder = mode === 'time' ? 'באיזו שעה?' : mode === 'datetime' ? 'מתי ובאיזו שעה?' : 'מתי תרצה להגיע?';
+  const modeVarPH       = mode === 'time' ? 'selected_time' : mode === 'datetime' ? 'selected_datetime' : 'selected_date';
+  const modeHint        = mode === 'time' ? 'תבנית פלט: HH:MM' : mode === 'datetime' ? 'תבנית פלט: DD/MM/YYYY HH:MM' : 'תבנית פלט: DD/MM/YYYY';
+
+  return (
+    <BaseNode id={props.id} title={modeTitle} icon={modeIcon} type={NodeType.INPUT_DATE} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} isSearchMatch={props.data.isSearchMatch}>
+      <InputFieldWrapper label="סוג קלט">
+        <div className="flex rounded-xl overflow-hidden border border-slate-200 mb-1">
+          {MODES.map(m => (
+            <button
+              key={m.id}
+              onClick={() => props.data.onChange({ dateTimeMode: m.id })}
+              className={`flex-1 py-2 text-xs font-bold nodrag transition-colors ${mode === m.id ? 'bg-blue-500 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}`}
+            >
+              {m.label}
+            </button>
+          ))}
+        </div>
+        <p className="text-[11px] text-slate-400 text-right">{modeHint}</p>
+      </InputFieldWrapper>
+      <InputFieldWrapper label="שאלה מהבוט">
+        <SearchableInput value={props.data.label} onChange={(v: string) => props.data.onChange({ label: v })} placeholder={modePlaceholder} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
+      </InputFieldWrapper>
+      <InputFieldWrapper label="שם משתנה לאחסון">
+        <SearchableInput value={props.data.variableName} onChange={(v: string) => props.data.onChange({ variableName: v })} placeholder={modeVarPH} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
+        {['waPhone', 'waOpen', 'waName'].includes(props.data.variableName) && (
+          <p className="text-[11px] text-red-500 text-right mt-1">⚠ "{props.data.variableName}" הוא שם שמור במערכת ולא ניתן להשתמש בו</p>
+        )}
+      </InputFieldWrapper>
+    </BaseNode>
+  );
+};
 
 export const InputFileNode = (props: any) => (
   <BaseNode id={props.id} title="קלט: קובץ" icon={<Upload size={20} />} type={NodeType.INPUT_FILE} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} isSearchMatch={props.data.isSearchMatch}>
@@ -347,9 +832,9 @@ export const OutputTextNode = (props: any) => (
 export const OutputImageNode = (props: any) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadMode, setUploadMode] = useState<'file' | 'url'>(props.data.url && !props.data.url.startsWith('data:') ? 'url' : 'file');
-  
+ 
   const mediaType = props.data.mediaType || 'image';
-  
+ 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
@@ -358,7 +843,7 @@ export const OutputImageNode = (props: any) => {
       reader.readAsDataURL(file);
     }
   };
-  
+ 
   const getAcceptTypes = () => {
     switch(mediaType) {
       case 'image': return 'image/*';
@@ -367,7 +852,7 @@ export const OutputImageNode = (props: any) => {
       default: return 'image/*,video/*,application/pdf';
     }
   };
-  
+ 
   const getMediaIcon = (type: string) => {
     switch(type) {
       case 'image': return <ImageIcon size={14} className="inline" />;
@@ -376,10 +861,10 @@ export const OutputImageNode = (props: any) => {
       default: return <ImageIcon size={14} className="inline" />;
     }
   };
-  
+ 
   const renderMediaPreview = () => {
     if (!props.data.url) return null;
-    
+   
     if (mediaType === 'video') {
       return <video src={props.data.url} controls className="max-w-full h-full object-contain" />;
     } else if (mediaType === 'pdf') {
@@ -393,12 +878,12 @@ export const OutputImageNode = (props: any) => {
       return <img src={props.data.url} alt="Bot upload" className="max-w-full h-full object-contain" />;
     }
   };
-  
+ 
   return (
     <BaseNode id={props.id} title="הודעת מדיה" icon={<ImageIcon size={20} />} type={NodeType.OUTPUT_IMAGE} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} isSearchMatch={props.data.isSearchMatch}>
       <InputFieldWrapper label="סוג מדיה">
         <div className="relative">
-          <select 
+          <select
             className="w-full appearance-none border border-slate-200 rounded-lg px-3.5 py-2 pr-9 text-right bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent focus:outline-none transition-all nodrag cursor-pointer text-slate-700 text-[13px] font-medium shadow-sm hover:border-slate-300 hover:shadow"
             value={mediaType}
             onChange={(e) => props.data.onChange({ mediaType: e.target.value, url: '' })}
@@ -415,27 +900,27 @@ export const OutputImageNode = (props: any) => {
           </div>
         </div>
       </InputFieldWrapper>
-      
+     
       <InputFieldWrapper label="אופן העלאה">
         <div className="flex gap-1.5 mb-3 bg-slate-100/80 p-1.5 rounded-lg border border-slate-200/60">
-          <button 
+          <button
             type="button"
             onClick={(e) => { e.preventDefault(); e.stopPropagation(); setUploadMode('file'); }}
             className={`flex-1 px-2.5 py-1.5 rounded-md transition-all duration-150 font-medium text-[13px] nodrag select-none outline-none whitespace-nowrap ${
-              uploadMode === 'file' 
-                ? 'bg-white text-blue-600 shadow-sm border border-slate-200/50' 
+              uploadMode === 'file'
+                ? 'bg-white text-blue-600 shadow-sm border border-slate-200/50'
                 : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50/50'
             }`}
           >
             <Upload size={13} className="inline ml-1 -mt-0.5" />
             העלאת קובץ
           </button>
-          <button 
+          <button
             type="button"
             onClick={(e) => { e.preventDefault(); e.stopPropagation(); setUploadMode('url'); }}
             className={`flex-1 px-2.5 py-1.5 rounded-md transition-all duration-150 font-medium text-[13px] nodrag select-none outline-none whitespace-nowrap ${
-              uploadMode === 'url' 
-                ? 'bg-white text-blue-600 shadow-sm border border-slate-200/50' 
+              uploadMode === 'url'
+                ? 'bg-white text-blue-600 shadow-sm border border-slate-200/50'
                 : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50/50'
             }`}
           >
@@ -443,14 +928,14 @@ export const OutputImageNode = (props: any) => {
             הוספת קישור
           </button>
         </div>
-        
+       
         {uploadMode === 'url' ? (
-          <SearchableInput 
-            value={props.data.url} 
-            onChange={(v: string) => props.data.onChange({ url: v })} 
+          <SearchableInput
+            value={props.data.url}
+            onChange={(v: string) => props.data.onChange({ url: v })}
             placeholder={`הכנס קישור ל${mediaType === 'image' ? 'תמונה' : mediaType === 'video' ? 'וידאו' : 'PDF'}`}
-            searchQuery={props.data.searchQuery} 
-            isCurrentMatch={props.data.isCurrentMatch} 
+            searchQuery={props.data.searchQuery}
+            isCurrentMatch={props.data.isCurrentMatch}
           />
         ) : (
           <div className="space-y-3">
@@ -458,16 +943,16 @@ export const OutputImageNode = (props: any) => {
               <div className="relative group rounded-xl overflow-hidden border border-slate-200 shadow-sm w-full h-40 bg-slate-50 flex items-center justify-center">
                 {renderMediaPreview()}
                 <div className="absolute inset-0 bg-slate-900/60 opacity-0 group-hover:opacity-100 transition-all flex items-center justify-center gap-2 backdrop-blur-[2px]">
-                  <button 
-                    type="button" 
-                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); fileInputRef.current?.click(); }} 
+                  <button
+                    type="button"
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); fileInputRef.current?.click(); }}
                     className="p-2.5 bg-white text-slate-900 rounded-lg shadow-xl hover:bg-slate-100 transition-all outline-none"
                   >
                     <Upload size={18} />
                   </button>
-                  <button 
-                    type="button" 
-                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); props.data.onChange({ url: '' }); }} 
+                  <button
+                    type="button"
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); props.data.onChange({ url: '' }); }}
                     className="p-2.5 bg-red-500 text-white rounded-lg shadow-xl hover:bg-red-600 transition-all outline-none"
                   >
                     <X size={18} />
@@ -475,9 +960,9 @@ export const OutputImageNode = (props: any) => {
                 </div>
               </div>
             ) : (
-              <button 
-                type="button" 
-                onClick={(e) => { e.preventDefault(); e.stopPropagation(); fileInputRef.current?.click(); }} 
+              <button
+                type="button"
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); fileInputRef.current?.click(); }}
                 className="w-full h-40 border-2 border-dashed border-slate-300 rounded-xl flex flex-col items-center justify-center gap-3 text-slate-400 hover:border-blue-400 hover:text-blue-500 hover:bg-blue-50/30 transition-all nodrag outline-none"
               >
                 <Upload size={28} strokeWidth={1.5} />
@@ -488,13 +973,13 @@ export const OutputImageNode = (props: any) => {
         )}
         <input type="file" ref={fileInputRef} className="hidden" accept={getAcceptTypes()} onChange={handleFileUpload} />
       </InputFieldWrapper>
-      
+     
       <InputFieldWrapper label="טקסט (אופציונלי)">
-        <SearchableInput 
-          value={props.data.caption} 
-          onChange={(v: string) => props.data.onChange({ caption: v })} 
+        <SearchableInput
+          value={props.data.caption}
+          onChange={(v: string) => props.data.onChange({ caption: v })}
           placeholder="הוסף טקסט מתחת למדיה"
-          searchQuery={props.data.searchQuery} 
+          searchQuery={props.data.searchQuery}
           isCurrentMatch={props.data.isCurrentMatch}
           isTextArea={true}
         />
@@ -550,7 +1035,7 @@ export const OutputMenuNode = (props: any) => {
   };
 
   const addOption = () => {
-    props.data.onChange({ 
+    props.data.onChange({
       options: [...options, ''],
       optionImages: [...(props.data.optionImages || Array(options.length).fill('')), '']
     });
@@ -571,6 +1056,9 @@ export const OutputMenuNode = (props: any) => {
       </InputFieldWrapper>
       <InputFieldWrapper label="שמור בחירה במשתנה (אופציונלי)">
         <SearchableInput value={props.data.variableName} onChange={(v: string) => props.data.onChange({ variableName: v })} placeholder="למשל: selected_option" searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
+        {['waPhone', 'waOpen', 'waName'].includes(props.data.variableName) && (
+          <p className="text-[11px] text-red-500 text-right mt-1">⚠ "{props.data.variableName}" הוא שם שמור במערכת ולא ניתן להשתמש בו</p>
+        )}
       </InputFieldWrapper>
       <div className="space-y-4 relative text-right">
         <label className="block text-[14px] font-bold text-slate-400 uppercase tracking-widest">רשימת אפשרויות</label>
@@ -581,15 +1069,14 @@ export const OutputMenuNode = (props: any) => {
         </div>
         {options.map((opt: string, i: number) => (
           <div key={i} className="flex items-center gap-2 p-2 bg-slate-50 border border-slate-100 rounded-2xl group/item relative transition-colors hover:bg-white hover:border-blue-100">
-            <Handle type="source" position={Position.Right} id={`option-${i}`} style={{ top: '50%', right: -16 }} className="w-4 h-4 bg-slate-400 border-2 border-white rounded-full shadow-lg" />
-            <button 
-              onClick={() => removeOption(i)} 
+            <DeletableHandle nodeId={props.id} handleId={`option-${i}`} style={{ top: '50%', right: -10 }} />
+            <button
+              onClick={() => removeOption(i)}
               className="w-10 h-10 rounded-lg flex items-center justify-center text-red-400 hover:text-red-600 hover:bg-red-50 transition-all nodrag flex-shrink-0"
               title="מחק אפשרות"
             >
               <X size={18} />
             </button>
-            {/* <DeletableHandle nodeId={props.id} handleId={`option-${i}`} style={{ top: '50%', right: -10 }} /> */}
             <div className="flex-1">
               <SearchableInput value={opt} onChange={(v: string) => updateOption(i, v)} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} placeholder="הזן ערך" />
             </div>
@@ -597,7 +1084,7 @@ export const OutputMenuNode = (props: any) => {
               {optionImages[i] ? (
                 <div className="relative w-12 h-12 rounded-lg overflow-hidden border border-slate-200 group/thumb flex-shrink-0">
                   <img src={optionImages[i]} className="w-full h-full object-cover" alt="Option visual" />
-                  <div 
+                  <div
                     onClick={() => removeOptionImage(i)}
                     className="absolute inset-0 bg-red-500/80 opacity-0 group-hover/thumb:opacity-100 flex items-center justify-center cursor-pointer transition-opacity backdrop-blur-sm"
                   >
@@ -605,8 +1092,8 @@ export const OutputMenuNode = (props: any) => {
                   </div>
                 </div>
               ) : (
-                <button 
-                  onClick={() => fileInputRefs.current[i]?.click()} 
+                <button
+                  onClick={() => fileInputRefs.current[i]?.click()}
                   className="w-12 h-12 rounded-lg bg-white border border-slate-100 flex items-center justify-center text-slate-300 hover:text-blue-500 hover:border-blue-200 transition-all flex-shrink-0"
                   title="הוסף תמונה"
                 >
@@ -614,12 +1101,12 @@ export const OutputMenuNode = (props: any) => {
                 </button>
               )}
             </div>
-            <input 
-              type="file" 
-              className="hidden" 
-              ref={el => { fileInputRefs.current[i] = el; }} 
-              accept="image/*" 
-              onChange={(e) => handleOptionImageUpload(i, e)} 
+            <input
+              type="file"
+              className="hidden"
+              ref={el => { fileInputRefs.current[i] = el; }}
+              accept="image/*"
+              onChange={(e) => handleOptionImageUpload(i, e)}
             />
           </div>
         ))}
@@ -631,9 +1118,21 @@ export const OutputMenuNode = (props: any) => {
   );
 };
 
+const METHOD_BADGE: Record<string, string> = {
+  GET:    'bg-emerald-50 text-emerald-700 border-emerald-200',
+  POST:   'bg-blue-50 text-blue-700 border-blue-200',
+  PUT:    'bg-amber-50 text-amber-700 border-amber-200',
+  PATCH:  'bg-violet-50 text-violet-700 border-violet-200',
+  DELETE: 'bg-red-50 text-red-700 border-red-200',
+};
+
 export const ActionWebServiceNode = (props: any) => {
   const branches = props.data.options || [];
   const operators = props.data.optionOperators || Array(branches.length).fill('eq');
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
+  const method: string = props.data.apiMethod || 'POST';
+  const badgeClass = METHOD_BADGE[method] || METHOD_BADGE['POST'];
 
   const updateBranch = (index: number, value: string) => {
     const newBranches = [...branches];
@@ -648,7 +1147,7 @@ export const ActionWebServiceNode = (props: any) => {
   };
 
   const addBranch = () => {
-    props.data.onChange({ 
+    props.data.onChange({
       options: [...branches, branches.length === 0 ? "1" : "0"],
       optionOperators: [...operators, 'eq']
     });
@@ -662,11 +1161,32 @@ export const ActionWebServiceNode = (props: any) => {
   };
 
   return (
+    <>
+    {settingsOpen && (
+      <ApiNodeSettingsModal
+        nodeId={props.id}
+        data={props.data}
+        onChange={props.data.onChange}
+        onClose={() => setSettingsOpen(false)}
+      />
+    )}
     <BaseNode id={props.id} title="חיבור API" icon={<Globe size={20} />} type={NodeType.ACTION_WEB_SERVICE} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} isSearchMatch={props.data.isSearchMatch}>
+      {/* Settings button + method badge */}
+      <div className="flex items-center justify-between mb-3">
+        <button
+          onClick={() => setSettingsOpen(true)}
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-600 hover:border-blue-400 hover:text-blue-600 hover:bg-blue-50 transition-all nodrag"
+          title="פתח הגדרות"
+        >
+          <Settings size={13} />
+          הגדרות
+        </button>
+        <span className={`px-2.5 py-1 rounded-lg border text-[11px] font-black tracking-wide ${badgeClass}`}>{method}</span>
+      </div>
       <InputFieldWrapper label="כתובת Webhook">
-        <SearchableInput value={props.data.url} onChange={(v: string) => props.data.onChange({ url: v })} placeholder="https://api.yourdomain.com" searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
+        <SearchableInput value={props.data.url} onChange={(v: string) => props.data.onChange({ url: v })} placeholder="https://api.yourdomain.com" searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} expandable={false} />
       </InputFieldWrapper>
-      
+     
       <div className="space-y-3 mt-4 text-right">
         {/* Default exit - always present */}
         <div>
@@ -685,11 +1205,11 @@ export const ActionWebServiceNode = (props: any) => {
           {branches.map((branch: string, i: number) => (
             <div key={i} className="flex flex-col gap-2 p-3 bg-slate-50 border border-slate-100 rounded-2xl group/branch relative transition-colors hover:bg-white hover:border-blue-100 mb-3">
               <DeletableHandle nodeId={props.id} handleId={`option-${i}`} style={{ top: '50%', right: -10 }} />
-              
+             
               <div className="flex items-center gap-2 flex-row-reverse">
                 <OperatorSelector value={operators[i]} onChange={(op) => updateOperator(i, op)} />
                 <div className="flex-1">
-                  <SearchableInput value={branch} onChange={(v: string) => updateBranch(i, v)} placeholder="ערך להשוואה..." searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
+                  <SearchableInput value={branch} onChange={(v: string) => updateBranch(i, v)} placeholder="ערך להשוואה..." searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} expandable={false} />
                 </div>
                 <button onClick={() => removeBranch(i)} className="p-2 text-slate-300 hover:text-red-500 opacity-0 group-hover/branch:opacity-100 transition-all nodrag"><X size={18} /></button>
               </div>
@@ -702,6 +1222,7 @@ export const ActionWebServiceNode = (props: any) => {
         </div>
       </div>
     </BaseNode>
+    </>
   );
 };
 
@@ -710,6 +1231,18 @@ export const ActionWaitNode = (props: any) => (
     <InputFieldWrapper label="זמן המתנה (שניות)">
       <SearchableInput type="number" value={props.data.waitTime?.toString()} onChange={(v: string) => props.data.onChange({ waitTime: parseInt(v) || 0 })} placeholder="למשל: 3" searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
     </InputFieldWrapper>
+  </BaseNode>
+);
+
+export const ActionSetParameterNode = (props: any) => (
+  <BaseNode id={props.id} title="הגדרת פרמטר" icon={<Zap size={20} />} type={NodeType.ACTION_SET_PARAMETER} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} isSearchMatch={props.data.isSearchMatch} nodeClassName="max-w-[280px]">
+    <InputFieldWrapper label="שם הפרמטר">
+      <SearchableInput value={props.data.parameterName} onChange={(v: string) => props.data.onChange({ parameterName: v })} placeholder="למשל: user_status" searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
+    </InputFieldWrapper>
+    <InputFieldWrapper label="ערך">
+      <SearchableInput value={props.data.parameterValue} onChange={(v: string) => props.data.onChange({ parameterValue: v })} placeholder="ערך קבוע או --שם_משתנה--" searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
+    </InputFieldWrapper>
+    <p className="text-[11px] text-slate-400 text-right px-1 -mt-2 mb-1">ניתן לכתוב ערך קבוע או לשלב --שם_פרמטר-- כדי להעתיק ערך של פרמטר אחר</p>
   </BaseNode>
 );
 
@@ -1181,6 +1714,20 @@ export const ActionTransferToAgentNode = (props: any) => {
         הרכיב יעביר את השיחה לנציג מהקבוצה שנבחרה.<br />
         הבוט יפסיק להגיב למשך 30 דקות (כמו בשיחה עם נציג).
       </p>
+
+      <label className="flex items-center gap-2 mt-2 cursor-pointer nodrag select-none">
+        <input
+          type="checkbox"
+          className="nodrag accent-green-600 w-3.5 h-3.5 cursor-pointer"
+          checked={!!props.data.wantsPhone}
+          onChange={e => props.data.onChange({ wantsPhone: e.target.checked })}
+        />
+        <span className="flex items-center gap-1 text-[12px] font-bold text-slate-700">
+          <Phone size={11} className="text-green-600" />
+לקוח מעוניין בשיחת טלפון חוזרת    
+
+  </span>
+      </label>
     </BaseNode>
   );
 };
@@ -1222,7 +1769,7 @@ export const AutomaticResponsesNode = (props: any) => {
   };
 
   const addOption = () => {
-    props.data.onChange({ 
+    props.data.onChange({
       options: [...options, ''], // Empty string instead of "פתיח חדש"
       optionOperators: [...operators, 'eq']
     });
@@ -1256,8 +1803,8 @@ export const AutomaticResponsesNode = (props: any) => {
                 {!isDefault ? (
                   <>
                     <ResponseOperatorSelector value={operators[i]} onChange={(op) => updateOperator(i, op)} disabled={isDefault} />
-                    <button 
-                      onClick={() => removeOption(i)} 
+                    <button
+                      onClick={() => removeOption(i)}
                       className="w-10 h-10 rounded-lg flex items-center justify-center text-red-400 hover:text-red-600 hover:bg-red-50 transition-all nodrag flex-shrink-0"
                       title="מחק פתיח"
                     >
