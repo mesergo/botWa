@@ -170,6 +170,12 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
     return requested;
   });
 
+  // Sync activeTab when navigating between routes that share this component instance
+  useEffect(() => {
+    if (!initialTab) return;
+    setActiveTab(initialTab);
+  }, [initialTab]);
+
   // Settings tab section
   type SettingsSection = 'profile' | 'account' | 'connection' | 'quota' | 'numbers' | 'templates' | 'removal';
   const [settingsSection, setSettingsSection] = useState<SettingsSection>('profile');

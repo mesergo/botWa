@@ -79,6 +79,7 @@ const SmsInPage: React.FC<SmsInPageProps> = ({
         <AppNav
           mode="sidebar"
           activePage="sms_in"
+          onGoHome={onBack}
           onBots={can('bots.view_tab') ? onBack : undefined}
           onSessions={onOpenSessions ? () => onOpenSessions() : undefined}
           onContacts={onOpenContacts ? () => onOpenContacts() : undefined}

@@ -155,9 +155,7 @@ export const listGroups = async (req, res) => {
       _id: g._id,
       name: g.name,
       is_blocklist: g.is_blocklist,
-      contact_count: g.is_blocklist
-        ? (g.phones?.length || 0) + (g.contact_ids?.length || 0)
-        : (g.contact_ids?.length || 0),
+      contact_count: g.contact_ids?.length || 0,
       createdAt: g.createdAt,
       updatedAt: g.updatedAt,
     }));
@@ -280,15 +278,8 @@ export const addMembers = async (req, res) => {
     for (const cid of idSet) existing.add(cid);
     group.contact_ids = Array.from(existing).map(s => new mongoose.Types.ObjectId(s));
 
-    // Blocklist may also store raw phone strings
-    if (group.is_blocklist) {
-      const phoneSet = new Set((group.phones || []).map(String));
-      for (const rawPhone of phones) {
-        const phone = String(rawPhone || '').trim();
-        if (phone) phoneSet.add(phone);
-      }
-      group.phones = Array.from(phoneSet);
-    }
+    // Note: phones added above are already resolved into contact_ids[],
+    // so we do NOT add them to phones[] to avoid double-counting.
 
     await group.save();
     res.json({ success: true, contact_count: group.contact_ids.length });
