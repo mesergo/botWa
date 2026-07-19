@@ -1,6 +1,6 @@
 ﻿import React, { useState, useEffect, useRef } from 'react';
 import { WhatsAppText } from '../utils/whatsappFormat';
-import { Clock, MessageSquare, Search, Bot, LogOut, User, Phone, List, Users, ExternalLink, X, Headphones, RefreshCw, Shield, Settings, UserCog, Layers, Plus, UserPlus, Check, Paperclip, ChevronRight, Bell, MoreVertical, Ban } from 'lucide-react';
+import { Clock, MessageSquare, Search, Bot, LogOut, User, Phone, List, Users, ExternalLink, X, Headphones, RefreshCw, Shield, Settings, UserCog, Layers, Plus, UserPlus, Check, Paperclip, ChevronRight, Bell, MoreVertical, Ban, Megaphone } from 'lucide-react';
 import ImpersonationBanner from './ImpersonationBanner';
 import { FileUploader } from './FileUploader';
 import { usePermission } from '../hooks/usePermission';
@@ -1487,9 +1487,10 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
 
 
     return grouped.map((item: any, idx: number) => {
-      const senderType: 'bot' | 'user' | 'agent' | 'system' =
+      const senderType: 'bot' | 'user' | 'agent' | 'system' | 'broadcast' =
         item.sender === 'system' || item.type === 'System' ? 'system'
         : item.sender === 'agent' ? 'agent'
+        : item.sender === 'broadcast' ? 'broadcast'
         : item.sender === 'user' ? 'user'
         : item.type === 'UserInput' ? 'user'
         : item.sender === 'bot' ? 'bot'
@@ -1497,6 +1498,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
       const isBot = senderType === 'bot';
       const isAgent = senderType === 'agent';
       const isSystem = senderType === 'system';
+      const isBroadcast = senderType === 'broadcast';
       const text = item.text ?? item.content ?? '';
       const msgDate = item.created ? formatMessageDate(item.created) : '';
       const isAudioUrl = /^https?:\/\/.+\.(oga|ogg|mp3|wav|m4a|aac|opus)(\?.*)?$/i.test(item.url || text);
@@ -1585,6 +1587,40 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                     </button>
                   </div>
                 )}
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      // Group-broadcast message — amber bubble on left side (like a bot message, but visually distinct)
+      if (isBroadcast) {
+        return (
+          <div key={`${session.id}-${idx}`} className="flex w-full justify-start">
+            <div className="flex gap-1.5 max-w-[88%] flex-row-reverse">
+              <div className="flex flex-col items-center gap-0.5 flex-shrink-0">
+                <div className="w-6 h-6 rounded-lg flex items-center justify-center shadow-sm bg-amber-100 border border-amber-200 text-amber-700">
+                  <Megaphone size={12} />
+                </div>
+                {msgDate && <span className="text-[9px] text-slate-400 font-semibold">{msgDate}</span>}
+              </div>
+              <div className="flex flex-col gap-0.5 items-end">
+                <div className="px-3 py-1.5 rounded-2xl text-sm font-semibold shadow-sm text-right bg-amber-50 border border-amber-200 text-amber-900 rounded-tr-none">
+                  <p className="text-[9px] text-amber-500 font-black mb-0.5 uppercase tracking-widest">📢 שידור: {item.broadcast_group || item.name || 'רשימת תפוצה'}</p>
+                  {item.type === 'Image' && item.url && (
+                    <img src={item.url} alt="תמונה" className="rounded-xl max-w-[200px] h-auto mb-2" />
+                  )}
+                  {item.type === 'Video' && item.url && (
+                    <video src={item.url} controls className="rounded-xl max-w-[200px] mb-2" />
+                  )}
+                  {item.type === 'Document' && item.url && (
+                    <a href={item.url} target="_blank" rel="noopener noreferrer"
+                      className="flex items-center gap-2 p-2 bg-amber-100 rounded-xl hover:bg-amber-200 transition-colors text-amber-700 text-xs font-bold mb-2">
+                      <ExternalLink size={13} /> פתח מסמך
+                    </a>
+                  )}
+                  {text && <WhatsAppText text={text} className="leading-snug" />}
+                </div>
               </div>
             </div>
           </div>
@@ -2880,7 +2916,16 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                           const resolveField = (optKey: string): string => {
                             if (!contactRecord) return '';
                             if (optKey.startsWith('base:')) return String(contactRecord[optKey.slice(5)] ?? '');
-                            if (optKey.startsWith('custom:')) return String(contactRecord.custom_field_values?.[optKey.slice(7)] ?? '');
+                            if (optKey.startsWith('custom:')) {
+                              const fieldId = optKey.slice(7);
+                              // Bot-flow saves use _id as key; manual edits use the slug key — check both
+                              const fieldDef = contactFieldDefs.find(f => f._id === fieldId);
+                              return String(
+                                contactRecord.custom_field_values?.[fieldId] ??
+                                (fieldDef ? contactRecord.custom_field_values?.[fieldDef.key] : undefined) ??
+                                ''
+                              );
+                            }
                             return '';
                           };
 

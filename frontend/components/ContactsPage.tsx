@@ -356,14 +356,25 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
 
   const openEdit = (c: MergedContact) => {
     setEditingContact({ _id: c._id, phone: c.phone, full_name: c.full_name, whatsapp_name: c.whatsapp_name, email: c.email });
+    const existingCv = c.custom_field_values ?? {};
+    // Migrate: for each known field def, resolve value from either _id key (bot-flow) or slug key (legacy manual edit)
+    const handledKeys = new Set<string>();
+    const cvByFieldId: Record<string, string> = {};
+    contactFieldDefs.forEach(fd => {
+      cvByFieldId[fd._id] = String((existingCv as Record<string, unknown>)[fd._id] ?? (existingCv as Record<string, unknown>)[fd.key] ?? '');
+      handledKeys.add(fd._id);
+      handledKeys.add(fd.key);
+    });
+    // Preserve unrecognized keys (e.g. legacy bot variable names)
+    Object.entries(existingCv).forEach(([k, v]) => {
+      if (!handledKeys.has(k)) cvByFieldId[k] = String(v ?? '');
+    });
     setForm({
       phone: c.phone,
       full_name: c.full_name ?? '',
       whatsapp_name: c.whatsapp_name ?? '',
       email: c.email ?? '',
-      custom_field_values: Object.fromEntries(
-        Object.entries(c.custom_field_values ?? {}).map(([k, v]) => [k, String(v ?? '')])
-      ),
+      custom_field_values: cvByFieldId,
     });
     setModalError('');
     setModalOpen(true);
@@ -672,13 +683,17 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
                           </div>
 
                           {/* Custom field columns */}
-                          {contactFieldDefs.map(f => (
-                            <div key={f._id} className="text-sm font-semibold text-slate-700 truncate">
-                              {contact.custom_field_values?.[f.key]
-                                ? String(contact.custom_field_values[f.key])
-                                : <span className="text-slate-300 font-normal">—</span>}
-                            </div>
-                          ))}
+                          {contactFieldDefs.map(f => {
+                            const cv = contact.custom_field_values as Record<string, unknown> | undefined;
+                            const val = cv?.[f._id!] ?? cv?.[f.key];
+                            return (
+                              <div key={f._id} className="text-sm font-semibold text-slate-700 truncate">
+                                {val
+                                  ? String(val)
+                                  : <span className="text-slate-300 font-normal">—</span>}
+                              </div>
+                            );
+                          })}
 
                           {/* Actions */}
                           <div className="flex items-center justify-end gap-1" onClick={e => e.stopPropagation()}>
@@ -987,8 +1002,8 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
                   key={fd._id}
                   className="w-full px-4 py-2.5 border border-indigo-100 bg-indigo-50/40 rounded-xl text-sm outline-none focus:ring-4 focus:ring-indigo-600/10 focus:border-indigo-400 transition-all"
                   placeholder={fd.label}
-                  value={form.custom_field_values?.[fd.key] ?? ''}
-                  onChange={e => setForm(f => ({ ...f, custom_field_values: { ...f.custom_field_values, [fd.key]: e.target.value } }))}
+                  value={form.custom_field_values?.[fd._id] ?? ''}
+                  onChange={e => setForm(f => ({ ...f, custom_field_values: { ...f.custom_field_values, [fd._id]: e.target.value } }))}
                 />
               ))}
 
@@ -1131,8 +1146,8 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
                 {detailContact.custom_field_values && Object.keys(detailContact.custom_field_values).length > 0 ? (
                   <div className="grid grid-cols-1 gap-2">
                     {Object.entries(detailContact.custom_field_values).map(([key, value]) => {
-                      // Resolve display label: look up by slug key, fall back to raw key
-                      const fieldDef = contactFieldDefs.find(f => f.key === key);
+                      // Resolve display label: look up by _id or slug key, fall back to raw key
+                      const fieldDef = contactFieldDefs.find(f => f._id === key || f.key === key);
                       const displayLabel = fieldDef ? fieldDef.label : key;
                       return (
                         <div key={key} className="flex items-center justify-between px-5 py-3.5 bg-blue-50 rounded-2xl border border-blue-100">

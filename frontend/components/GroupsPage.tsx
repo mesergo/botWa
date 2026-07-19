@@ -155,6 +155,11 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
   const [allBroadcastsCopiedId, setAllBroadcastsCopiedId] = useState<string | null>(null);
   const [allBroadcastsSelectedDetail, setAllBroadcastsSelectedDetail] = useState<any | null>(null);
 
+  // Members / history / removals search
+  const [memberSearch, setMemberSearch] = useState('');
+  const [historySearch, setHistorySearch] = useState('');
+  const [removalsSearch, setRemovalsSearch] = useState('');
+
   // Remove-member confirmation + removals report
   const [removeTarget, setRemoveTarget] = useState<ContactRecord | null>(null);
   const [removeReason, setRemoveReason] = useState('');
@@ -681,6 +686,9 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
   // Reset to members tab when switching group; auto-load history when tab=history
   useEffect(() => {
     setActiveTab('members');
+    setMemberSearch('');
+    setHistorySearch('');
+    setRemovalsSearch('');
     setBroadcasts([]);
     setSelectedBroadcast(null);
   }, [selectedGroup?._id]);
@@ -1165,37 +1173,73 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                 </div>
               </div>
 
-              {/* Tabs */}
-              <div className="flex items-center gap-1 bg-slate-100 rounded-2xl p-1 mb-6 w-fit">
-                <button
-                  onClick={() => setActiveTab('members')}
-                  className={`flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm transition-all ${
-                    activeTab === 'members' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-                  }`}
-                >
-                  <Users size={16} /> אנשי קשר
-                </button>
-                {!selectedGroup.is_blocklist && (
+              {/* Tabs + search row */}
+              <div className="flex items-center justify-between gap-3 mb-6">
+                <div className="flex items-center gap-1 bg-slate-100 rounded-2xl p-1">
                   <button
-                    onClick={() => setActiveTab('history')}
+                    onClick={() => setActiveTab('members')}
                     className={`flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm transition-all ${
-                      activeTab === 'history' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                      activeTab === 'members' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
                     }`}
                   >
-                    <History size={16} /> דוח שליחות
+                    <Users size={16} /> אנשי קשר
                   </button>
+                  {!selectedGroup.is_blocklist && (
+                    <button
+                      onClick={() => setActiveTab('history')}
+                      className={`flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm transition-all ${
+                        activeTab === 'history' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                      }`}
+                    >
+                      <History size={16} /> דוח שליחות
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setActiveTab('removals')}
+                    className={`flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm transition-all ${
+                      activeTab === 'removals' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                    }`}
+                  >
+                    <Trash2 size={16} /> דוח מחיקות
+                  </button>
+                </div>
+                {activeTab === 'members' && (
+                  <div className="relative w-64">
+                    <Search size={15} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                    <input
+                      type="text"
+                      placeholder="חיפוש לפי טלפון, שם או מייל..."
+                      value={memberSearch}
+                      onChange={e => setMemberSearch(e.target.value)}
+                      className="w-full pr-9 pl-4 py-2 bg-white border border-slate-200 rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-300"
+                    />
+                  </div>
                 )}
-                <button
-                  onClick={() => setActiveTab('removals')}
-                  className={`flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm transition-all ${
-                    activeTab === 'removals' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-                  }`}
-                >
-                  <Trash2 size={16} /> דוח מחיקות
-                </button>
+                {activeTab === 'history' && (
+                  <div className="relative w-64">
+                    <Search size={15} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                    <input
+                      type="text"
+                      placeholder="חיפוש לפי תוכן, תבנית או ID..."
+                      value={historySearch}
+                      onChange={e => setHistorySearch(e.target.value)}
+                      className="w-full pr-9 pl-4 py-2 bg-white border border-slate-200 rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-300"
+                    />
+                  </div>
+                )}
+                {activeTab === 'removals' && (
+                  <div className="relative w-64">
+                    <Search size={15} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                    <input
+                      type="text"
+                      placeholder="חיפוש לפי טלפון, שם או סיבה..."
+                      value={removalsSearch}
+                      onChange={e => setRemovalsSearch(e.target.value)}
+                      className="w-full pr-9 pl-4 py-2 bg-white border border-slate-200 rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-300"
+                    />
+                  </div>
+                )}
               </div>
-
-              {/* Members table */}
               {activeTab === 'members' && (loadingDetail ? (
                 <div className="flex items-center justify-center py-24 text-slate-300">
                   <div className="animate-spin w-10 h-10 border-4 border-slate-200 border-t-blue-500 rounded-full" />
@@ -1222,8 +1266,21 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                     <span>מייל</span>
                     <span></span>
                   </div>
-                  {selectedGroup.contacts.map((c, idx) => (
-                    <div key={c._id} className={`grid grid-cols-[1.6fr_1.5fr_1.3fr_1.6fr_5rem] gap-3 px-6 py-3.5 items-center hover:bg-slate-50/70 transition-colors ${idx !== selectedGroup.contacts.length - 1 ? 'border-b border-slate-100' : ''}`}>
+                  {(() => {
+                    const q = memberSearch.trim().toLowerCase();
+                    const filtered = q
+                      ? selectedGroup.contacts.filter(c =>
+                          c.phone.includes(q) ||
+                          (c.full_name?.toLowerCase().includes(q)) ||
+                          (c.whatsapp_name?.toLowerCase().includes(q)) ||
+                          (c.email?.toLowerCase().includes(q))
+                        )
+                      : selectedGroup.contacts;
+                    if (q && filtered.length === 0) return (
+                      <div className="py-10 text-center text-slate-400 text-sm">לא נמצאו תוצאות עבור &ldquo;{memberSearch}&rdquo;</div>
+                    );
+                    return filtered.map((c, idx) => (
+                    <div key={c._id} className={`grid grid-cols-[1.6fr_1.5fr_1.3fr_1.6fr_5rem] gap-3 px-6 py-3.5 items-center hover:bg-slate-50/70 transition-colors ${idx !== filtered.length - 1 ? 'border-b border-slate-100' : ''}`}>
                       <div className="flex items-center gap-3 min-w-0">
                         <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-500 flex items-center justify-center flex-shrink-0">
                           <Phone size={15} />
@@ -1251,7 +1308,8 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                         )}
                       </div>
                     </div>
-                  ))}
+                    ));
+                  })()}
                 </div>
               ))}
 
@@ -1280,7 +1338,14 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                       <span>סטטוס</span>
                       <span></span>
                     </div>
-                    {broadcasts.map((b, idx) => {
+                    {(() => {
+                      const hq = historySearch.trim().toLowerCase();
+                      return (hq ? broadcasts.filter(b =>
+                        (b._id?.toLowerCase().includes(hq)) ||
+                        (b.message?.toLowerCase().includes(hq)) ||
+                        (b.template_name?.toLowerCase().includes(hq))
+                      ) : broadcasts);
+                    })().map((b, idx) => {
                       // isStopped: any non-completed broadcast that has sent some but not all
                       // Includes status='running' — covers server-restart orphan (stuck in DB as running)
                       const isPartial = b.processed > 0 && b.processed < b.total;
@@ -1373,6 +1438,13 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                       </div>
                       );
                     })}
+                    {historySearch.trim() && broadcasts.filter(b =>
+                      (b._id?.toLowerCase().includes(historySearch.trim().toLowerCase())) ||
+                      (b.message?.toLowerCase().includes(historySearch.trim().toLowerCase())) ||
+                      (b.template_name?.toLowerCase().includes(historySearch.trim().toLowerCase()))
+                    ).length === 0 && (
+                      <div className="py-10 text-center text-slate-400 text-sm">לא נמצאו תוצאות עבור &ldquo;{historySearch}&rdquo;</div>
+                    )}
                   </div>
                 )
               )}
@@ -1397,7 +1469,16 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                       <span>סיבת הסרה</span>
                       <span>בוצע ע"י</span>
                     </div>
-                    {removals.map((r, idx) => (
+                    {(() => {
+                      const rq = removalsSearch.trim().toLowerCase();
+                      return rq ? removals.filter(r =>
+                        (r.phone?.includes(rq)) ||
+                        (r.full_name?.toLowerCase().includes(rq)) ||
+                        (r.whatsapp_name?.toLowerCase().includes(rq)) ||
+                        (r.reason?.toLowerCase().includes(rq)) ||
+                        (r.removed_by?.toLowerCase().includes(rq))
+                      ) : removals;
+                    })().map((r, idx) => (
                       <div
                         key={r._id}
                         className={`grid grid-cols-[10rem_1.4fr_1.4fr_2fr_1fr] gap-3 px-6 py-3.5 items-center hover:bg-slate-50/70 transition-colors ${idx !== removals.length - 1 ? 'border-b border-slate-100' : ''}`}
@@ -1412,6 +1493,15 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                         <p className="text-xs font-semibold text-slate-400 truncate">{r.removed_by || '—'}</p>
                       </div>
                     ))}
+                    {removalsSearch.trim() && removals.filter(r =>
+                      (r.phone?.includes(removalsSearch.trim().toLowerCase())) ||
+                      (r.full_name?.toLowerCase().includes(removalsSearch.trim().toLowerCase())) ||
+                      (r.whatsapp_name?.toLowerCase().includes(removalsSearch.trim().toLowerCase())) ||
+                      (r.reason?.toLowerCase().includes(removalsSearch.trim().toLowerCase())) ||
+                      (r.removed_by?.toLowerCase().includes(removalsSearch.trim().toLowerCase()))
+                    ).length === 0 && (
+                      <div className="py-10 text-center text-slate-400 text-sm">לא נמצאו תוצאות עבור &ldquo;{removalsSearch}&rdquo;</div>
+                    )}
                   </div>
                 )
               )}

@@ -775,7 +775,7 @@ export const InputTextNode = (props: any) => {
             >
               <option value="" disabled>בחר שדה...</option>
               {contactFields.map((f: any) => (
-                <option key={f._id} value={f.key}>{f.label}</option>
+                <option key={f._id} value={f._id}>{f.label}</option>
               ))}
             </select>
           </div>
