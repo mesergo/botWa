@@ -902,11 +902,24 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
         console.log(`[WALK]    action_web_service → default exit → nextNode=${nextNode || '(none)'}`);
         
         if (!nextNode) {
+          // No default edge connected — only now surface the error to the user
+          // (so they aren't left with no response at all).
+          if (wsResult.error) {
+            console.log(`[WALK]    ⚠️ action_web_service failed and no default edge → showing error message`);
+            const errMsg = { type: 'Text', text: `❌ שגיאה בחיבור לשרת ה-Webservice: ${wsResult.errorText}`, created: new Date().toISOString() };
+            messages.push(errMsg);
+            addToHistory(session, errMsg, currentNodeId);
+          }
           console.log(`[WALK]    ⏹ action_web_service: no default edge → returnToMenu()`);
           returnToMenu();
           return messages;
         }
         
+        // A component is connected to 'default' — continue to it silently,
+        // even if the webservice call failed (wsResult.error === true).
+        if (wsResult.error) {
+          console.log(`[WALK]    ⚠️ action_web_service failed but default edge exists → continuing silently to ${nextNode}`);
+        }
         currentNodeId = nextNode;
         break;
       }
@@ -1465,6 +1478,31 @@ export const respondToMessage = async (req, res) => {
           updateOp,
           { upsert: true, new: true }
         ).catch(err => console.error('[BOT] Failed to upsert contact:', err.message));
+
+        // Drain any group-broadcast messages that were queued on this contact while
+        // no session existed yet, so the new conversation opens with that history included.
+        try {
+          const flowIdStr = bot._id.toString();
+          const contactWithPending = await Contact.findOne({
+            user_id: String(user._id),
+            phone: sender,
+            'pending_history.0': { $exists: true },
+          });
+          const pendingForThisBot = (contactWithPending?.pending_history || [])
+            .filter(h => h.flow_id === flowIdStr);
+          if (pendingForThisBot.length > 0) {
+            pendingForThisBot.sort((a, b) => new Date(a.created) - new Date(b.created));
+            session.process_history = [...pendingForThisBot, ...(session.process_history || [])];
+            session.markModified('process_history');
+            await Contact.updateOne(
+              { _id: contactWithPending._id },
+              { $pull: { pending_history: { flow_id: flowIdStr } } }
+            );
+            console.log(`[BOT] 📢 Injected ${pendingForThisBot.length} pending broadcast message(s) into new session ${session._id}`);
+          }
+        } catch (err) {
+          console.error('[BOT] Failed to drain pending broadcast history:', err.message);
+        }
       }
 
       isNewSession = true;

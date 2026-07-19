@@ -5,6 +5,7 @@ import Group from '../models/Group.js';
 import Contact from '../models/Contact.js';
 import User from '../models/User.js';
 import BotFlow from '../models/BotFlow.js';
+import BotSession from '../models/BotSession.js';
 import GroupBroadcast from '../models/GroupBroadcast.js';
 import GroupRemovalLog from '../models/GroupRemovalLog.js';
 import { getEffectiveUserId } from '../middleware/auth.js';
@@ -486,6 +487,62 @@ export const sendToGroup = async (req, res) => {
   }
 };
 
+// Build the process_history-shaped entry representing a group broadcast message
+function buildBroadcastHistoryEntry(groupName, broadcastId, flowId, { isTemplate, templateData, msgText, media }) {
+  const base = {
+    sender: 'broadcast',
+    name: groupName,
+    node_id: 'broadcast',
+    flow_id: flowId,
+    broadcast_id: String(broadcastId),
+    broadcast_group: groupName,
+    created: new Date().toISOString(),
+  };
+
+  if (isTemplate && templateData) {
+    return { ...base, type: 'Text', text: msgText || `📢 תבנית: ${templateData.name || ''}` };
+  }
+  if (media?.url && media?.type) {
+    const typeMap = { image: 'Image', video: 'Video', document: 'Document' };
+    return { ...base, type: typeMap[media.type] || 'Text', url: media.url, filename: media.filename || '', text: msgText || '' };
+  }
+  return { ...base, type: 'Text', text: msgText || '' };
+}
+
+// After a successful broadcast send, reflect the message into each recipient's conversation:
+// - if they already have a BotSession with this bot, push it straight into process_history
+// - otherwise, queue it on Contact.pending_history — drained when their next session opens (chatController.js)
+async function saveBroadcastToSessions(userId, flowId, broadcastId, groupName, sendOpts, phonesArr) {
+  const historyEntry = buildBroadcastHistoryEntry(groupName, broadcastId, flowId, sendOpts);
+  const normalizedPhones = phonesArr.map(p => p.phone);
+  if (normalizedPhones.length === 0) return;
+
+  // Find the most recent session per phone for this bot
+  const latestSessions = await BotSession.aggregate([
+    { $match: { user_id: String(userId), flow_id: flowId, sender: { $in: normalizedPhones } } },
+    { $sort: { createdAt: -1 } },
+    { $group: { _id: '$sender', sessionId: { $first: '$_id' } } },
+  ]);
+
+  const phonesWithSession = new Set(latestSessions.map(s => s._id));
+  const sessionIds = latestSessions.map(s => s.sessionId);
+
+  if (sessionIds.length > 0) {
+    await BotSession.updateMany(
+      { _id: { $in: sessionIds } },
+      { $push: { process_history: historyEntry } }
+    );
+  }
+
+  const phonesWithoutSession = normalizedPhones.filter(p => !phonesWithSession.has(p));
+  if (phonesWithoutSession.length > 0) {
+    await Contact.updateMany(
+      { user_id: String(userId), phone: { $in: phonesWithoutSession } },
+      { $push: { pending_history: historyEntry } }
+    );
+  }
+}
+
 // Background worker: sends one-by-one and updates progress on the broadcast record
 async function processBroadcast(broadcastId, userId, group, contacts, opts) {
   const { isTemplate, templateData, msgText, media, bot_id, resumeFrom } = opts;
@@ -496,6 +553,7 @@ async function processBroadcast(broadcastId, userId, group, contacts, opts) {
 
     // Resolve endpoint ID dynamically from the user's first connected bot (without dialog360/ prefix)
     let sheetEndpointId = null;
+    let flowId = null;
     {
       const query = bot_id
         ? { _id: bot_id, user_id: userId, endpoint: { $nin: ['', null] } }
@@ -504,6 +562,7 @@ async function processBroadcast(broadcastId, userId, group, contacts, opts) {
       if (bot?.endpoint) {
         const ep = bot.endpoint.includes('/') ? bot.endpoint.split('/').pop() : bot.endpoint;
         sheetEndpointId = ep;
+        flowId = bot._id.toString();
       }
     }
     if (!sheetEndpointId) {
@@ -607,6 +666,14 @@ async function processBroadcast(broadcastId, userId, group, contacts, opts) {
         skipped,
         recipients,
       });
+
+      // Reflect the broadcast message into each recipient's conversation history —
+      // existing sessions get it right away; contacts with no session yet get it
+      // queued in Contact.pending_history and drained when their next session opens.
+      if (flowId) {
+        saveBroadcastToSessions(userId, flowId, broadcastId, group.name, { isTemplate, templateData, msgText, media }, phonesArr)
+          .catch(err => console.error(`${TAG} Failed to save broadcast to session histories:`, err));
+      }
     } else {
       console.error(`${TAG} ❌ Sheet API error: HTTP ${waRes.status} — ${responseText}`);
       await GroupBroadcast.findByIdAndUpdate(broadcastId, {
