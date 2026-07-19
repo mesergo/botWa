@@ -13,7 +13,7 @@ import { getEffectiveUserId } from '../middleware/auth.js';
 // ── Broadcast Queue (per-user) ────────────────────────────────────────────────
 // Ensures broadcasts for the same user run one at a time, never in parallel.
 const broadcastQueues = new Map(); // userId -> { running: boolean, queue: Array }
-
+  
 // ── Scheduled broadcast ticker ────────────────────────────────────────────────
 // Every 60s, find broadcasts whose scheduled_at has arrived and fire them via the
 // normal per-user queue — exactly like an immediate send.
@@ -487,8 +487,45 @@ export const sendToGroup = async (req, res) => {
   }
 };
 
-// Build the process_history-shaped entry representing a group broadcast message
-function buildBroadcastHistoryEntry(groupName, broadcastId, flowId, { isTemplate, templateData, msgText, media }) {
+// Resolve a __field:<ref> personalization token to the actual value for one specific contact.
+// Supports the same field refs the frontend offers: full_name, whatsapp_name, phone, email, custom:<fieldId>.
+function resolveContactField(contact, fieldRef) {
+  if (!contact) return '';
+  if (fieldRef === 'full_name') return contact.full_name || contact.whatsapp_name || '';
+  if (fieldRef === 'whatsapp_name') return contact.whatsapp_name || contact.full_name || '';
+  if (fieldRef === 'phone') return contact.phone || '';
+  if (fieldRef === 'email') return contact.email || '';
+  if (fieldRef.startsWith('custom:')) {
+    const fieldId = fieldRef.slice(7);
+    const val = contact.custom_field_values?.[fieldId];
+    return val != null ? String(val) : '';
+  }
+  return '';
+}
+
+// Render a WhatsApp template's BODY text with its actual sent params substituted in,
+// so the session history shows real content instead of just the template's internal name.
+// `contact` (when provided) is used to resolve __field: personalization tokens per-recipient.
+function renderTemplateBodyText(templateData, contact) {
+  const bodyComponent = (templateData.components || []).find(c => c.type === 'BODY');
+  let bodyText = bodyComponent?.text || '';
+  if (Array.isArray(templateData.params?.body)) {
+    templateData.params.body.forEach((val, i) => {
+      const placeholder = new RegExp(`\\{\\{${i + 1}\\}\\}`, 'g');
+      const raw = String(val || '');
+      const displayVal = raw.startsWith('__field:')
+        ? resolveContactField(contact, raw.slice(8))
+        : raw;
+      bodyText = bodyText.replace(placeholder, displayVal);
+    });
+  }
+  return bodyText;
+}
+
+// Build the process_history-shaped entry representing a group broadcast message.
+// `contact` (optional) lets template body params personalized via __field: be resolved
+// to that specific recipient's real value instead of a generic placeholder.
+function buildBroadcastHistoryEntry(groupName, broadcastId, flowId, { isTemplate, templateData, msgText, media }, contact) {
   const base = {
     sender: 'broadcast',
     name: groupName,
@@ -500,7 +537,20 @@ function buildBroadcastHistoryEntry(groupName, broadcastId, flowId, { isTemplate
   };
 
   if (isTemplate && templateData) {
-    return { ...base, type: 'Text', text: msgText || `📢 תבנית: ${templateData.name || ''}` };
+    const bodyText = renderTemplateBodyText(templateData, contact);
+    const templateMeta = { template_name: templateData.name || '' };
+    const headerUrl = templateData.params?.header?.url;
+    const headerType = templateData.params?.header?.type; // 'image' | 'video' | 'document'
+    if (headerUrl && headerType) {
+      const typeMap = { image: 'Image', video: 'Video', document: 'Document' };
+      return {
+        ...base, ...templateMeta,
+        type: typeMap[headerType] || 'Text',
+        url: headerUrl,
+        text: bodyText || `📢 תבנית: ${templateData.name || ''}`,
+      };
+    }
+    return { ...base, ...templateMeta, type: 'Text', text: bodyText || `📢 תבנית: ${templateData.name || ''}` };
   }
   if (media?.url && media?.type) {
     const typeMap = { image: 'Image', video: 'Video', document: 'Document' };
@@ -512,8 +562,9 @@ function buildBroadcastHistoryEntry(groupName, broadcastId, flowId, { isTemplate
 // After a successful broadcast send, reflect the message into each recipient's conversation:
 // - if they already have a BotSession with this bot, push it straight into process_history
 // - otherwise, queue it on Contact.pending_history — drained when their next session opens (chatController.js)
+// Each recipient gets its OWN history entry (not a shared one) so personalized template
+// params (__field:full_name etc.) show the real value for that specific contact.
 async function saveBroadcastToSessions(userId, flowId, broadcastId, groupName, sendOpts, phonesArr) {
-  const historyEntry = buildBroadcastHistoryEntry(groupName, broadcastId, flowId, sendOpts);
   const normalizedPhones = phonesArr.map(p => p.phone);
   if (normalizedPhones.length === 0) return;
 
@@ -523,24 +574,23 @@ async function saveBroadcastToSessions(userId, flowId, broadcastId, groupName, s
     { $sort: { createdAt: -1 } },
     { $group: { _id: '$sender', sessionId: { $first: '$_id' } } },
   ]);
+  const sessionIdByPhone = new Map(latestSessions.map(s => [s._id, s.sessionId]));
 
-  const phonesWithSession = new Set(latestSessions.map(s => s._id));
-  const sessionIds = latestSessions.map(s => s.sessionId);
+  const sessionOps = [];
+  const contactOps = [];
 
-  if (sessionIds.length > 0) {
-    await BotSession.updateMany(
-      { _id: { $in: sessionIds } },
-      { $push: { process_history: historyEntry } }
-    );
+  for (const p of phonesArr) {
+    const entry = buildBroadcastHistoryEntry(groupName, broadcastId, flowId, sendOpts, p.contact);
+    const sessionId = sessionIdByPhone.get(p.phone);
+    if (sessionId) {
+      sessionOps.push({ updateOne: { filter: { _id: sessionId }, update: { $push: { process_history: entry } } } });
+    } else if (p.contact?._id) {
+      contactOps.push({ updateOne: { filter: { _id: p.contact._id }, update: { $push: { pending_history: entry } } } });
+    }
   }
 
-  const phonesWithoutSession = normalizedPhones.filter(p => !phonesWithSession.has(p));
-  if (phonesWithoutSession.length > 0) {
-    await Contact.updateMany(
-      { user_id: String(userId), phone: { $in: phonesWithoutSession } },
-      { $push: { pending_history: historyEntry } }
-    );
-  }
+  if (sessionOps.length > 0) await BotSession.bulkWrite(sessionOps);
+  if (contactOps.length > 0) await Contact.bulkWrite(contactOps);
 }
 
 // Background worker: sends one-by-one and updates progress on the broadcast record
@@ -592,7 +642,7 @@ async function processBroadcast(broadcastId, userId, group, contacts, opts) {
         skipped++;
         recipients.push({ phone: contact.phone, name: contactName, status: 'skipped', reason: 'blocklist' });
       } else {
-        phonesArr.push({ phone: normalized, name: contactName });
+        phonesArr.push({ phone: normalized, name: contactName, contact });
       }
     }
 

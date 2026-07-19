@@ -17,7 +17,7 @@ const contactSchema = new mongoose.Schema({
   timestamps: true,
   collection: 'Contact'
 });
-
+ 
 // Unique: one contact record per phone per user
 contactSchema.index({ user_id: 1, phone: 1 }, { unique: true });
 

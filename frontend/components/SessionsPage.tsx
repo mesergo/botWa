@@ -1607,9 +1607,12 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
               <div className="flex flex-col gap-0.5 items-end">
                 <div className="px-3 py-1.5 rounded-2xl text-sm font-semibold shadow-sm text-right bg-amber-50 border border-amber-200 text-amber-900 rounded-tr-none">
                   <p className="text-[9px] text-amber-500 font-black mb-0.5 uppercase tracking-widest">📢 שידור: {item.broadcast_group || item.name || 'רשימת תפוצה'}</p>
+                  {item.template_name && (
+                    <p className="text-[9px] text-amber-400 font-bold mb-1">תבנית: {item.template_name}</p>
+                  )}
                   {item.type === 'Image' && item.url && (
                     <img src={item.url} alt="תמונה" className="rounded-xl max-w-[200px] h-auto mb-2" />
-                  )}
+                  )}  
                   {item.type === 'Video' && item.url && (
                     <video src={item.url} controls className="rounded-xl max-w-[200px] mb-2" />
                   )}
