@@ -49,6 +49,7 @@ interface GroupsPageProps {
   onOpenSettings?: () => void;
   onOpenSubUsers?: () => void;
   onStopImpersonation?: () => void;
+  onSwitchAccount?: (accountId: string) => void;
   onGoHome?: () => void;
 }
 
@@ -62,7 +63,7 @@ const API_BASE = window.location.hostname === 'localhost'
 
 const GroupsPage: React.FC<GroupsPageProps> = ({
   token, currentUser, onBack, onLogout, onOpenContacts, onOpenSessions,onOpenSmsIn,
-  onOpenAdminPanel, onOpenSettings, onOpenSubUsers, onStopImpersonation, onGoHome,
+  onOpenAdminPanel, onOpenSettings, onOpenSubUsers, onStopImpersonation, onSwitchAccount, onGoHome,
 }) => {
   const [groups, setGroups] = useState<GroupSummary[]>([]);
   const [selectedGroup, setSelectedGroup] = useState<GroupDetail | null>(null);
@@ -797,7 +798,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
 
   return (
     <div className="h-screen w-screen bg-[#f8fafc] flex flex-col font-medium text-right overflow-hidden" dir="rtl">
-      <ImpersonationBanner currentUser={currentUser} onStopImpersonation={onStopImpersonation} />
+      <ImpersonationBanner currentUser={currentUser} onStopImpersonation={onStopImpersonation} token={token} onSwitchAccount={onSwitchAccount} />
 
       {/* Navbar */}
       <nav className="h-20 bg-white border-b border-slate-100 flex items-center justify-between px-10 z-20 flex-shrink-0" dir="ltr">

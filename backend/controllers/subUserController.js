@@ -23,9 +23,12 @@ export const getSubUsers = async (req, res) => {
 
     let availableUserTypes = [];
     if (hasPermission(actorPerms, 'users.add')) {
-      const filter = { show_in_users_tab: true };
+      // Admin-role types (system_role: 'admin') must never be creatable from the Sub-Users
+      // tab, regardless of their show_in_users_tab flag — this endpoint only ever creates
+      // rep / rep_manager / user accounts (see the allowedRoles check in createSubUser).
+      const filter = { show_in_users_tab: true, system_role: { $ne: 'admin' } };
       if (actor?.role === 'admin') {
-        // Admin by role always gets all user types
+        // Admin by role always gets all (non-admin) user types
         availableUserTypes = await UserType.find(filter).select('_id name system_role').sort({ createdAt: 1 }).lean();
       } else {
         // Mirror resolvePermissions: prefer explicit user_type_id, fall back to seeded type by role
@@ -38,7 +41,7 @@ export const getSubUsers = async (req, res) => {
         const allowedIds = Array.isArray(actorType?.allowed_user_type_ids) ? actorType.allowed_user_type_ids : [];
         if (canAddByType) {
           if (allowedIds.length > 0) {
-            availableUserTypes = await UserType.find({ _id: { $in: allowedIds }, show_in_users_tab: true })
+            availableUserTypes = await UserType.find({ _id: { $in: allowedIds }, show_in_users_tab: true, system_role: { $ne: 'admin' } })
               .select('_id name system_role')
               .sort({ createdAt: 1 })
               .lean();
@@ -77,7 +80,7 @@ export const getSubUsers = async (req, res) => {
 export const createSubUser = async (req, res) => {
   try {
     const managerId = await getRootManagerId(req.userId);
-    const { name, email, password, phone, role, rep_group_ids, allowed_bot_ids, user_type_id } = req.body;
+    const { name, email, password, phone, role, rep_group_ids, allowed_bot_ids, user_type_id, allowDuplicateEmail } = req.body;
 
     const actor = await User.findById(req.userId).select('role user_type_id').lean();
     const actorPerms = await resolvePermissions(actor || { role: req.user?.role });
@@ -125,9 +128,19 @@ export const createSubUser = async (req, res) => {
     }
 
     const normalizedEmail = email.toLowerCase().trim();
-    const existing = await User.findOne({ email: normalizedEmail });
-    if (existing) {
-      return res.status(400).json({ error: 'כתובת האימייל כבר קיימת במערכת' });
+    const existingAccounts = await User.find({ email: normalizedEmail }).select('name account_type role createdAt');
+    if (existingAccounts.length > 0 && allowDuplicateEmail !== true) {
+      return res.status(409).json({
+        emailExists: true,
+        count: existingAccounts.length,
+        accounts: existingAccounts.map(u => ({
+          id: u._id.toString(),
+          name: u.name,
+          account_type: u.account_type || 'Basic',
+          role: u.role || 'user',
+          created_at: u.createdAt
+        }))
+      });
     }
 
     const publicId = Math.random().toString(36).substring(2, 15);

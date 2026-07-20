@@ -233,6 +233,14 @@ const FlowBuilder: React.FC = () => {
 
   const [authForm, setAuthForm] = useState({ name: '', email: '', password: '', rememberMe: false });
   const [authErrors, setAuthErrors] = useState<Record<string, string>>({});
+  // Populated when a direct login (password, or Google One Tap / auto-select, bypassing
+  // the email-blur picker) reveals that the email is shared by multiple accounts — shown
+  // as a friendly account picker on the login screen instead of a hard error.
+  const [pendingAccountsForLogin, setPendingAccountsForLogin] = useState<{ id: string; name: string; account_type: string; role: string; created_at: string }[]>([]);
+  // Which login path triggered the picker above — used to disable the regular "כניסה"
+  // button when the picker came from Google (the user must finish via Google again,
+  // since the resulting credential/account choice must round-trip through Google auth).
+  const [pendingAccountsSource, setPendingAccountsSource] = useState<'google' | 'password' | null>(null);
 
   const [isPublishModalOpen, setIsPublishModalOpen] = useState(false);
   const [newVersionName, setNewVersionName] = useState('');
@@ -1316,13 +1324,14 @@ const FlowBuilder: React.FC = () => {
     window.location.reload();
   }, [token]);
  
-  const handleGoogleLogin = async (credential: string) => {
+  const handleGoogleLogin = async (credential: string, accountId?: string) => {
     setAuthErrors({});
+    setPendingAccountsForLogin([]);
     try {
       const res = await fetch(`${API_BASE}/auth/google`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ credential }),
+        body: JSON.stringify({ credential, accountId }),
       });
       const data = await res.json();
       if (res.ok && data.token) {
@@ -1336,6 +1345,14 @@ const FlowBuilder: React.FC = () => {
         } else {
           navigate('/');
         }
+      } else if (res.ok && data.requiresAccountSelection) {
+        // Google One Tap / auto-login bypassed the email-blur picker — show a friendly
+        // account picker on the login form instead of a hard error, and default to the
+        // first account so a single extra click on the Google button completes the login.
+        const accounts = data.accounts || [];
+        setPendingAccountsForLogin(accounts);
+        setPendingAccountsSource('google');
+        setAuthForm(prev => ({ ...prev, accountId: accounts[0]?.id }));
       } else {
         setAuthErrors({ general: data.error || 'שגיאה בהתחברות עם גוגל' });
       }
@@ -1346,11 +1363,13 @@ const FlowBuilder: React.FC = () => {
 
   const handleAuth = async () => {
     setAuthErrors({});
+    setPendingAccountsForLogin([]);
+    setPendingAccountsSource(null);
     const endpoint = '/auth/login';
     const res = await fetch(`${API_BASE}${endpoint}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: authForm.email, password: authForm.password })
+      body: JSON.stringify({ email: authForm.email, password: authForm.password, accountId: (authForm as any).accountId })
     });
     const data = await res.json();
     if (res.ok && data.token) {
@@ -1364,6 +1383,15 @@ const FlowBuilder: React.FC = () => {
       } else {
         navigate('/');
       }
+    } else if (res.status === 409 && data.requiresAccountSelection) {
+      // Several accounts share this exact email+password and none was pre-selected
+      // (e.g. the email-blur picker didn't run) — show the friendly picker instead
+      // of logging into an arbitrary account.
+      const accounts = data.accounts || [];
+      setPendingAccountsForLogin(accounts);
+      setPendingAccountsSource('password');
+      setAuthForm(prev => ({ ...prev, accountId: accounts[0]?.id }));
+      setAuthErrors({ general: 'למייל זה משויכים מספר חשבונות - יש לבחור חשבון ולנסות שוב' });
     } else {
       setAuthErrors({ general: data.error === 'Invalid credentials' ? 'שם משתמש או סיסמה שגויים' : (data.error || 'שם משתמש או סיסמה שגויים') });
     }
@@ -1383,6 +1411,34 @@ const FlowBuilder: React.FC = () => {
     // Pass the new token directly to avoid stale closure with the old admin token
     loadBots(impersonationToken);
   }, [loadBots]);
+
+  // Self-service switch to a sibling account sharing the same login email.
+  const handleSwitchAccount = useCallback(async (accountId: string) => {
+    if (!token) return;
+    try {
+      const res = await fetch(`${API_BASE}/auth/switch-account`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ accountId }),
+      });
+      const data = await res.json();
+      if (res.ok && data.token) {
+        setToken(data.token);
+        setCurrentUser(data.user);
+        saveStoredAuth(data.token, data.user, true);
+        if (isRepOnlyUser(data.user)) {
+          setSessionsOwnOnly(false);
+          navigate('/sessions');
+        } else {
+          navigate('/dashboard');
+        }
+        // Pass the new token directly to avoid stale closure with the old token
+        loadBots(data.token);
+      }
+    } catch (error) {
+      console.error('Error switching account:', error);
+    }
+  }, [token, loadBots]);
 
   const handleStopImpersonation = useCallback(async () => {
     if (!token) return;
@@ -2139,7 +2195,21 @@ const FlowBuilder: React.FC = () => {
   }
 
   if (!currentUser && viewMode !== 'simulator-only') {
-    return <AuthScreen form={authForm} errors={authErrors} onFormChange={(data) => { setAuthErrors({}); setAuthForm(data); }} onAuth={handleAuth} onGoogleLogin={handleGoogleLogin} />
+    return <AuthScreen
+      form={authForm}
+      errors={authErrors}
+      pendingAccounts={pendingAccountsForLogin}
+      pendingAccountsSource={pendingAccountsSource}
+      onFormChange={(data) => {
+        setAuthErrors({});
+        // Only clear the pending account picker when the email itself changes, not when
+        // the user is simply picking an account from the list (which also updates form).
+        if (data.email !== authForm.email) { setPendingAccountsForLogin([]); setPendingAccountsSource(null); }
+        setAuthForm(data);
+      }}
+      onAuth={handleAuth}
+      onGoogleLogin={handleGoogleLogin}
+    />
   }
 
   // Trial expiry check — show blocking screen if trial has expired
@@ -2412,6 +2482,8 @@ const FlowBuilder: React.FC = () => {
               onOpenAdminPanel={currentUser?.role === 'admin' ? () => navigate('/admin') : undefined}
               onLogout={handleLogout}
               onStopImpersonation={handleStopImpersonation}
+              onSwitchAccount={handleSwitchAccount}
+              token={token}
             />
           } />
           <Route path="/contacts" element={
@@ -2420,7 +2492,7 @@ const FlowBuilder: React.FC = () => {
               currentUser={currentUser}
               onBack={() => navigate('/dashboard')}
               onGoHome={() => navigate('/')}
-              onLogout={() => { localStorage.clear(); window.location.reload(); }}
+              onLogout={handleLogout}
               onOpenSessions={can('sessions.view') ? (phone?: string) => { setSessionsInitialPhone(phone ?? null); setSessionsOwnOnly(true); navigate('/sessions'); } : undefined}
               onOpenGroups={can('groups.view') ? () => navigate('/groups') : undefined}
               onOpenSmsIn={can('sms_in.view') ? () => navigate('/sms-in') : undefined}
@@ -2428,6 +2500,7 @@ const FlowBuilder: React.FC = () => {
               onOpenSettings={can('settings.view') ? () => navigate('/settings') : undefined}
               onOpenSubUsers={can('users.view') ? () => navigate('/users') : undefined}
               onStopImpersonation={handleStopImpersonation}
+              onSwitchAccount={handleSwitchAccount}
               initialPhone={contactsInitialPhone}
             />
           } />
@@ -2437,7 +2510,7 @@ const FlowBuilder: React.FC = () => {
               currentUser={currentUser}
               onBack={() => navigate('/dashboard')}
               onGoHome={() => navigate('/')}
-              onLogout={() => { localStorage.clear(); window.location.reload(); }}
+              onLogout={handleLogout}
               onOpenContacts={can('contacts.view') ? (phone?: string) => { setContactsInitialPhone(phone ?? null); navigate('/contacts'); } : undefined}
               onOpenSessions={can('sessions.view') ? (phone?: string) => { setSessionsInitialPhone(phone ?? null); setSessionsOwnOnly(true); navigate('/sessions'); } : undefined}
               onOpenSmsIn={can('sms_in.view') ? () => navigate('/sms-in') : undefined}
@@ -2445,6 +2518,7 @@ const FlowBuilder: React.FC = () => {
               onOpenSettings={can('settings.view') ? () => navigate('/settings') : undefined}
               onOpenSubUsers={can('users.view') ? () => navigate('/users') : undefined}
               onStopImpersonation={handleStopImpersonation}
+              onSwitchAccount={handleSwitchAccount}
             />
           } />
           <Route path="/sessions" element={
@@ -2453,7 +2527,7 @@ const FlowBuilder: React.FC = () => {
               currentUser={currentUser}
               onBack={isRepOnlyUser(currentUser) ? undefined : () => navigate('/dashboard')}
               onGoHome={isRepOnlyUser(currentUser) ? undefined : () => navigate('/')}
-              onLogout={() => { localStorage.clear(); window.location.reload(); }}
+              onLogout={handleLogout}
               onOpenContacts={can('contacts.view') ? (phone?: string) => { setContactsInitialPhone(phone ?? null); navigate('/contacts'); } : undefined}
               onOpenGroups={can('groups.view') ? () => navigate('/groups') : undefined}
               onOpenSmsIn={can('sms_in.view') ? () => navigate('/sms-in') : undefined}
@@ -2463,6 +2537,7 @@ const FlowBuilder: React.FC = () => {
               onOpenSettings={can('settings.view') ? () => navigate('/settings') : undefined}
               onOpenSubUsers={can('users.view') ? () => navigate('/users') : undefined}
               onStopImpersonation={handleStopImpersonation}
+              onSwitchAccount={handleSwitchAccount}
               onUpdateAvailability={handleUpdateAvailability}
             />
           } />
@@ -2482,6 +2557,7 @@ const FlowBuilder: React.FC = () => {
                 onOpenGroups={() => navigate('/groups')}
                 onOpenSmsIn={can('sms_in.view') ? () => navigate('/sms-in') : undefined}
                 onStopImpersonation={handleStopImpersonation}
+                onSwitchAccount={handleSwitchAccount}
                 onConnectFacebook={(can('bots.publish') || currentUser?.isImpersonating) ? handleConnectFacebook : undefined}
                 onUpdateBotPublicId={handleUpdateBotPublicId}
                 onUpdateBotEndpoint={currentUser?.isImpersonating ? handleUpdateBotEndpoint : undefined}
@@ -2521,6 +2597,7 @@ const FlowBuilder: React.FC = () => {
               onOpenGroups={() => navigate('/groups')}
               onOpenSmsIn={can('sms_in.view') ? () => navigate('/sms-in') : undefined}
               onStopImpersonation={handleStopImpersonation}
+              onSwitchAccount={handleSwitchAccount}
               onConnectFacebook={(can('bots.publish') || currentUser?.isImpersonating) ? handleConnectFacebook : undefined}
               onUpdateBotPublicId={handleUpdateBotPublicId}
               onUpdateBotEndpoint={currentUser?.isImpersonating ? handleUpdateBotEndpoint : undefined}
@@ -2546,6 +2623,7 @@ const FlowBuilder: React.FC = () => {
               onOpenGroups={() => navigate('/groups')}
               onOpenSmsIn={can('sms_in.view') ? () => navigate('/sms-in') : undefined}
               onStopImpersonation={handleStopImpersonation}
+              onSwitchAccount={handleSwitchAccount}
               onConnectFacebook={(can('bots.publish') || currentUser?.isImpersonating) ? handleConnectFacebook : undefined}
               onUpdateBotPublicId={handleUpdateBotPublicId}
               onUpdateBotEndpoint={currentUser?.isImpersonating ? handleUpdateBotEndpoint : undefined}
@@ -2562,7 +2640,7 @@ const FlowBuilder: React.FC = () => {
               token={token}
               currentUser={currentUser}
               onBack={() => navigate('/dashboard')}
-              onLogout={() => { localStorage.clear(); window.location.reload(); }}
+              onLogout={handleLogout}
               onOpenSessions={can('sessions.view') ? (phone?: string) => { setSessionsInitialPhone(phone ?? null); setSessionsOwnOnly(true); navigate('/sessions'); } : undefined}
               onOpenContacts={can('contacts.view') ? (phone?: string) => { setContactsInitialPhone(phone ?? null); navigate('/contacts'); } : undefined}
               onOpenGroups={can('groups.view') ? () => navigate('/groups') : undefined}
@@ -2570,6 +2648,7 @@ const FlowBuilder: React.FC = () => {
               onOpenSettings={can('settings.view') ? () => navigate('/settings') : undefined}
               onOpenSubUsers={can('users.view') ? () => navigate('/users') : undefined}
               onStopImpersonation={handleStopImpersonation}
+              onSwitchAccount={handleSwitchAccount}
             />
           } />
           <Route path="*" element={<Navigate to="/" replace />} />

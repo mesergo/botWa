@@ -111,6 +111,14 @@ export const seedUserTypes = async () => {
     { system_role: { $in: ['rep_manager', 'rep'] }, is_seeded: true },
     { $set: { 'permissions.sms_in': { view: false } } }
   );
+
+  // Idempotent patch for existing DBs: the admin user type must never be selectable from
+  // the Sub-Users tab. Older documents created before `show_in_users_tab` existed on this
+  // type fell back to the schema default (true), incorrectly exposing "מנהל מערכת" there.
+  await UserType.updateOne(
+    { system_role: 'admin', is_seeded: true },
+    { $set: { show_in_users_tab: false } }
+  );
 };
 
 export default seedUserTypes;

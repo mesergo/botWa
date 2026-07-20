@@ -1,4 +1,5 @@
 
+import mongoose from 'mongoose';
 import User from '../models/User.js';
 import BotFlow from '../models/BotFlow.js';
 import Version from '../models/Version.js';
@@ -78,10 +79,33 @@ export const register = async (req, res) => {
 };
 
 export const login = async (req, res) => {
-  const { email, password } = req.body;
+  const { email, password, accountId } = req.body;
   try {
-    const user = await User.findOne({ email, password });
-    if (!user) return res.status(401).json({ error: 'Invalid credentials' });
+    // Find every account matching this email+password combo — with multiple accounts
+    // per email now allowed, more than one could share identical credentials.
+    const matches = await User.find({ email, password });
+    if (matches.length === 0) return res.status(401).json({ error: 'Invalid credentials' });
+
+    let user;
+    if (matches.length === 1) {
+      user = matches[0];
+    } else {
+      // Ambiguous: several accounts share this exact email+password. Never guess —
+      // require the caller to have pre-selected one via accountId.
+      user = accountId ? matches.find(u => u._id.toString() === accountId) : null;
+      if (!user) {
+        return res.status(409).json({
+          requiresAccountSelection: true,
+          accounts: matches.map(u => ({
+            id: u._id.toString(),
+            name: u.name,
+            account_type: u.account_type || 'Basic',
+            role: u.role || 'user',
+            created_at: u.createdAt
+          }))
+        });
+      }
+    }
     
     const userId = user._id.toString();
     const userRole = user.role || 'user';
@@ -138,9 +162,32 @@ export const checkEmail = async (req, res) => {
   }
 };
 
+// List lightweight account info for a given email — used by the pre-login account picker.
+// Public route (no auth required), never exposes password/token/googleId.
+export const listAccountsForEmail = async (req, res) => {
+  const { email } = req.query;
+  if (!email) return res.status(400).json({ error: 'Email is required' });
+  try {
+    const users = await User.find({ email: email.toLowerCase().trim() })
+      .select('name account_type role createdAt')
+      .sort({ createdAt: 1 });
+    res.json({
+      accounts: users.map(u => ({
+        id: u._id.toString(),
+        name: u.name,
+        account_type: u.account_type || 'Basic',
+        role: u.role || 'user',
+        created_at: u.createdAt
+      }))
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
 // Google OAuth login/register
 export const googleAuth = async (req, res) => {
-  const { credential } = req.body;
+  const { credential, accountId } = req.body;
   if (!credential) return res.status(400).json({ error: 'Missing Google credential' });
   try {
     const ticket = await googleClient.verifyIdToken({
@@ -150,9 +197,10 @@ export const googleAuth = async (req, res) => {
     const payload = ticket.getPayload();
     const { email, name, sub: googleId } = payload;
 
-    let user = await User.findOne({ email: email.toLowerCase() });
+    const matches = await User.find({ email: email.toLowerCase() });
 
-    if (!user) {
+    let user;
+    if (matches.length === 0) {
       const trialExpiresAt = new Date();
       trialExpiresAt.setMonth(trialExpiresAt.getMonth() + 1);
       user = await User.create({
@@ -164,9 +212,31 @@ export const googleAuth = async (req, res) => {
         status: 'active',
         trial_expires_at: trialExpiresAt,
       });
-    } else if (!user.googleId) {
-      user.googleId = googleId;
-      await user.save();
+    } else if (matches.length === 1) {
+      user = matches[0];
+      if (!user.googleId) {
+        user.googleId = googleId;
+        await user.save();
+      }
+    } else {
+      // Multiple accounts share this email — require the caller to have pre-selected one.
+      user = accountId ? matches.find(u => u._id.toString() === accountId) : null;
+      if (!user) {
+        return res.json({
+          requiresAccountSelection: true,
+          accounts: matches.map(u => ({
+            id: u._id.toString(),
+            name: u.name,
+            account_type: u.account_type || 'Basic',
+            role: u.role || 'user',
+            created_at: u.createdAt
+          }))
+        });
+      }
+      if (!user.googleId) {
+        user.googleId = googleId;
+        await user.save();
+      }
     }
 
     const googleRole = user.role || 'user';
@@ -206,6 +276,97 @@ export const googleAuth = async (req, res) => {
   } catch (err) {
     console.error('Google auth error:', err.message);
     res.status(401).json({ error: 'אימות גוגל נכשל, נסה שנית' });
+  }
+};
+
+// List sibling accounts sharing the authenticated user's email — used by the
+// in-app "switch account" banner. Excludes the currently authenticated account.
+export const getMyAccounts = async (req, res) => {
+  try {
+    const currentUser = await User.findById(req.userId).select('email');
+    if (!currentUser) return res.status(404).json({ error: 'User not found' });
+
+    const siblings = await User.find({
+      email: currentUser.email,
+      _id: { $ne: req.userId }
+    }).select('name account_type role createdAt').sort({ createdAt: 1 });
+
+    res.json({
+      accounts: siblings.map(u => ({
+        id: u._id.toString(),
+        name: u.name,
+        account_type: u.account_type || 'Basic',
+        role: u.role || 'user',
+        created_at: u.createdAt
+      }))
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// Self-service switch to another account sharing the same login email.
+// Modeled on adminController.impersonateUser, but scoped by matching email
+// instead of admin role, and issues a normal (non-impersonation) 24h token.
+export const switchAccount = async (req, res) => {
+  try {
+    const { accountId } = req.body;
+    if (!accountId) return res.status(400).json({ error: 'accountId is required' });
+    // Reject anything that isn't a plain ObjectId string (e.g. a query-operator object
+    // like { "$ne": null }) before it ever reaches a Mongo query — prevents NoSQL
+    // operator injection via User.findById.
+    if (typeof accountId !== 'string' || !mongoose.Types.ObjectId.isValid(accountId)) {
+      return res.status(400).json({ error: 'Invalid accountId' });
+    }
+
+    const currentUser = await User.findById(req.userId).select('email');
+    if (!currentUser) return res.status(404).json({ error: 'User not found' });
+
+    const target = await User.findById(accountId);
+    if (!target) return res.status(404).json({ error: 'Account not found' });
+
+    if (target.email.toLowerCase() !== currentUser.email.toLowerCase()) {
+      return res.status(403).json({ error: 'Cannot switch to an account with a different email' });
+    }
+
+    const targetRole = target.role || 'user';
+    const targetManagerId = target.manager_id || null;
+
+    if (targetRole === 'rep' || targetRole === 'rep_manager') {
+      target.availability_status = 'available';
+      await target.save();
+    }
+
+    const jwtToken = jwt.sign({
+      id: target._id.toString(),
+      email: target.email,
+      role: targetRole,
+      manager_id: targetManagerId,
+      user_type_id: target.user_type_id || null
+    }, SECRET_KEY, { expiresIn: '24h' });
+
+    const permissions = await resolvePermissions(target);
+
+    res.json({
+      token: jwtToken,
+      user: {
+        id: target._id.toString(),
+        name: target.name,
+        email: target.email,
+        role: targetRole,
+        manager_id: targetManagerId,
+        public_id: target.public_id,
+        account_type: target.account_type || 'Basic',
+        status: target.status || 'active',
+        availability_status: target.availability_status || 'unavailable',
+        trial_expires_at: target.trial_expires_at || null,
+        api_token: target.token,
+        user_type_id: target.user_type_id || null,
+        permissions
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 };
 

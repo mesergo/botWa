@@ -23,6 +23,7 @@ interface SmsInPageProps {
   onOpenSettings?: () => void;
   onOpenSubUsers?: () => void;
   onStopImpersonation?: () => void;
+  onSwitchAccount?: (accountId: string) => void;
 }
 
 const SmsInPage: React.FC<SmsInPageProps> = ({
@@ -37,13 +38,14 @@ const SmsInPage: React.FC<SmsInPageProps> = ({
   onOpenSettings,
   onOpenSubUsers,
   onStopImpersonation,
+  onSwitchAccount,
 }) => {
   const can = usePermission(currentUser as any);
   const firstName = currentUser?.name?.charAt(0)?.toUpperCase() ?? currentUser?.email?.charAt(0)?.toUpperCase() ?? '?';
 
   return (
     <div className="h-screen w-screen bg-[#f8fafc] flex flex-col font-medium text-right overflow-hidden" dir="rtl">
-      <ImpersonationBanner currentUser={currentUser} onStopImpersonation={onStopImpersonation} />
+      <ImpersonationBanner currentUser={currentUser} onStopImpersonation={onStopImpersonation} token={_token} onSwitchAccount={onSwitchAccount} />
 
       <nav className="h-20 bg-white border-b border-slate-100 flex items-center justify-between px-10 z-20 flex-shrink-0" dir="ltr">
         <div className="flex items-center gap-4">

@@ -114,6 +114,7 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
   const [form, setForm] = useState(emptyForm);
   const [formError, setFormError] = useState<string | null>(null);
   const [formSaving, setFormSaving] = useState(false);
+  const [duplicateEmailInfo, setDuplicateEmailInfo] = useState<{ count: number; accounts: any[] } | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [sendInvite, setSendInvite] = useState(false);
 
@@ -233,6 +234,7 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
     setFormError(null);
     setShowPassword(false);
     setSendInvite(false);
+    setDuplicateEmailInfo(null);
     setShowRepModal(true);
   };
 
@@ -250,6 +252,7 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
     });
     setFormError(null);
     setShowPassword(false);
+    setDuplicateEmailInfo(null);
     setShowRepModal(true);
   };
 
@@ -259,9 +262,10 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
     setForm(emptyForm);
     setFormError(null);
     setSendInvite(false);
+    setDuplicateEmailInfo(null);
   };
 
-  const handleSave = async () => {
+  const handleSave = async (allowDuplicateEmail: boolean = false) => {
     if (!form.name.trim() || !form.email.trim()) {
       setFormError('שם ואימייל הם שדות חובה');
       return;
@@ -270,6 +274,7 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
       setFormError('סיסמה היא שדה חובה בעת יצירת נציג');
       return;
     }
+    if (!allowDuplicateEmail) setDuplicateEmailInfo(null);
     setFormSaving(true);
     setFormError(null);
     try {
@@ -284,11 +289,16 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
       if (form.role === 'rep') body.rep_group_ids = form.repGroupIds;
       if (form.role === 'rep') body.allowed_bot_ids = form.allowedBotIds;
       if (!editingId && sendInvite) body.send_invite = true;
+      if (!editingId) body.allowDuplicateEmail = allowDuplicateEmail;
 
       const url = editingId ? `${API_BASE}/sub-users/${editingId}` : `${API_BASE}/sub-users`;
       const method = editingId ? 'PATCH' : 'POST';
       const res = await fetch(url, { method, headers, body: JSON.stringify(body) });
       const data = await res.json();
+      if (!editingId && res.status === 409 && data.emailExists) {
+        setDuplicateEmailInfo({ count: data.count, accounts: data.accounts || [] });
+        return;
+      }
       if (!res.ok) throw new Error(data.error || 'שגיאה בשמירה');
       await loadUsers();
       closeForm();
@@ -729,7 +739,7 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
                 <input
                   type="email"
                   value={form.email}
-                  onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
+                  onChange={e => { setForm(f => ({ ...f, email: e.target.value })); setDuplicateEmailInfo(null); }}
                   className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:border-blue-500"
                   placeholder="name@company.com"
                   dir="ltr"
@@ -884,9 +894,34 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
               <div className="mt-4 p-3 bg-red-50 text-red-700 rounded-xl text-sm font-bold">{formError}</div>
             )}
 
+            {duplicateEmailInfo && (
+              <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-xl text-right space-y-3">
+                <p className="text-sm font-bold text-amber-800">
+                  כתובת אימייל זו כבר קיימת במערכת ({duplicateEmailInfo.count} חשבונות) — ליצור בכל זאת?
+                </p>
+                <div className="flex flex-wrap gap-3">
+                  <button
+                    type="button"
+                    onClick={() => handleSave(true)}
+                    disabled={formSaving}
+                    className="text-sm font-bold bg-amber-600 text-white px-4 py-2 rounded-lg hover:bg-amber-700 disabled:opacity-50 transition-colors"
+                  >
+                    צור בכל זאת
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDuplicateEmailInfo(null)}
+                    className="text-sm font-bold bg-white border border-amber-300 text-amber-700 px-4 py-2 rounded-lg hover:bg-amber-50 transition-colors"
+                  >
+                    ביטול
+                  </button>
+                </div>
+              </div>
+            )}
+
             <div className="flex items-center gap-3 mt-6 flex-row-reverse">
               <button
-                onClick={handleSave}
+                onClick={() => handleSave()}
                 disabled={formSaving}
                 className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-all disabled:opacity-60"
               >
