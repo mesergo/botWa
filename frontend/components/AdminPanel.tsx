@@ -209,6 +209,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
   const [createUserTypes, setCreateUserTypes] = useState<any[]>([]);
   const [creatingUser, setCreatingUser] = useState(false);
   const [createUserError, setCreateUserError] = useState<string | null>(null);
+  const [createUserDuplicate, setCreateUserDuplicate] = useState<{ count: number; accounts: any[] } | null>(null);
 
   useEffect(() => {
     fetchStats();
@@ -272,8 +273,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
     } catch {}
   };
 
-  const handleCreateUser = async () => {
+  const handleCreateUser = async (allowDuplicateEmail: boolean = false) => {
     setCreateUserError(null);
+    if (!allowDuplicateEmail) setCreateUserDuplicate(null);
     if (!createUserForm.name.trim() || !createUserForm.email.trim()) {
       setCreateUserError('שם ואימייל נדרשים');
       return;
@@ -291,13 +293,19 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
           account_type: createUserForm.account_type,
           user_type_id: createUserForm.user_type_id || null,
           manager_id: createUserForm.manager_id || null,
-          allowed_bot_ids: createUserForm.allowed_bot_ids
+          allowed_bot_ids: createUserForm.allowed_bot_ids,
+          allowDuplicateEmail
         })
       });
       const d = await r.json();
+      if (r.status === 409 && d.emailExists) {
+        setCreateUserDuplicate({ count: d.count, accounts: d.accounts || [] });
+        return;
+      }
       if (!r.ok) { setCreateUserError(d.error); return; }
       setShowCreateUserModal(false);
       setCreateUserForm({ name: '', email: '', phone: '', password: '', account_type: 'Trial', user_type_id: '', manager_id: '', allowed_bot_ids: [] });
+      setCreateUserDuplicate(null);
       setCreateUserManagerBots([]);
       fetchAllUsers();
     } catch (e: any) {
@@ -1778,7 +1786,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                       />
                     </div>
                     <button
-                      onClick={() => { setCreateUserError(null); setShowCreateUserModal(true); fetchUserTypesForModal(); }}
+                      onClick={() => { setCreateUserError(null); setCreateUserDuplicate(null); setShowCreateUserModal(true); fetchUserTypesForModal(); }}
                       className="flex items-center gap-1.5 bg-blue-600 text-white px-3 py-2.5 rounded-xl text-xs font-bold hover:bg-blue-700 transition-colors whitespace-nowrap shadow-sm flex-shrink-0"
                     >
                       <Plus size={14} />
@@ -3318,7 +3326,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-5">
               <h3 className="text-lg font-black text-slate-800">הוספת לקוח חדש</h3>
-              <button onClick={() => setShowCreateUserModal(false)} className="p-2 rounded-lg hover:bg-slate-100 text-slate-400"><X size={18} /></button>
+              <button onClick={() => { setShowCreateUserModal(false); setCreateUserDuplicate(null); }} className="p-2 rounded-lg hover:bg-slate-100 text-slate-400"><X size={18} /></button>
             </div>
             <div className="space-y-3">
               <div>
@@ -3336,7 +3344,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                 <input
                   type="email"
                   value={createUserForm.email}
-                  onChange={e => setCreateUserForm(f => ({ ...f, email: e.target.value }))}
+                  onChange={e => { setCreateUserForm(f => ({ ...f, email: e.target.value })); setCreateUserDuplicate(null); }}
                   className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
                   placeholder="example@email.com"
                 />
@@ -3453,10 +3461,34 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                   {createUserError}
                 </div>
               )}
+              {createUserDuplicate && (
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-right space-y-3">
+                  <p className="text-sm font-bold text-amber-800">
+                    כתובת אימייל זו כבר קיימת במערכת ({createUserDuplicate.count} חשבונות) — ליצור בכל זאת?
+                  </p>
+                  <div className="flex flex-wrap gap-3">
+                    <button
+                      type="button"
+                      onClick={() => handleCreateUser(true)}
+                      disabled={creatingUser}
+                      className="text-sm font-bold bg-amber-600 text-white px-4 py-2 rounded-lg hover:bg-amber-700 disabled:opacity-50 transition-colors"
+                    >
+                      צור בכל זאת
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCreateUserDuplicate(null)}
+                      className="text-sm font-bold bg-white border border-amber-300 text-amber-700 px-4 py-2 rounded-lg hover:bg-amber-50 transition-colors"
+                    >
+                      ביטול
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
             <div className="flex gap-3 mt-5">
               <button
-                onClick={handleCreateUser}
+                onClick={() => handleCreateUser()}
                 disabled={creatingUser}
                 className="flex-1 flex items-center justify-center gap-2 bg-blue-600 text-white py-3 rounded-xl font-bold text-sm hover:bg-blue-700 disabled:opacity-50 transition-colors"
               >
@@ -3464,7 +3496,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                 צור משתמש
               </button>
               <button
-                onClick={() => setShowCreateUserModal(false)}
+                onClick={() => { setShowCreateUserModal(false); setCreateUserDuplicate(null); }}
                 className="px-5 py-3 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-100 transition-colors"
               >
                 ביטול

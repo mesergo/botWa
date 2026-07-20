@@ -49,6 +49,7 @@ interface ContactsPageProps {
   onOpenSettings?: () => void;
   onOpenSubUsers?: () => void;
   onStopImpersonation?: () => void;
+  onSwitchAccount?: (accountId: string) => void;
   onGoHome?: () => void;
   initialPhone?: string | null;
 }
@@ -155,7 +156,7 @@ const BotPhonesTags: React.FC<{ phones: string[] }> = ({ phones }) => {
 
 const ContactsPage: React.FC<ContactsPageProps> = ({
   token, currentUser, onBack, onLogout, onOpenSessions, onOpenGroups,onOpenSmsIn,
-  onOpenAdminPanel, onOpenSettings, onOpenSubUsers, onStopImpersonation, onGoHome, initialPhone,
+  onOpenAdminPanel, onOpenSettings, onOpenSubUsers, onStopImpersonation, onSwitchAccount, onGoHome, initialPhone,
 }) => {
   const [contacts, setContacts] = useState<MergedContact[]>([]);
   const [loading, setLoading] = useState(true);
@@ -445,7 +446,7 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
 
   return (
     <div className="h-screen w-screen bg-[#f8fafc] flex flex-col font-medium text-right overflow-hidden" dir="rtl">
-      <ImpersonationBanner currentUser={currentUser} onStopImpersonation={onStopImpersonation} />
+      <ImpersonationBanner currentUser={currentUser} onStopImpersonation={onStopImpersonation} token={token} onSwitchAccount={onSwitchAccount} />
 
       {/* Navbar */}
       <nav className="h-20 bg-white border-b border-slate-100 flex items-center justify-between px-10 z-20 flex-shrink-0" dir="ltr">

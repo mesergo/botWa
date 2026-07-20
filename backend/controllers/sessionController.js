@@ -1650,6 +1650,26 @@ export const sendTemplateToPhone = async (req, res) => {
       historyEntry.url = h[mediaType]?.link || '';
     }
 
+    // Drain any group-broadcast messages queued on this contact while no session existed yet
+    // (this agent-initiated conversation isn't tied to one specific bot flow, so drain all of them).
+    let initialHistory = [historyEntry];
+    try {
+      const contactWithPending = await Contact.findOne({
+        user_id: String(user._id),
+        phone: normalizedPhone,
+        'pending_history.0': { $exists: true },
+      });
+      const pending = contactWithPending?.pending_history || [];
+      if (pending.length > 0) {
+        const sortedPending = [...pending].sort((a, b) => new Date(a.created) - new Date(b.created));
+        initialHistory = [...sortedPending, historyEntry];
+        await Contact.updateOne({ _id: contactWithPending._id }, { $set: { pending_history: [] } });
+        console.log(`[sendTemplateToPhone] 📢 Injected ${sortedPending.length} pending broadcast message(s) into new session for ${normalizedPhone}`);
+      }
+    } catch (err) {
+      console.error('[sendTemplateToPhone] Failed to drain pending broadcast history:', err.message);
+    }
+
     // Create a BotSession so the contact appears in the sessions list and message is saved
     // (collection is already declared above for the lastSession lookup)
     const sessionDoc = {
@@ -1661,13 +1681,13 @@ export const sendTemplateToPhone = async (req, res) => {
       status: 'waiting',
       is_active: true,
       created_at: now,
-      process_history: [historyEntry]
+      process_history: initialHistory
     };
     const insertResult = await collection.insertOne(sessionDoc);
     const sessionId = insertResult.insertedId.toString();
     console.log(`[sendTemplateToPhone] 💾 Created BotSession ${sessionId} for phone=${normalizedPhone}`);
 
-    res.json({ success: true, waSent, waError, sessionId, historyEntry, created, phone: normalizedPhone });
+    res.json({ success: true, waSent, waError, sessionId, historyEntry, processHistory: initialHistory, created, phone: normalizedPhone });
   } catch (err) {
     console.error('sendTemplateToPhone error:', err);
     res.status(500).json({ error: err.message });

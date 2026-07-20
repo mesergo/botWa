@@ -3,9 +3,20 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
 
 const GOOGLE_CLIENT_ID = '266548688904-n1qrelk64op0usdbf52ae2gupcjld0vv.apps.googleusercontent.com';
+const API_BASE = window.location.hostname === 'localhost'
+  ? 'http://localhost:3001/api'
+  : `${window.location.origin}/api`;
 
 declare global {
   interface Window { google: any; }
+}
+
+interface AccountOption {
+  id: string;
+  name: string;
+  account_type: string;
+  role: string;
+  created_at: string;
 }
 
 interface AuthScreenProps {
@@ -13,11 +24,27 @@ interface AuthScreenProps {
   errors: Record<string, string>;
   onFormChange: (data: any) => void;
   onAuth: () => void;
-  onGoogleLogin?: (credential: string) => void;
+  onGoogleLogin?: (credential: string, accountId?: string) => void;
+  // Set when a direct login (password, or Google One Tap / auto-select) reveals that
+  // several accounts share the same credentials — shows a friendly picker instead of
+  // a hard error.
+  pendingAccounts?: AccountOption[];
+  // Which login path triggered the picker above. When 'google', the regular password
+  // login button is disabled — the user must finish signing in via the Google button so
+  // the chosen account round-trips through the actual Google credential exchange.
+  pendingAccountsSource?: 'google' | 'password' | null;
 }
 
-const AuthScreen: React.FC<AuthScreenProps> = ({ form, errors, onFormChange, onAuth, onGoogleLogin }) => {
+const AuthScreen: React.FC<AuthScreenProps> = ({ form, errors, onFormChange, onAuth, onGoogleLogin, pendingAccounts, pendingAccountsSource }) => {
   const [showPassword, setShowPassword] = useState(false);
+  const [accountsForEmail, setAccountsForEmail] = useState<AccountOption[]>([]);
+  const [loadingAccounts, setLoadingAccounts] = useState(false);
+
+  const hasPendingAccounts = !!pendingAccounts && pendingAccounts.length > 0;
+  const regularLoginDisabled = hasPendingAccounts && pendingAccountsSource === 'google';
+  // A forced picker (from a direct login attempt) takes priority over the passive
+  // email-blur picker so the user isn't shown two different lists at once.
+  const displayAccounts = hasPendingAccounts ? pendingAccounts! : accountsForEmail;
 
   // Read ?name= param from URL — set by invitation links
   const invitedByName = (() => {
@@ -33,6 +60,41 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ form, errors, onFormChange, onA
     onGoogleLoginRef.current = onGoogleLogin;
   }, [onGoogleLogin]);
 
+  const selectedAccountIdRef = useRef<string | undefined>(form.accountId);
+  useEffect(() => {
+    selectedAccountIdRef.current = form.accountId;
+  }, [form.accountId]);
+
+  // Fetch existing accounts for the typed email — triggered on email field blur.
+  // Read-only picker: shows only existing accounts, no "create new" option here.
+  const handleEmailBlur = async () => {
+    const email = (form.email || '').trim();
+    if (!email || !email.includes('@')) {
+      setAccountsForEmail([]);
+      return;
+    }
+    setLoadingAccounts(true);
+    try {
+      const res = await fetch(`${API_BASE}/auth/accounts-for-email?email=${encodeURIComponent(email)}`);
+      const data = await res.json();
+      const accounts: AccountOption[] = data.accounts || [];
+      if (accounts.length > 1) {
+        setAccountsForEmail(accounts);
+        // Default to the first account if none selected yet
+        if (!form.accountId) {
+          onFormChange({ ...form, accountId: accounts[0].id });
+        }
+      } else {
+        setAccountsForEmail([]);
+        if (form.accountId) onFormChange({ ...form, accountId: undefined });
+      }
+    } catch {
+      setAccountsForEmail([]);
+    } finally {
+      setLoadingAccounts(false);
+    }
+  };
+
   useEffect(() => {
     if (!GOOGLE_CLIENT_ID || !onGoogleLoginRef.current) return;
     let cancelled = false;
@@ -41,7 +103,7 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ form, errors, onFormChange, onA
       if (cancelled || !window.google || !onGoogleLoginRef.current) return;
       window.google.accounts.id.initialize({
         client_id: GOOGLE_CLIENT_ID,
-        callback: (response: { credential: string }) => onGoogleLoginRef.current!(response.credential),
+        callback: (response: { credential: string }) => onGoogleLoginRef.current!(response.credential, selectedAccountIdRef.current),
       });
       const btn = document.getElementById('google-login-btn');
       if (btn) {
@@ -88,8 +150,41 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ form, errors, onFormChange, onA
               placeholder="אימייל" 
               value={form.email} 
               onChange={e => onFormChange({...form, email: e.target.value})} 
+              onBlur={handleEmailBlur}
             />
             {errors.email && <p className="text-red-500 text-[11px] mt-1 mr-2 text-right font-bold">{errors.email}</p>}
+            {hasPendingAccounts && (
+              <div className="mt-2 mb-2 bg-blue-50 border border-blue-200 rounded-2xl px-4 py-3 text-right">
+                <p className="text-blue-700 text-sm font-bold">למייל זה משויכים מספר חשבונות</p>
+                <p className="text-blue-600 text-xs mt-1">
+                  {regularLoginDisabled
+                    ? 'יש לבחור חשבון מהרשימה למטה, ולאחר מכן ללחוץ שוב על כפתור הכניסה עם Google.'
+                    : 'יש לבחור חשבון מהרשימה למטה, ולאחר מכן לנסות שוב להתחבר.'}
+                </p>
+              </div>
+            )}
+            {displayAccounts.length > 1 && (
+              <div className="mt-2 border border-slate-200 rounded-2xl overflow-hidden divide-y divide-slate-100">
+                {displayAccounts.map(acc => (
+                  <label
+                    key={acc.id}
+                    className="flex items-center justify-between gap-3 px-4 py-3 cursor-pointer hover:bg-slate-50 transition-colors"
+                  >
+                    <input
+                      type="radio"
+                      name="accountId"
+                      className="accent-blue-600 w-4 h-4"
+                      checked={form.accountId === acc.id}
+                      onChange={() => onFormChange({ ...form, accountId: acc.id })}
+                    />
+                    <div className="flex-1 text-right">
+                      <span className="font-bold text-slate-700 text-sm">{acc.name}</span>
+                      <span className="text-xs text-slate-400 mr-2">({acc.role})</span>
+                    </div>
+                  </label>
+                ))}
+              </div>
+            )}
           </div>
           <div className="w-full">
             <div className="relative">
@@ -125,7 +220,18 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ form, errors, onFormChange, onA
               className="w-4 h-4 accent-blue-600 cursor-pointer"
             />
           </label>
-          <button onClick={onAuth} className="w-full bg-blue-600 text-white py-5 rounded-2xl font-bold shadow-lg shadow-blue-600/20 uppercase tracking-widest hover:bg-blue-700 transition-all">כניסה</button>
+          <button
+            onClick={onAuth}
+            disabled={regularLoginDisabled}
+            title={regularLoginDisabled ? 'יש להשלים את הכניסה דרך Google' : undefined}
+            className={`w-full py-5 rounded-2xl font-bold shadow-lg uppercase tracking-widest transition-all ${
+              regularLoginDisabled
+                ? 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
+                : 'bg-blue-600 text-white shadow-blue-600/20 hover:bg-blue-700'
+            }`}
+          >
+            כניסה
+          </button>
 
           {onGoogleLogin && (
             <>

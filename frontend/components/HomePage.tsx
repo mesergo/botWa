@@ -15,6 +15,8 @@ interface HomePageProps {
   onOpenAdminPanel?: () => void;
   onLogout: () => void;
   onStopImpersonation?: () => void;
+  onSwitchAccount?: (accountId: string) => void;
+  token?: string | null;
 }
 
 // Sidebar nav items definition
@@ -102,6 +104,8 @@ const HomePage: React.FC<HomePageProps> = ({
   onOpenAdminPanel,
   onLogout,
   onStopImpersonation,
+  onSwitchAccount,
+  token,
 }) => {
   const can = usePermission(currentUser);
 
@@ -133,7 +137,7 @@ const HomePage: React.FC<HomePageProps> = ({
 
   return (
     <div className="h-screen bg-slate-50 flex flex-col overflow-hidden" dir="rtl">
-      <ImpersonationBanner currentUser={currentUser} onStopImpersonation={onStopImpersonation} />
+      <ImpersonationBanner currentUser={currentUser} onStopImpersonation={onStopImpersonation} token={token} onSwitchAccount={onSwitchAccount} />
 
       <div className="flex flex-1 overflow-hidden">
 
