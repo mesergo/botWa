@@ -241,6 +241,11 @@ const FlowBuilder: React.FC = () => {
   // button when the picker came from Google (the user must finish via Google again,
   // since the resulting credential/account choice must round-trip through Google auth).
   const [pendingAccountsSource, setPendingAccountsSource] = useState<'google' | 'password' | null>(null);
+  // The Google credential from the sign-in that revealed multiple accounts. Kept in memory
+  // only (never persisted) so confirming a choice in the picker can complete the login by
+  // re-submitting this same credential with the chosen accountId — no need to click the
+  // Google button a second time.
+  const [pendingGoogleCredential, setPendingGoogleCredential] = useState<string | null>(null);
 
   const [isPublishModalOpen, setIsPublishModalOpen] = useState(false);
   const [newVersionName, setNewVersionName] = useState('');
@@ -1335,6 +1340,7 @@ const FlowBuilder: React.FC = () => {
       });
       const data = await res.json();
       if (res.ok && data.token) {
+        setPendingGoogleCredential(null);
         saveStoredAuth(data.token, data.user, authForm.rememberMe);
         setToken(data.token);
         setCurrentUser(data.user);
@@ -1347,13 +1353,16 @@ const FlowBuilder: React.FC = () => {
         }
       } else if (res.ok && data.requiresAccountSelection) {
         // Google One Tap / auto-login bypassed the email-blur picker — show a friendly
-        // account picker on the login form instead of a hard error, and default to the
-        // first account so a single extra click on the Google button completes the login.
+        // account picker on the login form instead of a hard error. The credential is kept
+        // so confirming the chosen account in the picker completes login directly, without
+        // requiring a second click on the Google button.
         const accounts = data.accounts || [];
         setPendingAccountsForLogin(accounts);
         setPendingAccountsSource('google');
+        setPendingGoogleCredential(credential);
         setAuthForm(prev => ({ ...prev, accountId: accounts[0]?.id }));
       } else {
+        setPendingGoogleCredential(null);
         setAuthErrors({ general: data.error || 'שגיאה בהתחברות עם גוגל' });
       }
     } catch {
@@ -1361,10 +1370,19 @@ const FlowBuilder: React.FC = () => {
     }
   };
 
+  // Confirms the account chosen in the picker for a Google login that revealed multiple
+  // accounts, by re-submitting the previously-obtained Google credential together with
+  // the chosen accountId — completing the login without a second Google button click.
+  const handleConfirmGoogleAccount = async (accountId: string) => {
+    if (!pendingGoogleCredential) return;
+    await handleGoogleLogin(pendingGoogleCredential, accountId);
+  };
+
   const handleAuth = async () => {
     setAuthErrors({});
     setPendingAccountsForLogin([]);
     setPendingAccountsSource(null);
+    setPendingGoogleCredential(null);
     const endpoint = '/auth/login';
     const res = await fetch(`${API_BASE}${endpoint}`, {
       method: 'POST',
@@ -2204,11 +2222,19 @@ const FlowBuilder: React.FC = () => {
         setAuthErrors({});
         // Only clear the pending account picker when the email itself changes, not when
         // the user is simply picking an account from the list (which also updates form).
-        if (data.email !== authForm.email) { setPendingAccountsForLogin([]); setPendingAccountsSource(null); }
+        // Skip this when the picker came from Google — the browser's password-manager
+        // autofill can overwrite the email/password fields right after the picker opens,
+        // which must NOT wipe out the account selection the user is about to make.
+        if (data.email !== authForm.email && pendingAccountsSource !== 'google') {
+          setPendingAccountsForLogin([]);
+          setPendingAccountsSource(null);
+          setPendingGoogleCredential(null);
+        }
         setAuthForm(data);
       }}
       onAuth={handleAuth}
       onGoogleLogin={handleGoogleLogin}
+      onConfirmGoogleAccount={handleConfirmGoogleAccount}
     />
   }
 

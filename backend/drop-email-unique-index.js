@@ -24,7 +24,7 @@ async function dropEmailUniqueIndex() {
       } else {
         throw err;
       }
-    }
+    } 
 
     // Re-create a plain (non-unique) index so lookups by email stay fast.
     await collection.createIndex({ email: 1 }, { unique: false });

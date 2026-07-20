@@ -289,13 +289,13 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
       if (form.role === 'rep') body.rep_group_ids = form.repGroupIds;
       if (form.role === 'rep') body.allowed_bot_ids = form.allowedBotIds;
       if (!editingId && sendInvite) body.send_invite = true;
-      if (!editingId) body.allowDuplicateEmail = allowDuplicateEmail;
+      body.allowDuplicateEmail = allowDuplicateEmail;
 
       const url = editingId ? `${API_BASE}/sub-users/${editingId}` : `${API_BASE}/sub-users`;
       const method = editingId ? 'PATCH' : 'POST';
       const res = await fetch(url, { method, headers, body: JSON.stringify(body) });
       const data = await res.json();
-      if (!editingId && res.status === 409 && data.emailExists) {
+      if (res.status === 409 && data.emailExists) {
         setDuplicateEmailInfo({ count: data.count, accounts: data.accounts || [] });
         return;
       }
@@ -897,7 +897,7 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
             {duplicateEmailInfo && (
               <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-xl text-right space-y-3">
                 <p className="text-sm font-bold text-amber-800">
-                  כתובת אימייל זו כבר קיימת במערכת ({duplicateEmailInfo.count} חשבונות) — ליצור בכל זאת?
+                  כתובת אימייל זו כבר קיימת במערכת ({duplicateEmailInfo.count} חשבונות) — {editingId ? 'לשמור בכל זאת?' : 'ליצור בכל זאת?'}
                 </p>
                 <div className="flex flex-wrap gap-3">
                   <button
@@ -906,7 +906,7 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
                     disabled={formSaving}
                     className="text-sm font-bold bg-amber-600 text-white px-4 py-2 rounded-lg hover:bg-amber-700 disabled:opacity-50 transition-colors"
                   >
-                    צור בכל זאת
+                    {editingId ? 'שמור בכל זאת' : 'צור בכל זאת'}
                   </button>
                   <button
                     type="button"

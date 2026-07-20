@@ -30,21 +30,33 @@ interface AuthScreenProps {
   // a hard error.
   pendingAccounts?: AccountOption[];
   // Which login path triggered the picker above. When 'google', the regular password
-  // login button is disabled — the user must finish signing in via the Google button so
-  // the chosen account round-trips through the actual Google credential exchange.
+  // login button is disabled — the picker's own confirm button completes the login
+  // directly (via onConfirmGoogleAccount) instead of requiring the Google button again.
   pendingAccountsSource?: 'google' | 'password' | null;
+  // Completes a Google login using the previously-obtained credential together with the
+  // chosen accountId. Only relevant when pendingAccountsSource === 'google'.
+  onConfirmGoogleAccount?: (accountId: string) => void | Promise<void>;
 }
 
-const AuthScreen: React.FC<AuthScreenProps> = ({ form, errors, onFormChange, onAuth, onGoogleLogin, pendingAccounts, pendingAccountsSource }) => {
+const AuthScreen: React.FC<AuthScreenProps> = ({ form, errors, onFormChange, onAuth, onGoogleLogin, pendingAccounts, pendingAccountsSource, onConfirmGoogleAccount }) => {
   const [showPassword, setShowPassword] = useState(false);
   const [accountsForEmail, setAccountsForEmail] = useState<AccountOption[]>([]);
   const [loadingAccounts, setLoadingAccounts] = useState(false);
+  const [pickerDismissed, setPickerDismissed] = useState(false);
+  const [confirmingAccount, setConfirmingAccount] = useState(false);
 
   const hasPendingAccounts = !!pendingAccounts && pendingAccounts.length > 0;
   const regularLoginDisabled = hasPendingAccounts && pendingAccountsSource === 'google';
   // A forced picker (from a direct login attempt) takes priority over the passive
   // email-blur picker so the user isn't shown two different lists at once.
   const displayAccounts = hasPendingAccounts ? pendingAccounts! : accountsForEmail;
+  const showAccountModal = displayAccounts.length > 1 && !pickerDismissed;
+
+  // Re-open the modal whenever a new set of accounts shows up (new email lookup or a
+  // fresh forced picker), so it doesn't stay hidden after a previous dismissal.
+  useEffect(() => {
+    if (displayAccounts.length > 1) setPickerDismissed(false);
+  }, [displayAccounts.length, pendingAccountsSource, form.email]);
 
   // Read ?name= param from URL — set by invitation links
   const invitedByName = (() => {
@@ -153,37 +165,19 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ form, errors, onFormChange, onA
               onBlur={handleEmailBlur}
             />
             {errors.email && <p className="text-red-500 text-[11px] mt-1 mr-2 text-right font-bold">{errors.email}</p>}
-            {hasPendingAccounts && (
-              <div className="mt-2 mb-2 bg-blue-50 border border-blue-200 rounded-2xl px-4 py-3 text-right">
-                <p className="text-blue-700 text-sm font-bold">למייל זה משויכים מספר חשבונות</p>
-                <p className="text-blue-600 text-xs mt-1">
-                  {regularLoginDisabled
-                    ? 'יש לבחור חשבון מהרשימה למטה, ולאחר מכן ללחוץ שוב על כפתור הכניסה עם Google.'
-                    : 'יש לבחור חשבון מהרשימה למטה, ולאחר מכן לנסות שוב להתחבר.'}
-                </p>
-              </div>
-            )}
             {displayAccounts.length > 1 && (
-              <div className="mt-2 border border-slate-200 rounded-2xl overflow-hidden divide-y divide-slate-100">
-                {displayAccounts.map(acc => (
-                  <label
-                    key={acc.id}
-                    className="flex items-center justify-between gap-3 px-4 py-3 cursor-pointer hover:bg-slate-50 transition-colors"
-                  >
-                    <input
-                      type="radio"
-                      name="accountId"
-                      className="accent-blue-600 w-4 h-4"
-                      checked={form.accountId === acc.id}
-                      onChange={() => onFormChange({ ...form, accountId: acc.id })}
-                    />
-                    <div className="flex-1 text-right">
-                      <span className="font-bold text-slate-700 text-sm">{acc.name}</span>
-                      <span className="text-xs text-slate-400 mr-2">({acc.role})</span>
-                    </div>
-                  </label>
-                ))}
-              </div>
+              <button
+                type="button"
+                onClick={() => setPickerDismissed(false)}
+                className="mt-2 w-full flex items-center justify-between gap-2 bg-blue-50 border border-blue-200 rounded-2xl px-4 py-3 text-right hover:bg-blue-100 transition-colors"
+              >
+                <span className="text-blue-600 text-xs font-bold underline">שינוי</span>
+                <span className="text-blue-700 text-sm font-bold">
+                  {form.accountId
+                    ? `חשבון נבחר: ${displayAccounts.find(a => a.id === form.accountId)?.name || ''}`
+                    : 'למייל זה משויכים מספר חשבונות - יש לבחור חשבון'}
+                </span>
+              </button>
             )}
           </div>
           <div className="w-full">
@@ -223,7 +217,7 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ form, errors, onFormChange, onA
           <button
             onClick={onAuth}
             disabled={regularLoginDisabled}
-            title={regularLoginDisabled ? 'יש להשלים את הכניסה דרך Google' : undefined}
+            title={regularLoginDisabled ? 'יש לבחור חשבון ולאשר בחלונית שנפתחה' : undefined}
             className={`w-full py-5 rounded-2xl font-bold shadow-lg uppercase tracking-widest transition-all ${
               regularLoginDisabled
                 ? 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
@@ -255,6 +249,60 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ form, errors, onFormChange, onA
           </p>
         </div>
       </div>
+
+      {showAccountModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6">
+          <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-sm p-8 text-right">
+            <p className="text-slate-800 font-bold text-lg mb-1">למייל זה משויכים מספר חשבונות</p>
+            <p className="text-slate-500 text-sm mb-4">
+              {regularLoginDisabled
+                ? 'יש לבחור חשבון וללחוץ על אישור כדי להיכנס.'
+                : 'יש לבחור חשבון ולאחר מכן לנסות שוב להתחבר.'}
+            </p>
+            <div className="border border-slate-200 rounded-2xl overflow-hidden divide-y divide-slate-100 mb-5 max-h-80 overflow-y-auto">
+              {displayAccounts.map(acc => (
+                <label
+                  key={acc.id}
+                  className="flex items-center justify-between gap-3 px-4 py-3 cursor-pointer hover:bg-slate-50 transition-colors"
+                >
+                  <input
+                    type="radio"
+                    name="accountId"
+                    className="accent-blue-600 w-4 h-4"
+                    checked={form.accountId === acc.id}
+                    onChange={() => onFormChange({ ...form, accountId: acc.id })}
+                  />
+                  <div className="flex-1 text-right">
+                    <span className="font-bold text-slate-700 text-sm">{acc.name}</span>
+                    <span className="text-xs text-slate-400 mr-2">({acc.role})</span>
+                  </div>
+                </label>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={async () => {
+                if (regularLoginDisabled && onConfirmGoogleAccount) {
+                  // Google flow: complete the login directly using the credential
+                  // obtained earlier — no need to click the Google button again.
+                  setConfirmingAccount(true);
+                  try {
+                    await onConfirmGoogleAccount(form.accountId);
+                  } finally {
+                    setConfirmingAccount(false);
+                  }
+                } else {
+                  setPickerDismissed(true);
+                }
+              }}
+              disabled={!form.accountId || confirmingAccount}
+              className="w-full py-3 rounded-xl bg-blue-600 text-white font-bold uppercase tracking-widest hover:bg-blue-700 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed transition-colors"
+            >
+              {confirmingAccount ? 'מתחבר...' : 'אישור'}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

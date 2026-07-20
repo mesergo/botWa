@@ -237,7 +237,7 @@ export const updateSubUser = async (req, res) => {
   try {
     const managerId = await getRootManagerId(req.userId);
     const { id } = req.params;
-    const { name, email, phone, role, password, rep_group_ids, allowed_bot_ids } = req.body;
+    const { name, email, phone, role, password, rep_group_ids, allowed_bot_ids, allowDuplicateEmail } = req.body;
 
     const rep = await User.findOne({ _id: id, manager_id: managerId });
     if (!rep) {
@@ -251,9 +251,27 @@ export const updateSubUser = async (req, res) => {
 
     if (email) {
       const normalizedEmail = email.toLowerCase().trim();
-      const existing = await User.findOne({ email: normalizedEmail, _id: { $ne: rep._id } });
-      if (existing) return res.status(400).json({ error: 'כתובת האימייל כבר קיימת במערכת' });
-      rep.email = normalizedEmail;
+      if (normalizedEmail !== rep.email) {
+        // Multiple accounts are allowed to share the same login email (multi-account
+        // feature) — so a match here is a warning to confirm, not a hard block, mirroring
+        // the create-sub-user flow below.
+        const existingAccounts = await User.find({ email: normalizedEmail, _id: { $ne: rep._id } })
+          .select('name account_type role createdAt');
+        if (existingAccounts.length > 0 && allowDuplicateEmail !== true) {
+          return res.status(409).json({
+            emailExists: true,
+            count: existingAccounts.length,
+            accounts: existingAccounts.map(u => ({
+              id: u._id.toString(),
+              name: u.name,
+              account_type: u.account_type || 'Basic',
+              role: u.role || 'user',
+              created_at: u.createdAt
+            }))
+          });
+        }
+        rep.email = normalizedEmail;
+      }
     }
     if (name && name.trim()) rep.name = name.trim();
     if (phone !== undefined) rep.phone = phone;
