@@ -273,7 +273,11 @@ export const getContacts = async (req, res) => {
       );
     }
 
-    // If user has view_assigned_only permission (but NOT view_all), filter to assigned contacts only
+    // Restrict to assigned-only conversations based on the actual granted permission
+    // (view_assigned_only without view_all) — NOT the raw role. Some accounts use a
+    // custom user type whose base role is 'rep' but has been explicitly granted
+    // view_all by the account admin (used to build a fuller shift-manager role), and
+    // that grant must be respected.
     const viewOnlyAssigned = hasPermission(perms, 'sessions.view_assigned_only') && !hasPermission(perms, 'sessions.view_all');
     console.log(`[getContacts] perms.sessions=${JSON.stringify(perms?.sessions)} | viewOnlyAssigned=${viewOnlyAssigned} | finalResult=${finalResult.length}`);
     if (viewOnlyAssigned) {
@@ -621,6 +625,25 @@ export const getSessionsByPhone = async (req, res) => {
   if (!phone) return res.status(400).json({ error: 'מספר טלפון הוא שדה חובה' });
 
   try {
+    // Restricted to assigned-only conversations based on the actual granted permission
+    // (view_assigned_only without view_all), matching the same rule enforced in
+    // getContacts / getSessionWithOwnership. This also guards against reaching an
+    // unassigned conversation directly (e.g. via a deep link) instead of only through
+    // one's own filtered contacts list.
+    const userDoc = await User.findById(req.userId).select('rep_group_ids role user_type_id').lean();
+    const perms = await resolvePermissions(userDoc || { role: req.user?.role });
+    const viewOnlyAssigned = hasPermission(perms, 'sessions.view_assigned_only') && !hasPermission(perms, 'sessions.view_all');
+
+    let allowedByAssignment = true;
+    let repGroupSet = null;
+    if (viewOnlyAssigned) {
+      const repId = req.userId;
+      repGroupSet = new Set(((userDoc?.rep_group_ids) || []).map(id => id.toString()));
+      const contactDoc = await Contact.findOne({ user_id: userId, phone }).select('assigned_to').lean();
+      const assignedToRep = (contactDoc?.assigned_to || []).map(x => x.toString()).includes(repId);
+      allowedByAssignment = assignedToRep; // may still be true via a session's own rep_user_id/rep_group_id, checked below
+    }
+
     const [userBots, userWidgets] = await Promise.all([
       BotFlow.find({ user_id: userId }).lean(),
       Widget.find({ $or: [{ user_id: userId }, { user_id: userId.toString() }] }).select('id flow_id').lean()
@@ -667,6 +690,19 @@ export const getSessionsByPhone = async (req, res) => {
       { $addFields: { _sortDate: { $ifNull: ['$created_at', '$createdAt', { $toDate: '$_id' }] } } },
       { $sort: { _sortDate: 1 } }
     ]).toArray();
+
+    // Reps restricted to their own assignments: also allow if any session in this
+    // conversation is pinned to them directly or to one of their rep groups.
+    if (viewOnlyAssigned && !allowedByAssignment) {
+      const repId = req.userId;
+      allowedByAssignment = sessions.some(s =>
+        String(s.rep_user_id || '') === repId ||
+        (s.rep_group_id && repGroupSet.has(String(s.rep_group_id)))
+      );
+    }
+    if (viewOnlyAssigned && !allowedByAssignment) {
+      return res.json([]);
+    }
 
     const result = sessions.map(s => {
       const flowId = widgetFlowMap[s.widget_id] || s.flow_id;
@@ -718,9 +754,11 @@ export const deactivateSession = async (req, res) => {
 // Resolves a session and verifies the requester can manage it.
 // For company managers / admins / rep_managers: matches by user_id or by a widget
 // belonging to one of the company's bots.
-// For reps (role === 'rep'): in addition to the company match, the rep must be
-// involved in the session — either explicitly assigned (rep_user_id === me),
-// or the session belongs to a rep group the rep is a member of.
+// For reps restricted to their own assignments (permission `sessions.view_assigned_only`
+// without `sessions.view_all` — mirrors the same check used by getContacts so the
+// conversations shown in the list match what the user is actually allowed to act on):
+// the rep must additionally be involved in the session — either explicitly assigned
+// (rep_user_id === me), the session's rep group, or Contact.assigned_to.
 const getSessionWithOwnership = async (id, req) => {
   if (!mongoose.Types.ObjectId.isValid(id)) return { error: 'מזהה שיחה לא תקין', status: 400 };
   const collection = mongoose.connection.collection('BotSession');
@@ -742,11 +780,17 @@ const getSessionWithOwnership = async (id, req) => {
 
   if (!owned) return { error: 'גישה נדחית', status: 403 };
 
-  // Additional rep involvement guard.
-  if (req.user?.role === 'rep') {
+  // Additional involvement guard — only for users actually restricted to their own
+  // assignments (permission `sessions.view_assigned_only` without `sessions.view_all`),
+  // matching the same rule enforced in getContacts. Based on the resolved permission
+  // (custom user types included), not just the raw role.
+  const userDoc = await User.findById(req.userId).select('rep_group_ids role user_type_id').lean();
+  const perms = await resolvePermissions(userDoc || { role: req.user?.role });
+  const viewOnlyAssigned = hasPermission(perms, 'sessions.view_assigned_only') && !hasPermission(perms, 'sessions.view_all');
+
+  if (viewOnlyAssigned) {
     const repId = String(req.userId);
-    const me = await User.findById(repId).select('rep_group_ids').lean();
-    const myGroups = new Set(((me?.rep_group_ids) || []).map(g => g.toString()));
+    const myGroups = new Set(((userDoc?.rep_group_ids) || []).map(g => g.toString()));
     const involvedDirect = String(session.rep_user_id || '') === repId;
     const involvedGroup =
       session.rep_group_id && myGroups.has(String(session.rep_group_id));
@@ -925,12 +969,15 @@ export const transferConversation = async (req, res) => {
       widgetIds.includes(session.widget_id);
     if (!owned) return res.status(403).json({ error: 'גישה נדחית' });
 
-    // Additional guard for reps: a rep may only transfer conversations they
-    // are currently involved in (assigned via rep_user_id, or via one of
-    // their rep groups).
-    if (req.user?.role === 'rep') {
-      const me = await User.findById(req.userId).select('rep_group_ids').lean();
-      const myGroups = new Set(((me?.rep_group_ids) || []).map(x => x.toString()));
+    // Additional guard — only for users actually restricted to their own
+    // assignments (permission `sessions.view_assigned_only` without
+    // `sessions.view_all`), matching the same rule enforced in getContacts.
+    // Based on the resolved permission (custom user types included), not just the raw role.
+    const actorDoc = await User.findById(req.userId).select('rep_group_ids role user_type_id').lean();
+    const actorPerms = await resolvePermissions(actorDoc || { role: req.user?.role });
+    const viewOnlyAssigned = hasPermission(actorPerms, 'sessions.view_assigned_only') && !hasPermission(actorPerms, 'sessions.view_all');
+    if (viewOnlyAssigned) {
+      const myGroups = new Set(((actorDoc?.rep_group_ids) || []).map(x => x.toString()));
       const involved =
         String(session.rep_user_id || '') === String(req.userId) ||
         (session.rep_group_id && myGroups.has(String(session.rep_group_id)));

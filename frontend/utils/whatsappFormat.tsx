@@ -31,7 +31,7 @@ function linkifyText(text: string): React.ReactNode[] {
 /**
  * Apply inline formatting to a string segment.
  * Order: ```mono``` > `code` > *bold* > _italic_ > ~~strike~~
- */
+ */ 
 function renderInline(text: string, keyPrefix: string): React.ReactNode {
   if (!text) return null;
 

@@ -5,7 +5,7 @@ import BotFlow from '../models/BotFlow.js';
 import Version from '../models/Version.js';
 import jwt from 'jsonwebtoken';
 import { getUserLimits } from '../utils/limits.js';
-import { SECRET_KEY, resolvePermissions } from '../middleware/auth.js';
+import { SECRET_KEY, resolvePermissions, getEffectiveUserId } from '../middleware/auth.js';
 import { OAuth2Client } from 'google-auth-library';
 import {
   DEFAULT_REMOVAL_CONFIG,
@@ -392,9 +392,12 @@ export const getApiToken = async (req, res) => {
 // Get Dialog360 templates for authenticated user
 export const getTemplates = async (req, res) => {
   try {
-    console.log('[Dialog360] getTemplates called, userId:', req.userId);
-    
-    const userId = req.userId; // From auth middleware
+    // Use the effective (owning) account ID so reps / rep-managers pull
+    // templates from the account manager they are associated with,
+    // instead of trying to look up their own (non-existent) Dialog360 config.
+    const userId = getEffectiveUserId(req);
+    console.log('[Dialog360] getTemplates called, effective userId:', userId);
+
     const user = await User.findById(userId);
     
     if (!user) {

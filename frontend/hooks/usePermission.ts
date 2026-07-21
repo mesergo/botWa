@@ -12,7 +12,7 @@ import { User, UserTypePermissions } from '../types';
 export function usePermission(currentUser: User | null) {
   const check = useCallback((key: string): boolean => {
     if (!currentUser) return false;
-
+  
     const perms = currentUser.permissions as UserTypePermissions | undefined;
     if (!perms) {
       // Fallback: derive from role for backward-compat

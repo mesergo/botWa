@@ -852,16 +852,26 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 setAgentWaRetryable(msgData.waRetryable === true);
                 setTimeout(() => { setAgentWaFailed(false); setAgentWaError(null); setAgentWaRetryable(false); }, 12000);
               }
+            } else {
+              const errData = await msgResponse.json().catch(() => ({}));
+              console.error('Failed to send message after activating agent', msgResponse.status, errData);
+              alert(errData.error || `שגיאה בשליחת ההודעה (קוד ${msgResponse.status})`);
             }
           } catch (msgError) {
             console.error('Failed to send message after activating agent', msgError);
+            alert('שגיאת רשת בשליחת ההודעה');
           } finally {
             setAgentSending(false);
           }
         }
+      } else {
+        const errData = await r.json().catch(() => ({}));
+        console.error('Failed to set agent mode', r.status, errData);
+        alert(errData.error || `שגיאה במעבר למצב נציג (קוד ${r.status})`);
       }
     } catch (e) {
       console.error('Failed to set agent mode', e);
+      alert('שגיאת רשת במעבר למצב נציג');
     }
   };
 
@@ -2469,10 +2479,16 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                           <div className="p-2">
                             {(() => {
                               const role = currentUser?.role;
-                              const isAgent = role === 'rep' || role === 'rep_bot';
+                              // Determine tier from the actual granted permission (works for
+                              // custom user types too), falling back to the raw role when the
+                              // permission is unavailable (e.g. legacy sessions without a
+                              // permissions object).
+                              const canAsManager = can('sessions.templates_as_manager') || role === 'user' || role === 'admin' || role === 'rep_manager';
+                              const canAsRep = can('sessions.templates_as_rep') || role === 'rep' || role === 'rep_bot';
+                              const isAgent = !canAsManager && canAsRep;
                               // Visibility filter:
-                              //   - 'rep' / 'rep_bot' agents see only templates explicitly marked 'agent'.
-                              //   - All other roles (rep_manager, user, admin) see anything not 'hidden'.
+                              //   - agents (no manager-tier permission) see only templates explicitly marked 'agent'.
+                              //   - Anyone with manager-tier access (rep_manager, user, admin) sees anything not 'hidden'.
                               const isVisibleForUser = (name: string): boolean => {
                                 const vis = templateSettings[name] ?? 'manager';
                                 if (vis === 'hidden') return false;
