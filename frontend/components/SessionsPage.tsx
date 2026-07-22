@@ -88,6 +88,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
   const [fileUploadError, setFileUploadError] = useState<string | null>(null);
   const [fileUploading, setFileUploading] = useState(false);
   const fileUploadRef = React.useRef<HTMLInputElement>(null);
+  const agentMessageInputRef = React.useRef<HTMLTextAreaElement>(null);
 
   // Template dropdown state
   const [showTemplates, setShowTemplates] = useState(false);
@@ -835,9 +836,10 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
               setSelectedTemplate(null);
               setTemplateParams({});
               const replyStatus: ConvStatus = msgData.status || (isTemplate ? 'waiting' : 'handling');
+              const currentAgentName = currentUser?.name || currentUser?.email || 'נציג';
               const fallbackEntry = capturedFile
-                ? { type: capturedFile.type === 'image' ? 'Image' : capturedFile.type === 'video' ? 'Video' : 'Document', url: capturedFile.url, text: messageToSend, sender: 'agent', name: 'נציג', created, wa_sent: msgData.waSent }
-                : { type: 'Text', text: messageToSend, sender: 'agent', name: 'נציג', created, wa_sent: msgData.waSent };
+                ? { type: capturedFile.type === 'image' ? 'Image' : capturedFile.type === 'video' ? 'Video' : 'Document', url: capturedFile.url, text: messageToSend, sender: 'agent', name: 'נציג', agent_name: currentAgentName, created, wa_sent: msgData.waSent }
+                : { type: 'Text', text: messageToSend, sender: 'agent', name: 'נציג', agent_name: currentAgentName, created, wa_sent: msgData.waSent };
               setPhoneSessions(prev => prev.map((s, i) =>
                 i === prev.length - 1
                   ? { ...s, status: replyStatus, process_history: [...s.process_history, msgData.historyEntry || fallbackEntry] }
@@ -954,6 +956,14 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
     // Reset input so same file can be re-selected
     if (fileUploadRef.current) fileUploadRef.current.value = '';
   };
+
+  // Auto-grow the message textarea as its content changes (reset to 1 line when empty)
+  useEffect(() => {
+    const el = agentMessageInputRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  }, [agentMessage]);
 
   const sendAgentMsg = async () => {
     if (!agentMessage.trim() && !attachedFile || agentSending) return;
@@ -1076,9 +1086,10 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
         setSelectedTemplate(null);
         setTemplateParams({});
         const replyStatus: ConvStatus = data.status || (isTemplate ? (currentStatus === 'bot' ? 'waiting' : currentStatus) : 'handling');
+        const currentAgentName = currentUser?.name || currentUser?.email || 'נציג';
         const fallbackEntry = currentAttachedFile
-          ? { type: currentAttachedFile.type === 'image' ? 'Image' : currentAttachedFile.type === 'video' ? 'Video' : 'Document', url: currentAttachedFile.url, text: msgText, sender: 'agent', name: 'נציג', created, wa_sent: data.waSent }
-          : { type: 'Text', text: msgText, sender: 'agent', name: 'נציג', created, wa_sent: data.waSent };
+          ? { type: currentAttachedFile.type === 'image' ? 'Image' : currentAttachedFile.type === 'video' ? 'Video' : 'Document', url: currentAttachedFile.url, text: msgText, sender: 'agent', name: 'נציג', agent_name: currentAgentName, created, wa_sent: data.waSent }
+          : { type: 'Text', text: msgText, sender: 'agent', name: 'נציג', agent_name: currentAgentName, created, wa_sent: data.waSent };
         setPhoneSessions(prev => prev.map((s, i) =>
           i === prev.length - 1
             ? { ...s, status: replyStatus, process_history: [...s.process_history, data.historyEntry || fallbackEntry] }
@@ -1541,10 +1552,12 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                   <Headphones size={12} />
                 </div>
                 {msgDate && <span className="text-[9px] text-slate-400 font-semibold">{msgDate}</span>}
+                {(item.agent_name || item.name) && (item.agent_name || item.name) !== 'נציג' && (
+                  <span className="text-[9px] text-purple-400 font-black">{item.agent_name || item.name}</span>
+                )}
               </div>
               <div className="flex flex-col gap-0.5 items-end">
                 <div className="px-3 py-1.5 rounded-2xl text-sm font-semibold shadow-sm text-right bg-purple-50 border border-purple-200 text-purple-900 rounded-tr-none">
-                  <p className="text-[9px] text-purple-400 font-black mb-0.5 uppercase tracking-widest">נציג</p>
                   {item.type === 'Image' && item.url && (
                     <img src={item.url} alt="תמונה" className="rounded-xl max-w-[200px] h-auto mb-2" />
                   )} 
@@ -1653,6 +1666,9 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 {isBot ? <Bot size={12} /> : <User size={12} />}
               </div>
               {msgDate && <span className="text-[9px] text-slate-400 font-semibold">{msgDate}</span>}
+              {isBot && session.bot_name && (
+                <span className="text-[9px] text-slate-400 font-black">{session.bot_name}</span>
+              )}
             </div>
             <div className={`flex flex-col gap-0.5 ${isBot ? 'items-end' : 'items-start'}`}>
               <div className={`px-3 py-1.5 rounded-2xl text-sm font-semibold shadow-sm text-right
@@ -2499,6 +2515,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                               const filtered = templates.filter(t => {
                                 const name = t.name || t.elementName || t.template_name || '';
                                 if (!isVisibleForUser(name)) return false;
+                                if ((t.status || '').toUpperCase() !== 'APPROVED') return false;
                                 if (searchQuery && !name.toLowerCase().includes(searchQuery)) return false;
                                 return true;
                               });
@@ -2613,8 +2630,8 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                           </div>
                         </div>
                       )}
-                      <input
-                        type="text"
+                      <textarea
+                        ref={agentMessageInputRef}
                         value={agentMessage}
                         onChange={e => {
                           const value = e.target.value;
@@ -2626,9 +2643,15 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                             setShowTemplates(false);
                           }
                         }}
-                        onKeyDown={e => { if (e.key === 'Enter') sendAgentMsg(); }}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter' && !e.shiftKey) {
+                            e.preventDefault();
+                            sendAgentMsg();
+                          }
+                        }}
                         placeholder={attachedFile ? 'כיתוב (אופציונלי)...' : 'כתוב הודעה ללקוח... (/ לטמפלייטים)'}
-                        className='w-full bg-transparent px-4 py-2.5 text-sm text-right font-medium outline-none text-slate-800 placeholder:text-slate-400'
+                        rows={1}
+                        className='w-full bg-transparent px-4 py-2.5 text-sm text-right font-medium outline-none text-slate-800 placeholder:text-slate-400 resize-none max-h-40 overflow-y-auto leading-normal'
                       />
                     </div>
                     {fileUploadError && (

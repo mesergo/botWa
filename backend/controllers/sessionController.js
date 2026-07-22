@@ -1262,6 +1262,10 @@ export const sendAgentMessage = async (req, res) => {
 
     // Get user (effective company manager) to access Dialog360 credentials
     const user = await User.findById(getEffectiveUserId(req));
+ 
+    // Actual sender (rep/manager) display name, shown under the timestamp in the chat bubble
+    const senderUser = await User.findById(req.userId).select('name email').lean();
+    const agentName = senderUser?.name || senderUser?.email || 'נציג';
 
     // Load the bot associated with this session for per-bot endpoint
     const bot = session.flow_id ? await BotFlow.findById(session.flow_id).select('endpoint').lean() : null;
@@ -1452,6 +1456,7 @@ export const sendAgentMessage = async (req, res) => {
     let historyEntry = {
       sender: 'agent',
       name: 'נציג',
+      agent_name: agentName,
       node_id: 'agent',
       created,
       wa_sent: waSent,
@@ -1566,6 +1571,10 @@ export const sendTemplateToPhone = async (req, res) => {
     const user = await User.findById(getEffectiveUserId(req));
     if (!user) return res.status(404).json({ error: 'המשתמש לא נמצא' });
 
+    // Actual sender (rep/manager) display name, shown under the timestamp in the chat bubble
+    const senderUser = await User.findById(req.userId).select('name email').lean();
+    const agentName = senderUser?.name || senderUser?.email || 'נציג';
+
     // Normalize phone first so we can look up the last session
     let normalizedPhone = String(phone).replace(/[^0-9]/g, '');
     normalizedPhone = normalizedPhone.replace(/^972972/, '972');
@@ -1678,6 +1687,7 @@ export const sendTemplateToPhone = async (req, res) => {
     const historyEntry = {
       sender: 'agent',
       name: 'נציג',
+      agent_name: agentName,
       node_id: 'agent',
       created,
       wa_sent: waSent,
@@ -1774,6 +1784,10 @@ export const sendAdminMessageToSession = async (req, res) => {
     if (!user) {
       return res.status(404).json({ error: 'המשתמש לא נמצא' });
     }
+
+    // Actual sender (admin) display name, shown under the timestamp in the chat bubble
+    const senderUser = await User.findById(req.userId).select('name email').lean();
+    const agentName = senderUser?.name || senderUser?.email || 'נציג';
 
     // Load the bot associated with this session for per-bot endpoint
     const adminMsgBot = session.flow_id ? await BotFlow.findById(session.flow_id).select('endpoint').lean() : null;
@@ -1910,6 +1924,7 @@ export const sendAdminMessageToSession = async (req, res) => {
     let historyEntry = {
       sender: 'agent',
       name: 'נציג',
+      agent_name: agentName,
       node_id: 'agent',
       created,
       wa_sent: waSent,
