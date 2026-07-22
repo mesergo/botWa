@@ -19,7 +19,12 @@ const dialog360TemplateSettingSchema = new mongoose.Schema({
   language: { type: String },
   // Additional metadata
   category: { type: String },
-  status: { type: String }
+  status: { type: String },
+  // Default header media (image/video/document) the admin uploaded for this template.
+  // When set, agents sending this template can choose to reuse it instead of
+  // uploading a new file each time.
+  defaultHeaderMediaUrl: { type: String, default: null },
+  defaultHeaderMediaType: { type: String, enum: ['image', 'video', 'document', null], default: null }
 }, {
   timestamps: true,
   collection: 'dialog360_template_settings'

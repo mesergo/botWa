@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, Bot, ArrowLeft, Trash2, Calendar, LogOut, Shield, UserCog, Users, List, Settings, Save, User as UserIcon, Phone, Mail, Star, Copy, Check, Wifi, Gauge, MessageSquare, Globe, Layers, CheckCircle, Eye, EyeOff, X, Image as ImageIcon, Link as LinkIcon, Unlink, UserMinus, AlertTriangle, RefreshCcw, ToggleLeft, ToggleRight, Zap } from 'lucide-react';
+import { Plus, Bot, ArrowLeft, Trash2, Calendar, LogOut, Shield, UserCog, Users, List, Settings, Save, User as UserIcon, Phone, Mail, Star, Copy, Check, Wifi, Gauge, MessageSquare, Globe, Layers, CheckCircle, Eye, EyeOff, X, Image as ImageIcon, FileText, Link as LinkIcon, Unlink, UserMinus, AlertTriangle, RefreshCcw, ToggleLeft, ToggleRight, Zap } from 'lucide-react';
 import ImpersonationBanner from './ImpersonationBanner';
 import { BotFlow, User } from '../types';
 import SubUsersTab from './SubUsersTab';
 import BotSettingsModal from './BotSettingsModal';
+import { FileUploader } from './FileUploader';
 import { usePermission } from '../hooks/usePermission';
 import AppNav from './AppNav';
 
@@ -199,6 +200,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
   const [waTemplates, setWaTemplates] = useState<any[]>([]);
   const [waTemplatesLoading, setWaTemplatesLoading] = useState(false);
   const [templateSettings, setTemplateSettings] = useState<Record<string, boolean>>({});
+  const [templateDefaultMedia, setTemplateDefaultMedia] = useState<Record<string, { url: string; type: 'image' | 'video' | 'document' }>>({});
   const [previewTemplate, setPreviewTemplate] = useState<any | null>(null);
 
   // Connected WhatsApp numbers (Settings tab)
@@ -299,15 +301,61 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
       const data = await res.json();
       if (data.success && Array.isArray(data.settings)) {
         const settingsMap: Record<string, boolean> = {};
+        const defaultMediaMap: Record<string, { url: string; type: 'image' | 'video' | 'document' }> = {};
         data.settings.forEach((s: any) => {
           if (s.templateName) {
             settingsMap[s.templateName] = s.showInChat ?? true;
+            if (s.defaultHeaderMediaUrl && s.defaultHeaderMediaType) {
+              defaultMediaMap[s.templateName] = { url: s.defaultHeaderMediaUrl, type: s.defaultHeaderMediaType };
+            }
           }
         });
         setTemplateSettings(settingsMap);
+        setTemplateDefaultMedia(defaultMediaMap);
       }
     } catch (err) {
       console.error('Failed to fetch template settings:', err);
+    }
+  };
+
+  // Set or clear the default header media (image/video/document) configured
+  // for a template, so agents can reuse it instead of uploading a file each time.
+  const updateTemplateDefaultMedia = async (
+    template: any,
+    url: string | null,
+    mediaType: 'image' | 'video' | 'document' | null
+  ) => {
+    if (!token) return;
+    const templateName = template.name || template.elementName || template.template_name || '';
+    try {
+      const res = await fetch(`${API_BASE}/dialog360-templates/default-media`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          templateName,
+          templateId: template.id,
+          url: url || undefined,
+          mediaType: url ? mediaType : undefined,
+        }),
+      });
+      if (res.ok) {
+        setTemplateDefaultMedia(prev => {
+          const next = { ...prev };
+          if (url && mediaType) {
+            next[templateName] = { url, type: mediaType };
+          } else {
+            delete next[templateName];
+          }
+          return next;
+        });
+      } else {
+        console.error('Failed to update template default media');
+      }
+    } catch (err) {
+      console.error('Error updating template default media:', err);
     }
   };
 
@@ -1521,6 +1569,14 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                       const bodyText = bodyComponent?.text || '';
                       const hasImage = headerComponent?.format === 'IMAGE';
                       const buttonCount = buttonsComponent?.buttons?.length || 0;
+                      // Templates whose header requires a media file (image/video/document)
+                      // can have a default file configured here, so agents can reuse it
+                      // instead of uploading a new one every time they send it in chat.
+                      const headerMediaType: 'image' | 'video' | 'document' | null =
+                        headerComponent && ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(headerComponent.format)
+                          ? (headerComponent.format.toLowerCase() as 'image' | 'video' | 'document')
+                          : null;
+                      const defaultMedia = templateDefaultMedia[name];
                       return (
                         <div 
                           key={tmpl.id || idx} 
@@ -1578,6 +1634,48 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                             ) : (
                               <p className="text-xs text-slate-400 italic">אין תוכן</p>
                             )}
+
+                            {/* Default header media (image/video/document) — reusable when sending in chat */}
+                            {headerMediaType && (
+                              <div className="mt-3" onClick={(e) => e.stopPropagation()}>
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-wide mb-1.5 flex items-center gap-1">
+                                  <ImageIcon size={11} />
+                                  תמונת ברירת מחדל
+                                </label>
+                                {defaultMedia?.url ? (
+                                  <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl p-2">
+                                    <div className="w-10 h-10 rounded-lg overflow-hidden border border-slate-200 bg-slate-50 flex-shrink-0 flex items-center justify-center">
+                                      {headerMediaType === 'image' ? (
+                                        <img src={defaultMedia.url} alt="ברירת מחדל" className="w-full h-full object-cover" />
+                                      ) : headerMediaType === 'video' ? (
+                                        <video src={defaultMedia.url} className="w-full h-full object-cover" />
+                                      ) : (
+                                        <FileText size={16} className="text-slate-400" />
+                                      )}
+                                    </div>
+                                    <span className="flex-1 text-[11px] text-slate-500 font-bold">הוגדרה</span>
+                                    <button
+                                      type="button"
+                                      onClick={() => updateTemplateDefaultMedia(tmpl, null, null)}
+                                      className="p-1.5 rounded-lg text-rose-600 hover:bg-rose-50 transition-colors border border-rose-200"
+                                      title="הסר תמונת ברירת מחדל"
+                                    >
+                                      <X size={12} />
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <FileUploader
+                                    value=""
+                                    onChange={(url) => updateTemplateDefaultMedia(tmpl, url, headerMediaType)}
+                                    accept={headerMediaType === 'image' ? 'image/*' : headerMediaType === 'video' ? 'video/*' : '*/*'}
+                                    label={headerMediaType === 'image' ? 'תמונה' : headerMediaType === 'video' ? 'וידאו' : 'מסמך'}
+                                    mediaType={headerMediaType}
+                                    token={token || ''}
+                                  />
+                                )}
+                              </div>
+                            )}
+
                             <div className="flex items-center gap-3 mt-3 text-[10px] text-slate-400 font-bold">
                               <span className="flex items-center gap-1"><Layers size={11} />{components.length} רכיבים</span>
                               {buttonCount > 0 && <span>{buttonCount} כפתורים</span>}

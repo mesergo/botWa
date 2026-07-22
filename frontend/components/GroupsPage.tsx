@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import ImpersonationBanner from './ImpersonationBanner';
 import { FileUploader } from './FileUploader';
+import { TemplateHeaderMediaField } from './TemplateHeaderMediaField';
 import { usePermission } from '../hooks/usePermission';
 import AppNav from './AppNav';
 import { useContactFields } from '../context/ContactFieldsContext';
@@ -126,6 +127,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
   const [templatesLoading, setTemplatesLoading] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<any | null>(null);
   const [templateParams, setTemplateParams] = useState<any>({});
+  const [templateDefaultMedia, setTemplateDefaultMedia] = useState<Record<string, { url: string; type: 'image' | 'video' | 'document' }>>({});
 
   // Free-form media attachment (when not using a template)
   const [mediaType, setMediaType] = useState<'image' | 'video' | 'document' | null>(null);
@@ -566,12 +568,34 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
     }
   }, [token, authHeader]);
 
+  // Fetch admin-configured default header media per template (for the "use default image" option)
+  const fetchTemplateDefaultMedia = useCallback(async () => {
+    if (!token) return;
+    try {
+      const res = await fetch(`${API_BASE}/dialog360-templates`, { headers: authHeader });
+      if (!res.ok) return;
+      const data = await res.json();
+      const settingsList = data.success && Array.isArray(data.settings) ? data.settings : [];
+      const defaultMediaMap: Record<string, { url: string; type: 'image' | 'video' | 'document' }> = {};
+      settingsList.forEach((s: any) => {
+        if (s.defaultHeaderMediaUrl && s.defaultHeaderMediaType) {
+          defaultMediaMap[s.templateName] = { url: s.defaultHeaderMediaUrl, type: s.defaultHeaderMediaType };
+        }
+      });
+      setTemplateDefaultMedia(defaultMediaMap);
+    } catch (e) {
+      console.error('Failed to fetch template default media', e);
+    }
+  }, [token, authHeader]);
+
   const initTemplateParams = (template: any) => {
     const params: any = {};
+    const templateName = template.name || template.elementName || template.template_name || '';
     if (template.components && Array.isArray(template.components)) {
       template.components.forEach((comp: any) => {
         if (comp.type === 'HEADER' && ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(comp.format)) {
-          params.header = { type: comp.format.toLowerCase(), url: '' };
+          const defaultMedia = templateDefaultMedia[templateName];
+          params.header = { type: comp.format.toLowerCase(), url: defaultMedia?.url || '' };
         }
         if (comp.type === 'BODY' && comp.text) {
           const matches = comp.text.match(/\{\{\d+\}\}/g);
@@ -773,6 +797,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
     setSendText('');
     setExcludeGroupId('');
     if (templates.length === 0) fetchTemplates();
+    fetchTemplateDefaultMedia();
     // Fetch bots with endpoints for number selection
     setSendBotsLoading(true);
     setSelectedSendBotId('');
@@ -1719,22 +1744,20 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                         (Array.isArray(headerComp?.example?.header_handle) ? headerComp.example.header_handle[0] : undefined) ||
                         headerComp?.example?.header_handle ||
                         undefined;
+                      const templateName = selectedTemplate.name || selectedTemplate.elementName || selectedTemplate.template_name || '';
+                      const defaultMedia = templateDefaultMedia[templateName];
                       return (
                         <div className="mt-3">
                           <label className="text-xs font-bold text-slate-500 block mb-1">
                             {templateParams.header.type === 'image' ? '🖼️ תמונה' : templateParams.header.type === 'video' ? '🎥 וידאו' : '📄 מסמך'}
                           </label>
-                          <FileUploader
+                          <TemplateHeaderMediaField
+                            mediaType={templateParams.header.type}
                             value={templateParams.header.url || ''}
                             onChange={(url: string) => setTemplateParams((p: any) => ({ ...p, header: { ...p.header, url } }))}
-                            accept={
-                              templateParams.header.type === 'image' ? 'image/*' :
-                              templateParams.header.type === 'video' ? 'video/*' : '*/*'
-                            }
-                            label={templateParams.header.type === 'image' ? 'תמונה' : templateParams.header.type === 'video' ? 'וידאו' : 'מסמך'}
-                            mediaType={templateParams.header.type}
                             token={token || ''}
                             sampleUrl={sampleUrl}
+                            defaultUrl={defaultMedia?.url}
                           />
                         </div>
                       );
@@ -1801,7 +1824,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                   </div>
                 ) : (
                   <button
-                    onClick={() => { setShowTemplatePicker(true); if (templates.length === 0) fetchTemplates(); }}
+                    onClick={() => { setShowTemplatePicker(true); if (templates.length === 0) fetchTemplates(); fetchTemplateDefaultMedia(); }}
                     className="w-full px-4 py-3 bg-purple-50 hover:bg-purple-100 border-2 border-dashed border-purple-200 text-purple-700 rounded-2xl text-sm font-bold flex items-center justify-center gap-2 transition-colors"
                   >
                     <FileText size={16} /> בחר תבנית הודעה

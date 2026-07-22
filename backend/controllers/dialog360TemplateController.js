@@ -94,6 +94,42 @@ export const toggleShowInChat = async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
+}; 
+
+/**
+ * Set (or clear) the default header media (image/video/document) for a template.
+ * When set, agents sending this template in chat can reuse it instead of
+ * uploading a new file each time.
+ */
+export const setDefaultMedia = async (req, res) => {
+  try {
+    const { templateName, templateId, url, mediaType } = req.body;
+    const userId = getEffectiveUserId(req);
+
+    if (!templateName) {
+      return res.status(400).json({ error: 'templateName is required' });
+    }
+    if (url && !['image', 'video', 'document'].includes(mediaType)) {
+      return res.status(400).json({ error: 'mediaType must be one of: image, video, document' });
+    }
+
+    const update = {
+      templateId,
+      defaultHeaderMediaUrl: url || null,
+      defaultHeaderMediaType: url ? mediaType : null,
+      userId,
+    };
+
+    const setting = await Dialog360TemplateSetting.findOneAndUpdate(
+      { templateName, userId },
+      { $set: update },
+      { upsert: true, new: true }
+    );
+
+    res.json({ success: true, setting: normalizeSetting(setting) });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 };
 
 /**

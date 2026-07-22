@@ -2,7 +2,7 @@
 import { WhatsAppText } from '../utils/whatsappFormat';
 import { Clock, MessageSquare, Search, Bot, LogOut, User, Phone, List, Users, ExternalLink, X, Headphones, RefreshCw, Shield, Settings, UserCog, Layers, Plus, UserPlus, Check, Paperclip, ChevronRight, Bell, MoreVertical, Ban, Megaphone } from 'lucide-react';
 import ImpersonationBanner from './ImpersonationBanner';
-import { FileUploader } from './FileUploader';
+import { TemplateHeaderMediaField } from './TemplateHeaderMediaField';
 import { usePermission } from '../hooks/usePermission';
 import AppNav from './AppNav';
 import { useContactFields } from '../context/ContactFieldsContext';
@@ -96,6 +96,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
   const [templatesLoading, setTemplatesLoading] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<any>(null);
   const [templateSettings, setTemplateSettings] = useState<Record<string, 'hidden' | 'manager' | 'agent'>>({});
+  const [templateDefaultMedia, setTemplateDefaultMedia] = useState<Record<string, { url: string; type: 'image' | 'video' | 'document' }>>({});
   
   // Template parameters modal
   const [showTemplateParamsModal, setShowTemplateParamsModal] = useState(false);
@@ -1157,10 +1158,15 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
         const data = await response.json();
         const settingsList = data.success && Array.isArray(data.settings) ? data.settings : [];
         const settingsMap: Record<string, 'hidden' | 'manager' | 'agent'> = {};
+        const defaultMediaMap: Record<string, { url: string; type: 'image' | 'video' | 'document' }> = {};
         settingsList.forEach((s: any) => {
           settingsMap[s.templateName] = s.visibility || (s.showInChat === false ? 'hidden' : 'manager');
+          if (s.defaultHeaderMediaUrl && s.defaultHeaderMediaType) {
+            defaultMediaMap[s.templateName] = { url: s.defaultHeaderMediaUrl, type: s.defaultHeaderMediaType };
+          }
         });
         setTemplateSettings(settingsMap);
+        setTemplateDefaultMedia(defaultMediaMap);
       }
     } catch (err) {
       console.error('Error fetching template settings:', err);
@@ -1182,14 +1188,17 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
       if (template.components && Array.isArray(template.components)) {
         template.components.forEach((comp: any) => {
           if (comp.type === 'HEADER' && ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(comp.format)) {
-            // Pre-fill with the template's example image so it's sent automatically if the user doesn't upload a new one
+            // Prefer the admin-configured default media for this template; otherwise
+            // pre-fill with the template's example image so something is sent
+            // automatically if the agent doesn't upload a new file.
+            const defaultMedia = templateDefaultMedia[templateName];
             const exampleUrl: string =
               comp.example?.header_url?.[0] ||
               comp.example?.header_url ||
               (Array.isArray(comp.example?.header_handle) ? comp.example.header_handle[0] : undefined) ||
               comp.example?.header_handle ||
               '';
-            initialParams.header = { type: comp.format.toLowerCase(), url: exampleUrl };
+            initialParams.header = { type: comp.format.toLowerCase(), url: defaultMedia?.url || exampleUrl };
           }
           if (comp.type === 'BODY' && comp.text) {
             // Extract {{1}}, {{2}} etc from body text
@@ -2910,12 +2919,15 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                     (Array.isArray(comp.example?.header_handle) ? comp.example.header_handle[0] : undefined) ||
                     comp.example?.header_handle ||
                     undefined;
+                  const templateName = selectedTemplate.name || selectedTemplate.elementName || selectedTemplate.template_name || '';
+                  const defaultMedia = templateDefaultMedia[templateName];
                   return (
                     <div key={idx} className="space-y-2">
                       <label className="block text-sm font-bold text-slate-700">
                         {mediaType === 'image' ? '🖼️ תמונה' : mediaType === 'video' ? '🎥 וידאו' : '📄 מסמך'}
                       </label>
-                      <FileUploader
+                      <TemplateHeaderMediaField
+                        mediaType={mediaType}
                         value={templateParams.header?.url || ''}
                         onChange={(url) => {
                           setTemplateParams(prev => ({
@@ -2923,14 +2935,9 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                             header: { type: mediaType, url }
                           }));
                         }}
-                        accept={
-                          mediaType === 'image' ? 'image/*' :
-                          mediaType === 'video' ? 'video/*' : '*/*'
-                        }
-                        label={mediaType === 'image' ? 'תמונה' : mediaType === 'video' ? 'וידאו' : 'מסמך'}
-                        mediaType={mediaType}
                         token={token || ''}
                         sampleUrl={sampleUrl}
+                        defaultUrl={defaultMedia?.url}
                       />
                     </div>
                   );

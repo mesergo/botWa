@@ -10,6 +10,7 @@ import {
   UserCheck, Headphones, UserMinus, RefreshCcw
 } from 'lucide-react';
 import UserTypesManager from './UserTypesManager';
+import { FileUploader } from './FileUploader';
 
 interface User {
   id: string;
@@ -186,6 +187,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
   
   // Dialog360 Templates
   const [dialog360Templates, setDialog360Templates] = useState<any[]>([]);
+  const [dialog360TemplateDefaultMedia, setDialog360TemplateDefaultMedia] = useState<Record<string, { url: string; type: 'image' | 'video' | 'document' }>>({});
   const [dialog360Loading, setDialog360Loading] = useState(false);
   const [dialog360TemplateSettings, setDialog360TemplateSettings] = useState<Record<string, 'hidden' | 'manager' | 'agent'>>({});
   
@@ -469,13 +471,60 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
         const data = await response.json();
         const settingsList = data.success && Array.isArray(data.settings) ? data.settings : [];
         const settingsMap: Record<string, 'hidden' | 'manager' | 'agent'> = {};
+        const defaultMediaMap: Record<string, { url: string; type: 'image' | 'video' | 'document' }> = {};
         settingsList.forEach((s: any) => {
           settingsMap[s.templateName] = s.visibility || (s.showInChat === false ? 'hidden' : 'manager');
+          if (s.defaultHeaderMediaUrl && s.defaultHeaderMediaType) {
+            defaultMediaMap[s.templateName] = { url: s.defaultHeaderMediaUrl, type: s.defaultHeaderMediaType };
+          }
         });
         setDialog360TemplateSettings(settingsMap);
+        setDialog360TemplateDefaultMedia(defaultMediaMap);
       }
     } catch (err) {
       console.error('Error fetching template settings:', err);
+    }
+  };
+
+  // Set or clear the default header media (image/video/document) an admin
+  // configured for a specific template, so agents can reuse it when sending.
+  const updateTemplateDefaultMedia = async (
+    template: any,
+    url: string | null,
+    mediaType: 'image' | 'video' | 'document' | null
+  ) => {
+    const templateName = template.name || template.elementName || template.template_name || '';
+    try {
+      const response = await fetch(`${API_BASE}/dialog360-templates/default-media`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          templateName,
+          templateId: template.id,
+          url: url || undefined,
+          mediaType: url ? mediaType : undefined
+        })
+      });
+
+      if (response.ok) {
+        setDialog360TemplateDefaultMedia(prev => {
+          const next = { ...prev };
+          if (url && mediaType) {
+            next[templateName] = { url, type: mediaType };
+          } else {
+            delete next[templateName];
+          }
+          return next;
+        });
+      } else {
+        alert('שגיאה בעדכון תמונת ברירת המחדל');
+      }
+    } catch (err) {
+      console.error('Error updating template default media:', err);
+      alert('שגיאה בעדכון תמונת ברירת המחדל');
     }
   };
 
@@ -2377,6 +2426,14 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                     const hasButtons = !!buttonsComponent;
                     const buttonCount = buttonsComponent?.buttons?.length || 0;
                     const showInChat = dialog360TemplateSettings[name] ?? true;
+                    // Templates whose header requires a media file (image/video/document)
+                    // can have a default file configured by the admin, so agents can reuse
+                    // it instead of uploading a new one every time they send it.
+                    const headerMediaType: 'image' | 'video' | 'document' | null =
+                      headerComponent && ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(headerComponent.format)
+                        ? (headerComponent.format.toLowerCase() as 'image' | 'video' | 'document')
+                        : null;
+                    const defaultMedia = dialog360TemplateDefaultMedia[name];
                     
                     return (
                       <div 
@@ -2451,7 +2508,48 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                               </p>
                             </div>
                           )}
-                          
+
+                          {/* Default header media (image/video/document) — lets agents reuse it when sending */}
+                          {headerMediaType && (
+                            <div className="mb-4">
+                              <label className="text-xs font-bold text-slate-500 mb-2 flex items-center gap-1">
+                                <ImageIcon size={13} />
+                                תמונת ברירת מחדל לתבנית
+                              </label>
+                              {defaultMedia?.url ? (
+                                <div className="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-xl p-3">
+                                  <div className="w-14 h-14 rounded-lg overflow-hidden border border-slate-200 bg-white flex-shrink-0 flex items-center justify-center">
+                                    {headerMediaType === 'image' ? (
+                                      <img src={defaultMedia.url} alt="ברירת מחדל" className="w-full h-full object-cover" />
+                                    ) : headerMediaType === 'video' ? (
+                                      <video src={defaultMedia.url} className="w-full h-full object-cover" />
+                                    ) : (
+                                      <FileText size={20} className="text-slate-400" />
+                                    )}
+                                  </div>
+                                  <span className="flex-1 text-xs text-slate-500">הוגדרה תמונת ברירת מחדל</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => updateTemplateDefaultMedia(template, null, null)}
+                                    className="p-2 rounded-lg text-rose-600 hover:bg-rose-50 transition-colors border border-rose-200"
+                                    title="הסר תמונת ברירת מחדל"
+                                  >
+                                    <X size={14} />
+                                  </button>
+                                </div>
+                              ) : (
+                                <FileUploader
+                                  value=""
+                                  onChange={(url) => updateTemplateDefaultMedia(template, url, headerMediaType)}
+                                  accept={headerMediaType === 'image' ? 'image/*' : headerMediaType === 'video' ? 'video/*' : '*/*'}
+                                  label={headerMediaType === 'image' ? 'תמונה' : headerMediaType === 'video' ? 'וידאו' : 'מסמך'}
+                                  mediaType={headerMediaType}
+                                  token={token || ''}
+                                />
+                              )}
+                            </div>
+                          )}
+
                           {/* Components info */}
                           <div className="flex items-center justify-between text-xs mb-4">
                             <div className="flex items-center gap-3 text-slate-500">
