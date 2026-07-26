@@ -52,8 +52,16 @@ interface SmsInAppProps {
   userEmail?: string;
   userId?: string;
   userName?: string;
-  /** Line assignment (routing) is admin-only; customers only see their SMS. */
+  /**
+   * Management UI (routing / clients filters).
+   * Does NOT by itself mean "see every SMS" — use viewAll for that.
+   */
   isAdmin?: boolean;
+  /**
+   * /admin panel only: load the full system inbox (all messages, all lines).
+   * Regular accounts — including role=admin — must leave this false/undefined.
+   */
+  viewAll?: boolean;
   /** Auth token for fetching platform clients from MongoDB */
   token?: string | null;
   /** Open on a specific tab (e.g. Settings → שיוך קווים). */
@@ -68,12 +76,15 @@ export default function SmsInApp({
   userId,
   userName,
   isAdmin: isAdminProp,
+  viewAll = false,
   token,
   initialTab,
   lockedTab,
 }: SmsInAppProps) {
   // Standalone demo = full admin UI; when embedded in botWa, only real admins get assignment tabs
   const isAdmin = isAdminProp ?? !embedded;
+  // /admin panel → always every message; user SMS tab → only assigned lines
+  const seeAllMessages = viewAll || (!embedded && isAdmin);
   // Authentication State — skip when embedded in botWa (already authenticated)
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => {
     if (embedded) return true;
@@ -159,6 +170,20 @@ export default function SmsInApp({
   const [searchTotal, setSearchTotal] = useState<number | null>(null);
   const lastServerSearchRef = useRef('');
 
+  /** Auth headers for SMS API calls. */
+  const buildApiHeaders = (extra?: HeadersInit): HeadersInit => {
+    const headers: Record<string, string> = {};
+    if (token) headers.Authorization = `Bearer ${token}`;
+    if (extra) Object.assign(headers, extra);
+    return headers;
+  };
+
+  /** Management panel (/admin) uses dedicated unscoped admin routes. */
+  const messagesEndpoint = seeAllMessages ? `${API_BASE}/admin/messages` : `${API_BASE}/messages`;
+  const destSettingsEndpoint = seeAllMessages || isAdmin
+    ? `${API_BASE}/admin/dest-settings`
+    : `${API_BASE}/dest-settings`;
+
   // Fetch real-time connection status of database
   const fetchDbStatus = async () => {
     try {
@@ -172,13 +197,13 @@ export default function SmsInApp({
     }
   };
 
-  // Fetch real messages from MongoDB (scoped to assigned lines for non-admins)
+  // Fetch real messages from MongoDB (scoped to assigned lines unless management mode)
   const fetchRealMessages = async (silent = false) => {
     setIsLoadingMessages(true);
     try {
-      const headers: HeadersInit = {};
-      if (token) headers.Authorization = `Bearer ${token}`;
-      const res = await fetch(`${API_BASE}/messages?limit=${MESSAGES_FETCH_LIMIT}`, { headers });
+      const res = await fetch(`${messagesEndpoint}?limit=${MESSAGES_FETCH_LIMIT}`, {
+        headers: buildApiHeaders(),
+      });
       const data = await res.json();
       if (data.source === 'mongodb' && Array.isArray(data.messages)) {
         setMessages(data.messages);
@@ -210,7 +235,7 @@ export default function SmsInApp({
     setIsLoadingClients(true);
     try {
       const res = await fetch(`${API_BASE}/clients`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: buildApiHeaders(),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
@@ -231,8 +256,8 @@ export default function SmsInApp({
   const fetchDestSettings = async () => {
     if (!token) return;
     try {
-      const res = await fetch(`${API_BASE}/dest-settings`, {
-        headers: { Authorization: `Bearer ${token}` },
+      const res = await fetch(destSettingsEndpoint, {
+        headers: buildApiHeaders(),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
@@ -245,7 +270,7 @@ export default function SmsInApp({
     }
   };
 
-  // Run on mount
+  // Load when auth / management mode is ready (not only on first mount)
   useEffect(() => {
     fetchDbStatus().then((status) => {
       if (status && status.connected) {
@@ -255,7 +280,7 @@ export default function SmsInApp({
     if (embedded && token) {
       fetchDestSettings();
     }
-  }, []);
+  }, [embedded, token, isAdmin, seeAllMessages]);
 
   useEffect(() => {
     if (embedded && token && isAdmin) {
@@ -284,16 +309,14 @@ export default function SmsInApp({
     const timer = window.setTimeout(async () => {
       setIsLoadingMessages(true);
       try {
-        const headers: HeadersInit = {};
-        if (token) headers.Authorization = `Bearer ${token}`;
         const params = new URLSearchParams({
           page: String(messagesPage),
           limit: String(MESSAGES_PAGE_SIZE),
         });
         if (query) params.set('q', query);
         if (destQuery) params.set('dest', destQuery);
-        const res = await fetch(`${API_BASE}/messages?${params.toString()}`, {
-          headers,
+        const res = await fetch(`${messagesEndpoint}?${params.toString()}`, {
+          headers: buildApiHeaders(),
           signal: controller.signal,
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -317,7 +340,7 @@ export default function SmsInApp({
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [searchText, filterDest, messagesPage, token]);
+  }, [searchText, filterDest, messagesPage, token, seeAllMessages, messagesEndpoint]);
 
   // Sync state to LocalStorage
   useEffect(() => {
@@ -394,9 +417,9 @@ export default function SmsInApp({
     return idOrName;
   };
 
-  /** Dest lines belonging to the logged-in customer */
+  /** Dest lines belonging to the logged-in customer / admin-user account */
   const myAssignedDests = useMemo(() => {
-    if (isAdmin || !userId) return null;
+    if (seeAllMessages || !userId) return null;
     return new Set(
       destSettings
         .filter(ds =>
@@ -406,7 +429,7 @@ export default function SmsInApp({
         )
         .map(ds => ds.dest)
     );
-  }, [isAdmin, userId, userName, userEmail, destSettings]);
+  }, [seeAllMessages, userId, userName, userEmail, destSettings]);
 
   const showToastMsg = (text: string, type: 'success' | 'info' | 'error' = 'success') => {
     setToast({ text, type });
@@ -482,8 +505,9 @@ export default function SmsInApp({
 
   // Filter messages logic
   const filteredMessages = messages.filter(msg => {
-    // Customer scope from assignments (server already scopes; defense in depth)
-    if (!isAdmin && userId && embedded) {
+    // Customer / admin-user account: only their assigned lines (server already scopes; defense in depth)
+    // /admin with viewAll: never scope here
+    if (!seeAllMessages && userId && embedded) {
       if (!destSettingsFromMongo) {
         // Wait until we know which lines belong to this account
         return false;
@@ -810,10 +834,7 @@ export default function SmsInApp({
       try {
         await fetch(`${API_BASE}/dest-settings/${encodeURIComponent(toSave.dest)}`, {
           method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
+          headers: buildApiHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({
             assignedClientId: clientId,
             assignedClientName: clientName,
@@ -1306,59 +1327,76 @@ export default function SmsInApp({
                         
                       </div>
 
-                      {/* RESPONSIVE TABLE FRAMEWORK */}
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-right border-collapse text-sm">
-                          <thead>
-                            <tr className="bg-slate-50 text-slate-500 font-bold text-xs border-b border-slate-100">
-                              <th className="p-4 text-right">נמען</th>
-                              <th className="p-4 text-right">מי שלח</th>
-                              <th className="p-4 text-right whitespace-nowrap">תאריך</th>
-                              <th className="p-4 text-right min-w-[300px]">תוכן ההודעה</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-100">
+                      {filteredMessages.length === 0 ? (
+                        <div className="py-16 sm:py-20 flex flex-col items-center justify-center gap-3 text-slate-300 px-4">
+                          <AlertCircle size={48} strokeWidth={1} />
+                          <p className="text-lg font-bold text-center text-slate-700">לא נמצאו הודעות SMS תואמות</p>
+                          <p className="text-sm text-slate-400 font-semibold text-center">
+                            {!isAdmin && myAssignedDests && myAssignedDests.size === 0
+                              ? 'עדיין לא שויך אליך קו SMS. פנה למנהל המערכת לשיוך קו.'
+                              : 'נסה לשנות את פרמטרי החיפוש או לבטל מסננים קיימים.'}
+                          </p>
+                        </div>
+                      ) : (
+                        <>
+                          {/* Mobile cards — same responsive language as the contacts table */}
+                          <div className="lg:hidden p-3 space-y-3 bg-slate-50/40">
                             {paginatedMessages.map((msg) => (
-                                <tr 
-                                  key={msg.id_}
-                                  className="hover:bg-slate-50 transition-colors group"
-                                >
-                                  <td className="p-4 font-bold text-slate-800 align-middle">
-                                    {msg.dest}
-                                  </td>
-
-                                  <td className="p-4 font-bold text-slate-700 align-middle">
-                                    <span className="bg-slate-100 text-slate-800 px-2.5 py-1 rounded-lg text-sm font-bold">{msg.phone}</span>
-                                  </td>
-
-                                  <td className="p-4 text-slate-600 align-middle whitespace-nowrap text-sm font-medium">
-                                    {msg.date}
-                                  </td>
-
-                                  <td className="p-4 text-slate-800 align-middle leading-relaxed font-medium whitespace-normal break-words max-w-md">
-                                    <span className="text-slate-800 text-sm font-medium text-right whitespace-pre-wrap">{msg.message}</span>
-                                  </td>
-                                </tr>
-                            ))}
-
-                            {filteredMessages.length === 0 && (
-                              <tr>
-                                <td colSpan={4} className="p-12 text-center text-slate-400 text-sm font-medium">
-                                  <div className="max-w-xs mx-auto space-y-1">
-                                    <AlertCircle className="mx-auto text-slate-300" size={32} />
-                                    <p className="font-black text-slate-700 mt-2 text-base">לא נמצאו הודעות SMS תואמות</p>
-                                    <p className="text-sm text-slate-400 font-semibold">
-                                      {!isAdmin && myAssignedDests && myAssignedDests.size === 0
-                                        ? 'עדיין לא שויך אליך קו SMS. פנה למנהל המערכת לשיוך קו.'
-                                        : 'נסה לשנות את פרמטרי החיפוש או לבטל מסננים קיימים.'}
-                                    </p>
+                              <div key={`mobile-${msg.id_}`} className="bg-white border border-slate-100 rounded-2xl p-4 shadow-sm">
+                                <div className="flex items-start gap-3 min-w-0">
+                                  <div className="w-9 h-9 rounded-xl bg-sky-50 text-sky-500 flex items-center justify-center flex-shrink-0">
+                                    <MessageSquare size={16} />
                                   </div>
-                                </td>
-                              </tr>
-                            )}
-                          </tbody>
-                        </table>
-                      </div>
+                                  <div className="min-w-0 flex-1">
+                                    <p className="text-sm font-bold text-slate-900 truncate">{msg.phone}</p>
+                                    <p className="text-xs text-slate-500 font-semibold truncate mt-0.5">אל {msg.dest}</p>
+                                  </div>
+                                  <span className="text-xs text-slate-400 font-medium whitespace-nowrap">{msg.date}</span>
+                                </div>
+                                <div className="mt-3 bg-slate-50 rounded-xl px-3 py-2.5 border border-slate-100">
+                                  <p className="text-xs text-slate-400 font-bold mb-1">תוכן ההודעה</p>
+                                  <p className="text-sm font-semibold text-slate-700 whitespace-pre-wrap break-words">{msg.message}</p>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+
+                          {/* Desktop table — mirrors the contacts table grid and spacing */}
+                          <div className="hidden lg:block overflow-x-auto">
+                            <div className="min-w-[760px]">
+                              <div
+                                className="grid gap-3 px-6 py-3 bg-slate-50 border-b border-slate-100 text-xs font-bold text-slate-400 uppercase tracking-wide"
+                                style={{ gridTemplateColumns: '1.1fr 1.2fr 1fr 2.5fr' }}
+                              >
+                                <span>נמען</span>
+                                <span>מי שלח</span>
+                                <span>תאריך</span>
+                                <span>תוכן ההודעה</span>
+                              </div>
+
+                              {paginatedMessages.map((msg, idx) => (
+                                <div
+                                  key={msg.id_}
+                                  className={`grid gap-3 px-6 py-3.5 items-center hover:bg-slate-50/70 transition-colors ${
+                                    idx !== paginatedMessages.length - 1 ? 'border-b border-slate-100' : ''
+                                  }`}
+                                  style={{ gridTemplateColumns: '1.1fr 1.2fr 1fr 2.5fr' }}
+                                >
+                                  <div className="flex items-center gap-3 min-w-0">
+                                    <div className="w-8 h-8 rounded-xl bg-sky-50 text-sky-500 flex items-center justify-center flex-shrink-0">
+                                      <MessageSquare size={15} />
+                                    </div>
+                                    <span className="text-sm font-bold text-slate-900 truncate">{msg.dest}</span>
+                                  </div>
+                                  <div className="text-sm font-semibold text-slate-700 truncate">{msg.phone}</div>
+                                  <div className="text-sm text-slate-400 font-medium whitespace-nowrap">{msg.date}</div>
+                                  <div className="text-sm font-semibold text-slate-700 whitespace-pre-wrap break-words">{msg.message}</div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </>
+                      )}
 
                       {messageResultCount > MESSAGES_PAGE_SIZE && (
                         <div className="flex items-center justify-between gap-3 p-4 border-t border-slate-100 bg-slate-50/50">

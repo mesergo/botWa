@@ -7,10 +7,11 @@ import {
   CreditCard, MoreVertical, X, Star, Globe, Lock, Copy, List, Phone, Clock,
   ChevronDown, ChevronUp, ToggleLeft, ToggleRight, XCircle, MessageSquare, Menu,
   User as UserIcon, ExternalLink, Sliders, Image as ImageIcon, Layers,
-  UserCheck, Headphones, UserMinus, RefreshCcw
+  UserCheck, Headphones, UserMinus, RefreshCcw, Inbox
 } from 'lucide-react';
 import UserTypesManager from './UserTypesManager';
 import { FileUploader } from './FileUploader';
+import SmsInApp from './sms-in/SmsInApp';
 
 interface User {
   id: string;
@@ -89,8 +90,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
   const navigate = useNavigate();
   const { tab } = useParams<{ tab?: string }>();
 
-  type AdminTab = 'dashboard' | 'users' | 'user-types' | 'templates' | 'settings' | 'sessions' | 'dialog360' | 'removal-log';
-  const VALID_TABS: AdminTab[] = ['dashboard', 'users', 'user-types', 'templates', 'settings', 'sessions', 'dialog360', 'removal-log'];
+  type AdminTab = 'dashboard' | 'users' | 'user-types' | 'templates' | 'settings' | 'sessions' | 'dialog360' | 'sms-in' | 'removal-log';
+  const VALID_TABS: AdminTab[] = ['dashboard', 'users', 'user-types', 'templates', 'settings', 'sessions', 'dialog360', 'sms-in', 'removal-log'];
   const activeTab: AdminTab = (VALID_TABS.includes(tab as AdminTab) ? tab : 'dashboard') as AdminTab;
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const setActiveTab = (t: AdminTab) => {
@@ -1223,6 +1224,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
               { id: 'user-types', label: 'סוגי משתמשים', icon: Shield },
               { id: 'sessions', label: 'סשנים', icon: List },
               { id: 'dialog360', label: 'הודעות תבנית', icon: MessageSquare },
+              { id: 'sms-in', label: 'הודעות SMS', icon: Inbox },
               { id: 'templates', label: 'מאגר תבניות בוט', icon: FileText },
               { id: 'settings', label: 'הגדרות מערכת', icon: Settings },
               { id: 'removal-log', label: 'לוג פעילות הסרה', icon: Activity },
@@ -1279,6 +1281,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
               {activeTab === 'user-types' && 'סוגי משתמשים'}
               {activeTab === 'sessions' && 'כל הסשנים'}
               {activeTab === 'dialog360' && 'הודעות תבנית Dialog360'}
+              {activeTab === 'sms-in' && 'הודעות SMS'}
               {activeTab === 'templates' && 'ניהול תבניות'}
               {activeTab === 'settings' && 'הגדרות מערכת'}
               {activeTab === 'removal-log' && 'לוג פעילות הסרה'}
@@ -1289,6 +1292,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
               {activeTab === 'user-types' && 'הגדרת הרשאות לכל סוג משתמש במערכת'}
               {activeTab === 'sessions' && 'צפייה בכל הסשנים של כל המשתמשים במערכת'}
               {activeTab === 'dialog360' && 'צפייה בהודעות תבנית מ-Dialog360'}
+              {activeTab === 'sms-in' && 'צפייה בכל הודעות ה-SMS הנכנסות במערכת'}
               {activeTab === 'templates' && 'ניהול ותחזוקת מאגר התבניות הגלובלי'}
               {activeTab === 'settings' && 'הגדרת מגבלות, מחירים ופרמטרים למערכת'}
               {activeTab === 'removal-log' && 'היסטוריית שינויים בהגדרות ההסרה האוטומטית'}
@@ -1299,13 +1303,30 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
         </header>
 
         {/* Content Scroll Area */}
-        <div className={`flex-1 min-h-0 z-10 ${activeTab === 'sessions' ? 'overflow-hidden' : 'overflow-visible px-4 sm:px-6 lg:px-10 pb-6 sm:pb-10 pt-2'}`}>
+        <div className={`flex-1 min-h-0 z-10 ${activeTab === 'sessions' || activeTab === 'sms-in' ? 'overflow-hidden' : 'overflow-visible px-4 sm:px-6 lg:px-10 pb-6 sm:pb-10 pt-2'}`}>
           
           {error && (
             <div className="bg-red-50 border-r-4 border-red-500 p-4 mb-8 rounded-xl shadow-sm flex items-center gap-4 animate-fade-in group hover:bg-red-100/50 transition-colors">
               <div className="p-2 bg-red-100 rounded-full text-red-600 group-hover:bg-red-200 transition-colors"><AlertCircle className="w-5 h-5" /></div>
               <p className="text-red-700 font-bold">{error}</p>
               <button onClick={() => setError(null)} className="mr-auto p-2 hover:bg-red-200 rounded-full text-red-400 hover:text-red-700 transition-all"><X size={18} /></button>
+            </div>
+          )}
+
+          {/* SMS INBOX TAB — full system view */}
+          {activeTab === 'sms-in' && (
+            <div className="h-[calc(100vh-5.5rem)] w-full overflow-hidden">
+              <SmsInApp
+                embedded
+                lockedTab="sms_in"
+                initialTab="sms_in"
+                userEmail={currentUser?.email}
+                userId={currentUser?.id}
+                userName={currentUser?.name}
+                isAdmin
+                viewAll
+                token={token}
+              />
             </div>
           )}
 
