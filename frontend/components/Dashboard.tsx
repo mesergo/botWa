@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, Bot, ArrowLeft, Trash2, Calendar, LogOut, Shield, UserCog, Users, List, Settings, Save, User as UserIcon, Phone, Mail, Star, Copy, Check, Wifi, Gauge, MessageSquare, Globe, Layers, CheckCircle, Eye, EyeOff, X, Image as ImageIcon, FileText, Link as LinkIcon, Unlink, UserMinus, AlertTriangle, RefreshCcw, ToggleLeft, ToggleRight, Zap } from 'lucide-react';
+import { Plus, Bot, ArrowLeft, Trash2, Calendar, LogOut, Shield, UserCog, Users, List, Settings, Save, User as UserIcon, Phone, Mail, Star, Copy, Check, Wifi, Gauge, MessageSquare, Globe, Layers, CheckCircle, Eye, EyeOff, X, Menu, Image as ImageIcon, FileText, Link as LinkIcon, Unlink, UserMinus, AlertTriangle, RefreshCcw, ToggleLeft, ToggleRight, Zap } from 'lucide-react';
 import ImpersonationBanner from './ImpersonationBanner';
 import { BotFlow, User } from '../types';
 import SubUsersTab from './SubUsersTab';
@@ -7,6 +7,7 @@ import BotSettingsModal from './BotSettingsModal';
 import { FileUploader } from './FileUploader';
 import { usePermission } from '../hooks/usePermission';
 import AppNav from './AppNav';
+import { MobileNavToggle } from './PageTopBar';
 
 const API_BASE = window.location.hostname === 'localhost'
   ? 'http://localhost:3001/api'
@@ -26,6 +27,7 @@ interface DashboardProps {
   onOpenContacts?: () => void;
   onOpenSessions?: () => void;
   onOpenGroups?: () => void;
+  onOpenSendMessages?: () => void;
   onOpenSmsIn?: () => void;
   onConnectFacebook?: (bot: BotFlow) => Promise<void>;
   onUpdateBotPublicId?: (id: string, publicId: string) => Promise<void>;
@@ -151,7 +153,7 @@ const AvailabilityBadge: React.FC<{
   );
 };
 
-const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, onDeleteBot, onSetDefaultBot, onLogout, currentUser, onOpenAdminPanel, onStopImpersonation, onSwitchAccount, onOpenContacts, onOpenSessions, onOpenGroups, onConnectFacebook, onUpdateBotPublicId, onUpdateBotEndpoint, onUpdateBotRestartKeyword, onUpdateAvailability, onGoHome,onOpenSmsIn, token, initialTab }) => {
+const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, onDeleteBot, onSetDefaultBot, onLogout, currentUser, onOpenAdminPanel, onStopImpersonation, onSwitchAccount, onOpenContacts, onOpenSessions, onOpenGroups, onOpenSendMessages, onConnectFacebook, onUpdateBotPublicId, onUpdateBotEndpoint, onUpdateBotRestartKeyword, onUpdateAvailability, onGoHome,onOpenSmsIn, token, initialTab }) => {
   const can = usePermission(currentUser as User | null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newBotName, setNewBotName] = useState('');
@@ -171,12 +173,25 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
     }
     return requested;
   });
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [isMobileTopBar, setIsMobileTopBar] = useState<boolean>(() => window.innerWidth <= 900);
 
   // Sync activeTab when navigating between routes that share this component instance
   useEffect(() => {
     if (!initialTab) return;
     setActiveTab(initialTab);
   }, [initialTab]);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(max-width: 900px)');
+    const update = (event: MediaQueryListEvent | MediaQueryList) => setIsMobileTopBar(event.matches);
+
+    update(mediaQuery);
+    const handleChange = (event: MediaQueryListEvent) => update(event);
+    mediaQuery.addEventListener('change', handleChange);
+
+    return () => mediaQuery.removeEventListener('change', handleChange);
+  }, []);
 
   // Settings tab section
   type SettingsSection = 'profile' | 'account' | 'connection' | 'quota' | 'numbers' | 'templates' | 'removal';
@@ -834,7 +849,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
       {/* Impersonation Banner */}
       <ImpersonationBanner currentUser={currentUser} onStopImpersonation={onStopImpersonation} token={token} onSwitchAccount={onSwitchAccount} />
       
-      <nav className="h-20 bg-white border-b border-slate-100 flex items-center justify-between px-10 z-20">
+      <nav className="h-20 bg-white border-b border-slate-100 flex items-center justify-between px-4 md:px-10 z-20">
         <div className="flex items-center gap-4">
           <button onClick={onLogout} className="p-2.5 text-slate-300 hover:text-red-500 transition-colors rounded-xl hover:bg-red-50"><LogOut size={22} /></button>
           <img src="/images/mesergo-logo.png" alt="Logo" className="h-10 w-auto cursor-pointer hover:scale-105 transition-transform" onClick={() => setActiveTab('bots')} />
@@ -878,6 +893,9 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
               );
             })()}
           </div>
+          {isMobileTopBar && (
+            <MobileNavToggle open={mobileNavOpen} onToggle={() => setMobileNavOpen((prev) => !prev)} />
+          )}
         </div>
       </nav>
 
@@ -888,11 +906,15 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
         <AppNav
           mode="sidebar"
           activePage={activeTab}
+          hideMobileTrigger
+          mobileMenuOpen={mobileNavOpen}
+          onMobileMenuOpenChange={setMobileNavOpen}
           onGoHome={onGoHome}
           onBots={can('bots.view_tab') ? () => setActiveTab('bots') : undefined}
           onSessions={onOpenSessions && can('sessions.view') ? onOpenSessions : undefined}
           onContacts={onOpenContacts && can('contacts.view') ? onOpenContacts : undefined}
           onGroups={onOpenGroups && can('groups.view') ? onOpenGroups : undefined}
+          onSendMessages={onOpenSendMessages && can('send_messages.view') ? onOpenSendMessages : undefined}
           onSmsIn={onOpenSmsIn && can('sms_in.view') ? onOpenSmsIn : undefined}
           onSettings={can('settings.view') ? () => setActiveTab('settings') : undefined}
           onUsers={can('users.view') ? () => setActiveTab('users') : undefined}
@@ -903,11 +925,12 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
 
       {/* ── Settings Tab ── */}
       {activeTab === 'settings' && (
-        <div className="flex-1 flex overflow-hidden" dir="rtl">
+        <div className="flex-1 flex flex-col md:flex-row overflow-hidden" dir="rtl">
 
           {/* ── Inner settings sidebar ── */}
-          <aside className="w-56 bg-white border-l border-slate-100 flex flex-col py-6 px-3 gap-1 flex-shrink-0 overflow-y-auto">
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider px-3 mb-2">הגדרות</p>
+          <aside className="w-full md:w-56 bg-white border-b md:border-b-0 md:border-l border-slate-100 py-3 md:py-6 px-3 flex-shrink-0 overflow-x-auto md:overflow-y-auto">
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider px-1 md:px-3 mb-2">הגדרות</p>
+            <div className="flex md:flex-col gap-2 md:gap-1 min-w-max md:min-w-0">
             {([
               { key: 'profile',    label: 'פרטים אישיים',     icon: <UserIcon size={16} /> },
               { key: 'account',    label: 'פרטי חשבון',        icon: <Shield size={16} /> },
@@ -920,7 +943,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
               <button
                 key={key}
                 onClick={() => setSettingsSection(key)}
-                className={`flex items-center gap-3 px-4 py-3 rounded-2xl font-bold text-sm transition-all w-full text-right ${
+                className={`flex items-center gap-3 px-4 py-3 rounded-2xl font-bold text-sm transition-all w-auto md:w-full text-right whitespace-nowrap ${
                   settingsSection === key
                     ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20'
                     : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700'
@@ -930,10 +953,11 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                 <span>{label}</span>
               </button>
             ))}
+            </div>
           </aside>
 
           {/* ── Settings content ── */}
-          <div className="flex-1 overflow-y-auto p-10">
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8 lg:p-10">
             <div className="max-w-2xl mx-auto">
 
             {profileLoading ? (
@@ -1108,8 +1132,8 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
               )}
 
               {settingsSection === 'numbers' && (
-              <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-8">
-                <div className="flex items-center justify-between border-b border-slate-100 pb-4 mb-6">
+              <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-5 sm:p-6 lg:p-8">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-slate-100 pb-4 mb-6">
                   <h2 className="text-xs font-black text-slate-400 uppercase tracking-wider flex items-center gap-2">
                     <Phone size={14} /> מספרים מחוברים
                   </h2>
@@ -1912,30 +1936,30 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
 
       {/* ── Bots Tab ── */}
       {activeTab === 'bots' && can('bots.view_tab') && (
-      <div className="flex-1 overflow-y-auto p-12">
+      <div className="flex-1 overflow-y-auto px-4 py-6 sm:px-6 sm:py-8 lg:px-10 lg:py-10 xl:px-12">
         <div className="max-w-6xl mx-auto">
-          <div className="flex items-center justify-between mb-10 flex-row-reverse">
-            <h1 className="text-3xl font-black text-slate-900">הבוטים שלי</h1>
+          <div className="flex flex-col-reverse sm:flex-row-reverse sm:items-center sm:justify-between gap-4 mb-6 sm:mb-8 lg:mb-10">
+            <h1 className="text-2xl sm:text-3xl font-black text-slate-900 text-right">הבוטים שלי</h1>
             {can('bots.create') && (
               <button 
                 onClick={() => setIsModalOpen(true)}
-                className="flex items-center gap-3 px-8 py-4 bg-blue-600 text-white rounded-2xl font-bold shadow-lg shadow-blue-600/20 hover:bg-blue-700 transition-all scale-100 active:scale-95"
+                className="w-full sm:w-auto justify-center flex items-center gap-3 px-5 sm:px-7 lg:px-8 py-3 sm:py-4 bg-blue-600 text-white rounded-2xl font-bold text-sm sm:text-base shadow-lg shadow-blue-600/20 hover:bg-blue-700 transition-all scale-100 active:scale-95"
               >
                 <Plus size={20} /> צור תזרים חדש
               </button>
             )}
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5 lg:gap-6">
             {bots.map((bot) => (
               <div 
                 key={bot.id}
-                className={`bg-white border border-slate-100 rounded-[2.5rem] p-8 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all group flex flex-col justify-between h-[280px] ${can('bots.edit') ? 'cursor-pointer' : 'cursor-default'}`}
+                className={`bg-white border border-slate-100 rounded-[2rem] sm:rounded-[2.5rem] p-5 sm:p-6 lg:p-8 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all group flex flex-col justify-between min-h-[230px] sm:h-[280px] ${can('bots.edit') ? 'cursor-pointer' : 'cursor-default'}`}
                 onClick={() => can('bots.edit') && onEnterBot(bot)}
               >
                 <div>
-                  <div className="flex items-center justify-between mb-6 flex-row-reverse">
-                    <div className="p-4 bg-blue-50 text-blue-600 rounded-2xl group-hover:bg-blue-600 group-hover:text-white transition-colors">
+                  <div className="flex items-center justify-between mb-4 sm:mb-6 flex-row-reverse">
+                    <div className="p-3 sm:p-4 bg-blue-50 text-blue-600 rounded-2xl group-hover:bg-blue-600 group-hover:text-white transition-colors">
                       <Bot size={28} />
                     </div>
                     <div className="flex items-center gap-2">
@@ -1958,7 +1982,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                       )}
                     </div>
                   </div>
-                  <h3 className="text-2xl font-black text-slate-900 mb-2 truncate">{bot.name}</h3>
+                  <h3 className="text-xl sm:text-2xl font-black text-slate-900 mb-2 truncate">{bot.name}</h3>
                   <p className="text-slate-400 text-sm font-bold flex items-center justify-end gap-2 uppercase tracking-widest">
                     <span>{formatDate(bot.created_at)}</span>
                     <Calendar size={14} />
@@ -1989,9 +2013,9 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
             ))}
             
             {bots.length === 0 && (
-              <div className="col-span-full py-20 bg-white border-2 border-dashed border-slate-200 rounded-[2.5rem] flex flex-col items-center justify-center gap-4 text-slate-300">
-                <Bot size={64} strokeWidth={1} />
-                <p className="text-xl font-bold">אין לך בוטים עדיין. בוא ניצור את הראשון!</p>
+              <div className="col-span-full py-12 sm:py-16 lg:py-20 px-6 text-center bg-white border-2 border-dashed border-slate-200 rounded-[2rem] sm:rounded-[2.5rem] flex flex-col items-center justify-center gap-4 text-slate-300">
+                <Bot size={56} strokeWidth={1} />
+                <p className="text-lg sm:text-xl font-bold">אין לך בוטים עדיין. בוא ניצור את הראשון!</p>
               </div>
             )}
           </div>

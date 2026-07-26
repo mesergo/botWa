@@ -151,12 +151,31 @@ const fetchFlowData = async (userId, flow_id, standard_process_id = null, versio
     
     // Special handling for TIME_ROUTING
     if (w.type === 'action_time_routing') {
-      const timeRanges = nodeOptions
-        .filter(o => o.operator === 'time_range')
-        .map(o => {
-          const [fromHour, toHour] = o.value.split('-').map(Number);
-          return { fromHour, toHour };
-        });
+      const routingMode = metadata.routingMode || 'time';
+      let ranges = {};
+
+      if (routingMode === 'date') {
+        ranges.dateRanges = nodeOptions
+          .filter(o => o.operator === 'date_range')
+          .map(o => {
+            const [fromDate, toDate] = o.value.split('|');
+            return { fromDate, toDate };
+          });
+      } else if (routingMode === 'weekday') {
+        ranges.weekdayRanges = nodeOptions
+          .filter(o => o.operator === 'weekday_range')
+          .map(o => {
+            const [fromDay, toDay] = o.value.split('-').map(Number);
+            return { fromDay, toDay };
+          });
+      } else {
+        ranges.timeRanges = nodeOptions
+          .filter(o => o.operator === 'time_range')
+          .map(o => {
+            const [fromHour, toHour] = o.value.split('-').map(Number);
+            return { fromHour, toHour };
+          });
+      }
       
       return { 
         id: w.id, 
@@ -164,7 +183,7 @@ const fetchFlowData = async (userId, flow_id, standard_process_id = null, versio
         position: { x: w.pos_x, y: w.pos_y }, 
         data: { 
           ...metadata,
-          timeRanges: timeRanges
+          ...ranges
         } 
       };
     }
@@ -210,8 +229,8 @@ const fetchFlowData = async (userId, flow_id, standard_process_id = null, versio
             type: 'button', 
             style: { stroke: '#3b82f6', strokeWidth: 2, strokeDasharray: '6,4' } 
           });
-          if (o.operator === 'time_range') timeRangeIndex++;
-        } else if (o.operator === 'time_range') {
+          if (o.operator === 'time_range' || o.operator === 'date_range' || o.operator === 'weekday_range') timeRangeIndex++;
+        } else if (o.operator === 'time_range' || o.operator === 'date_range' || o.operator === 'weekday_range') {
           timeRangeIndex++;
         }
       });
@@ -518,18 +537,40 @@ const SHRINK_RATIO = 0.75;  // במקום 0.5
       
       // Handle TIME_ROUTING differently - it has timeRanges + default option
       if (node.type === 'action_time_routing') {
-        const timeRanges = node.data.timeRanges || [];
-        
-        // Save each time range as an option
-        for (let i = 0; i < timeRanges.length; i++) {
-          const range = timeRanges[i];
+        const routingMode = node.data.routingMode || 'time';
+        let ranges = [];
+        let operator = 'time_range';
+
+        if (routingMode === 'date') {
+          ranges = node.data.dateRanges || [];
+          operator = 'date_range';
+        } else if (routingMode === 'weekday') {
+          ranges = node.data.weekdayRanges || [];
+          operator = 'weekday_range';
+        } else {
+          ranges = node.data.timeRanges || [];
+          operator = 'time_range';
+        }
+
+        // Save each range as an option
+        for (let i = 0; i < ranges.length; i++) {
+          const range = ranges[i];
           const optionEdge = findLastEdge(e => e.source === node.id && e.sourceHandle === `option-${i}`);
+          let value = '';
+          if (operator === 'date_range') {
+            value = `${range.fromDate || ''}|${range.toDate || ''}`;
+          } else if (operator === 'weekday_range') {
+            value = `${Number.isInteger(range.fromDay) ? range.fromDay : 0}-${Number.isInteger(range.toDay) ? range.toDay : 6}`;
+          } else {
+            value = `${range.fromHour}-${range.toHour}`;
+          }
+
           await Option.create({
             widget_id: node.id,
-            value: `${range.fromHour}-${range.toHour}`, // Store as "8-16"
+            value,
             next: optionEdge ? optionEdge.target : null,
             image_url: null,
-            operator: 'time_range' // Special operator for time ranges
+            operator
           });
         }
         

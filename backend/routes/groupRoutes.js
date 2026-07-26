@@ -1,5 +1,5 @@
 import express from 'express';
-import { authenticateToken } from '../middleware/auth.js';
+import { authenticateToken, requirePermission } from '../middleware/auth.js';
 import {
   listGroups,
   createGroup,
@@ -10,6 +10,8 @@ import {
   removeMember,
   addToBlocklist,
   sendToGroup,
+  previewCustomAudience,
+  sendCustomBroadcast,
   listBroadcasts,
   getBroadcast,
   completeBroadcast,
@@ -28,6 +30,8 @@ router.use(authenticateToken);
 
 // Specific routes first
 router.post('/blocklist/add', addToBlocklist);
+router.post('/broadcast-custom/preview', requirePermission('send_messages.send'), previewCustomAudience);
+router.post('/broadcast-custom', requirePermission('send_messages.send'), sendCustomBroadcast);
 router.get('/broadcasts', listBroadcasts);
 router.get('/broadcasts/:id', getBroadcast);
 router.post('/broadcasts/:id/resume', resumeBroadcast);

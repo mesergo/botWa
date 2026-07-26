@@ -1,9 +1,10 @@
 ﻿import React, { useState, useEffect, useRef } from 'react';
 import { WhatsAppText } from '../utils/whatsappFormat';
-import { Clock, MessageSquare, Search, Bot, LogOut, User, Phone, List, Users, ExternalLink, X, Headphones, RefreshCw, Shield, Settings, UserCog, Layers, Plus, UserPlus, Check, Paperclip, ChevronRight, Bell, MoreVertical, Ban, Megaphone } from 'lucide-react';
+import { Clock, MessageSquare, Search, Bot, User, Phone, List, Users, ExternalLink, X, Headphones, RefreshCw, Settings, UserCog, Layers, Plus, UserPlus, Check, Paperclip, ChevronRight, Bell, MoreVertical, Ban, Megaphone } from 'lucide-react';
 import ImpersonationBanner from './ImpersonationBanner';
 import { TemplateHeaderMediaField } from './TemplateHeaderMediaField';
 import { usePermission } from '../hooks/usePermission';
+import PageTopBar from './PageTopBar';
 import AppNav from './AppNav';
 import { useContactFields } from '../context/ContactFieldsContext';
  
@@ -42,6 +43,7 @@ interface SessionsPageProps {
   onLogout: () => void;
   onOpenContacts?: (phone?: string) => void;
   onOpenGroups?: () => void;
+  onOpenSendMessages?: () => void;
   onOpenSmsIn?: () => void;
   onOpenAdminPanel?: () => void;
   onOpenSettings?: () => void;
@@ -64,7 +66,7 @@ const WhatsAppIcon = ({ size = 12, className = '' }: { size?: number; className?
   </svg>
 );
 
-const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack, onLogout, onOpenContacts, onOpenGroups, onOpenAdminPanel,onOpenSmsIn, onOpenSettings, onOpenSubUsers, onStopImpersonation, onSwitchAccount, onUpdateAvailability, onGoHome, initialPhone }) => {
+const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack, onLogout, onOpenContacts, onOpenGroups, onOpenSendMessages, onOpenAdminPanel,onOpenSmsIn, onOpenSettings, onOpenSubUsers, onStopImpersonation, onSwitchAccount, onUpdateAvailability, onGoHome, initialPhone }) => {
   // Contacts panel state
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [contactsLoading, setContactsLoading] = useState(true);
@@ -1253,7 +1255,22 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
   // ─────────────────────────────────────────────────────────────────────────
 
   const can = usePermission(currentUser as any);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [isCompactLayout, setIsCompactLayout] = useState<boolean>(() => window.innerWidth <= 900);
   const firstName = currentUser?.name?.charAt(0)?.toUpperCase() || currentUser?.email?.charAt(0)?.toUpperCase() || '?';
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(max-width: 900px)');
+
+    const syncLayout = (e: MediaQueryList | MediaQueryListEvent) => {
+      setIsCompactLayout(e.matches);
+    };
+
+    syncLayout(mediaQuery);
+    const handleChange = (e: MediaQueryListEvent) => syncLayout(e);
+    mediaQuery.addEventListener('change', handleChange);
+    return () => mediaQuery.removeEventListener('change', handleChange);
+  }, []);
 
   // ── Availability badge (reps / rep_managers) ────────────────────────────
   const AVAILABILITY_OPTIONS: { value: 'available' | 'unavailable' | 'on_break'; label: string; dot: string; text: string; bg: string }[] = [
@@ -1778,84 +1795,56 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
   };
 
   return (
-    <div className="h-screen w-screen bg-[#f8fafc] flex flex-col font-medium text-right overflow-hidden" dir="rtl">
+    <div className="h-[100dvh] w-full bg-[#f8fafc] flex flex-col font-medium text-right overflow-hidden" dir="rtl">
       {/* Impersonation Banner */}
       <ImpersonationBanner currentUser={currentUser} onStopImpersonation={onStopImpersonation} token={token} onSwitchAccount={onSwitchAccount} />
       {/* Navbar */}
-      <nav className="h-20 bg-white border-b border-slate-100 flex items-center justify-between px-10 z-20 flex-shrink-0" dir="ltr">
-        <div className="flex items-center gap-4">
-          <button onClick={onLogout} className="p-2.5 text-slate-300 hover:text-red-500 transition-colors rounded-xl hover:bg-red-50">
-            <LogOut size={22} />
-          </button>
-          <img src="/images/mesergo-logo.png" alt="Logo" className="h-10 w-auto cursor-pointer" onClick={onBack} />
-        </div>
-        <div className="flex items-center gap-4">
-          {currentUser && (
-            <span className="text-sm font-bold text-slate-600">שלום, {currentUser.name || currentUser.email}</span>
-          )}
-          {showAvailability && (
-            <div ref={availabilityWrapperRef} className="relative" dir="rtl">
-              <button
-                type="button"
-                onClick={() => setAvailabilityOpen(v => !v)}
-                disabled={availabilitySaving}
-                title="שינוי סטטוס זמינות"
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-black border border-slate-200 ${currentAvailability.bg} ${currentAvailability.text} hover:shadow-sm transition-all disabled:opacity-60`}
-              >
-                <span className="relative flex h-2.5 w-2.5">
-                  {currentAvailability.value === 'available' && (
-                    <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-60 ${currentAvailability.dot}`}></span>
-                  )}
-                  <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${currentAvailability.dot}`}></span>
-                </span>
-                <span>{currentAvailability.label}</span>
-              </button>
-              {availabilityOpen && (
-                <div className="absolute mt-2 left-0 w-44 bg-white rounded-2xl shadow-xl border border-slate-100 py-2 z-50">
-                  {AVAILABILITY_OPTIONS.map(opt => {
-                    const isActive = opt.value === (currentUser?.availability_status || 'available');
-                    return (
-                      <button
-                        key={opt.value}
-                        onClick={() => handleAvailabilitySelect(opt.value)}
-                        className={`w-full flex items-center gap-2 px-4 py-2 text-sm font-bold text-right hover:bg-slate-50 transition-colors ${isActive ? 'bg-slate-50' : ''}`}
-                      >
-                        <span className={`inline-block h-2.5 w-2.5 rounded-full ${opt.dot}`}></span>
-                        <span className="flex-1 text-slate-700">{opt.label}</span>
-                        {isActive && <Check size={14} className="text-blue-600" />}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
-          {currentUser?.role === 'admin' && onOpenAdminPanel && (
+      <PageTopBar
+        currentUser={currentUser}
+        onBack={onBack ?? onGoHome ?? (() => {})}
+        onLogout={onLogout}
+        onOpenAdminPanel={onOpenAdminPanel}
+        showMobileNavToggle
+        mobileNavOpen={mobileNavOpen}
+        onMobileNavToggle={() => setMobileNavOpen((prev) => !prev)}
+        rightSlot={showAvailability ? (
+          <div ref={availabilityWrapperRef} className="relative" dir="rtl">
             <button
-              onClick={onOpenAdminPanel}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-100 text-blue-700 rounded-lg font-bold hover:bg-blue-200 transition-colors"
+              type="button"
+              onClick={() => setAvailabilityOpen(v => !v)}
+              disabled={availabilitySaving}
+              title="שינוי סטטוס זמינות"
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-black border border-slate-200 ${currentAvailability.bg} ${currentAvailability.text} hover:shadow-sm transition-all disabled:opacity-60`}
             >
-              <Shield size={18} />
-              פאנל ניהול
+              <span className="relative flex h-2.5 w-2.5">
+                {currentAvailability.value === 'available' && (
+                  <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-60 ${currentAvailability.dot}`}></span>
+                )}
+                <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${currentAvailability.dot}`}></span>
+              </span>
+              <span>{currentAvailability.label}</span>
             </button>
-          )}
-          <div className="relative">
-            <div
-              title={currentUser?.name || currentUser?.email || ''}
-              className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-sm shadow-md select-none cursor-pointer hover:scale-105 transition-transform"
-              onClick={onBack}
-            >
-              {firstName}
-            </div>
-            {showAvailability && (
-              <span
-                title={currentAvailability.label}
-                className={`absolute -bottom-0.5 -left-0.5 h-3 w-3 rounded-full ring-2 ring-white ${currentAvailability.dot}`}
-              />
+            {availabilityOpen && (
+              <div className="absolute mt-2 left-0 w-44 bg-white rounded-2xl shadow-xl border border-slate-100 py-2 z-50">
+                {AVAILABILITY_OPTIONS.map(opt => {
+                  const isActive = opt.value === (currentUser?.availability_status || 'available');
+                  return (
+                    <button
+                      key={opt.value}
+                      onClick={() => handleAvailabilitySelect(opt.value)}
+                      className={`w-full flex items-center gap-2 px-4 py-2 text-sm font-bold text-right hover:bg-slate-50 transition-colors ${isActive ? 'bg-slate-50' : ''}`}
+                    >
+                      <span className={`inline-block h-2.5 w-2.5 rounded-full ${opt.dot}`}></span>
+                      <span className="flex-1 text-slate-700">{opt.label}</span>
+                      {isActive && <Check size={14} className="text-blue-600" />}
+                    </button>
+                  );
+                })}
+              </div>
             )}
           </div>
-        </div>
-      </nav>
+        ) : undefined}
+      />
 
       {/* ── Bot Picker ─────────────────────────────────────────────────────── */}
       {showBotPicker ? (
@@ -1864,23 +1853,28 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
             <AppNav
               mode="sidebar"
               activePage="sessions"
+              hideMobileTrigger
+              mobileBreakpoint={900}
+              mobileMenuOpen={mobileNavOpen}
+              onMobileMenuOpenChange={setMobileNavOpen}
               onGoHome={onGoHome}
               onBots={onBack && can('bots.view_tab') ? onBack : undefined}
               onContacts={onOpenContacts ? () => onOpenContacts() : undefined}
               onGroups={onOpenGroups}
+              onSendMessages={onOpenSendMessages}
               onSmsIn={onOpenSmsIn}
               onSettings={onOpenSettings}
               onUsers={onOpenSubUsers && can('users.view') ? onOpenSubUsers : undefined}
             />
           )}
-          <div className="flex-1 overflow-y-auto p-10 bg-[#f8fafc]">
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-10 bg-[#f8fafc]">
           <div className="max-w-5xl mx-auto">
-            <div className="flex items-center gap-4 mb-8">
+            <div className="flex items-center gap-3 sm:gap-4 mb-6 sm:mb-8">
               <div className="w-12 h-12 bg-sky-50 text-sky-600 rounded-2xl flex items-center justify-center">
                 <MessageSquare size={26} />
               </div>
               <div>
-                <h1 className="text-3xl font-black text-slate-900">שיחות</h1>
+                <h1 className="text-2xl sm:text-3xl font-black text-slate-900">שיחות</h1>
                 <p className="text-slate-400 text-sm font-semibold mt-0.5">בחר מספר מחובר לצפייה בשיחות</p>
               </div>
             </div>
@@ -1890,7 +1884,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 <div className="animate-spin w-10 h-10 border-4 border-slate-200 border-t-sky-500 rounded-full" />
               </div>
             ) : (
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-5">
                 {/* All bots card */}
                 <button
                   onClick={() => { setActiveBotFilter(null); setShowBotPicker(false); }}
@@ -1929,16 +1923,21 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
           </div>
         </div>
       ) : (
-      <div className="flex-1 flex overflow-hidden">
+      <div className={`flex-1 flex overflow-hidden ${isCompactLayout ? 'flex-col' : 'flex-row'}`}>
         {(onGoHome || onBack) && (
           <AppNav
             mode="sidebar"
             activePage="sessions"
+            hideMobileTrigger
+            mobileBreakpoint={900}
+            mobileMenuOpen={mobileNavOpen}
+            onMobileMenuOpenChange={setMobileNavOpen}
             onGoHome={onGoHome}
             onBots={onBack && can('bots.view_tab') ? onBack : undefined}
             onSessions={botList.length > 1 ? () => { setActiveBotFilter(null); setSelectedPhone(null); setShowBotPicker(true); } : undefined}
             onContacts={onOpenContacts ? () => onOpenContacts() : undefined}
             onGroups={onOpenGroups}
+            onSendMessages={onOpenSendMessages}
             onSmsIn={onOpenSmsIn}
             onSettings={onOpenSettings}
             onUsers={onOpenSubUsers && can('users.view') ? onOpenSubUsers : undefined}
@@ -1946,9 +1945,9 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
         )}
 
         {/* ── Contacts panel (right side in RTL, ~25%) ── */}
-        <div className="w-[25%] flex-shrink-0 bg-white border-l border-slate-100 flex flex-col overflow-hidden">
+        <div className={`bg-white border-slate-100 flex-col overflow-hidden ${isCompactLayout ? 'w-full' : 'w-[25%] flex-shrink-0 border-l'} ${isCompactLayout && selectedPhone ? 'hidden' : 'flex'}`}>
           {/* Header */}
-          <div className="flex-shrink-0 px-5 py-4 border-b border-slate-100">
+          <div className="flex-shrink-0 px-4 lg:px-5 py-3 lg:py-4 border-b border-slate-100">
             {/* Bot filter breadcrumb — only shown when there are multiple bots */}
             {activeBotFilter && botList.length > 1 && (
               <button
@@ -2211,7 +2210,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
         </div>
 
         {/* ── Chat history area (second child = left side in RTL, ~70%) ── */}
-        <div className="flex-1 flex flex-col overflow-hidden bg-[#f8fafc]">
+        <div className={`flex-1 flex-col overflow-hidden bg-[#f8fafc] ${isCompactLayout ? (selectedPhone ? 'flex' : 'hidden') : 'flex'}`}>
           {!selectedPhone ? (
             <div className="flex-1 flex flex-col items-center justify-center gap-4 text-center px-8">
               <MessageSquare size={72} strokeWidth={0.7} className="text-slate-200" />
@@ -2221,12 +2220,12 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
           ) : (
             <>
               {/* Contact header */}
-              <div className="flex-shrink-0 px-6 py-4 bg-white border-b border-slate-100 flex items-center gap-4">
+              <div className="flex-shrink-0 px-3 sm:px-4 lg:px-6 py-3 lg:py-4 bg-white border-b border-slate-100 flex items-start sm:items-center gap-2 sm:gap-4 flex-wrap">
                 <div className={`w-11 h-11 rounded-2xl flex items-center justify-center flex-shrink-0
                   ${isSimulator(selectedPhone) ? 'bg-blue-50 text-blue-400' : 'bg-sky-50 text-sky-500'}`}>
                   {isSimulator(selectedPhone) ? <MessageSquare size={20} /> : <Phone size={20} />}
                 </div>
-                <div className="flex-1">
+                <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <p className="text-base font-black text-slate-900 flex items-center gap-1.5 flex-wrap">
                       {isSimulator(selectedPhone) ? 'סימולטור' : selectedPhone}
@@ -2380,7 +2379,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 )} */}
                 <button
                   onClick={() => setSelectedPhone(null)}
-                  className="p-2 hover:bg-slate-100 rounded-xl transition-colors text-slate-400"
+                  className={`p-2 hover:bg-slate-100 rounded-xl transition-colors text-slate-400 ${isCompactLayout ? '' : 'hidden'}`}
                 >
                   <X size={18} />
                 </button>
@@ -2430,7 +2429,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 /* Sessions ordered oldest (top) → newest (bottom) */
                 <div
                   ref={chatScrollRef}
-                  className="flex-1 overflow-y-auto p-3"
+                  className="flex-1 overflow-y-auto p-2 sm:p-3"
                   dir="rtl"
                   onScroll={() => {
                     const el = chatScrollRef.current;
@@ -2485,14 +2484,14 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
 
               {/* Message input bar */}
               {!phoneSessionsLoading && (
-                <div className="flex-shrink-0 bg-white border-t border-slate-100 px-4 py-3" dir="rtl">
+                <div className="flex-shrink-0 bg-white border-t border-slate-100 px-2 sm:px-3 lg:px-4 py-2.5 lg:py-3" dir="rtl">
                   {/* {phoneSessions.length === 0 && (
                     <div className="flex items-center gap-2 mb-2 px-1 py-2 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-700 font-semibold">
                       <span className="text-base">⚠️</span>
                       לקוח חדש — ניתן לשלוח הודעות תבנית בלבד. הקש <span className="font-black">/</span> לבחירת תבנית.
                     </div>
                   )} */}
-                  <div className="flex items-center gap-3 relative">
+                  <div className="flex flex-wrap sm:flex-nowrap items-end gap-2 sm:gap-3 relative">
                     {/* Template dropdown */}
                     {showTemplates && selectedPhone && (
                       <div className="absolute bottom-full left-0 right-0 mb-2 bg-white border border-slate-200 rounded-xl shadow-xl max-h-80 overflow-y-auto z-50">
@@ -2585,7 +2584,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                              : 'bg-sky-500 text-white opacity-40 cursor-not-allowed'}`}
                       */
                       disabled={(!agentMessage.trim() && !attachedFile) || agentSending}
-                      className={`w-10 h-10 flex-shrink-0 flex items-center justify-center rounded-2xl transition-colors self-end
+                      className={`order-2 sm:order-none w-10 h-10 flex-shrink-0 flex items-center justify-center rounded-2xl transition-colors self-end
                         ${(agentMessage.trim() || attachedFile) && !agentSending
                           ? 'bg-sky-500 text-white hover:bg-sky-600 cursor-pointer'
                           : 'bg-sky-500 text-white opacity-40 cursor-not-allowed'}`}
@@ -2598,7 +2597,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                       onClick={() => fileUploadRef.current?.click()}
                       title="צרף קובץ / תמונה / וידאו"
                       disabled={fileUploading}
-                      className={`w-10 h-10 flex-shrink-0 flex items-center justify-center rounded-2xl transition-colors cursor-pointer self-end
+                      className={`order-2 sm:order-none w-10 h-10 flex-shrink-0 flex items-center justify-center rounded-2xl transition-colors cursor-pointer self-end
                         ${fileUploading ? 'text-sky-500 bg-sky-50 animate-pulse' : 'text-slate-400 hover:text-sky-500 hover:bg-slate-100'}`}
                     >
                       {fileUploading
@@ -2614,7 +2613,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                       onChange={handleFileAttach}
                     />
                     {/* Composite input: preview thumbnail top-right + text below, all inside one bordered box */}
-                    <div className="flex-1 bg-slate-50 border border-slate-200 rounded-2xl overflow-hidden focus-within:ring-2 focus-within:ring-sky-500/20 focus-within:border-sky-400 transition-all">
+                    <div className="order-1 basis-full sm:basis-auto sm:flex-1 bg-slate-50 border border-slate-200 rounded-2xl overflow-hidden focus-within:ring-2 focus-within:ring-sky-500/20 focus-within:border-sky-400 transition-all">
                       {attachedFile && (
                         <div className="flex justify-start px-2 pt-2">
                           <div className="relative inline-block">

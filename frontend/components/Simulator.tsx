@@ -832,6 +832,26 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
               break;
             }
           }
+        } else if (routingMode === 'weekday') {
+          const israelDay = israelTime.getDay(); // 0=Sunday ... 6=Saturday
+          const weekdayRanges = node.data.weekdayRanges || [];
+          for (let i = 0; i < weekdayRanges.length; i++) {
+            const range = weekdayRanges[i];
+            const fromDay = Number.isInteger(range.fromDay) ? range.fromDay : 0;
+            const toDay = Number.isInteger(range.toDay) ? range.toDay : 6;
+
+            let inRange = false;
+            if (fromDay <= toDay) {
+              inRange = israelDay >= fromDay && israelDay <= toDay;
+            } else {
+              inRange = israelDay >= fromDay || israelDay <= toDay;
+            }
+
+            if (inRange) {
+              matchedIndex = i;
+              break;
+            }
+          }
         } else {
           const israelHour = israelTime.getHours();
           const timeRanges = node.data.timeRanges || [];

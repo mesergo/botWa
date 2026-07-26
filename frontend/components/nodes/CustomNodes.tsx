@@ -1269,12 +1269,24 @@ export const FixedProcessNode = (props: any) => (
 );
 
 export const ActionTimeRoutingNode = (props: any) => {
-  const routingMode = props.data.routingMode || 'time';
+  const routingMode: 'time' | 'date' | 'weekday' = props.data.routingMode || 'time';
   const timeRanges = props.data.timeRanges || [];
   const dateRanges = props.data.dateRanges || [];
+  const weekdayRanges = props.data.weekdayRanges || [];
   const isDateMode = routingMode === 'date';
+  const isWeekdayMode = routingMode === 'weekday';
 
-  const setMode = (mode: 'time' | 'date') => {
+  const WEEKDAYS = [
+    { value: 0, label: 'ראשון' },
+    { value: 1, label: 'שני' },
+    { value: 2, label: 'שלישי' },
+    { value: 3, label: 'רביעי' },
+    { value: 4, label: 'חמישי' },
+    { value: 5, label: 'שישי' },
+    { value: 6, label: 'שבת' },
+  ];
+
+  const setMode = (mode: 'time' | 'date' | 'weekday') => {
     props.data.onChange({ routingMode: mode });
   };
 
@@ -1309,7 +1321,22 @@ export const ActionTimeRoutingNode = (props: any) => {
     props.data.onChange({ dateRanges: dateRanges.filter((_: any, i: number) => i !== index) });
   };
 
-  const nodeTitle = isDateMode ? 'ניתוב לפי תאריך' : 'ניתוב לפי שעות';
+  // Weekday mode helpers
+  const updateWeekdayRange = (index: number, field: 'fromDay' | 'toDay', value: number) => {
+    const newRanges = [...weekdayRanges];
+    newRanges[index] = { ...newRanges[index], [field]: value };
+    props.data.onChange({ weekdayRanges: newRanges });
+  };
+
+  const addWeekdayRange = () => {
+    props.data.onChange({ weekdayRanges: [...weekdayRanges, { fromDay: 0, toDay: 4 }] });
+  };
+
+  const removeWeekdayRange = (index: number) => {
+    props.data.onChange({ weekdayRanges: weekdayRanges.filter((_: any, i: number) => i !== index) });
+  };
+
+  const nodeTitle = isDateMode ? 'ניתוב לפי תאריך' : isWeekdayMode ? 'ניתוב לפי ימי שבוע' : 'ניתוב לפי שעות';
 
   return (
     <BaseNode id={props.id} title={nodeTitle} icon={<Clock size={20} />} type={NodeType.ACTION_TIME_ROUTING} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} isSearchMatch={props.data.isSearchMatch}>
@@ -1319,20 +1346,26 @@ export const ActionTimeRoutingNode = (props: any) => {
         <div className="flex rounded-xl overflow-hidden border border-slate-200">
           <button
             onClick={() => setMode('time')}
-            className={`flex-1 py-2 text-sm font-bold nodrag transition-colors ${!isDateMode ? 'bg-orange-500 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}`}
+            className={`flex-1 py-2 text-sm font-bold nodrag transition-colors ${routingMode === 'time' ? 'bg-orange-500 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}`}
           >
             לפי שעה
           </button>
           <button
             onClick={() => setMode('date')}
-            className={`flex-1 py-2 text-sm font-bold nodrag transition-colors ${isDateMode ? 'bg-orange-500 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}`}
+            className={`flex-1 py-2 text-sm font-bold nodrag transition-colors ${routingMode === 'date' ? 'bg-orange-500 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}`}
           >
             לפי תאריך
+          </button>
+          <button
+            onClick={() => setMode('weekday')}
+            className={`flex-1 py-2 text-sm font-bold nodrag transition-colors ${routingMode === 'weekday' ? 'bg-orange-500 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}`}
+          >
+            לפי יום
           </button>
         </div>
 
         <label className="block text-[14px] font-bold text-slate-400 uppercase tracking-widest">
-          {isDateMode ? 'טווחי תאריכים' : 'טווחי שעות'}
+          {isDateMode ? 'טווחי תאריכים' : isWeekdayMode ? 'טווחי ימים' : 'טווחי שעות'}
         </label>
 
         {/* Default option */}
@@ -1340,13 +1373,13 @@ export const ActionTimeRoutingNode = (props: any) => {
           <DeletableHandle nodeId={props.id} handleId="option-default" style={{ top: '50%', right: -10 }} />
           <div className="flex-1 text-center py-2">
             <span className="text-sm font-bold text-slate-600">
-              {isDateMode ? 'ברירת מחדל (כל שאר התאריכים)' : 'ברירת מחדל (כל שאר השעות)'}
+              {isDateMode ? 'ברירת מחדל (כל שאר התאריכים)' : isWeekdayMode ? 'ברירת מחדל (כל שאר הימים)' : 'ברירת מחדל (כל שאר השעות)'}
             </span>
           </div>
         </div>
 
         {/* Time ranges */}
-        {!isDateMode && timeRanges.map((range: any, i: number) => (
+        {routingMode === 'time' && timeRanges.map((range: any, i: number) => (
           <div key={i} className="flex items-center gap-2 p-3 bg-slate-50 border border-slate-100 rounded-2xl group/item relative transition-colors hover:bg-white hover:border-orange-100">
             <DeletableHandle nodeId={props.id} handleId={`option-${i}`} style={{ top: '50%', right: -10 }} />
 
@@ -1384,7 +1417,7 @@ export const ActionTimeRoutingNode = (props: any) => {
         ))}
 
         {/* Date ranges */}
-        {isDateMode && dateRanges.map((range: any, i: number) => (
+        {routingMode === 'date' && dateRanges.map((range: any, i: number) => (
           <div key={i} className="flex items-center gap-1 p-1.5 bg-slate-50 border border-slate-100 rounded-xl group/item relative transition-colors hover:bg-white hover:border-orange-100">
             <DeletableHandle nodeId={props.id} handleId={`option-${i}`} style={{ top: '50%', right: -10 }} />
 
@@ -1417,11 +1450,51 @@ export const ActionTimeRoutingNode = (props: any) => {
           </div>
         ))}
 
+        {/* Weekday ranges */}
+        {routingMode === 'weekday' && weekdayRanges.map((range: any, i: number) => (
+          <div key={i} className="flex items-center gap-1 p-1.5 bg-slate-50 border border-slate-100 rounded-xl group/item relative transition-colors hover:bg-white hover:border-orange-100">
+            <DeletableHandle nodeId={props.id} handleId={`option-${i}`} style={{ top: '50%', right: -10 }} />
+
+            <div className="flex-1">
+              <div className="flex gap-1 items-center" dir="rtl">
+                <span className="text-xs font-bold text-slate-500 whitespace-nowrap">מ</span>
+                <select
+                  value={Number.isInteger(range.fromDay) ? range.fromDay : 0}
+                  onChange={(e) => updateWeekdayRange(i, 'fromDay', parseInt(e.target.value, 10))}
+                  className="flex-1 min-w-0 px-1 py-1 border border-slate-200 rounded-lg nodrag font-bold text-xs bg-white"
+                >
+                  {WEEKDAYS.map((d) => (
+                    <option key={`from-${d.value}`} value={d.value}>{d.label}</option>
+                  ))}
+                </select>
+                <span className="text-xs font-bold text-slate-500 whitespace-nowrap">עד</span>
+                <select
+                  value={Number.isInteger(range.toDay) ? range.toDay : 4}
+                  onChange={(e) => updateWeekdayRange(i, 'toDay', parseInt(e.target.value, 10))}
+                  className="flex-1 min-w-0 px-1 py-1 border border-slate-200 rounded-lg nodrag font-bold text-xs bg-white"
+                >
+                  {WEEKDAYS.map((d) => (
+                    <option key={`to-${d.value}`} value={d.value}>{d.label}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <button
+              onClick={() => removeWeekdayRange(i)}
+              className="w-6 h-6 rounded-md flex items-center justify-center text-slate-200 hover:text-red-500 hover:bg-red-50 transition-all opacity-0 group-hover/item:opacity-100 nodrag flex-shrink-0"
+              title="מחק טווח"
+            >
+              <X size={13} />
+            </button>
+          </div>
+        ))}
+
         <button
-          onClick={isDateMode ? addDateRange : addTimeRange}
+          onClick={routingMode === 'date' ? addDateRange : routingMode === 'weekday' ? addWeekdayRange : addTimeRange}
           className="w-full mt-2 py-4 text-[13px] font-bold bg-white text-blue-600 rounded-2xl border-2 border-dashed border-blue-100 hover:bg-blue-50 hover:border-blue-400 flex items-center justify-center gap-2 transition-all nodrag uppercase tracking-wider"
         >
-          <Plus size={18} /> {isDateMode ? 'הוסף טווח תאריכים' : 'הוסף טווח שעות'}
+          <Plus size={18} /> {routingMode === 'date' ? 'הוסף טווח תאריכים' : routingMode === 'weekday' ? 'הוסף טווח ימים' : 'הוסף טווח שעות'}
         </button>
       </div>
     </BaseNode>

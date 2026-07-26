@@ -240,16 +240,39 @@ export const initializeFromTemplate = async (req, res) => {
       await Option.deleteMany({ widget_id: node.id });
 
       if (isTimeRouting) {
-        const timeRanges = node.data.timeRanges || [];
-        for (let i = 0; i < timeRanges.length; i++) {
-          const range = timeRanges[i];
+        const routingMode = node.data.routingMode || 'time';
+        let ranges = [];
+        let operator = 'time_range';
+
+        if (routingMode === 'date') {
+          ranges = node.data.dateRanges || [];
+          operator = 'date_range';
+        } else if (routingMode === 'weekday') {
+          ranges = node.data.weekdayRanges || [];
+          operator = 'weekday_range';
+        } else {
+          ranges = node.data.timeRanges || [];
+          operator = 'time_range';
+        }
+
+        for (let i = 0; i < ranges.length; i++) {
+          const range = ranges[i];
           const optionEdge = processedEdges.find(e => e.source === node.id && e.sourceHandle === `option-${i}`);
+          let value = '';
+          if (operator === 'date_range') {
+            value = `${range.fromDate || ''}|${range.toDate || ''}`;
+          } else if (operator === 'weekday_range') {
+            value = `${Number.isInteger(range.fromDay) ? range.fromDay : 0}-${Number.isInteger(range.toDay) ? range.toDay : 6}`;
+          } else {
+            value = `${range.fromHour}-${range.toHour}`;
+          }
+
           await Option.create({
             widget_id: node.id,
-            value: `${range.fromHour}-${range.toHour}`,
+            value,
             next: optionEdge ? optionEdge.target : null,
             image_url: null,
-            operator: 'time_range'
+            operator
           });
         }
         const defaultEdge = processedEdges.find(e => e.source === node.id && e.sourceHandle === 'option-default');
@@ -488,17 +511,35 @@ export const createTemplateFromBot = async (req, res) => {
         const metadata = w.image_file || {};
 
         if (w.type === 'action_time_routing') {
-          const timeRanges = nodeOptions
-            .filter(o => o.operator === 'time_range')
-            .map(o => {
-              const [fromHour, toHour] = o.value.split('-').map(Number);
-              return { fromHour, toHour };
-            });
+          const routingMode = metadata.routingMode || 'time';
+          let ranges = {};
+          if (routingMode === 'date') {
+            ranges.dateRanges = nodeOptions
+              .filter(o => o.operator === 'date_range')
+              .map(o => {
+                const [fromDate, toDate] = o.value.split('|');
+                return { fromDate, toDate };
+              });
+          } else if (routingMode === 'weekday') {
+            ranges.weekdayRanges = nodeOptions
+              .filter(o => o.operator === 'weekday_range')
+              .map(o => {
+                const [fromDay, toDay] = o.value.split('-').map(Number);
+                return { fromDay, toDay };
+              });
+          } else {
+            ranges.timeRanges = nodeOptions
+              .filter(o => o.operator === 'time_range')
+              .map(o => {
+                const [fromHour, toHour] = o.value.split('-').map(Number);
+                return { fromHour, toHour };
+              });
+          }
           return {
             id: w.id,
             type: w.type,
             position: { x: w.pos_x || 0, y: w.pos_y || 0 },
-            data: { ...metadata, timeRanges }
+            data: { ...metadata, ...ranges }
           };
         }
 
@@ -529,8 +570,8 @@ export const createTemplateFromBot = async (req, res) => {
             if (o.next) {
               const sourceHandle = o.operator === 'default' ? 'option-default' : `option-${timeRangeIndex}`;
               edges.push({ id: `e-${w.id}-${sourceHandle}-${o.next}`, source: w.id, sourceHandle, target: o.next, type: 'button' });
-              if (o.operator === 'time_range') timeRangeIndex++;
-            } else if (o.operator === 'time_range') {
+              if (o.operator === 'time_range' || o.operator === 'date_range' || o.operator === 'weekday_range') timeRangeIndex++;
+            } else if (o.operator === 'time_range' || o.operator === 'date_range' || o.operator === 'weekday_range') {
               timeRangeIndex++;
             }
           });

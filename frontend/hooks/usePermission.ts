@@ -41,13 +41,15 @@ function roleDefaultCheck(role: string | undefined, key: string): boolean {
     // 'sms_in.view' intentionally excluded: shown only per-user via the admin checkbox (User.sms_in_enabled)
     'settings.view','settings.edit_profile',
     'users.view','users.add','users.edit','users.delete',
-    'rep_groups.view','rep_groups.add','rep_groups.delete'
+    'rep_groups.view','rep_groups.add','rep_groups.delete',
+    'send_messages.view','send_messages.send'
   ];
   const repManagerKeys = [
     'sessions.view','sessions.add','sessions.view_all','sessions.templates_as_manager',
     'contacts.view','contacts.add','contacts.edit',
     'groups.view','groups.send_message',
-    'settings.view','settings.edit_profile'
+    'settings.view','settings.edit_profile',
+    'send_messages.view','send_messages.send'
   ];
   const repKeys = [
     'sessions.view','sessions.view_assigned_only','sessions.templates_as_rep',

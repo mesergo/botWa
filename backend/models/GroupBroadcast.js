@@ -2,8 +2,19 @@ import mongoose from 'mongoose';
 
 const groupBroadcastSchema = new mongoose.Schema({
   user_id: { type: String, required: true, index: true },
-  group_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Group', required: true, index: true },
+  group_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Group', index: true },
   group_name: { type: String, default: '' },
+
+  // 'group' = classic single-group broadcast (default, backward compatible).
+  // 'custom' = multi-source broadcast from the "שליחת הודעות" tab (contacts + groups + manual phones combined).
+  audience_type: { type: String, enum: ['group', 'custom'], default: 'group' },
+  // Immutable snapshot of the final deduped recipient contact ids — used by the scheduled
+  // ticker and resumeBroadcast for custom sends (there's no single live group to re-query).
+  audience_contact_ids: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Contact' }],
+  // Which distribution lists (if any) contributed to a custom send — audit/display only.
+  source_group_ids: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Group' }],
+  // Manually typed phone numbers that contributed to a custom send — audit/display only.
+  manual_phones: { type: [String], default: [] },
 
   // What was sent
   is_template: { type: Boolean, default: false },

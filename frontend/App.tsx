@@ -15,6 +15,7 @@ import ContactsPage from './components/ContactsPage';
 import SessionsPage from './components/SessionsPage';
 import GroupsPage from './components/GroupsPage';
 import SmsInPage from './components/SmsInPage';
+import SendMessagesPage from './components/SendMessagesPage';
 import { StartNode, InputTextNode, InputDateNode, InputFileNode, OutputTextNode, OutputImageNode, OutputLinkNode, OutputMenuNode, ActionWebServiceNode, ActionWaitNode, ActionTimeRoutingNode, ActionAddToGroupNode, ActionRemoveFromGroupNode, ActionTransferToAgentNode, ActionSetParameterNode, FixedProcessNode, AutomaticResponsesNode } from './components/nodes/CustomNodes';
 import ButtonEdge from './components/edges/ButtonEdge';
 import { CloudUpload, RotateCcw, Plus, AlertTriangle, Copy, X, Lock, Wallet, Sliders, Save } from 'lucide-react';
@@ -1089,7 +1090,8 @@ const FlowBuilder: React.FC = () => {
         case NodeType.ACTION_TIME_ROUTING: {
           const trCount = (node.data.timeRanges || []).length;
           const drCount = (node.data.dateRanges || []).length;
-          const rangeCount = Math.max(trCount, drCount);
+          const wrCount = (node.data.weekdayRanges || []).length;
+          const rangeCount = Math.max(trCount, drCount, wrCount);
           height += 250; // mode toggle + label + default option + add button + space-y-4 gaps (~232px content)
           height += rangeCount * 90; // per range row: p-3 + inputs (~70px) + space-y-4 gap (16px) ≈ 86px
           break;
@@ -1283,6 +1285,22 @@ const FlowBuilder: React.FC = () => {
     }
     const data = await res.json();
     setBots(prev => prev.map(b => b.id === id ? { ...b, restart_keyword: data.restart_keyword } : b));
+  };
+
+  const handleRenameBot = async (id: string, newName: string) => {
+    if (!token) return;
+    try {
+      const res = await fetch(`${API_BASE}/bots/${id}/name`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ name: newName }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setBots(prev => prev.map(b => b.id === id ? { ...b, name: data.name } : b));
+        setSelectedBot(prev => prev && prev.id === id ? { ...prev, name: data.name } : prev);
+      }
+    } catch (e) { console.error('Failed to rename bot', e); }
   };
 
   // Update current user's availability status (rep / rep_manager)
@@ -2139,7 +2157,7 @@ const FlowBuilder: React.FC = () => {
       [NodeType.OUTPUT_MENU]: 'תפריט בחירה',
       [NodeType.ACTION_WEB_SERVICE]: 'קריאת API',
       [NodeType.ACTION_WAIT]: 'המתנה',
-      [NodeType.ACTION_TIME_ROUTING]: 'ניתוב לפי שעה',
+      [NodeType.ACTION_TIME_ROUTING]: 'ניתוב לפי שעה/תאריך/יום',
       [NodeType.ACTION_ADD_TO_GROUP]: 'הוספה/הסרה מקבוצה',
       [NodeType.ACTION_REMOVE_FROM_GROUP]: 'הסר מקבוצה',
       [NodeType.ACTION_TRANSFER_TO_AGENT]: 'העברה לנציג',
@@ -2521,6 +2539,7 @@ const FlowBuilder: React.FC = () => {
               onLogout={handleLogout}
               onOpenSessions={can('sessions.view') ? (phone?: string) => { setSessionsInitialPhone(phone ?? null); setSessionsOwnOnly(true); navigate('/sessions'); } : undefined}
               onOpenGroups={can('groups.view') ? () => navigate('/groups') : undefined}
+              onOpenSendMessages={can('send_messages.view') ? () => navigate('/send-messages') : undefined}
               onOpenSmsIn={can('sms_in.view') ? () => navigate('/sms-in') : undefined}
               onOpenAdminPanel={() => navigate('/admin')}
               onOpenSettings={can('settings.view') ? () => navigate('/settings') : undefined}
@@ -2539,6 +2558,7 @@ const FlowBuilder: React.FC = () => {
               onLogout={handleLogout}
               onOpenContacts={can('contacts.view') ? (phone?: string) => { setContactsInitialPhone(phone ?? null); navigate('/contacts'); } : undefined}
               onOpenSessions={can('sessions.view') ? (phone?: string) => { setSessionsInitialPhone(phone ?? null); setSessionsOwnOnly(true); navigate('/sessions'); } : undefined}
+              onOpenSendMessages={can('send_messages.view') ? () => navigate('/send-messages') : undefined}
               onOpenSmsIn={can('sms_in.view') ? () => navigate('/sms-in') : undefined}
               onOpenAdminPanel={() => navigate('/admin')}
               onOpenSettings={can('settings.view') ? () => navigate('/settings') : undefined}
@@ -2556,6 +2576,7 @@ const FlowBuilder: React.FC = () => {
               onLogout={handleLogout}
               onOpenContacts={can('contacts.view') ? (phone?: string) => { setContactsInitialPhone(phone ?? null); navigate('/contacts'); } : undefined}
               onOpenGroups={can('groups.view') ? () => navigate('/groups') : undefined}
+              onOpenSendMessages={can('send_messages.view') ? () => navigate('/send-messages') : undefined}
               onOpenSmsIn={can('sms_in.view') ? () => navigate('/sms-in') : undefined}
               onOpenAdminPanel={() => navigate('/admin')}
               ownOnly={sessionsOwnOnly}
@@ -2581,6 +2602,7 @@ const FlowBuilder: React.FC = () => {
                 onOpenContacts={() => navigate('/contacts')}
                 onOpenSessions={() => { setSessionsOwnOnly(true); navigate('/sessions'); }}
                 onOpenGroups={() => navigate('/groups')}
+                onOpenSendMessages={can('send_messages.view') ? () => navigate('/send-messages') : undefined}
                 onOpenSmsIn={can('sms_in.view') ? () => navigate('/sms-in') : undefined}
                 onStopImpersonation={handleStopImpersonation}
                 onSwitchAccount={handleSwitchAccount}
@@ -2621,6 +2643,7 @@ const FlowBuilder: React.FC = () => {
               onOpenContacts={() => navigate('/contacts')}
               onOpenSessions={() => { setSessionsOwnOnly(true); navigate('/sessions'); }}
               onOpenGroups={() => navigate('/groups')}
+              onOpenSendMessages={can('send_messages.view') ? () => navigate('/send-messages') : undefined}
               onOpenSmsIn={can('sms_in.view') ? () => navigate('/sms-in') : undefined}
               onStopImpersonation={handleStopImpersonation}
               onSwitchAccount={handleSwitchAccount}
@@ -2647,6 +2670,7 @@ const FlowBuilder: React.FC = () => {
               onOpenContacts={() => navigate('/contacts')}
               onOpenSessions={() => { setSessionsOwnOnly(true); navigate('/sessions'); }}
               onOpenGroups={() => navigate('/groups')}
+              onOpenSendMessages={can('send_messages.view') ? () => navigate('/send-messages') : undefined}
               onOpenSmsIn={can('sms_in.view') ? () => navigate('/sms-in') : undefined}
               onStopImpersonation={handleStopImpersonation}
               onSwitchAccount={handleSwitchAccount}
@@ -2670,7 +2694,27 @@ const FlowBuilder: React.FC = () => {
               onOpenSessions={can('sessions.view') ? (phone?: string) => { setSessionsInitialPhone(phone ?? null); setSessionsOwnOnly(true); navigate('/sessions'); } : undefined}
               onOpenContacts={can('contacts.view') ? (phone?: string) => { setContactsInitialPhone(phone ?? null); navigate('/contacts'); } : undefined}
               onOpenGroups={can('groups.view') ? () => navigate('/groups') : undefined}
+              onOpenSendMessages={can('send_messages.view') ? () => navigate('/send-messages') : undefined}
               onOpenAdminPanel={currentUser?.role === 'admin' ? () => navigate('/admin') : undefined}
+              onOpenSettings={can('settings.view') ? () => navigate('/settings') : undefined}
+              onOpenSubUsers={can('users.view') ? () => navigate('/users') : undefined}
+              onStopImpersonation={handleStopImpersonation}
+              onSwitchAccount={handleSwitchAccount}
+            />
+          } />
+          <Route path="/send-messages" element={
+            !can('send_messages.view') ? <Navigate to="/" replace /> :
+            <SendMessagesPage
+              token={token}
+              currentUser={currentUser}
+              onBack={() => navigate('/dashboard')}
+              onGoHome={() => navigate('/')}
+              onLogout={handleLogout}
+              onOpenContacts={can('contacts.view') ? (phone?: string) => { setContactsInitialPhone(phone ?? null); navigate('/contacts'); } : undefined}
+              onOpenSessions={can('sessions.view') ? (phone?: string) => { setSessionsInitialPhone(phone ?? null); setSessionsOwnOnly(true); navigate('/sessions'); } : undefined}
+              onOpenGroups={can('groups.view') ? () => navigate('/groups') : undefined}
+              onOpenSmsIn={can('sms_in.view') ? () => navigate('/sms-in') : undefined}
+              onOpenAdminPanel={() => navigate('/admin')}
               onOpenSettings={can('settings.view') ? () => navigate('/settings') : undefined}
               onOpenSubUsers={can('users.view') ? () => navigate('/users') : undefined}
               onStopImpersonation={handleStopImpersonation}
@@ -2729,6 +2773,7 @@ const FlowBuilder: React.FC = () => {
         onNavigateToProcessResult={navigateToProcessResult}
         onOpenBotSettings={can('bots.settings') ? () => setIsBotSettingsOpen(true) : undefined}
         onRenameProcess={handleRenameProcess}
+        onRenameBot={handleRenameBot}
         saveStatus={saveStatus}
         sidebarProps={{
           fixedProcesses,

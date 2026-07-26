@@ -5,7 +5,7 @@ import {
   Search, Trash2, Edit2, Ban, CheckCircle, BarChart2, Settings, 
   FileText, Save, Plus, Eye, EyeOff, Bot, ChevronRight, LayoutDashboard,
   CreditCard, MoreVertical, X, Star, Globe, Lock, Copy, List, Phone, Clock,
-  ChevronDown, ChevronUp, ToggleLeft, ToggleRight, XCircle, MessageSquare,
+  ChevronDown, ChevronUp, ToggleLeft, ToggleRight, XCircle, MessageSquare, Menu,
   User as UserIcon, ExternalLink, Sliders, Image as ImageIcon, Layers,
   UserCheck, Headphones, UserMinus, RefreshCcw
 } from 'lucide-react';
@@ -92,7 +92,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
   type AdminTab = 'dashboard' | 'users' | 'user-types' | 'templates' | 'settings' | 'sessions' | 'dialog360' | 'removal-log';
   const VALID_TABS: AdminTab[] = ['dashboard', 'users', 'user-types', 'templates', 'settings', 'sessions', 'dialog360', 'removal-log'];
   const activeTab: AdminTab = (VALID_TABS.includes(tab as AdminTab) ? tab : 'dashboard') as AdminTab;
-  const setActiveTab = (t: AdminTab) => navigate(`/admin/${t}`);
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const setActiveTab = (t: AdminTab) => {
+    navigate(`/admin/${t}`);
+    setIsMobileSidebarOpen(false);
+  };
   const [users, setUsers] = useState<User[]>([]);
   const [stats, setStats] = useState<SystemStats | null>(null);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
@@ -223,6 +227,25 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
     if (activeTab === 'dialog360') fetchDialog360Templates();
     if (activeTab === 'users' || activeTab === 'user-types') fetchUserTypesForModal();
   }, [activeTab]);
+
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth >= 768) {
+        setIsMobileSidebarOpen(false);
+      }
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  useEffect(() => {
+    if (!isMobileSidebarOpen || window.innerWidth >= 768) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [isMobileSidebarOpen]);
 
   // Refetch when page changes
   useEffect(() => {
@@ -1123,7 +1146,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
 
   // Render Component
   return (
-    <div className="flex h-screen bg-[#F8FAFC] text-slate-900 font-sans selection:bg-indigo-100 selection:text-indigo-900" dir="rtl" style={{ fontFamily: "'Heebo', sans-serif" }}>
+    <div className="relative flex items-start min-h-screen bg-[#F8FAFC] text-slate-900 font-sans selection:bg-indigo-100 selection:text-indigo-900 overflow-x-hidden" dir="rtl" style={{ fontFamily: "'Heebo', sans-serif" }}>
       <style>{`
         @keyframes fadeIn {
           from { opacity: 0; }
@@ -1171,9 +1194,18 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
           background-color: #0284C7;
         }
       `}</style>
+
+      {isMobileSidebarOpen && (
+        <button
+          type="button"
+          aria-label="סגור תפריט"
+          onClick={() => setIsMobileSidebarOpen(false)}
+          className="fixed inset-0 bg-slate-900/40 z-30 md:hidden"
+        />
+      )}
       
       {/* Sidebar Navigation */}
-      <aside className="w-72 bg-white flex flex-col z-30 border-l border-slate-100 shadow-[4px_0_24px_rgba(0,0,0,0.02)]">
+      <aside className={`fixed md:relative inset-y-0 right-0 w-72 max-w-[85vw] bg-white flex flex-col z-40 border-l border-slate-100 shadow-[4px_0_24px_rgba(0,0,0,0.12)] md:shadow-[4px_0_24px_rgba(0,0,0,0.02)] transform transition-transform duration-300 ${isMobileSidebarOpen ? 'translate-x-0' : 'translate-x-full md:translate-x-0'}`}>
         <div className="p-8 pb-6">
           <div className="flex items-center gap-3 mb-10">
            <div 
@@ -1224,14 +1256,24 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
       </aside>
 
       {/* Main Content Area */}
-      <main className="flex-1 flex flex-col min-w-0 overflow-hidden bg-[#F8FAFC]">
+      <main className="flex-1 w-full flex flex-col min-w-0 overflow-visible bg-[#F8FAFC]">
         {/* Decorative Background Elements */}
         <div className="absolute top-0 left-0 w-full h-96 bg-gradient-to-b from-indigo-50/50 to-transparent pointer-events-none z-0"></div>
         
         {/* Top Header */}
-        <header className="h-24 px-10 flex items-center justify-between z-10 sticky top-0 bg-[#F8FAFC]/80 backdrop-blur-md">
-          <div className="animate-slide-in">
-            <h2 className="text-2xl font-black text-slate-800 tracking-tight">
+        <header className="min-h-20 px-4 sm:px-6 lg:px-10 py-4 sm:py-5 flex items-start sm:items-center gap-3 z-10 sticky top-0 bg-[#F8FAFC]/80 backdrop-blur-md">
+          <div className="flex items-start sm:items-center gap-3 sm:gap-4 min-w-0">
+            <button
+              type="button"
+              onClick={() => setIsMobileSidebarOpen(true)}
+              className="md:hidden inline-flex items-center justify-center w-10 h-10 text-slate-700 hover:text-sky-600 transition-colors flex-shrink-0"
+              aria-label="פתח תפריט"
+            >
+              <Menu size={18} />
+            </button>
+
+            <div className="animate-slide-in min-w-0">
+            <h2 className="text-xl sm:text-2xl font-black text-slate-800 tracking-tight leading-tight">
               {activeTab === 'dashboard' && 'לוח בקרה'}
               {activeTab === 'users' && 'ניהול לקוחות'}
               {activeTab === 'user-types' && 'סוגי משתמשים'}
@@ -1241,7 +1283,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
               {activeTab === 'settings' && 'הגדרות מערכת'}
               {activeTab === 'removal-log' && 'לוג פעילות הסרה'}
             </h2>
-            <p className="text-sm font-medium text-slate-400 mt-1">
+            <p className="hidden sm:block text-sm font-medium text-slate-400 mt-1">
               {activeTab === 'dashboard' && 'סקירה מקיפה על נתוני וביצועי המערכת'}
               {activeTab === 'users' && 'צפייה, עריכה וניהול הרשאות משתמשים מתקדם'}
               {activeTab === 'user-types' && 'הגדרת הרשאות לכל סוג משתמש במערכת'}
@@ -1251,12 +1293,13 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
               {activeTab === 'settings' && 'הגדרת מגבלות, מחירים ופרמטרים למערכת'}
               {activeTab === 'removal-log' && 'היסטוריית שינויים בהגדרות ההסרה האוטומטית'}
             </p>
+            </div>
           </div>
 
         </header>
 
         {/* Content Scroll Area */}
-        <div className={`flex-1 z-10 ${activeTab === 'sessions' ? 'overflow-hidden' : 'overflow-y-auto px-10 pb-10 pt-2'}`}>
+        <div className={`flex-1 min-h-0 z-10 ${activeTab === 'sessions' ? 'overflow-hidden' : 'overflow-visible px-4 sm:px-6 lg:px-10 pb-6 sm:pb-10 pt-2'}`}>
           
           {error && (
             <div className="bg-red-50 border-r-4 border-red-500 p-4 mb-8 rounded-xl shadow-sm flex items-center gap-4 animate-fade-in group hover:bg-red-100/50 transition-colors">
@@ -1268,10 +1311,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
 
           {/* SESSIONS TAB */}
           {activeTab === 'sessions' && (
-            <div className="flex flex-row h-full overflow-hidden">
+            <div className="flex flex-col xl:flex-row h-full overflow-hidden">
 
               {/* LEFT: Sessions list (flex-1, scrollable) */}
-              <div className="flex-1 overflow-y-auto px-10 pb-10 pt-2">
+              <div className="flex-1 overflow-y-auto px-4 sm:px-6 lg:px-10 pb-6 sm:pb-10 pt-2">
                 <div className="space-y-4 animate-fade-in-up" dir="rtl">
                   {/* Search bar with submit */}
                   <div className="relative max-w-md mb-6">
@@ -1304,8 +1347,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                       </p>
 
                       {/* Table */}
-                      <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
-                        <table className="w-full text-sm" dir="rtl">
+                      <div className="bg-white border border-slate-200 rounded-2xl overflow-x-auto shadow-sm">
+                        <table className="w-full min-w-[760px] text-sm" dir="rtl">
                           <thead>
                             <tr className="border-b border-slate-100 bg-slate-50/80">
                               <th className="text-right px-4 py-3 text-xs font-black text-slate-400 uppercase tracking-widest">טלפון</th>
@@ -1492,7 +1535,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                     d.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
                 };
                 return (
-                  <div className="w-1/4 flex-shrink-0 border-l border-slate-200 flex flex-col overflow-hidden bg-white shadow-lg">
+                  <div className="w-full xl:w-[30%] 2xl:w-1/4 flex-shrink-0 border-t xl:border-t-0 xl:border-l border-slate-200 flex flex-col overflow-hidden bg-white shadow-lg max-h-[48vh] xl:max-h-none">
                     {/* Panel header */}
                     <div className="flex-shrink-0 px-4 py-3.5 bg-slate-900 text-white flex items-center justify-between">
                       <div className="flex items-center gap-2.5">
@@ -1819,7 +1862,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
 
           {/* USERS TAB */}
           {activeTab === 'users' && (
-            <div className="grid grid-cols-12 gap-6 h-[calc(100vh-140px)] animate-fade-in-up">
+            <div className="grid grid-cols-12 gap-4 sm:gap-6 h-auto lg:h-[calc(100vh-140px)] animate-fade-in-up">
               {/* Users List */}
               <div className="col-span-12 lg:col-span-4 bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden">
                 <div className="p-4 border-b border-slate-100 space-y-4 bg-white z-10">
@@ -1993,22 +2036,22 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                 {selectedUser ? (
                   <div className="flex flex-col h-full bg-slate-50/30 animate-fade-in">
                     {/* Header - Spacious & Clean */}
-                    <div className="bg-white border-b border-slate-100 px-8 py-6 sticky top-0 z-20 flex justify-between items-center shadow-sm shrink-0">
-                        <div className="flex items-center gap-5">
-                            <div className="w-16 h-16 bg-sky-100 rounded-2xl flex items-center justify-center text-3xl font-black text-sky-700 shrink-0 shadow-sm border border-sky-200">
+                    <div className="bg-white border-b border-slate-100 px-4 sm:px-8 py-4 sm:py-6 sticky top-0 z-20 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 shadow-sm shrink-0">
+                      <div className="flex items-center gap-3 sm:gap-5 min-w-0">
+                        <div className="w-12 h-12 sm:w-16 sm:h-16 bg-sky-100 rounded-2xl flex items-center justify-center text-2xl sm:text-3xl font-black text-sky-700 shrink-0 shadow-sm border border-sky-200">
                                 {selectedUser.name.charAt(0)}
                             </div>
-                            <div>
-                                <h2 className="text-2xl font-black text-slate-800 leading-tight mb-1">{selectedUser.name}</h2>
-                                <div className="flex items-center gap-3 text-xs text-slate-500 font-medium">
-                                    <span className="bg-slate-100 px-2.5 py-1 rounded-md border border-slate-200 font-mono tracking-tight text-slate-600">{selectedUser.public_id}</span>
+                        <div className="min-w-0">
+                          <h2 className="text-xl sm:text-2xl font-black text-slate-800 leading-tight mb-1 truncate">{selectedUser.name}</h2>
+                          <div className="flex items-center gap-2 sm:gap-3 text-xs text-slate-500 font-medium flex-wrap">
+                            <span className="bg-slate-100 px-2 py-1 rounded-md border border-slate-200 font-mono tracking-tight text-slate-600 truncate max-w-[180px] sm:max-w-none">{selectedUser.public_id}</span>
                                     <span className="text-slate-300">•</span>
                                     <span>הצטרף ב-{new Date(selectedUser.createdAt).toLocaleDateString('he-IL')}</span>
                                 </div>
                             </div>
                         </div>
 
-                        <div className="flex gap-3">
+                      <div className="flex gap-2 sm:gap-3 w-full lg:w-auto flex-wrap">
                            {!isEditing ? (
                                 <>
                                     <button 
@@ -2022,7 +2065,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                                                 onImpersonate(data.user, data.token);
                                             } catch (e) { console.error(e); }
                                         }}
-                                        className="bg-sky-600 hover:bg-sky-700 text-white px-5 py-2.5 rounded-xl text-sm font-bold transition-all shadow-md shadow-sky-100 hover:-translate-y-0.5 active:translate-y-0 flex items-center gap-2"
+                                        className="bg-sky-600 hover:bg-sky-700 text-white px-4 sm:px-5 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all shadow-md shadow-sky-100 hover:-translate-y-0.5 active:translate-y-0 flex items-center gap-2"
                                     >
                                         <UserCog size={18} /> כניסה למשתמש
                                     </button>
@@ -2034,15 +2077,15 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                                           setEditAllowedBotIds(selectedUser.allowed_bot_ids || []);
                                           if (selectedUser.manager_id) fetchManagerBots(selectedUser.manager_id);
                                         }}
-                                        className="bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 px-5 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2 hover:shadow-sm"
+                                        className="bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 px-4 sm:px-5 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center gap-2 hover:shadow-sm"
                                     >
                                         <Edit2 size={18} /> עריכה
                                     </button>
                                 </>
                             ) : (
                                 <>
-                                    <button onClick={handleUpdateUser} className="bg-emerald-500 hover:bg-emerald-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold transition-all shadow-md shadow-emerald-100 flex items-center gap-2 hover:-translate-y-0.5"><CheckCircle size={18} /> שמור שינויים</button>
-                                    <button onClick={() => setIsEditing(false)} className="bg-white border border-slate-200 text-slate-700 px-5 py-2.5 rounded-xl text-sm font-bold hover:bg-slate-50">ביטול</button>
+                                      <button onClick={handleUpdateUser} className="bg-emerald-500 hover:bg-emerald-600 text-white px-4 sm:px-5 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all shadow-md shadow-emerald-100 flex items-center gap-2 hover:-translate-y-0.5"><CheckCircle size={18} /> שמור שינויים</button>
+                                      <button onClick={() => setIsEditing(false)} className="bg-white border border-slate-200 text-slate-700 px-4 sm:px-5 py-2.5 rounded-xl text-xs sm:text-sm font-bold hover:bg-slate-50">ביטול</button>
                                 </>
                             )}
                             <button onClick={() => handleDeleteUser(selectedUser.id)} className="bg-white hover:bg-rose-50 text-rose-600 p-2.5 rounded-xl transition-colors border border-slate-200 hover:border-rose-200" title="מחק משתמש"><Trash2 size={20} /></button>
@@ -2050,11 +2093,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                     </div>
 
                     {/* Content - Spacious Grid Layout */}
-                    <div className="flex-1 overflow-y-auto p-8 content-start h-full"> 
+                              <div className="flex-1 overflow-y-auto p-4 sm:p-8 content-start h-full"> 
                       <div className="grid grid-cols-12 gap-6 auto-rows-min h-full">
                         
                         {/* Personal Details - Main Card */}
-                        <div className="col-span-12 md:col-span-7 bg-white p-8 rounded-3xl border border-slate-100 shadow-sm hover:shadow-md transition-shadow flex flex-col justify-center">
+                                <div className="col-span-12 md:col-span-7 bg-white p-5 sm:p-8 rounded-3xl border border-slate-100 shadow-sm hover:shadow-md transition-shadow flex flex-col justify-center">
                             <h3 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-6 flex items-center gap-2 border-b border-slate-50 pb-4">
                                 <Users size={16} className="text-slate-400" /> פרטים אישיים
                             </h3>
@@ -2161,7 +2204,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                             </div>
 
                             {/* Settings & Security - Adjusted Card */}
-                            <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm flex-1 flex flex-col justify-center">
+                            <div className="bg-white p-5 sm:p-6 rounded-3xl border border-slate-100 shadow-sm flex-1 flex flex-col justify-center">
                                 <h3 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-6 flex items-center gap-2 border-b border-slate-50 pb-4">
                                     <Shield size={16} className="text-slate-400" /> הגדרות חשבון
                                 </h3>
@@ -2250,7 +2293,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
 
                         {/* ── Rep: Manager assignment + Allowed phone numbers ── */}
                         {(selectedUser.role === 'rep' || selectedUser.role === 'rep_manager') && (
-                          <div className={`col-span-12 p-8 rounded-3xl border transition-all ${isEditing ? 'bg-indigo-50 border-indigo-200' : 'bg-white border-slate-100 shadow-sm'}`}>
+                          <div className={`col-span-12 p-5 sm:p-8 rounded-3xl border transition-all ${isEditing ? 'bg-indigo-50 border-indigo-200' : 'bg-white border-slate-100 shadow-sm'}`}>
                             <h3 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-6 flex items-center gap-2 border-b border-slate-100 pb-4">
                               <Phone size={16} className="text-slate-400" /> שיוך ומספרים מורשים
                             </h3>
@@ -2329,7 +2372,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
 
                          {/* Custom Limits - Full Width */}
                         {(isEditing || selectedUser.custom_limits) && (
-                            <div className={`col-span-12 p-8 rounded-3xl border transition-all ${isEditing ? 'bg-amber-50 border-amber-200' : 'bg-white border-slate-200 shadow-sm'}`}>
+                            <div className={`col-span-12 p-5 sm:p-8 rounded-3xl border transition-all ${isEditing ? 'bg-amber-50 border-amber-200' : 'bg-white border-slate-200 shadow-sm'}`}>
                                  <div className="flex items-center gap-3 mb-6">
                                     <div className="w-12 h-12 rounded-2xl bg-amber-100 flex items-center justify-center text-amber-600 shadow-sm border border-amber-200">
                                         <Settings size={24} />
@@ -2339,7 +2382,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                                         <p className="text-sm text-amber-800/60 font-medium">הגדרות אלו גוברות על הגדרות ברירת המחדל של המערכת</p>
                                     </div>
                                  </div>
-                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+                                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 sm:gap-6">
                                       {[
                                         { k: 'max_bots', label: 'Max Bots', ph: 3 },
                                         { k: 'max_versions', label: 'Max Versions', ph: 5 },

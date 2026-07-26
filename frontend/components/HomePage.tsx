@@ -1,5 +1,5 @@
 import React from 'react';
-import { Bot, MessageSquare, Users, Settings, LogOut, Shield, ArrowLeft, LayoutDashboard, Layers,Inbox } from 'lucide-react';
+import { Bot, MessageSquare, Users, Settings, LogOut, Shield, ArrowLeft, LayoutDashboard, Inbox } from 'lucide-react';
 import { User } from '../types';
 import { usePermission } from '../hooks/usePermission';
 import DashboardStats from './DashboardStats';
@@ -109,6 +109,21 @@ const HomePage: React.FC<HomePageProps> = ({
 }) => {
   const can = usePermission(currentUser);
 
+  const getNavHandler = (id: NavId) => {
+    if (id === 'bots') return onGoToBots;
+    if (id === 'chats') return onGoToChats;
+    if (id === 'sms_in') return onGoToSmsIn;
+    if (id === 'contacts') return onGoToContacts;
+    if (id === 'settings') return onGoToSettings;
+    return undefined;
+  };
+
+  const mobileNavItems = SIDE_NAV.filter(({ id, permission }) => {
+    if (id === 'home') return false;
+    if (id === 'sms_in' && !onGoToSmsIn) return false;
+    return !permission || can(permission as any);
+  });
+
   const visibleTiles = tiles.filter(({ id }) => {
     if (id === 'bots')     return can('bots.view_tab');
     if (id === 'chats')    return can('sessions.view');
@@ -136,13 +151,13 @@ const HomePage: React.FC<HomePageProps> = ({
   });
 
   return (
-    <div className="h-screen bg-slate-50 flex flex-col overflow-hidden" dir="rtl">
+    <div className="h-screen bg-slate-50 flex flex-col overflow-y-auto lg:overflow-hidden" dir="rtl">
       <ImpersonationBanner currentUser={currentUser} onStopImpersonation={onStopImpersonation} token={token} onSwitchAccount={onSwitchAccount} />
 
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 min-h-0 flex-col lg:flex-row lg:overflow-hidden">
 
       {/* ── Sidebar ── */}
-      <aside className="w-64 bg-white border-l border-slate-100 flex flex-col flex-shrink-0">
+      <aside className="hidden lg:flex w-64 bg-white border-l border-slate-100 flex-col flex-shrink-0">
 
         {/* Logo */}
         <div className="h-16 flex items-center px-6 border-b border-slate-100">
@@ -195,13 +210,7 @@ const HomePage: React.FC<HomePageProps> = ({
           )}
           {SIDE_NAV.filter(({ permission }) => !permission || can(permission as any)).map(({ id, label, Icon }) => {
             const isActive = id === 'home';
-            const handler =
-              id === 'bots'     ? onGoToBots
-              : id === 'chats'    ? onGoToChats
-              : id === 'sms_in'   ? onGoToSmsIn
-              : id === 'contacts' ? onGoToContacts
-              : id === 'settings' ? onGoToSettings
-              : undefined;
+            const handler = getNavHandler(id);
             return (
               <button
                 key={id}
@@ -250,12 +259,69 @@ const HomePage: React.FC<HomePageProps> = ({
       </aside>
 
       {/* ── Main Content ── */}
-      <main className="flex-1 overflow-y-auto">
-        <div className="max-w-4xl mx-auto px-2 py-10">
+      <main className="flex-1 min-h-0 overflow-visible lg:overflow-y-auto">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 py-6 sm:py-8 lg:py-10">
+
+          {/* Mobile top area */}
+          <div className="lg:hidden mb-6 space-y-4">
+            <div className="bg-white border border-slate-100 rounded-2xl p-4 shadow-sm">
+              <div className="flex items-center justify-between gap-3 mb-4">
+                <img
+                  src="/images/mesergo-logo.png"
+                  alt="Logo"
+                  className="h-7 w-auto cursor-pointer"
+                  onClick={onGoToBots}
+                />
+                <button
+                  onClick={onLogout}
+                  className="inline-flex items-center gap-2 px-3 py-2 text-xs font-semibold text-slate-500 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                >
+                  <LogOut size={14} />
+                  התנתק
+                </button>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-base shadow-sm select-none">
+                  {initial}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-slate-900 font-bold text-sm truncate">{currentUser?.name ?? 'משתמש'}</p>
+                  {currentUser?.email && (
+                    <p className="text-slate-400 text-xs truncate mt-0.5">{currentUser.email}</p>
+                  )}
+                </div>
+                {currentUser?.role === 'admin' && onOpenAdminPanel && (
+                  <button
+                    onClick={onOpenAdminPanel}
+                    className="inline-flex items-center justify-center w-10 h-10 rounded-xl border border-slate-200 text-slate-500 hover:text-slate-700 hover:bg-slate-50 transition-colors"
+                    aria-label="ניהול מערכת"
+                  >
+                    <Shield size={16} />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="bg-white border border-slate-100 rounded-2xl p-2 shadow-sm">
+              <div className="grid grid-cols-2 gap-2">
+                {mobileNavItems.map(({ id, label, Icon }) => (
+                  <button
+                    key={id}
+                    onClick={getNavHandler(id)}
+                    className="inline-flex items-center justify-center gap-2 w-full px-3 py-2.5 rounded-xl text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition-colors"
+                  >
+                    <Icon size={14} className="text-slate-400" />
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
 
           {/* Page header */}
           <div className="mb-8">
-            <h1 className="text-2xl font-bold text-slate-900">לוח בקרה</h1>
+            <h1 className="text-xl sm:text-2xl font-bold text-slate-900">לוח בקרה</h1>
             <p className="text-slate-400 text-sm mt-1">{today}</p>
           </div>
 
@@ -269,16 +335,16 @@ const HomePage: React.FC<HomePageProps> = ({
               <button
                 key={id}
                 onClick={() => handleTile(id)}
-                className={`group bg-white border border-slate-100 ${border} rounded-2xl p-7 flex items-center gap-6 text-right shadow-sm hover:shadow-lg transition-all duration-200 hover:-translate-y-1 active:scale-[0.99] focus:outline-none focus:ring-2 focus:ring-blue-500/20`}
+                className={`group bg-white border border-slate-100 ${border || ''} rounded-2xl p-5 sm:p-7 flex items-center gap-4 sm:gap-6 text-right shadow-sm hover:shadow-lg transition-all duration-200 hover:-translate-y-1 active:scale-[0.99] focus:outline-none focus:ring-2 focus:ring-blue-500/20`}
               >
-                <div className={`w-16 h-16 ${bg} rounded-2xl flex items-center justify-center flex-shrink-0 transition-transform duration-200 group-hover:scale-110`}>
-                  <Icon size={28} className={color} strokeWidth={2} />
+                <div className={`w-14 h-14 sm:w-16 sm:h-16 ${bg || 'bg-slate-100'} rounded-2xl flex items-center justify-center flex-shrink-0 transition-transform duration-200 group-hover:scale-110`}>
+                  <Icon size={24} className={color || 'text-slate-600'} strokeWidth={2} />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="font-bold text-slate-900 text-lg leading-snug">{label}</p>
+                  <p className="font-bold text-slate-900 text-base sm:text-lg leading-snug">{label}</p>
                   <p className="text-slate-400 text-sm font-medium mt-1 leading-snug">{description}</p>
                 </div>
-                <ArrowLeft size={18} className="text-slate-300 flex-shrink-0 opacity-0 group-hover:opacity-100 -translate-x-1 group-hover:translate-x-0 transition-all duration-200" />
+                <ArrowLeft size={18} className="hidden sm:block text-slate-300 flex-shrink-0 opacity-0 group-hover:opacity-100 -translate-x-1 group-hover:translate-x-0 transition-all duration-200" />
               </button>
             ))}
           </div>
