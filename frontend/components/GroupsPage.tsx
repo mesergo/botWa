@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-  Phone, Search, Users, LogOut, List, Shield, Settings, UserCog, Plus,
+  Phone, Search, Users, List, Settings, UserCog, Plus,
   Edit2, Trash2, X, Check, Bot, Send, UserPlus, UserMinus, Ban, Layers,
   ChevronRight, ChevronLeft, ArrowRight, MessageSquare, FileText, History,
   Calendar, Eye, AlertTriangle, CheckCircle2, Clock, Paperclip, Image as ImageIcon, Video, File as FileLucide, RotateCcw, Copy, Download
@@ -8,6 +8,7 @@ import {
 import ImpersonationBanner from './ImpersonationBanner';
 import { FileUploader } from './FileUploader';
 import { usePermission } from '../hooks/usePermission';
+import PageTopBar from './PageTopBar';
 import AppNav from './AppNav';
 import { useContactFields } from '../context/ContactFieldsContext';
 
@@ -44,6 +45,7 @@ interface GroupsPageProps {
   onLogout: () => void;
   onOpenContacts?: (phone?: string) => void;
   onOpenSessions?: (phone?: string) => void;
+  onOpenSendMessages?: () => void;
   onOpenSmsIn?: () => void;
   onOpenAdminPanel?: () => void;
   onOpenSettings?: () => void;
@@ -51,6 +53,8 @@ interface GroupsPageProps {
   onStopImpersonation?: () => void;
   onSwitchAccount?: (accountId: string) => void;
   onGoHome?: () => void;
+  /** Render without the page's own navbar/sidebar chrome — used when hosted inside another page (e.g. as a tab) */
+  embedded?: boolean;
 }
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -62,8 +66,8 @@ const API_BASE = window.location.hostname === 'localhost'
 // ─── Component ────────────────────────────────────────────────────────────────
 
 const GroupsPage: React.FC<GroupsPageProps> = ({
-  token, currentUser, onBack, onLogout, onOpenContacts, onOpenSessions,onOpenSmsIn,
-  onOpenAdminPanel, onOpenSettings, onOpenSubUsers, onStopImpersonation, onSwitchAccount, onGoHome,
+  token, currentUser, onBack, onLogout, onOpenContacts, onOpenSessions,onOpenSendMessages,onOpenSmsIn,
+  onOpenAdminPanel, onOpenSettings, onOpenSubUsers, onStopImpersonation, onSwitchAccount, onGoHome, embedded = false,
 }) => {
   const [groups, setGroups] = useState<GroupSummary[]>([]);
   const [selectedGroup, setSelectedGroup] = useState<GroupDetail | null>(null);
@@ -793,51 +797,47 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
   const firstName = currentUser?.name?.charAt(0)?.toUpperCase() ?? currentUser?.email?.charAt(0)?.toUpperCase() ?? '?';
   const blocklist = groups.find(g => g.is_blocklist);
   const regularGroups = groups.filter(g => !g.is_blocklist);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   // ── Render ─────────────────────────────────────────────────────────────
 
   return (
-    <div className="h-screen w-screen bg-[#f8fafc] flex flex-col font-medium text-right overflow-hidden" dir="rtl">
-      <ImpersonationBanner currentUser={currentUser} onStopImpersonation={onStopImpersonation} token={token} onSwitchAccount={onSwitchAccount} />
+    <div className={embedded ? "h-full w-full flex flex-col font-medium text-right overflow-hidden" : "h-screen w-screen bg-[#f8fafc] flex flex-col font-medium text-right overflow-hidden"} dir="rtl">
+      {!embedded && <ImpersonationBanner currentUser={currentUser} onStopImpersonation={onStopImpersonation} token={token} onSwitchAccount={onSwitchAccount} />}
 
       {/* Navbar */}
-      <nav className="h-20 bg-white border-b border-slate-100 flex items-center justify-between px-10 z-20 flex-shrink-0" dir="ltr">
-        <div className="flex items-center gap-4">
-          <button onClick={onLogout} className="p-2.5 text-slate-300 hover:text-red-500 transition-colors rounded-xl hover:bg-red-50">
-            <LogOut size={22} />
-          </button>
-          <img src="/images/mesergo-logo.png" alt="Logo" className="h-10 w-auto cursor-pointer" onClick={onBack} />
-        </div>
-
-<div className="flex items-center gap-4">
-          {currentUser && (
-            <span className="text-sm font-bold text-slate-600">שלום, {currentUser.name ?? currentUser.email}</span>
-          )}
-          {currentUser?.role === 'admin' && onOpenAdminPanel && (
-            <button onClick={onOpenAdminPanel} className="flex items-center gap-2 px-4 py-2 bg-blue-100 text-blue-700 rounded-lg font-bold hover:bg-blue-200 transition-colors">
-              <Shield size={18} /> פאנל ניהול
-            </button>
-          )}
-          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-sm shadow-md select-none cursor-pointer hover:scale-105 transition-transform" onClick={onBack}>
-            {firstName}
-          </div>
-        </div>
-      </nav>
+      {!embedded && (
+        <PageTopBar
+          currentUser={currentUser}
+          onBack={onBack}
+          onLogout={onLogout}
+          onOpenAdminPanel={onOpenAdminPanel}
+          showMobileNavToggle
+          mobileNavOpen={mobileNavOpen}
+          onMobileNavToggle={() => setMobileNavOpen((prev) => !prev)}
+        />
+      )}
 
       {/* Content */}
       <div className="flex-1 overflow-hidden flex">
         {/* ── App nav sidebar ── */}
+        {!embedded && (
         <AppNav
           mode="sidebar"
           activePage="groups"
+          hideMobileTrigger
+          mobileMenuOpen={mobileNavOpen}
+          onMobileMenuOpenChange={setMobileNavOpen}
           onGoHome={onGoHome}
           onBots={can('bots.view_tab') ? onBack : undefined}
           onSessions={onOpenSessions ? () => onOpenSessions() : undefined}
           onContacts={onOpenContacts ? () => onOpenContacts() : undefined}
           onSmsIn={onOpenSmsIn}
+          onSendMessages={onOpenSendMessages}
           onSettings={onOpenSettings}
           onUsers={onOpenSubUsers && can('users.view') ? onOpenSubUsers : undefined}
         />
+        )}
         {/* Sidebar — list of groups */}
         <aside className="w-72 border-l border-slate-100 bg-white flex flex-col flex-shrink-0">
           <div className="p-6 border-b border-slate-100">

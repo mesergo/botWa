@@ -22,7 +22,7 @@ setInterval(async () => {
     const due = await GroupBroadcast.find({
       status: 'scheduled',
       scheduled_at: { $lte: new Date() },
-    }).select('_id user_id group_id is_template template_data message media');
+    }).select('_id user_id group_id group_name audience_type audience_contact_ids is_template template_data message media');
 
     for (const rec of due) {
       // Atomically claim this broadcast — prevents double-firing if two ticks overlap
@@ -36,13 +36,20 @@ setInterval(async () => {
       console.log(`[scheduledTicker] ⏰ Firing broadcast ${rec._id} for user ${rec.user_id}`);
 
       try {
-        const group = await Group.findById(rec.group_id);
-        if (!group) {
-          console.error(`[scheduledTicker] Group ${rec.group_id} not found for broadcast ${rec._id} — marking failed`);
-          await GroupBroadcast.findByIdAndUpdate(rec._id, { status: 'failed', completed_at: new Date() });
-          continue;
+        let group;
+        let contacts;
+        if (rec.audience_type === 'custom') {
+          group = { name: rec.group_name };
+          contacts = await Contact.find({ _id: { $in: rec.audience_contact_ids }, user_id: rec.user_id });
+        } else {
+          group = await Group.findById(rec.group_id);
+          if (!group) {
+            console.error(`[scheduledTicker] Group ${rec.group_id} not found for broadcast ${rec._id} — marking failed`);
+            await GroupBroadcast.findByIdAndUpdate(rec._id, { status: 'failed', completed_at: new Date() });
+            continue;
+          }
+          contacts = await Contact.find({ _id: { $in: group.contact_ids }, user_id: rec.user_id });
         }
-        const contacts = await Contact.find({ _id: { $in: group.contact_ids }, user_id: rec.user_id });
         const opts = {
           isTemplate: claimed.is_template,
           templateData: claimed.template_data,
@@ -487,6 +494,145 @@ export const sendToGroup = async (req, res) => {
   }
 };
 
+// ── Custom (multi-source) audience broadcast ─────────────────────────────────
+// Combines individually-picked contacts, whole distribution lists, and manually
+// typed phone numbers into ONE deduplicated recipient set — the same phone can
+// never receive the broadcast twice even if it came in via more than one source.
+async function resolveCustomAudience(userId, { contact_ids = [], phones = [], group_ids = [] } = {}) {
+  const idSet = new Set((contact_ids || []).map(String));
+
+  // 1. Union in every contact belonging to each selected distribution list
+  const resolvedGroupIds = [];
+  for (const gid of (group_ids || [])) {
+    const group = await Group.findOne({ _id: gid, user_id: userId, is_blocklist: { $ne: true } });
+    if (!group) continue;
+    resolvedGroupIds.push(group._id);
+    for (const cid of (group.contact_ids || [])) idSet.add(String(cid));
+  }
+
+  // 2. Resolve manually typed phones → existing or newly-created Contact records
+  const cleanPhones = [];
+  for (const rawPhone of (phones || [])) {
+    const normalized = normalizePhone(rawPhone);
+    if (!normalized) continue;
+    cleanPhones.push(normalized);
+    let contact = await Contact.findOne({ user_id: userId, phone: normalized });
+    if (!contact) {
+      contact = await Contact.create({ user_id: userId, phone: normalized });
+    }
+    idSet.add(String(contact._id));
+  }
+
+  // 3. Fetch — always scoped to the caller's own user_id, never trusts stray ids from other users
+  const rawContacts = idSet.size
+    ? await Contact.find({ _id: { $in: Array.from(idSet) }, user_id: userId })
+    : [];
+
+  // 4. Re-key by normalized phone — collapses any residual duplicates so the same
+  //    phone can only appear once in the final list, regardless of how many sources named it.
+  const byPhone = new Map();
+  for (const c of rawContacts) {
+    const np = normalizePhone(c.phone);
+    if (np && !byPhone.has(np)) byPhone.set(np, c);
+  }
+
+  // 5. Apply the existing blocklist filter, same as classic group broadcasts
+  const blocked = await getBlockedPhones(userId);
+  const contacts = Array.from(byPhone.values()).filter(c => !blocked.has(normalizePhone(c.phone)));
+
+  // Build a human-readable audience summary label, e.g. "2 רשימות + 5 אנשי קשר + 3 מספרים"
+  const parts = [];
+  if (resolvedGroupIds.length) parts.push(`${resolvedGroupIds.length} רשימות`);
+  if (contact_ids.length) parts.push(`${contact_ids.length} אנשי קשר`);
+  if (cleanPhones.length) parts.push(`${cleanPhones.length} מספרים`);
+  const audienceSummary = parts.length ? parts.join(' + ') : 'שליחה מותאמת אישית';
+
+  return { contacts, audienceSummary, resolvedGroupIds, manualPhones: cleanPhones };
+}
+
+// POST /api/groups/broadcast-custom/preview — resolve+dedupe the audience, no DB writes
+export const previewCustomAudience = async (req, res) => {
+  try {
+    const userId = getEffectiveUserId(req);
+    const { contact_ids, phones, group_ids } = req.body || {};
+    const { contacts, audienceSummary } = await resolveCustomAudience(userId, { contact_ids, phones, group_ids });
+    res.json({
+      total: contacts.length,
+      audience_summary: audienceSummary,
+      contacts: contacts.map(c => ({ _id: c._id, phone: c.phone, full_name: c.full_name, whatsapp_name: c.whatsapp_name })),
+    });
+  } catch (err) {
+    console.error('[groups.previewCustomAudience] error:', err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// POST /api/groups/broadcast-custom — enqueue a multi-source broadcast (mirrors sendToGroup)
+export const sendCustomBroadcast = async (req, res) => {
+  try {
+    const userId = getEffectiveUserId(req);
+    const { message, isTemplate, templateData, media, bot_id, scheduled_at, contact_ids, phones, group_ids } = req.body || {};
+
+    const hasMedia = media && media.url && media.type;
+    if (!isTemplate && !hasMedia && (!message || !String(message).trim())) {
+      return res.status(400).json({ error: 'message or media is required' });
+    }
+
+    const scheduledAt = scheduled_at ? Number(scheduled_at) : null;
+    if (scheduledAt && (isNaN(scheduledAt) || scheduledAt <= Date.now())) {
+      return res.status(400).json({ error: 'scheduled_at must be a future Unix timestamp in milliseconds' });
+    }
+
+    const { contacts, audienceSummary, resolvedGroupIds, manualPhones } = await resolveCustomAudience(userId, { contact_ids, phones, group_ids });
+    const msgText = String(message || '').trim();
+
+    const broadcast = await GroupBroadcast.create({
+      user_id: userId,
+      audience_type: 'custom',
+      group_name: audienceSummary,
+      audience_contact_ids: contacts.map(c => c._id),
+      source_group_ids: resolvedGroupIds,
+      manual_phones: manualPhones,
+      is_template: !!isTemplate,
+      message: isTemplate ? '' : msgText,
+      template_name: isTemplate && templateData ? (templateData.name || '') : '',
+      template_language: isTemplate && templateData ? (templateData.language || '') : '',
+      template_data: isTemplate ? templateData : undefined,
+      media: hasMedia ? media : undefined,
+      total: contacts.length,
+      processed: 0,
+      sent: 0,
+      failed: 0,
+      skipped: 0,
+      status: scheduledAt ? 'scheduled' : 'queued',
+      scheduled_at: scheduledAt ? new Date(scheduledAt) : undefined,
+      sent_by: req.user?.email || req.user?.name || '',
+    });
+
+    const queueStatusBefore = getBroadcastQueueStatus(userId);
+    const willBeQueued = queueStatusBefore.running;
+    const queuePosition = willBeQueued ? queueStatusBefore.queued + 1 : 0;
+
+    res.json({
+      success: true,
+      broadcast_id: broadcast._id,
+      status: scheduledAt ? 'scheduled' : 'queued',
+      total: contacts.length,
+      scheduled_at: scheduledAt || undefined,
+      queued_behind: willBeQueued,
+      queue_position: queuePosition,
+    });
+
+    if (!scheduledAt) {
+      enqueueBroadcast(userId, broadcast._id, { name: audienceSummary }, contacts, { isTemplate, templateData, msgText, media: hasMedia ? media : null, bot_id: bot_id || null, scheduled_at: null })
+        .catch(err => console.error('[groups.sendCustomBroadcast] queue error:', err));
+    }
+  } catch (err) {
+    console.error('[groups.sendCustomBroadcast] error:', err);
+    if (!res.headersSent) res.status(500).json({ error: err.message });
+  }
+};
+
 // Resolve a __field:<ref> personalization token to the actual value for one specific contact.
 // Supports the same field refs the frontend offers: full_name, whatsapp_name, phone, email, custom:<fieldId>.
 function resolveContactField(contact, fieldRef) {
@@ -839,8 +985,19 @@ export const resumeBroadcast = async (req, res) => {
     }
 
     const queueStatus = getBroadcastQueueStatus(userId);
-    const group = await Group.findOne({ _id: broadcast.group_id, user_id: userId });
-    if (!group) return res.status(404).json({ error: 'Group not found' });
+
+    // Custom (multi-source) broadcasts have no single live group — re-fetch the
+    // immutable audience snapshot taken at send time instead of live group membership.
+    let group;
+    let allContacts;
+    if (broadcast.audience_type === 'custom') {
+      group = { name: broadcast.group_name };
+      allContacts = await Contact.find({ _id: { $in: broadcast.audience_contact_ids }, user_id: userId });
+    } else {
+      group = await Group.findOne({ _id: broadcast.group_id, user_id: userId });
+      if (!group) return res.status(404).json({ error: 'Group not found' });
+      allContacts = await Contact.find({ _id: { $in: group.contact_ids }, user_id: userId });
+    }
 
     // Build set of phones already successfully sent (from previous run's recipients)
     const alreadySentPhones = new Set(
@@ -850,8 +1007,7 @@ export const resumeBroadcast = async (req, res) => {
         .filter(Boolean)
     );
 
-    // Get current group contacts and filter to only those not yet sent
-    const allContacts = await Contact.find({ _id: { $in: group.contact_ids }, user_id: userId });
+    // Filter to only contacts not yet sent
     const remainingContacts = allContacts.filter(c => {
       const np = normalizePhone(c.phone);
       return !np || !alreadySentPhones.has(np);

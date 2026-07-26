@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
-  Phone, Clock, MessageSquare, Search, Users, User, LogOut, List, Shield,
+  Phone, Clock, MessageSquare, Search, Users, User, List,
   Settings, UserCog, ExternalLink, Plus, Edit2, Trash2, Mail, X, Check, Bot,
   Upload, Download, Eye, ChevronRight, ChevronLeft, Layers, Sliders
 } from 'lucide-react';
 import ImpersonationBanner from './ImpersonationBanner';
+import PageTopBar from './PageTopBar';
 import AppNav from './AppNav';
+import GroupsPage from './GroupsPage';
 import { usePermission } from '../hooks/usePermission';
 import { useContactFields } from '../context/ContactFieldsContext';
 import { ContactFieldDef } from '../types';
@@ -44,6 +46,7 @@ interface ContactsPageProps {
   onLogout: () => void;
   onOpenSessions?: (phone?: string) => void;
   onOpenGroups?: () => void;
+  onOpenSendMessages?: () => void;
   onOpenSmsIn?: () => void;
   onOpenAdminPanel?: () => void;
   onOpenSettings?: () => void;
@@ -155,13 +158,16 @@ const BotPhonesTags: React.FC<{ phones: string[] }> = ({ phones }) => {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 const ContactsPage: React.FC<ContactsPageProps> = ({
-  token, currentUser, onBack, onLogout, onOpenSessions, onOpenGroups,onOpenSmsIn,
+  token, currentUser, onBack, onLogout, onOpenSessions, onOpenGroups, onOpenSendMessages,onOpenSmsIn,
   onOpenAdminPanel, onOpenSettings, onOpenSubUsers, onStopImpersonation, onSwitchAccount, onGoHome, initialPhone,
 }) => {
   const [contacts, setContacts] = useState<MergedContact[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
+
+  // Main tab — switch between contacts table and distribution lists (groups)
+  const [activeMainTab, setActiveMainTab] = useState<'contacts' | 'groups'>('contacts');
 
   // Pagination
   const [page, setPage] = useState(1);
@@ -441,6 +447,7 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
   const can = usePermission(currentUser as any);
   const firstName = currentUser?.name?.charAt(0)?.toUpperCase() ?? currentUser?.email?.charAt(0)?.toUpperCase() ?? '?';
   const isSimulator = (phone: string) => phone === 'Simulated' || phone.toLowerCase() === 'simulator' || phone.toLowerCase() === 'simulated';
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -448,65 +455,72 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
     <div className="h-screen w-screen bg-[#f8fafc] flex flex-col font-medium text-right overflow-hidden" dir="rtl">
       <ImpersonationBanner currentUser={currentUser} onStopImpersonation={onStopImpersonation} token={token} onSwitchAccount={onSwitchAccount} />
 
-      {/* Navbar */}
-      <nav className="h-20 bg-white border-b border-slate-100 flex items-center justify-between px-10 z-20 flex-shrink-0" dir="ltr">
-        <div className="flex items-center gap-4">
-          <button onClick={onLogout} className="p-2.5 text-slate-300 hover:text-red-500 transition-colors rounded-xl hover:bg-red-50">
-            <LogOut size={22} />
-          </button>
-          <img src="/images/mesergo-logo.png" alt="Logo" className="h-10 w-auto cursor-pointer" onClick={onBack} />
-        </div>
-
-<div className="flex items-center gap-4">
-          {currentUser && (
-            <span className="text-sm font-bold text-slate-600">שלום, {currentUser.name ?? currentUser.email}</span>
-          )}
-          {currentUser?.role === 'admin' && onOpenAdminPanel && (
-            <button onClick={onOpenAdminPanel} className="flex items-center gap-2 px-4 py-2 bg-blue-100 text-blue-700 rounded-lg font-bold hover:bg-blue-200 transition-colors">
-              <Shield size={18} /> פאנל ניהול
-            </button>
-          )}
-          <div
-            title={currentUser?.name ?? currentUser?.email ?? ''}
-            className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-sm shadow-md select-none cursor-pointer hover:scale-105 transition-transform"
-            onClick={onBack}
-          >
-            {firstName}
-          </div>
-        </div>
-      </nav>
+      <PageTopBar
+        currentUser={currentUser}
+        onBack={onBack}
+        onLogout={onLogout}
+        onOpenAdminPanel={onOpenAdminPanel}
+        showMobileNavToggle
+        mobileNavOpen={mobileNavOpen}
+        onMobileNavToggle={() => setMobileNavOpen((prev) => !prev)}
+      />
 
       {/* Main layout */}
       <div className="flex-1 flex overflow-hidden">
         <AppNav
           mode="sidebar"
           activePage="contacts"
+          hideMobileTrigger
+          mobileMenuOpen={mobileNavOpen}
+          onMobileMenuOpenChange={setMobileNavOpen}
           onGoHome={onGoHome}
           onBots={can('bots.view_tab') ? onBack : undefined}
           onSessions={onOpenSessions ? () => onOpenSessions() : undefined}
-          onGroups={onOpenGroups}
           onSmsIn={onOpenSmsIn}
+          onSendMessages={onOpenSendMessages}
           onSettings={onOpenSettings}
           onUsers={onOpenSubUsers && can('users.view') ? onOpenSubUsers : undefined}
         />
-        <div className="flex-1 overflow-y-auto p-10">
+        <div className="flex-1 flex flex-col overflow-hidden">
+        <div className={`px-4 sm:px-6 lg:px-10 pt-4 sm:pt-6 flex-shrink-0 ${activeMainTab === 'contacts' ? 'pb-6' : 'pb-0'}`}>
         <div className="max-w-7xl mx-auto">
 
+          {/* Tab switcher */}
+          <div className="flex items-center gap-1 bg-slate-100 rounded-2xl p-1 mb-5 w-full sm:w-fit overflow-x-auto">
+            <button
+              onClick={() => setActiveMainTab('contacts')}
+              className={`flex items-center justify-center gap-1.5 px-4 py-1.5 rounded-xl font-bold text-sm transition-all whitespace-nowrap min-w-[8.5rem] ${
+                activeMainTab === 'contacts' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              <Users size={14} /> אנשי קשר
+            </button>
+            <button
+              onClick={() => setActiveMainTab('groups')}
+              className={`flex items-center justify-center gap-1.5 px-4 py-1.5 rounded-xl font-bold text-sm transition-all whitespace-nowrap min-w-[8.5rem] ${
+                activeMainTab === 'groups' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              <Layers size={14} /> רשימות תפוצה
+            </button>
+          </div>
+
           {/* Page header */}
-          <div className="flex items-center justify-between mb-8">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center">
+          {activeMainTab === 'contacts' && (
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between mb-2">
+            <div className="flex items-center gap-3 sm:gap-4">
+              <div className="w-10 h-10 sm:w-12 sm:h-12 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center">
                 <Users size={26} />
               </div>
               <div>
-                <h1 className="text-3xl font-black text-slate-900">אנשי קשר</h1>
+                <h1 className="text-xl sm:text-2xl font-black text-slate-900">אנשי קשר</h1>
                 <p className="text-slate-400 text-sm font-semibold mt-0.5">{total} איש קשר</p>
               </div>
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2 sm:gap-3 w-full lg:w-auto">
               {/* Search */}
-              <div className="relative w-72">
+              <div className="relative w-full sm:w-72 lg:w-80">
                 <Search className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-300" size={16} />
                 <input
                   className="w-full pr-11 pl-4 py-2.5 bg-white border border-slate-200 rounded-2xl text-sm outline-none focus:ring-4 focus:ring-blue-600/10 focus:border-blue-600 transition-all text-right font-medium"
@@ -522,7 +536,7 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
                 onClick={openImportModal}
                 disabled={importing}
                 title="ייבוא אנשי קשר מאקסל / CSV"
-                className="flex items-center gap-2 px-4 py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-2xl font-bold text-sm transition-colors disabled:opacity-60"
+                className="w-full sm:w-auto justify-center flex items-center gap-2 px-4 py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-2xl font-bold text-sm transition-colors disabled:opacity-60"
               >
                 <Upload size={15} />
                 {importing ? 'מייבא...' : 'ייבוא מאקסל'}
@@ -542,13 +556,21 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
               {can('contacts.add') && (
               <button
                 onClick={openAdd}
-                className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-bold text-sm transition-colors shadow-sm"
+                className="w-full sm:w-auto justify-center flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-bold text-sm transition-colors shadow-sm"
               >
                 <Plus size={16} /> הוסף איש קשר
               </button>
               )}
             </div>
           </div>
+          )}
+
+        </div>
+        </div>
+
+        {activeMainTab === 'contacts' ? (
+        <div className="flex-1 overflow-y-auto px-4 sm:px-6 lg:px-10 pb-6 sm:pb-10">
+        <div className="max-w-7xl mx-auto">
 
           {/* Table */}
           {loading ? (
@@ -556,9 +578,9 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
               <div className="animate-spin w-10 h-10 border-4 border-slate-200 border-t-blue-500 rounded-full" />
             </div>
           ) : contacts.length === 0 ? (
-            <div className="py-24 bg-white border-2 border-dashed border-slate-200 rounded-[2.5rem] flex flex-col items-center justify-center gap-4 text-slate-300">
-              <Users size={64} strokeWidth={1} />
-              <p className="text-xl font-bold">
+            <div className="py-16 sm:py-24 bg-white border-2 border-dashed border-slate-200 rounded-3xl sm:rounded-[2.5rem] flex flex-col items-center justify-center gap-4 text-slate-300 px-4">
+              <Users size={56} strokeWidth={1} />
+              <p className="text-lg sm:text-xl font-bold text-center">
                 {total === 0 ? 'עדיין אין אנשי קשר' : 'לא נמצאו תוצאות'}
               </p>
               {total === 0 && can('contacts.add') && (
@@ -571,7 +593,166 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
               )}
             </div>
           ) : (
-            <div className="bg-white border border-slate-100 rounded-2xl overflow-hidden shadow-sm overflow-x-auto">
+            <>
+              {/* Mobile cards */}
+              <div className="lg:hidden space-y-3">
+                {contacts.map(contact => {
+                  const sim = isSimulator(contact.phone);
+                  const customFieldRows = contactFieldDefs
+                    .map(fd => {
+                      const cv = contact.custom_field_values as Record<string, unknown> | undefined;
+                      const val = cv?.[fd._id!] ?? cv?.[fd.key];
+                      const text = val == null ? '' : String(val).trim();
+                      return text ? { key: fd._id, label: fd.label, value: text } : null;
+                    })
+                    .filter((row): row is { key: string; label: string; value: string } => row !== null);
+
+                  const botPhonesLabel = (contact.botPhones ?? []).length === 0
+                    ? '—'
+                    : `${(contact.botPhones ?? []).slice(0, 2).join(', ')}${(contact.botPhones ?? []).length > 2 ? ` +${(contact.botPhones ?? []).length - 2}` : ''}`;
+
+                  const groupsLabel = (contact.contactGroups ?? []).length === 0
+                    ? '—'
+                    : `${(contact.contactGroups ?? []).slice(0, 2).map(g => g.name).join(', ')}${(contact.contactGroups ?? []).length > 2 ? ` +${(contact.contactGroups ?? []).length - 2}` : ''}`;
+
+                  return (
+                    <div
+                      key={`mobile-${contact.phone}`}
+                      onClick={() => setDetailContact(contact)}
+                      className="bg-white border border-slate-100 rounded-2xl p-4 shadow-sm cursor-pointer"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${sim ? 'bg-purple-50 text-purple-500' : 'bg-blue-50 text-blue-500'}`}>
+                            {sim ? <MessageSquare size={16} /> : <Phone size={16} />}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-sm font-bold text-slate-900 truncate">{sim ? 'סימולטור' : contact.phone}</p>
+                            {(contact.full_name || contact.whatsapp_name) && (
+                              <p className="text-xs text-slate-500 font-semibold truncate mt-0.5">{contact.full_name || contact.whatsapp_name}</p>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+                          {onOpenSessions && contact.sessionCount > 0 && (
+                            <button
+                              onClick={() => onOpenSessions(contact.phone)}
+                              title="עבור לשיחות"
+                              className="p-1.5 text-blue-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                            >
+                              <ExternalLink size={15} />
+                            </button>
+                          )}
+                          {can('contacts.edit') && (
+                            <button
+                              onClick={() => openEdit(contact)}
+                              title="ערוך"
+                              className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+                            >
+                              <Edit2 size={15} />
+                            </button>
+                          )}
+                          {can('contacts.delete') && contact._id && (
+                            deletingId === contact._id ? (
+                              <div className="flex items-center gap-1">
+                                <button
+                                  onClick={() => confirmDelete(contact._id!)}
+                                  title="אשר מחיקה"
+                                  className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                                >
+                                  <Check size={15} />
+                                </button>
+                                <button
+                                  onClick={() => setDeletingId(null)}
+                                  title="ביטול"
+                                  className="p-1.5 text-slate-400 hover:bg-slate-100 rounded-lg transition-colors"
+                                >
+                                  <X size={15} />
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => setDeletingId(contact._id!)}
+                                title="מחק"
+                                className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                              >
+                                <Trash2 size={15} />
+                              </button>
+                            )
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="mt-3 grid grid-cols-3 gap-2 text-xs" onClick={e => e.stopPropagation()}>
+                        <div className="bg-slate-50 rounded-xl px-2.5 py-2 border border-slate-100 min-w-0">
+                          <p className="text-slate-400 font-bold mb-1">שם וואטסאפ</p>
+                          <p className={`font-bold truncate ${contact.whatsapp_name ? 'text-slate-700' : 'text-slate-300'}`}>
+                            {contact.whatsapp_name || '—'}
+                          </p>
+                        </div>
+                        <div className="bg-slate-50 rounded-xl px-2.5 py-2 border border-slate-100 min-w-0">
+                          <p className="text-slate-400 font-bold mb-1">כתובת מייל</p>
+                          <p className={`font-bold truncate ${contact.email ? 'text-slate-700' : 'text-slate-300'}`}>
+                            {contact.email || '—'}
+                          </p>
+                        </div>
+                        <div className="bg-slate-50 rounded-xl px-2.5 py-2 border border-slate-100 min-w-0">
+                          <p className="text-slate-400 font-bold mb-1">שוחח עם</p>
+                          <p className={`font-bold truncate ${botPhonesLabel !== '—' ? 'text-slate-700' : 'text-slate-300'}`} title={botPhonesLabel}>
+                            {botPhonesLabel}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="mt-2 grid grid-cols-3 gap-2 text-xs" onClick={e => e.stopPropagation()}>
+                        <div className="bg-slate-50 rounded-xl px-2.5 py-2 border border-slate-100 min-w-0">
+                          <p className="text-slate-400 font-bold mb-1">רשימות תפוצה</p>
+                          <p className={`font-bold truncate ${groupsLabel !== '—' ? 'text-slate-700' : 'text-slate-300'}`} title={groupsLabel}>
+                            {groupsLabel}
+                          </p>
+                        </div>
+                        <div className="bg-slate-50 rounded-xl px-2.5 py-2 border border-slate-100 min-w-0">
+                          <p className="text-slate-400 font-bold mb-1">שיחות</p>
+                          <p className="text-slate-700 font-bold">{contact.sessionCount}</p>
+                        </div>
+                        <div className="bg-slate-50 rounded-xl px-2.5 py-2 border border-slate-100 min-w-0">
+                          <p className="text-slate-400 font-bold mb-1">פעיל לאחרונה</p>
+                          <p className="text-slate-700 font-bold truncate">{formatDate(contact.lastSeen)}</p>
+                        </div>
+                      </div>
+
+                      {customFieldRows.length > 0 && (
+                        <div className="mt-3 bg-indigo-50/40 border border-indigo-100 rounded-xl p-3 flex flex-col gap-2" onClick={e => e.stopPropagation()}>
+                          <p className="text-[11px] text-indigo-400 font-bold">שדות מותאמים אישית</p>
+                          <div className="flex flex-col gap-1.5">
+                            {customFieldRows.map(row => {
+                              return (
+                                <div key={`mobile-custom-${contact.phone}-${row.key}`} className="flex items-center justify-between gap-3">
+                                  <span className="text-[11px] text-indigo-500 font-bold">{row.label}</span>
+                                  <span className="text-xs font-semibold text-slate-700">
+                                    {row.value}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+
+                <button
+                  onClick={() => setFieldsModalOpen(true)}
+                  title="ניהול שדות"
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-bold text-sm transition-colors shadow-sm"
+                >
+                  <Sliders size={14} />
+                  ניהול שדות
+                </button>
+              </div>
+
+              <div className="hidden lg:block bg-white border border-slate-100 rounded-2xl overflow-hidden shadow-sm overflow-x-auto">
               {/* Build grid template dynamically */}
               {(() => {
                 // When there are custom fields we switch to fixed rem widths so the grid
@@ -754,7 +935,7 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
 
               {/* Pagination bar */}
               {totalPages > 1 && (
-                <div className="flex items-center justify-between px-6 py-3 border-t border-slate-100 bg-slate-50">
+                <div className="hidden lg:flex items-center justify-between px-6 py-3 border-t border-slate-100 bg-slate-50">
                   <span className="text-xs font-bold text-slate-400">
                     עמוד {page} מתוך {totalPages} &nbsp;·&nbsp; {total} איש קשר
                   </span>
@@ -801,16 +982,57 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
                   </div>
                 </div>
               )}
-            </div>
+              </div>
+
+              {totalPages > 1 && (
+                <div className="lg:hidden mt-3 flex items-center justify-between gap-2 px-3 py-2 border border-slate-200 rounded-xl bg-white">
+                  <button
+                    onClick={() => setPage(p => Math.max(1, p - 1))}
+                    disabled={page === 1}
+                    className="px-3 py-1.5 rounded-lg text-xs font-bold text-slate-500 hover:bg-slate-100 disabled:opacity-40"
+                  >
+                    הקודם
+                  </button>
+                  <span className="text-xs font-bold text-slate-400 text-center">עמוד {page} / {totalPages}</span>
+                  <button
+                    onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                    disabled={page === totalPages}
+                    className="px-3 py-1.5 rounded-lg text-xs font-bold text-slate-500 hover:bg-slate-100 disabled:opacity-40"
+                  >
+                    הבא
+                  </button>
+                </div>
+              )}
+            </>
           )}
         </div>
+        </div>
+        ) : (
+        <div className="flex-1 overflow-hidden">
+          <GroupsPage
+            embedded
+            token={token}
+            currentUser={currentUser}
+            onBack={onBack}
+            onLogout={onLogout}
+            onOpenSessions={onOpenSessions}
+            onOpenSmsIn={onOpenSmsIn}
+            onOpenAdminPanel={onOpenAdminPanel}
+            onOpenSettings={onOpenSettings}
+            onOpenSubUsers={onOpenSubUsers}
+            onStopImpersonation={onStopImpersonation}
+            onSwitchAccount={onSwitchAccount}
+            onGoHome={onGoHome}
+          />
+        </div>
+        )}
         </div>
       </div>{/* end main layout */}
 
       {/* Import modal */}
       {importModalOpen && (
         <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm p-8" dir="rtl">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm p-5 sm:p-8" dir="rtl">
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-xl font-black text-slate-900">ייבוא אנשי קשר</h2>
               <button onClick={() => setImportModalOpen(false)} className="p-2 text-slate-300 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-colors">
@@ -894,7 +1116,7 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
       {/* Import result modal */}
       {importResult && (
         <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm p-8" dir="rtl">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm p-5 sm:p-8" dir="rtl">
             <div className="flex items-center justify-between mb-5">
               <h2 className="text-xl font-black text-slate-900">תוצאות ייבוא</h2>
               <button onClick={() => setImportResult(null)} className="p-2 text-slate-300 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-colors">
@@ -938,7 +1160,7 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
           className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 flex items-center justify-center p-4"
           onClick={e => { if (e.target === e.currentTarget) closeModal(); }}
         >
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md p-8" dir="rtl">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md p-5 sm:p-8" dir="rtl">
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-xl font-black text-slate-900">
                 {editingContact?._id ? 'עריכת איש קשר' : 'הוספת איש קשר'}
@@ -1012,7 +1234,7 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
                 <p className="text-sm text-red-500 font-semibold bg-red-50 px-4 py-2 rounded-xl">{modalError}</p>
               )}
 
-              <div className="flex gap-3 mt-2">
+              <div className="flex flex-col-reverse sm:flex-row gap-3 mt-2">
                 <button
                   onClick={saveContact}
                   disabled={saving}
@@ -1034,28 +1256,28 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
       {/* Contact Detail Modal */}
       {detailContact && (
         <div
-          className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-6"
+          className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-6"
           onClick={() => setDetailContact(null)}
         >
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[88vh]" dir="rtl" onClick={e => e.stopPropagation()}>
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[92vh] sm:max-h-[88vh]" dir="rtl" onClick={e => e.stopPropagation()}>
 
             {/* Header */}
-            <div className="flex items-center justify-between px-10 pt-8 pb-6 border-b border-slate-100 flex-shrink-0">
-              <div className="flex items-center gap-4">
-                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-xl shadow-md select-none">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between px-4 sm:px-10 pt-6 sm:pt-8 pb-5 sm:pb-6 border-b border-slate-100 flex-shrink-0">
+              <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+                <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-lg sm:text-xl shadow-md select-none flex-shrink-0">
                   {(detailContact.full_name || detailContact.whatsapp_name || detailContact.phone).charAt(0).toUpperCase()}
                 </div>
-                <div>
-                  <h2 className="text-2xl font-black text-slate-900">
+                <div className="min-w-0">
+                  <h2 className="text-xl sm:text-2xl font-black text-slate-900 truncate">
                     {detailContact.full_name || detailContact.whatsapp_name || detailContact.phone}
                   </h2>
-                  <p className="text-sm text-slate-400 font-semibold mt-0.5 flex items-center gap-1.5">
+                  <p className="text-sm text-slate-400 font-semibold mt-0.5 flex items-center gap-1.5 truncate">
                     <Phone size={13} />
                     {detailContact.phone}
                   </p>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center flex-wrap gap-2">
                 {onOpenSessions && detailContact.sessionCount > 0 && (
                   <button
                     onClick={() => { setDetailContact(null); onOpenSessions(detailContact.phone); }}
@@ -1086,10 +1308,10 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
             </div>
 
             {/* Body */}
-            <div className="px-10 py-7 flex flex-col gap-7 overflow-y-auto">
+            <div className="px-4 sm:px-10 py-5 sm:py-7 flex flex-col gap-6 sm:gap-7 overflow-y-auto">
 
               {/* Stats bar */}
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 <div className="bg-slate-50 border border-slate-100 rounded-2xl px-5 py-4 flex flex-col gap-1">
                   <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">שיחות</span>
                   <div className="flex items-center gap-2 mt-1">
@@ -1243,11 +1465,11 @@ const ContactFieldsModal: React.FC<{
   };
 
   return (
-    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-6" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-6" onClick={onClose}>
       <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[85vh]" dir="rtl" onClick={e => e.stopPropagation()}>
 
         {/* Header */}
-        <div className="flex items-center justify-between px-8 pt-7 pb-5 border-b border-slate-100 flex-shrink-0">
+        <div className="flex items-center justify-between px-5 sm:px-8 pt-6 sm:pt-7 pb-4 sm:pb-5 border-b border-slate-100 flex-shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center">
               <Sliders size={20} />
@@ -1259,7 +1481,7 @@ const ContactFieldsModal: React.FC<{
           </button>
         </div>
 
-        <div className="overflow-y-auto px-8 py-6 flex flex-col gap-6">
+        <div className="overflow-y-auto px-5 sm:px-8 py-5 sm:py-6 flex flex-col gap-6">
 
           {/* Base fields (read-only) */}
           <div className="flex flex-col gap-2">
@@ -1357,7 +1579,7 @@ const ContactFieldsModal: React.FC<{
           </div>
         </div>
 
-        <div className="px-8 py-5 border-t border-slate-100 flex-shrink-0">
+        <div className="px-5 sm:px-8 py-4 sm:py-5 border-t border-slate-100 flex-shrink-0">
           <button onClick={onClose} className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-sm transition-colors">
             סגור
           </button>

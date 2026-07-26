@@ -46,9 +46,10 @@ export interface NodeData {
   optionOperators?: string[];
   optionImages?: string[];
   dateTimeMode?: 'date' | 'time' | 'datetime';
-  routingMode?: 'time' | 'date';
+  routingMode?: 'time' | 'date' | 'weekday';
   timeRanges?: Array<{ fromHour: number; toHour: number; }>;
   dateRanges?: Array<{ fromDate: string; toDate: string; }>;
+  weekdayRanges?: Array<{ fromDay: number; toDay: number; }>;
   groupId?: string;
   removeFromGroupMode?: 'specific' | 'all';
   removeGroupId?: string;
@@ -170,6 +171,7 @@ export interface UserTypePermissions {
   users:    { view: boolean; add: boolean; edit: boolean; delete: boolean };
   rep_groups: { view: boolean; add: boolean; delete: boolean };
   sms_in:   { view: boolean };
+  send_messages: { view: boolean; send: boolean };
 }
 
 export interface UserType {

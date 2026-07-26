@@ -204,6 +204,13 @@ const getFlowData = async (flowId, processId = null) => {
             const [fromDate, toDate] = o.value.split('|');
             return { fromDate, toDate };
           });
+      } else if (routingMode === 'weekday') {
+        ranges.weekdayRanges = nodeOptions
+          .filter(o => o.operator === 'weekday_range')
+          .map(o => {
+            const [fromDay, toDay] = o.value.split('-').map(Number);
+            return { fromDay, toDay };
+          });
       } else {
         ranges.timeRanges = nodeOptions
           .filter(o => o.operator === 'time_range')
@@ -267,7 +274,7 @@ const getFlowData = async (flowId, processId = null) => {
           const sourceHandle = o.operator === 'default' ? 'option-default' : `option-${rangeIndex}`;
           edges.push({ id: `e-${w.id}-${sourceHandle}-${o.next}`, source: w.id, sourceHandle, target: o.next });
         }
-        if (o.operator === 'time_range' || o.operator === 'date_range') rangeIndex++;
+        if (o.operator === 'time_range' || o.operator === 'date_range' || o.operator === 'weekday_range') rangeIndex++;
       });
     } else if (w.type === 'action_web_service') {
       // For action_web_service: build conditional option edges with sequential indices
@@ -810,6 +817,26 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
           for (let i = 0; i < dateRanges.length; i++) {
             const range = dateRanges[i];
             if (range.fromDate && range.toDate && israelDateStr >= range.fromDate && israelDateStr <= range.toDate) {
+              matchedIndex = i;
+              break;
+            }
+          }
+        } else if (routingMode === 'weekday') {
+          const israelDay = israelTime.getDay(); // 0=Sunday ... 6=Saturday
+          const weekdayRanges = nodeData.weekdayRanges || [];
+          for (let i = 0; i < weekdayRanges.length; i++) {
+            const range = weekdayRanges[i];
+            const fromDay = Number.isInteger(range.fromDay) ? range.fromDay : 0;
+            const toDay = Number.isInteger(range.toDay) ? range.toDay : 6;
+
+            let inRange = false;
+            if (fromDay <= toDay) {
+              inRange = israelDay >= fromDay && israelDay <= toDay;
+            } else {
+              inRange = israelDay >= fromDay || israelDay <= toDay;
+            }
+
+            if (inRange) {
               matchedIndex = i;
               break;
             }

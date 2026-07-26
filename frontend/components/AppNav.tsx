@@ -1,14 +1,15 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Bot, List, Users, Layers, Settings, UserCog, Home,MessageSquare } from 'lucide-react';
+import { Bot, List, Users, Settings, UserCog, Home, MessageSquare, Send, Menu, X } from 'lucide-react';
 
-export type NavPage = 'bots' | 'sessions' | 'contacts' | 'groups'| 'sms_in' | 'settings' | 'users';
+export type NavPage = 'bots' | 'sessions' | 'contacts' | 'groups'| 'send_messages' | 'sms_in' | 'settings' | 'users';
 
 const NAV_PATHS: Record<NavPage, string> = {
   bots:     '/dashboard',
   sessions: '/sessions',
   contacts: '/contacts',
   groups:   '/groups',
+  send_messages: '/send-messages',
   settings: '/settings',
   sms_in:   '/sms-in',
   users:    '/users',
@@ -22,6 +23,7 @@ interface AppNavProps {
   onSessions?: () => void;
   onContacts?: () => void;
   onGroups?: () => void;
+  onSendMessages?: () => void;
   onSmsIn?: () => void;
   onSettings?: () => void;
   onUsers?: () => void;
@@ -29,13 +31,21 @@ interface AppNavProps {
   onGoHome?: () => void;
   /** 'sidebar' = vertical panel (right side), 'tabs' = horizontal pill bar in navbar */
   mode?: 'sidebar' | 'tabs';
+  /** Controls mobile drawer state externally (recommended with PageTopBar) */
+  mobileMenuOpen?: boolean;
+  /** Called whenever mobile drawer should open/close */
+  onMobileMenuOpenChange?: (open: boolean) => void;
+  /** Hide built-in mobile trigger when using a top-bar trigger */
+  hideMobileTrigger?: boolean;
+  /** Max width (px) considered mobile drawer mode */
+  mobileBreakpoint?: number;
 }
 
 const NAV_ITEMS: { key: NavPage; label: string; Icon: React.FC<{ size?: number; className?: string }> }[] = [
   { key: 'bots',     label: 'הבוטים שלי', Icon: Bot },
   { key: 'sessions', label: 'שיחות',       Icon: List },
   { key: 'contacts', label: 'אנשי קשר',   Icon: Users },
-  { key: 'groups',   label: 'רשימות תפוצה', Icon: Layers },
+  { key: 'send_messages', label: 'שליחת הודעות', Icon: Send },
   { key: 'sms_in',   label: 'SMS נכנס',      Icon: MessageSquare },
   { key: 'settings', label: 'הגדרות',      Icon: Settings },
   { key: 'users',    label: 'משתמשים',     Icon: UserCog },
@@ -47,14 +57,50 @@ const AppNav: React.FC<AppNavProps> = ({
   onSessions,
   onContacts,
   onGroups,
+  onSendMessages,
   onSmsIn,
   onSettings,
   onUsers,
   onGoHome,
   mode = 'sidebar',
+  mobileMenuOpen,
+  onMobileMenuOpenChange,
+  hideMobileTrigger = false,
+  mobileBreakpoint = 900,
 }) => {
   const navigate = useNavigate();
   const location = useLocation();
+  const [isMobileNav, setIsMobileNav] = useState<boolean>(() => window.innerWidth <= mobileBreakpoint);
+  const [internalMenuOpen, setInternalMenuOpen] = useState(false);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia(`(max-width: ${mobileBreakpoint}px)`);
+
+    const updateMobileState = (event: MediaQueryListEvent | MediaQueryList) => {
+      const mobile = event.matches;
+      setIsMobileNav(mobile);
+      if (!mobile) {
+        setInternalMenuOpen(false);
+      }
+    };
+
+    updateMobileState(mediaQuery);
+
+    const handleChange = (event: MediaQueryListEvent) => updateMobileState(event);
+    mediaQuery.addEventListener('change', handleChange);
+
+    return () => mediaQuery.removeEventListener('change', handleChange);
+  }, [mobileBreakpoint]);
+
+  useEffect(() => {
+    if (isMobileNav) {
+      if (mobileMenuOpen !== undefined) {
+        onMobileMenuOpenChange?.(false);
+      } else {
+        setInternalMenuOpen(false);
+      }
+    }
+  }, [location.pathname, isMobileNav, onMobileMenuOpenChange]);
 
   // Derive active page from URL, fall back to explicit prop
   const activeFromUrl = (Object.entries(NAV_PATHS) as [NavPage, string][])
@@ -66,6 +112,7 @@ const AppNav: React.FC<AppNavProps> = ({
     sessions: onSessions,
     contacts: onContacts,
     groups: onGroups,
+    send_messages: onSendMessages,
     sms_in: onSmsIn,
     settings: onSettings,
     users: onUsers,
@@ -74,6 +121,112 @@ const AppNav: React.FC<AppNavProps> = ({
   // Show an item if a handler was provided for it, or it is the active page
   const visibleItems = NAV_ITEMS.filter(({ key }) => handlers[key] !== undefined || key === activePage);
 
+  const menuOpen = mobileMenuOpen ?? internalMenuOpen;
+  const setMenuOpen = (open: boolean) => {
+    if (mobileMenuOpen === undefined) {
+      setInternalMenuOpen(open);
+    }
+    onMobileMenuOpenChange?.(open);
+  };
+
+  const renderNavButtons = (iconSize: number, dense: boolean) => (
+    <>
+      {onGoHome && (
+        <>
+          <button
+            onClick={onGoHome}
+            className={`flex items-center gap-3 px-4 ${dense ? 'py-3' : 'py-3.5'} rounded-xl font-bold text-sm transition-all duration-200 w-full text-slate-500 hover:bg-slate-50 hover:text-slate-800`}
+          >
+            <Home size={iconSize} className="flex-shrink-0 text-slate-400" />
+            <span className="tracking-tight">דף הבית</span>
+          </button>
+          <div className="my-1 border-t border-slate-100" />
+        </>
+      )}
+
+      {visibleItems.map(({ key, label, Icon }) => {
+        const isActive = key === activePage;
+        return (
+          <button
+            key={key}
+            onClick={() => {
+              navigate(NAV_PATHS[key]);
+              if (isMobileNav) {
+                setMenuOpen(false);
+              }
+            }}
+            disabled={isActive}
+            className={`relative flex items-center gap-3 px-4 ${dense ? 'py-3' : 'py-3.5'} rounded-xl font-bold text-sm transition-all duration-200 w-full group overflow-hidden ${
+              isActive
+                ? 'cursor-default'
+                : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'
+            }`}
+            style={
+              isActive
+                ? {
+                    background: 'linear-gradient(90deg, rgb(219 234 254) 0%, rgb(239 246 255) 100%)',
+                    color: 'rgb(37 99 235)',
+                  }
+                : {}
+            }
+          >
+            {isActive && (
+              <span
+                className="absolute right-0 top-2 bottom-2 w-1 rounded-l-full"
+                style={{ backgroundColor: 'rgb(37 99 235)' }}
+              />
+            )}
+            <Icon
+              size={iconSize}
+              className={`flex-shrink-0 transition-colors ${
+                isActive
+                  ? ''
+                  : 'text-slate-400 group-hover:text-slate-600'
+              }`}
+            />
+            <span className="tracking-tight">{label}</span>
+          </button>
+        );
+      })}
+    </>
+  );
+
+  if (isMobileNav) {
+    return (
+      <>
+        {!hideMobileTrigger && (
+          <div className="fixed z-40" style={{ top: '1.15rem', right: '-0.2rem' }} dir="rtl">
+            <button
+              onClick={() => setMenuOpen(!menuOpen)}
+              aria-label={menuOpen ? 'סגור תפריט ניווט' : 'פתח תפריט ניווט'}
+              aria-expanded={menuOpen}
+              className="inline-flex items-center justify-center p-2.5 rounded-xl bg-white text-slate-700 hover:bg-slate-50 transition-colors"
+            >
+              {menuOpen ? <X size={20} /> : <Menu size={20} />}
+            </button>
+          </div>
+        )}
+
+        {menuOpen && (
+          <>
+            <div
+              className="fixed inset-0 bg-slate-900/20 z-40"
+              onClick={() => setMenuOpen(false)}
+              aria-hidden="true"
+            />
+            <aside
+              className="fixed right-0 top-20 bottom-0 w-64 bg-white border-l border-slate-100 flex flex-col py-4 px-3 gap-1 z-50 overflow-y-auto"
+              style={{ boxShadow: '4px 0 24px rgba(0,0,0,0.03)' }}
+              dir="rtl"
+            >
+              {renderNavButtons(20, false)}
+            </aside>
+          </>
+        )}
+      </>
+    );
+  }
+
   if (mode === 'sidebar') {
     return (
       <aside
@@ -81,57 +234,7 @@ const AppNav: React.FC<AppNavProps> = ({
         style={{ boxShadow: '4px 0 24px rgba(0,0,0,0.03)' }}
         dir="rtl"
       >
-        {onGoHome && (
-          <>
-            <button
-              onClick={onGoHome}
-              className="flex items-center gap-3 px-4 py-3.5 rounded-xl font-bold text-sm transition-all duration-200 w-full text-slate-500 hover:bg-slate-50 hover:text-slate-800"
-            >
-              <Home size={20} className="flex-shrink-0 text-slate-400" />
-              <span className="tracking-tight">דף הבית</span>
-            </button>
-            <div className="my-1 border-t border-slate-100" />
-          </>
-        )}
-        {visibleItems.map(({ key, label, Icon }) => {
-          const isActive = key === activePage;
-          return (
-            <button
-              key={key}
-              onClick={() => navigate(NAV_PATHS[key])}
-              disabled={isActive}
-              className={`relative flex items-center gap-3 px-4 py-3.5 rounded-xl font-bold text-sm transition-all duration-200 w-full group overflow-hidden ${
-                isActive
-                  ? 'cursor-default'
-                  : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'
-              }`}
-              style={
-                isActive
-                  ? {
-                      background: 'linear-gradient(90deg, rgb(219 234 254) 0%, rgb(239 246 255) 100%)',
-                      color: 'rgb(37 99 235)',
-                    }
-                  : {}
-              }
-            >
-              {isActive && (
-                <span
-                  className="absolute right-0 top-2 bottom-2 w-1 rounded-l-full"
-                  style={{ backgroundColor: 'rgb(37 99 235)' }}
-                />
-              )}
-              <Icon
-                size={20}
-                className={`flex-shrink-0 transition-colors ${
-                  isActive
-                    ? ''
-                    : 'text-slate-400 group-hover:text-slate-600'
-                }`}
-              />
-              <span className="tracking-tight">{label}</span>
-            </button>
-          );
-        })}
+        {renderNavButtons(20, false)}
       </aside>
     );
   }

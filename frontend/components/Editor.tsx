@@ -74,6 +74,8 @@ interface EditorProps {
   saveStatus?: 'idle' | 'saving' | 'saved';
   /** Called when user renames the active fixed process */
   onRenameProcess?: (processId: string, newName: string) => Promise<void>;
+  /** Called when user renames the current bot */
+  onRenameBot?: (botId: string, newName: string) => Promise<void>;
 }
 
 const HighlightedText: React.FC<{ text: string; query: string }> = ({ text, query }) => {
@@ -95,11 +97,13 @@ const Editor: React.FC<EditorProps> = ({
   onNodesChange, onEdgesChange, onConnect, onInit, onDrop, onSearchChange, onSearchNav, onTidy, onPublish,
   onCloseEditor, onHome, onSimulatorOpen, onSimulatorClose, onDuplicate, onChangeTemplate, sidebarProps,
   isEditingTemplate, onSaveTemplate, existingTemplateData, onOpenContacts, onOpenSessions, initialParams, onManageParams, onNodeFocus, onFixedProcessActive, isTransitioning,
-  globalSearchResults, onNavigateToProcessResult, onOpenBotSettings, saveStatus, onRenameProcess
+  globalSearchResults, onNavigateToProcessResult, onOpenBotSettings, saveStatus, onRenameProcess, onRenameBot
 }) => {
   const [showSaveModal, setShowSaveModal] = React.useState(false);
   const [isEditingProcessName, setIsEditingProcessName] = useState(false);
   const [processNameInput, setProcessNameInput] = useState('');
+  const [isEditingBotName, setIsEditingBotName] = useState(false);
+  const [botNameInput, setBotNameInput] = useState('');
   const [templateName, setTemplateName] = React.useState(existingTemplateData?.name || '');
   const [templateDescription, setTemplateDescription] = React.useState(existingTemplateData?.description || '');
   const [templateIsPublic, setTemplateIsPublic] = React.useState(existingTemplateData?.isPublic ?? true);
@@ -308,9 +312,36 @@ const Editor: React.FC<EditorProps> = ({
             );
           })()}
            {selectedBot?.name && (
-            <span className="px-3 py-1.5 text-base font-bold text-black max-w-[180px] truncate" title={selectedBot.name} dir="rtl">
-              {selectedBot.name}
-            </span>
+            isEditingBotName ? (
+              <input
+                className="px-3 py-2 bg-white border border-blue-400 rounded-xl text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500/30 min-w-[100px] max-w-[200px] text-right shadow-sm"
+                dir="rtl"
+                value={botNameInput}
+                onChange={e => setBotNameInput(e.target.value)}
+                onBlur={() => {
+                  setIsEditingBotName(false);
+                  const trimmed = botNameInput.trim();
+                  if (trimmed && trimmed !== selectedBot.name && onRenameBot) {
+                    onRenameBot(selectedBot.id, trimmed);
+                  }
+                }}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                  else if (e.key === 'Escape') { setBotNameInput(selectedBot.name); setIsEditingBotName(false); }
+                }}
+                autoFocus
+              />
+            ) : (
+              <button
+                onClick={() => { if (!onRenameBot) return; setBotNameInput(selectedBot.name); setIsEditingBotName(true); }}
+                title={onRenameBot ? 'לחץ לשינוי שם הבוט' : selectedBot.name}
+                disabled={!onRenameBot}
+                className="px-3 py-1.5 bg-transparent border-none text-base font-bold text-black hover:opacity-70 transition-all max-w-[180px] truncate disabled:cursor-default disabled:hover:opacity-100"
+                dir="rtl"
+              >
+                {selectedBot.name}
+              </button>
+            )
           )}
           <div className="h-8 w-px bg-slate-100 mx-1"></div>
           {/* User Avatar - navigates to bots page */}

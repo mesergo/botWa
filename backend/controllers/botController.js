@@ -1121,3 +1121,20 @@ export const updateBotRestartKeyword = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
+
+export const updateBotName = async (req, res) => {
+  const { id } = req.params;
+  const { name } = req.body;
+  const userId = req.user.id;
+  const trimmed = String(name ?? '').trim();
+  if (!trimmed) return res.status(400).json({ error: 'Name cannot be empty' });
+  try {
+    const bot = await BotFlow.findOne({ _id: id, user_id: userId });
+    if (!bot) return res.status(404).json({ error: 'Bot not found' });
+    bot.name = trimmed;
+    await bot.save();
+    res.json({ success: true, name: bot.name });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};

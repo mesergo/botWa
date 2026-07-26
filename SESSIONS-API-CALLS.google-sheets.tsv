@@ -1,0 +1,36 @@
+﻿מספר	תיאור	Method	Route	Params/Query	Body קצר	Headers
+1	מחזיר את רשימת אנשי הקשר במסך השיחות, כולל סטטוס, מספר סשנים ובוטים קשורים	GET	/api/sessions/contacts	אין	אין	Authorization: Bearer <token>
+2	מחזיר את כל הסשנים של מספר טלפון מסוים, כולל היסטוריית תהליך	GET	/api/sessions/by-phone	phone, botId?	אין	Authorization: Bearer <token>
+3	פותח חיבור EventSource לעדכונים בזמן אמת של שיחות והתראות	GET	/api/sessions/stream	token	אין	אין; token עובר ב-query
+4	מבצע חיפוש מהיר בטקסט של הודעות אחרונות	GET	/api/sessions/search-messages	q, mode=basic	אין	Authorization: Bearer <token>
+5	מבצע חיפוש מתקדם בהודעות לפי טקסט וטווח תאריכים	GET	/api/sessions/search-messages	q, mode=advanced, from?, to?	אין	Authorization: Bearer <token>
+6	מסמן שיחה כטופלה ומוסיף היסטוריית מערכת מתאימה	PATCH	/api/sessions/:id/mark-resolved	:id	אין	Authorization: Bearer <token>
+7	סוגר את השיחה ומכבה את מצב הנציג אם הוא פעיל	PATCH	/api/sessions/:id/close-conversation	:id	אין	Authorization: Bearer <token>
+8	מפעיל מצב נציג ומעביר את השיחה לטיפול אנושי	PATCH	/api/sessions/:id/set-agent	:id	אין	Authorization: Bearer <token>
+9	מחזיר את השיחה לטיפול הבוט ומעדכן סטטוס בהתאם	PATCH	/api/sessions/:id/clear-agent	:id	אין	Authorization: Bearer <token>
+10	מחזיר את יעדי ההעברה האפשריים: קבוצות, נציגים ומנהלי משמרת	GET	/api/sessions/transfer-targets	אין	אין	Authorization: Bearer <token>
+11	מעביר שיחה לקבוצה, נציג או מנהל משמרת עם פרטי ההעברה	PATCH	/api/sessions/:id/transfer	:id	targetType, targetId, groupId?, wantsPhone?, note?	Authorization: Bearer <token>; Content-Type: application/json
+12	שולח הודעה מתוך שיחה קיימת; תומך בטקסט, מדיה או טמפלייט	POST	/api/sessions/:id/send-agent-message	:id	טקסט / מדיה / טמפלייט	Authorization: Bearer <token>; Content-Type: application/json
+13	שולח טמפלייט ללקוח גם בלי session קיים, ויכול ליצור session חדש	POST	/api/sessions/send-template-to-phone	אין	phone, message, templateData	Authorization: Bearer <token>; Content-Type: application/json
+14	שולף את טמפלייטי Dialog360 הזמינים למשתמש המחובר	GET	/api/auth/templates	אין	אין	Authorization: Bearer <token>
+15	מחזיר את הגדרות הנראות של טמפלייטים במסך השיחות	GET	/api/dialog360-templates	אין	אין	Authorization: Bearer <token>
+16	מעלה קובץ ומחזיר URL ציבורי שאפשר לשלוח כמדיה	POST	/api/upload	אין	multipart/form-data עם file	Authorization: Bearer <token>; Content-Type: multipart/form-data
+17	מחזיר את רשימת הבוטים של המשתמש, כולל מספרי תצוגה	GET	/api/bots	אין	אין	Authorization: Bearer <token>
+18	יוצר איש קשר חדש או מעדכן איש קשר קיים לפי מספר טלפון	POST	/api/contacts	אין	phone, full_name?, whatsapp_name?, email?, custom_field_values?	Authorization: Bearer <token>; Content-Type: application/json
+19	מחפש ושולף אנשי קשר ממודול אנשי הקשר עם דפדוף וסינון	GET	/api/contacts	search?, limit?, page?	אין	Authorization: Bearer <token>
+20	מחזיר את רשימת הנציגים או תתי-המשתמשים של החברה	GET	/api/sub-users	אין	אין	Authorization: Bearer <token>
+21	משייך נציג לאיש קשר או מסיר שיוך קיים לפי פעולה מבוקשת	PATCH	/api/contacts/assign-rep	אין	phone, rep_id, action	Authorization: Bearer <token>; Content-Type: application/json
+22	מחזיר את קבוצות המשתמש, כולל קבוצות blocklist אם קיימות	GET	/api/groups	אין	אין	Authorization: Bearer <token>
+23	מוסיף אנשי קשר לקבוצה או לרשימת הסרה לפי מזהה קבוצה	POST	/api/groups/:id/members	:id	phones?, contact_ids?	Authorization: Bearer <token>; Content-Type: application/json
+24	מחזיר את ההתראות הפעילות של המשתמש המחובר	GET	/api/notifications	אין	אין	Authorization: Bearer <token>
+25	מסמן התראה אחת כ-dismiss לפי מזהה ההתראה	PATCH	/api/notifications/:id/dismiss	:id	אין	Authorization: Bearer <token>
+26	מסמן את כל ההתראות הפעילות כ-dismiss בבת אחת	PATCH	/api/notifications/dismiss-all	אין	אין	Authorization: Bearer <token>
+27	מחזיר סשנים מדופדפים של המשתמש הנוכחי עם חיפוש אופציונלי	GET	/api/sessions/my-sessions	page?, search?	אין	Authorization: Bearer <token>
+28	מחזיר את כל הסשנים במערכת עבור אדמין, עם דפדוף וחיפוש	GET	/api/sessions/all-sessions	page?, search?	אין	Authorization: Bearer <token>
+29	פותח session חדש עבור widget או simulator, עם טלפון לקוח אופציונלי	POST	/api/sessions/start	אין	customer_phone?, widget_id, simulator_id?	Authorization: Bearer <token> אופציונלי; Content-Type: application/json
+30	מעדכן את אובייקט הפרמטרים של session קיים	POST	/api/sessions/update-parameters	אין	sessionId, parameters	Content-Type: application/json
+31	מוסיף פריט חדש להיסטוריית התהליך של session	POST	/api/sessions/add-history	אין	sessionId, message	Content-Type: application/json
+32	מחליף את מצב is_active של session; מיועד לאדמין	PATCH	/api/sessions/:id/toggle-active	:id	אין	Authorization: Bearer <token>
+33	מסמן session כלא פעיל ללא צורך בהרשאת Authorization	PATCH	/api/sessions/:id/deactivate	:id	אין	אין
+34	מזריק הודעה חיצונית ל-session, למשל ממערכת חיצונית או שירות משלים	POST	/api/sessions/send-message	אין	sessionId, message, simulator_id?	Content-Type: application/json
+35	מחזיר את הודעות ה-session עם תמיכה ב-polling וסינון לפי זמן או simulator	GET	/api/sessions/:sessionId/messages	:sessionId, since?, simulator_id?	אין	אין
