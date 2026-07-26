@@ -48,6 +48,10 @@ const permissionsSchema = new mongoose.Schema({
   },
   sms_in: {
     view: { type: Boolean, default: false }
+  },
+  send_messages: {
+    view: { type: Boolean, default: false },
+    send: { type: Boolean, default: false }
   }
 }, { _id: false });
 

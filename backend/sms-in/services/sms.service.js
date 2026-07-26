@@ -17,6 +17,25 @@ export async function getRecentMessages(limit = 500) {
   return docs.map(formatSmsDocument);
 }
 
+export async function searchMessages({ search, allowedDests, destQuery, page = 1, limit = 50 }) {
+  if (!(await ensureSmsReady())) {
+    throw new Error('Database not configured');
+  }
+
+  const { docs, total } = await smsRepository.searchMessages({
+    search,
+    allowedDests,
+    destQuery,
+    skip: (page - 1) * limit,
+    limit,
+  });
+
+  return {
+    messages: docs.map(formatSmsDocument),
+    total,
+  };
+}
+
 export async function createMessage({ dest, phone, date, message }) {
   const doc = {
     dest,

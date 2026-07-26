@@ -44,6 +44,9 @@ const RegisterPage: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [registeredEmail, setRegisteredEmail] = useState('');
+  // Non-blocking duplicate-email confirm choice: "create another account with this email" vs "go to login"
+  const [duplicateEmailChoice, setDuplicateEmailChoice] = useState(false);
+  const [confirmedDuplicate, setConfirmedDuplicate] = useState(false);
 
   // Allow body scrolling while this page is mounted
   useEffect(() => {
@@ -156,6 +159,10 @@ const RegisterPage: React.FC = () => {
       const err = validateField(field, value);
       setErrors((prev) => ({ ...prev, [field]: err }));
     }
+    if (field === 'email') {
+      setDuplicateEmailChoice(false);
+      setConfirmedDuplicate(false);
+    }
   };
 
   const handleBlur = async (field: keyof RegisterForm) => {
@@ -170,9 +177,8 @@ const RegisterPage: React.FC = () => {
           `${API_BASE}/auth/check-email?email=${encodeURIComponent(form.email.trim())}`
         );
         const data = await res.json();
-        if (data.exists) {
-          setErrors((prev) => ({ ...prev, email: 'כתובת אימייל זו כבר רשומה במערכת' }));
-        }
+        // Non-blocking: existing email just surfaces the "create another account?" choice
+        setDuplicateEmailChoice(!!data.exists && !confirmedDuplicate);
       } catch {
         // silent
       } finally {
@@ -200,8 +206,8 @@ const RegisterPage: React.FC = () => {
         `${API_BASE}/auth/check-email?email=${encodeURIComponent(form.email.trim())}`
       );
       const emailData = await emailRes.json();
-      if (emailData.exists) {
-        setErrors({ email: 'כתובת אימייל זו כבר רשומה במערכת' });
+      if (emailData.exists && !confirmedDuplicate) {
+        setDuplicateEmailChoice(true);
         setIsSubmitting(false);
         return;
       }
@@ -366,6 +372,33 @@ const RegisterPage: React.FC = () => {
                 </div>
                 {touched.email && errors.email && (
                   <p className="text-red-500 text-sm mt-1 font-medium">{errors.email}</p>
+                )}
+                {duplicateEmailChoice && (
+                  <div className="mt-3 bg-amber-50 border border-amber-200 rounded-xl p-4 text-right space-y-3">
+                    <p className="text-sm font-bold text-amber-800">
+                      כתובת אימייל זו כבר קיימת במערכת — ליצור חשבון נוסף בכל זאת?
+                    </p>
+                    <div className="flex flex-wrap gap-3">
+                      <button
+                        type="button"
+                        onClick={() => { setConfirmedDuplicate(true); setDuplicateEmailChoice(false); }}
+                        className="text-sm font-bold bg-amber-600 text-white px-4 py-2 rounded-lg hover:bg-amber-700 transition-colors"
+                      >
+                        צור חשבון נוסף עם מייל זה
+                      </button>
+                      <a
+                        href="/"
+                        className="text-sm font-bold bg-white border border-amber-300 text-amber-700 px-4 py-2 rounded-lg hover:bg-amber-50 transition-colors"
+                      >
+                        עבור להתחברות
+                      </a>
+                    </div>
+                  </div>
+                )}
+                {confirmedDuplicate && !duplicateEmailChoice && (
+                  <p className="text-amber-700 text-sm mt-2 font-bold">
+                    ✓ ייווצר חשבון נוסף עבור כתובת אימייל זו
+                  </p>
                 )}
               </div>
             </div>

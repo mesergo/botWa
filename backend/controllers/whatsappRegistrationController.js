@@ -587,7 +587,7 @@ export const createPhpAccount = async (req, res) => {
       apiPrefix,
       phone,
       exportUrl: b.exportUrl || '',
-      countriesPrefix: b.countriesPrefix || '972',
+      countriesPrefix: '972',
       firstname: b.firstname || '',
       lastname: b.lastname || '',
       username: b.username || '',

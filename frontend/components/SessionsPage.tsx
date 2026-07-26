@@ -1,9 +1,10 @@
 ﻿import React, { useState, useEffect, useRef } from 'react';
 import { WhatsAppText } from '../utils/whatsappFormat';
-import { Clock, MessageSquare, Search, Bot, LogOut, User, Phone, List, Users, ExternalLink, X, Headphones, RefreshCw, Shield, Settings, UserCog, Layers, Plus, UserPlus, Check, Paperclip, ChevronRight, Bell, MoreVertical, Ban } from 'lucide-react';
+import { Clock, MessageSquare, Search, Bot, User, Phone, List, Users, ExternalLink, X, Headphones, RefreshCw, Settings, UserCog, Layers, Plus, UserPlus, Check, Paperclip, ChevronRight, Bell, MoreVertical, Ban, Megaphone } from 'lucide-react';
 import ImpersonationBanner from './ImpersonationBanner';
-import { FileUploader } from './FileUploader';
+import { TemplateHeaderMediaField } from './TemplateHeaderMediaField';
 import { usePermission } from '../hooks/usePermission';
+import PageTopBar from './PageTopBar';
 import AppNav from './AppNav';
 import { useContactFields } from '../context/ContactFieldsContext';
  
@@ -42,11 +43,13 @@ interface SessionsPageProps {
   onLogout: () => void;
   onOpenContacts?: (phone?: string) => void;
   onOpenGroups?: () => void;
+  onOpenSendMessages?: () => void;
   onOpenSmsIn?: () => void;
   onOpenAdminPanel?: () => void;
   onOpenSettings?: () => void;
   onOpenSubUsers?: () => void;
   onStopImpersonation?: () => void;
+  onSwitchAccount?: (accountId: string) => void;
   onUpdateAvailability?: (status: 'available' | 'unavailable' | 'on_break') => Promise<void>;
   onGoHome?: () => void;
   ownOnly?: boolean;
@@ -63,7 +66,7 @@ const WhatsAppIcon = ({ size = 12, className = '' }: { size?: number; className?
   </svg>
 );
 
-const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack, onLogout, onOpenContacts, onOpenGroups, onOpenAdminPanel,onOpenSmsIn, onOpenSettings, onOpenSubUsers, onStopImpersonation, onUpdateAvailability, onGoHome, initialPhone }) => {
+const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack, onLogout, onOpenContacts, onOpenGroups, onOpenSendMessages, onOpenAdminPanel,onOpenSmsIn, onOpenSettings, onOpenSubUsers, onStopImpersonation, onSwitchAccount, onUpdateAvailability, onGoHome, initialPhone }) => {
   // Contacts panel state
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [contactsLoading, setContactsLoading] = useState(true);
@@ -87,6 +90,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
   const [fileUploadError, setFileUploadError] = useState<string | null>(null);
   const [fileUploading, setFileUploading] = useState(false);
   const fileUploadRef = React.useRef<HTMLInputElement>(null);
+  const agentMessageInputRef = React.useRef<HTMLTextAreaElement>(null);
 
   // Template dropdown state
   const [showTemplates, setShowTemplates] = useState(false);
@@ -94,6 +98,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
   const [templatesLoading, setTemplatesLoading] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<any>(null);
   const [templateSettings, setTemplateSettings] = useState<Record<string, 'hidden' | 'manager' | 'agent'>>({});
+  const [templateDefaultMedia, setTemplateDefaultMedia] = useState<Record<string, { url: string; type: 'image' | 'video' | 'document' }>>({});
   
   // Template parameters modal
   const [showTemplateParamsModal, setShowTemplateParamsModal] = useState(false);
@@ -834,9 +839,10 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
               setSelectedTemplate(null);
               setTemplateParams({});
               const replyStatus: ConvStatus = msgData.status || (isTemplate ? 'waiting' : 'handling');
+              const currentAgentName = currentUser?.name || currentUser?.email || 'נציג';
               const fallbackEntry = capturedFile
-                ? { type: capturedFile.type === 'image' ? 'Image' : capturedFile.type === 'video' ? 'Video' : 'Document', url: capturedFile.url, text: messageToSend, sender: 'agent', name: 'נציג', created, wa_sent: msgData.waSent }
-                : { type: 'Text', text: messageToSend, sender: 'agent', name: 'נציג', created, wa_sent: msgData.waSent };
+                ? { type: capturedFile.type === 'image' ? 'Image' : capturedFile.type === 'video' ? 'Video' : 'Document', url: capturedFile.url, text: messageToSend, sender: 'agent', name: 'נציג', agent_name: currentAgentName, created, wa_sent: msgData.waSent }
+                : { type: 'Text', text: messageToSend, sender: 'agent', name: 'נציג', agent_name: currentAgentName, created, wa_sent: msgData.waSent };
               setPhoneSessions(prev => prev.map((s, i) =>
                 i === prev.length - 1
                   ? { ...s, status: replyStatus, process_history: [...s.process_history, msgData.historyEntry || fallbackEntry] }
@@ -851,16 +857,26 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 setAgentWaRetryable(msgData.waRetryable === true);
                 setTimeout(() => { setAgentWaFailed(false); setAgentWaError(null); setAgentWaRetryable(false); }, 12000);
               }
+            } else {
+              const errData = await msgResponse.json().catch(() => ({}));
+              console.error('Failed to send message after activating agent', msgResponse.status, errData);
+              alert(errData.error || `שגיאה בשליחת ההודעה (קוד ${msgResponse.status})`);
             }
           } catch (msgError) {
             console.error('Failed to send message after activating agent', msgError);
+            alert('שגיאת רשת בשליחת ההודעה');
           } finally {
             setAgentSending(false);
           }
         }
+      } else {
+        const errData = await r.json().catch(() => ({}));
+        console.error('Failed to set agent mode', r.status, errData);
+        alert(errData.error || `שגיאה במעבר למצב נציג (קוד ${r.status})`);
       }
     } catch (e) {
       console.error('Failed to set agent mode', e);
+      alert('שגיאת רשת במעבר למצב נציג');
     }
   };
 
@@ -944,6 +960,14 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
     if (fileUploadRef.current) fileUploadRef.current.value = '';
   };
 
+  // Auto-grow the message textarea as its content changes (reset to 1 line when empty)
+  useEffect(() => {
+    const el = agentMessageInputRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  }, [agentMessage]);
+
   const sendAgentMsg = async () => {
     if (!agentMessage.trim() && !attachedFile || agentSending) return;
 
@@ -987,7 +1011,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
               bot_name: 'נציג',
               created_at: data.created,
               parameters: {},
-              process_history: [data.historyEntry],
+              process_history: data.processHistory || [data.historyEntry],
               is_agent: true,
               agent_since: data.created
             };
@@ -1065,9 +1089,10 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
         setSelectedTemplate(null);
         setTemplateParams({});
         const replyStatus: ConvStatus = data.status || (isTemplate ? (currentStatus === 'bot' ? 'waiting' : currentStatus) : 'handling');
+        const currentAgentName = currentUser?.name || currentUser?.email || 'נציג';
         const fallbackEntry = currentAttachedFile
-          ? { type: currentAttachedFile.type === 'image' ? 'Image' : currentAttachedFile.type === 'video' ? 'Video' : 'Document', url: currentAttachedFile.url, text: msgText, sender: 'agent', name: 'נציג', created, wa_sent: data.waSent }
-          : { type: 'Text', text: msgText, sender: 'agent', name: 'נציג', created, wa_sent: data.waSent };
+          ? { type: currentAttachedFile.type === 'image' ? 'Image' : currentAttachedFile.type === 'video' ? 'Video' : 'Document', url: currentAttachedFile.url, text: msgText, sender: 'agent', name: 'נציג', agent_name: currentAgentName, created, wa_sent: data.waSent }
+          : { type: 'Text', text: msgText, sender: 'agent', name: 'נציג', agent_name: currentAgentName, created, wa_sent: data.waSent };
         setPhoneSessions(prev => prev.map((s, i) =>
           i === prev.length - 1
             ? { ...s, status: replyStatus, process_history: [...s.process_history, data.historyEntry || fallbackEntry] }
@@ -1135,10 +1160,15 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
         const data = await response.json();
         const settingsList = data.success && Array.isArray(data.settings) ? data.settings : [];
         const settingsMap: Record<string, 'hidden' | 'manager' | 'agent'> = {};
+        const defaultMediaMap: Record<string, { url: string; type: 'image' | 'video' | 'document' }> = {};
         settingsList.forEach((s: any) => {
           settingsMap[s.templateName] = s.visibility || (s.showInChat === false ? 'hidden' : 'manager');
+          if (s.defaultHeaderMediaUrl && s.defaultHeaderMediaType) {
+            defaultMediaMap[s.templateName] = { url: s.defaultHeaderMediaUrl, type: s.defaultHeaderMediaType };
+          }
         });
         setTemplateSettings(settingsMap);
+        setTemplateDefaultMedia(defaultMediaMap);
       }
     } catch (err) {
       console.error('Error fetching template settings:', err);
@@ -1160,14 +1190,17 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
       if (template.components && Array.isArray(template.components)) {
         template.components.forEach((comp: any) => {
           if (comp.type === 'HEADER' && ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(comp.format)) {
-            // Pre-fill with the template's example image so it's sent automatically if the user doesn't upload a new one
+            // Prefer the admin-configured default media for this template; otherwise
+            // pre-fill with the template's example image so something is sent
+            // automatically if the agent doesn't upload a new file.
+            const defaultMedia = templateDefaultMedia[templateName];
             const exampleUrl: string =
               comp.example?.header_url?.[0] ||
               comp.example?.header_url ||
               (Array.isArray(comp.example?.header_handle) ? comp.example.header_handle[0] : undefined) ||
               comp.example?.header_handle ||
               '';
-            initialParams.header = { type: comp.format.toLowerCase(), url: exampleUrl };
+            initialParams.header = { type: comp.format.toLowerCase(), url: defaultMedia?.url || exampleUrl };
           }
           if (comp.type === 'BODY' && comp.text) {
             // Extract {{1}}, {{2}} etc from body text
@@ -1222,7 +1255,22 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
   // ─────────────────────────────────────────────────────────────────────────
 
   const can = usePermission(currentUser as any);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [isCompactLayout, setIsCompactLayout] = useState<boolean>(() => window.innerWidth <= 900);
   const firstName = currentUser?.name?.charAt(0)?.toUpperCase() || currentUser?.email?.charAt(0)?.toUpperCase() || '?';
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(max-width: 900px)');
+
+    const syncLayout = (e: MediaQueryList | MediaQueryListEvent) => {
+      setIsCompactLayout(e.matches);
+    };
+
+    syncLayout(mediaQuery);
+    const handleChange = (e: MediaQueryListEvent) => syncLayout(e);
+    mediaQuery.addEventListener('change', handleChange);
+    return () => mediaQuery.removeEventListener('change', handleChange);
+  }, []);
 
   // ── Availability badge (reps / rep_managers) ────────────────────────────
   const AVAILABILITY_OPTIONS: { value: 'available' | 'unavailable' | 'on_break'; label: string; dot: string; text: string; bg: string }[] = [
@@ -1487,9 +1535,10 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
 
 
     return grouped.map((item: any, idx: number) => {
-      const senderType: 'bot' | 'user' | 'agent' | 'system' =
+      const senderType: 'bot' | 'user' | 'agent' | 'system' | 'broadcast' =
         item.sender === 'system' || item.type === 'System' ? 'system'
         : item.sender === 'agent' ? 'agent'
+        : item.sender === 'broadcast' ? 'broadcast'
         : item.sender === 'user' ? 'user'
         : item.type === 'UserInput' ? 'user'
         : item.sender === 'bot' ? 'bot'
@@ -1497,6 +1546,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
       const isBot = senderType === 'bot';
       const isAgent = senderType === 'agent';
       const isSystem = senderType === 'system';
+      const isBroadcast = senderType === 'broadcast';
       const text = item.text ?? item.content ?? '';
       const msgDate = item.created ? formatMessageDate(item.created) : '';
       const isAudioUrl = /^https?:\/\/.+\.(oga|ogg|mp3|wav|m4a|aac|opus)(\?.*)?$/i.test(item.url || text);
@@ -1528,10 +1578,12 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                   <Headphones size={12} />
                 </div>
                 {msgDate && <span className="text-[9px] text-slate-400 font-semibold">{msgDate}</span>}
+                {(item.agent_name || item.name) && (item.agent_name || item.name) !== 'נציג' && (
+                  <span className="text-[9px] text-purple-400 font-black">{item.agent_name || item.name}</span>
+                )}
               </div>
               <div className="flex flex-col gap-0.5 items-end">
                 <div className="px-3 py-1.5 rounded-2xl text-sm font-semibold shadow-sm text-right bg-purple-50 border border-purple-200 text-purple-900 rounded-tr-none">
-                  <p className="text-[9px] text-purple-400 font-black mb-0.5 uppercase tracking-widest">נציג</p>
                   {item.type === 'Image' && item.url && (
                     <img src={item.url} alt="תמונה" className="rounded-xl max-w-[200px] h-auto mb-2" />
                   )} 
@@ -1591,6 +1643,43 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
         );
       }
 
+      // Group-broadcast message — amber bubble on left side (like a bot message, but visually distinct)
+      if (isBroadcast) {
+        return (
+          <div key={`${session.id}-${idx}`} className="flex w-full justify-start">
+            <div className="flex gap-1.5 max-w-[88%] flex-row-reverse">
+              <div className="flex flex-col items-center gap-0.5 flex-shrink-0">
+                <div className="w-6 h-6 rounded-lg flex items-center justify-center shadow-sm bg-amber-100 border border-amber-200 text-amber-700">
+                  <Megaphone size={12} />
+                </div>
+                {msgDate && <span className="text-[9px] text-slate-400 font-semibold">{msgDate}</span>}
+              </div>
+              <div className="flex flex-col gap-0.5 items-end">
+                <div className="px-3 py-1.5 rounded-2xl text-sm font-semibold shadow-sm text-right bg-amber-50 border border-amber-200 text-amber-900 rounded-tr-none">
+                  <p className="text-[9px] text-amber-500 font-black mb-0.5 uppercase tracking-widest">📢 שידור: {item.broadcast_group || item.name || 'רשימת תפוצה'}</p>
+                  {item.template_name && (
+                    <p className="text-[9px] text-amber-400 font-bold mb-1">תבנית: {item.template_name}</p>
+                  )}
+                  {item.type === 'Image' && item.url && (
+                    <img src={item.url} alt="תמונה" className="rounded-xl max-w-[200px] h-auto mb-2" />
+                  )}  
+                  {item.type === 'Video' && item.url && (
+                    <video src={item.url} controls className="rounded-xl max-w-[200px] mb-2" />
+                  )}
+                  {item.type === 'Document' && item.url && (
+                    <a href={item.url} target="_blank" rel="noopener noreferrer"
+                      className="flex items-center gap-2 p-2 bg-amber-100 rounded-xl hover:bg-amber-200 transition-colors text-amber-700 text-xs font-bold mb-2">
+                      <ExternalLink size={13} /> פתח מסמך
+                    </a>
+                  )}
+                  {text && <WhatsAppText text={text} className="leading-snug" />}
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      }
+
       return (
         <div
           key={`${session.id}-${idx}`}
@@ -1603,6 +1692,9 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 {isBot ? <Bot size={12} /> : <User size={12} />}
               </div>
               {msgDate && <span className="text-[9px] text-slate-400 font-semibold">{msgDate}</span>}
+              {isBot && session.bot_name && (
+                <span className="text-[9px] text-slate-400 font-black">{session.bot_name}</span>
+              )}
             </div>
             <div className={`flex flex-col gap-0.5 ${isBot ? 'items-end' : 'items-start'}`}>
               <div className={`px-3 py-1.5 rounded-2xl text-sm font-semibold shadow-sm text-right
@@ -1703,84 +1795,56 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
   };
 
   return (
-    <div className="h-screen w-screen bg-[#f8fafc] flex flex-col font-medium text-right overflow-hidden" dir="rtl">
+    <div className="h-[100dvh] w-full bg-[#f8fafc] flex flex-col font-medium text-right overflow-hidden" dir="rtl">
       {/* Impersonation Banner */}
-      <ImpersonationBanner currentUser={currentUser} onStopImpersonation={onStopImpersonation} />
+      <ImpersonationBanner currentUser={currentUser} onStopImpersonation={onStopImpersonation} token={token} onSwitchAccount={onSwitchAccount} />
       {/* Navbar */}
-      <nav className="h-20 bg-white border-b border-slate-100 flex items-center justify-between px-10 z-20 flex-shrink-0" dir="ltr">
-        <div className="flex items-center gap-4">
-          <button onClick={onLogout} className="p-2.5 text-slate-300 hover:text-red-500 transition-colors rounded-xl hover:bg-red-50">
-            <LogOut size={22} />
-          </button>
-          <img src="/images/mesergo-logo.png" alt="Logo" className="h-10 w-auto cursor-pointer" onClick={onBack} />
-        </div>
-        <div className="flex items-center gap-4">
-          {currentUser && (
-            <span className="text-sm font-bold text-slate-600">שלום, {currentUser.name || currentUser.email}</span>
-          )}
-          {showAvailability && (
-            <div ref={availabilityWrapperRef} className="relative" dir="rtl">
-              <button
-                type="button"
-                onClick={() => setAvailabilityOpen(v => !v)}
-                disabled={availabilitySaving}
-                title="שינוי סטטוס זמינות"
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-black border border-slate-200 ${currentAvailability.bg} ${currentAvailability.text} hover:shadow-sm transition-all disabled:opacity-60`}
-              >
-                <span className="relative flex h-2.5 w-2.5">
-                  {currentAvailability.value === 'available' && (
-                    <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-60 ${currentAvailability.dot}`}></span>
-                  )}
-                  <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${currentAvailability.dot}`}></span>
-                </span>
-                <span>{currentAvailability.label}</span>
-              </button>
-              {availabilityOpen && (
-                <div className="absolute mt-2 left-0 w-44 bg-white rounded-2xl shadow-xl border border-slate-100 py-2 z-50">
-                  {AVAILABILITY_OPTIONS.map(opt => {
-                    const isActive = opt.value === (currentUser?.availability_status || 'available');
-                    return (
-                      <button
-                        key={opt.value}
-                        onClick={() => handleAvailabilitySelect(opt.value)}
-                        className={`w-full flex items-center gap-2 px-4 py-2 text-sm font-bold text-right hover:bg-slate-50 transition-colors ${isActive ? 'bg-slate-50' : ''}`}
-                      >
-                        <span className={`inline-block h-2.5 w-2.5 rounded-full ${opt.dot}`}></span>
-                        <span className="flex-1 text-slate-700">{opt.label}</span>
-                        {isActive && <Check size={14} className="text-blue-600" />}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
-          {currentUser?.role === 'admin' && onOpenAdminPanel && (
+      <PageTopBar
+        currentUser={currentUser}
+        onBack={onBack ?? onGoHome ?? (() => {})}
+        onLogout={onLogout}
+        onOpenAdminPanel={onOpenAdminPanel}
+        showMobileNavToggle
+        mobileNavOpen={mobileNavOpen}
+        onMobileNavToggle={() => setMobileNavOpen((prev) => !prev)}
+        rightSlot={showAvailability ? (
+          <div ref={availabilityWrapperRef} className="relative" dir="rtl">
             <button
-              onClick={onOpenAdminPanel}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-100 text-blue-700 rounded-lg font-bold hover:bg-blue-200 transition-colors"
+              type="button"
+              onClick={() => setAvailabilityOpen(v => !v)}
+              disabled={availabilitySaving}
+              title="שינוי סטטוס זמינות"
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-black border border-slate-200 ${currentAvailability.bg} ${currentAvailability.text} hover:shadow-sm transition-all disabled:opacity-60`}
             >
-              <Shield size={18} />
-              פאנל ניהול
+              <span className="relative flex h-2.5 w-2.5">
+                {currentAvailability.value === 'available' && (
+                  <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-60 ${currentAvailability.dot}`}></span>
+                )}
+                <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${currentAvailability.dot}`}></span>
+              </span>
+              <span>{currentAvailability.label}</span>
             </button>
-          )}
-          <div className="relative">
-            <div
-              title={currentUser?.name || currentUser?.email || ''}
-              className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-sm shadow-md select-none cursor-pointer hover:scale-105 transition-transform"
-              onClick={onBack}
-            >
-              {firstName}
-            </div>
-            {showAvailability && (
-              <span
-                title={currentAvailability.label}
-                className={`absolute -bottom-0.5 -left-0.5 h-3 w-3 rounded-full ring-2 ring-white ${currentAvailability.dot}`}
-              />
+            {availabilityOpen && (
+              <div className="absolute mt-2 left-0 w-44 bg-white rounded-2xl shadow-xl border border-slate-100 py-2 z-50">
+                {AVAILABILITY_OPTIONS.map(opt => {
+                  const isActive = opt.value === (currentUser?.availability_status || 'available');
+                  return (
+                    <button
+                      key={opt.value}
+                      onClick={() => handleAvailabilitySelect(opt.value)}
+                      className={`w-full flex items-center gap-2 px-4 py-2 text-sm font-bold text-right hover:bg-slate-50 transition-colors ${isActive ? 'bg-slate-50' : ''}`}
+                    >
+                      <span className={`inline-block h-2.5 w-2.5 rounded-full ${opt.dot}`}></span>
+                      <span className="flex-1 text-slate-700">{opt.label}</span>
+                      {isActive && <Check size={14} className="text-blue-600" />}
+                    </button>
+                  );
+                })}
+              </div>
             )}
           </div>
-        </div>
-      </nav>
+        ) : undefined}
+      />
 
       {/* ── Bot Picker ─────────────────────────────────────────────────────── */}
       {showBotPicker ? (
@@ -1789,23 +1853,28 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
             <AppNav
               mode="sidebar"
               activePage="sessions"
+              hideMobileTrigger
+              mobileBreakpoint={900}
+              mobileMenuOpen={mobileNavOpen}
+              onMobileMenuOpenChange={setMobileNavOpen}
               onGoHome={onGoHome}
               onBots={onBack && can('bots.view_tab') ? onBack : undefined}
               onContacts={onOpenContacts ? () => onOpenContacts() : undefined}
               onGroups={onOpenGroups}
+              onSendMessages={onOpenSendMessages}
               onSmsIn={onOpenSmsIn}
               onSettings={onOpenSettings}
               onUsers={onOpenSubUsers && can('users.view') ? onOpenSubUsers : undefined}
             />
           )}
-          <div className="flex-1 overflow-y-auto p-10 bg-[#f8fafc]">
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-10 bg-[#f8fafc]">
           <div className="max-w-5xl mx-auto">
-            <div className="flex items-center gap-4 mb-8">
+            <div className="flex items-center gap-3 sm:gap-4 mb-6 sm:mb-8">
               <div className="w-12 h-12 bg-sky-50 text-sky-600 rounded-2xl flex items-center justify-center">
                 <MessageSquare size={26} />
               </div>
               <div>
-                <h1 className="text-3xl font-black text-slate-900">שיחות</h1>
+                <h1 className="text-2xl sm:text-3xl font-black text-slate-900">שיחות</h1>
                 <p className="text-slate-400 text-sm font-semibold mt-0.5">בחר מספר מחובר לצפייה בשיחות</p>
               </div>
             </div>
@@ -1815,7 +1884,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 <div className="animate-spin w-10 h-10 border-4 border-slate-200 border-t-sky-500 rounded-full" />
               </div>
             ) : (
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-5">
                 {/* All bots card */}
                 <button
                   onClick={() => { setActiveBotFilter(null); setShowBotPicker(false); }}
@@ -1854,16 +1923,21 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
           </div>
         </div>
       ) : (
-      <div className="flex-1 flex overflow-hidden">
+      <div className={`flex-1 flex overflow-hidden ${isCompactLayout ? 'flex-col' : 'flex-row'}`}>
         {(onGoHome || onBack) && (
           <AppNav
             mode="sidebar"
             activePage="sessions"
+            hideMobileTrigger
+            mobileBreakpoint={900}
+            mobileMenuOpen={mobileNavOpen}
+            onMobileMenuOpenChange={setMobileNavOpen}
             onGoHome={onGoHome}
             onBots={onBack && can('bots.view_tab') ? onBack : undefined}
             onSessions={botList.length > 1 ? () => { setActiveBotFilter(null); setSelectedPhone(null); setShowBotPicker(true); } : undefined}
             onContacts={onOpenContacts ? () => onOpenContacts() : undefined}
             onGroups={onOpenGroups}
+            onSendMessages={onOpenSendMessages}
             onSmsIn={onOpenSmsIn}
             onSettings={onOpenSettings}
             onUsers={onOpenSubUsers && can('users.view') ? onOpenSubUsers : undefined}
@@ -1871,9 +1945,9 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
         )}
 
         {/* ── Contacts panel (right side in RTL, ~25%) ── */}
-        <div className="w-[25%] flex-shrink-0 bg-white border-l border-slate-100 flex flex-col overflow-hidden">
+        <div className={`bg-white border-slate-100 flex-col overflow-hidden ${isCompactLayout ? 'w-full' : 'w-[25%] flex-shrink-0 border-l'} ${isCompactLayout && selectedPhone ? 'hidden' : 'flex'}`}>
           {/* Header */}
-          <div className="flex-shrink-0 px-5 py-4 border-b border-slate-100">
+          <div className="flex-shrink-0 px-4 lg:px-5 py-3 lg:py-4 border-b border-slate-100">
             {/* Bot filter breadcrumb — only shown when there are multiple bots */}
             {activeBotFilter && botList.length > 1 && (
               <button
@@ -2136,7 +2210,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
         </div>
 
         {/* ── Chat history area (second child = left side in RTL, ~70%) ── */}
-        <div className="flex-1 flex flex-col overflow-hidden bg-[#f8fafc]">
+        <div className={`flex-1 flex-col overflow-hidden bg-[#f8fafc] ${isCompactLayout ? (selectedPhone ? 'flex' : 'hidden') : 'flex'}`}>
           {!selectedPhone ? (
             <div className="flex-1 flex flex-col items-center justify-center gap-4 text-center px-8">
               <MessageSquare size={72} strokeWidth={0.7} className="text-slate-200" />
@@ -2146,12 +2220,12 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
           ) : (
             <>
               {/* Contact header */}
-              <div className="flex-shrink-0 px-6 py-4 bg-white border-b border-slate-100 flex items-center gap-4">
+              <div className="flex-shrink-0 px-3 sm:px-4 lg:px-6 py-3 lg:py-4 bg-white border-b border-slate-100 flex items-start sm:items-center gap-2 sm:gap-4 flex-wrap">
                 <div className={`w-11 h-11 rounded-2xl flex items-center justify-center flex-shrink-0
                   ${isSimulator(selectedPhone) ? 'bg-blue-50 text-blue-400' : 'bg-sky-50 text-sky-500'}`}>
                   {isSimulator(selectedPhone) ? <MessageSquare size={20} /> : <Phone size={20} />}
                 </div>
-                <div className="flex-1">
+                <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <p className="text-base font-black text-slate-900 flex items-center gap-1.5 flex-wrap">
                       {isSimulator(selectedPhone) ? 'סימולטור' : selectedPhone}
@@ -2305,7 +2379,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 )} */}
                 <button
                   onClick={() => setSelectedPhone(null)}
-                  className="p-2 hover:bg-slate-100 rounded-xl transition-colors text-slate-400"
+                  className={`p-2 hover:bg-slate-100 rounded-xl transition-colors text-slate-400 ${isCompactLayout ? '' : 'hidden'}`}
                 >
                   <X size={18} />
                 </button>
@@ -2355,7 +2429,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 /* Sessions ordered oldest (top) → newest (bottom) */
                 <div
                   ref={chatScrollRef}
-                  className="flex-1 overflow-y-auto p-3"
+                  className="flex-1 overflow-y-auto p-2 sm:p-3"
                   dir="rtl"
                   onScroll={() => {
                     const el = chatScrollRef.current;
@@ -2410,14 +2484,14 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
 
               {/* Message input bar */}
               {!phoneSessionsLoading && (
-                <div className="flex-shrink-0 bg-white border-t border-slate-100 px-4 py-3" dir="rtl">
+                <div className="flex-shrink-0 bg-white border-t border-slate-100 px-2 sm:px-3 lg:px-4 py-2.5 lg:py-3" dir="rtl">
                   {/* {phoneSessions.length === 0 && (
                     <div className="flex items-center gap-2 mb-2 px-1 py-2 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-700 font-semibold">
                       <span className="text-base">⚠️</span>
                       לקוח חדש — ניתן לשלוח הודעות תבנית בלבד. הקש <span className="font-black">/</span> לבחירת תבנית.
                     </div>
                   )} */}
-                  <div className="flex items-center gap-3 relative">
+                  <div className="flex flex-wrap sm:flex-nowrap items-end gap-2 sm:gap-3 relative">
                     {/* Template dropdown */}
                     {showTemplates && selectedPhone && (
                       <div className="absolute bottom-full left-0 right-0 mb-2 bg-white border border-slate-200 rounded-xl shadow-xl max-h-80 overflow-y-auto z-50">
@@ -2429,10 +2503,16 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                           <div className="p-2">
                             {(() => {
                               const role = currentUser?.role;
-                              const isAgent = role === 'rep' || role === 'rep_bot';
+                              // Determine tier from the actual granted permission (works for
+                              // custom user types too), falling back to the raw role when the
+                              // permission is unavailable (e.g. legacy sessions without a
+                              // permissions object).
+                              const canAsManager = can('sessions.templates_as_manager') || role === 'user' || role === 'admin' || role === 'rep_manager';
+                              const canAsRep = can('sessions.templates_as_rep') || role === 'rep' || role === 'rep_bot';
+                              const isAgent = !canAsManager && canAsRep;
                               // Visibility filter:
-                              //   - 'rep' / 'rep_bot' agents see only templates explicitly marked 'agent'.
-                              //   - All other roles (rep_manager, user, admin) see anything not 'hidden'.
+                              //   - agents (no manager-tier permission) see only templates explicitly marked 'agent'.
+                              //   - Anyone with manager-tier access (rep_manager, user, admin) sees anything not 'hidden'.
                               const isVisibleForUser = (name: string): boolean => {
                                 const vis = templateSettings[name] ?? 'manager';
                                 if (vis === 'hidden') return false;
@@ -2443,6 +2523,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                               const filtered = templates.filter(t => {
                                 const name = t.name || t.elementName || t.template_name || '';
                                 if (!isVisibleForUser(name)) return false;
+                                if ((t.status || '').toUpperCase() !== 'APPROVED') return false;
                                 if (searchQuery && !name.toLowerCase().includes(searchQuery)) return false;
                                 return true;
                               });
@@ -2503,7 +2584,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                              : 'bg-sky-500 text-white opacity-40 cursor-not-allowed'}`}
                       */
                       disabled={(!agentMessage.trim() && !attachedFile) || agentSending}
-                      className={`w-10 h-10 flex-shrink-0 flex items-center justify-center rounded-2xl transition-colors self-end
+                      className={`order-2 sm:order-none w-10 h-10 flex-shrink-0 flex items-center justify-center rounded-2xl transition-colors self-end
                         ${(agentMessage.trim() || attachedFile) && !agentSending
                           ? 'bg-sky-500 text-white hover:bg-sky-600 cursor-pointer'
                           : 'bg-sky-500 text-white opacity-40 cursor-not-allowed'}`}
@@ -2516,7 +2597,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                       onClick={() => fileUploadRef.current?.click()}
                       title="צרף קובץ / תמונה / וידאו"
                       disabled={fileUploading}
-                      className={`w-10 h-10 flex-shrink-0 flex items-center justify-center rounded-2xl transition-colors cursor-pointer self-end
+                      className={`order-2 sm:order-none w-10 h-10 flex-shrink-0 flex items-center justify-center rounded-2xl transition-colors cursor-pointer self-end
                         ${fileUploading ? 'text-sky-500 bg-sky-50 animate-pulse' : 'text-slate-400 hover:text-sky-500 hover:bg-slate-100'}`}
                     >
                       {fileUploading
@@ -2532,7 +2613,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                       onChange={handleFileAttach}
                     />
                     {/* Composite input: preview thumbnail top-right + text below, all inside one bordered box */}
-                    <div className="flex-1 bg-slate-50 border border-slate-200 rounded-2xl overflow-hidden focus-within:ring-2 focus-within:ring-sky-500/20 focus-within:border-sky-400 transition-all">
+                    <div className="order-1 basis-full sm:basis-auto sm:flex-1 bg-slate-50 border border-slate-200 rounded-2xl overflow-hidden focus-within:ring-2 focus-within:ring-sky-500/20 focus-within:border-sky-400 transition-all">
                       {attachedFile && (
                         <div className="flex justify-start px-2 pt-2">
                           <div className="relative inline-block">
@@ -2557,8 +2638,8 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                           </div>
                         </div>
                       )}
-                      <input
-                        type="text"
+                      <textarea
+                        ref={agentMessageInputRef}
                         value={agentMessage}
                         onChange={e => {
                           const value = e.target.value;
@@ -2570,9 +2651,15 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                             setShowTemplates(false);
                           }
                         }}
-                        onKeyDown={e => { if (e.key === 'Enter') sendAgentMsg(); }}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter' && !e.shiftKey) {
+                            e.preventDefault();
+                            sendAgentMsg();
+                          }
+                        }}
                         placeholder={attachedFile ? 'כיתוב (אופציונלי)...' : 'כתוב הודעה ללקוח... (/ לטמפלייטים)'}
-                        className='w-full bg-transparent px-4 py-2.5 text-sm text-right font-medium outline-none text-slate-800 placeholder:text-slate-400'
+                        rows={1}
+                        className='w-full bg-transparent px-4 py-2.5 text-sm text-right font-medium outline-none text-slate-800 placeholder:text-slate-400 resize-none max-h-40 overflow-y-auto leading-normal'
                       />
                     </div>
                     {fileUploadError && (
@@ -2831,12 +2918,15 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                     (Array.isArray(comp.example?.header_handle) ? comp.example.header_handle[0] : undefined) ||
                     comp.example?.header_handle ||
                     undefined;
+                  const templateName = selectedTemplate.name || selectedTemplate.elementName || selectedTemplate.template_name || '';
+                  const defaultMedia = templateDefaultMedia[templateName];
                   return (
                     <div key={idx} className="space-y-2">
                       <label className="block text-sm font-bold text-slate-700">
                         {mediaType === 'image' ? '🖼️ תמונה' : mediaType === 'video' ? '🎥 וידאו' : '📄 מסמך'}
                       </label>
-                      <FileUploader
+                      <TemplateHeaderMediaField
+                        mediaType={mediaType}
                         value={templateParams.header?.url || ''}
                         onChange={(url) => {
                           setTemplateParams(prev => ({
@@ -2844,14 +2934,9 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                             header: { type: mediaType, url }
                           }));
                         }}
-                        accept={
-                          mediaType === 'image' ? 'image/*' :
-                          mediaType === 'video' ? 'video/*' : '*/*'
-                        }
-                        label={mediaType === 'image' ? 'תמונה' : mediaType === 'video' ? 'וידאו' : 'מסמך'}
-                        mediaType={mediaType}
                         token={token || ''}
                         sampleUrl={sampleUrl}
+                        defaultUrl={defaultMedia?.url}
                       />
                     </div>
                   );
@@ -2880,7 +2965,16 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                           const resolveField = (optKey: string): string => {
                             if (!contactRecord) return '';
                             if (optKey.startsWith('base:')) return String(contactRecord[optKey.slice(5)] ?? '');
-                            if (optKey.startsWith('custom:')) return String(contactRecord.custom_field_values?.[optKey.slice(7)] ?? '');
+                            if (optKey.startsWith('custom:')) {
+                              const fieldId = optKey.slice(7);
+                              // Bot-flow saves use _id as key; manual edits use the slug key — check both
+                              const fieldDef = contactFieldDefs.find(f => f._id === fieldId);
+                              return String(
+                                contactRecord.custom_field_values?.[fieldId] ??
+                                (fieldDef ? contactRecord.custom_field_values?.[fieldDef.key] : undefined) ??
+                                ''
+                              );
+                            }
                             return '';
                           };
 

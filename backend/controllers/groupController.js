@@ -5,6 +5,7 @@ import Group from '../models/Group.js';
 import Contact from '../models/Contact.js';
 import User from '../models/User.js';
 import BotFlow from '../models/BotFlow.js';
+import BotSession from '../models/BotSession.js';
 import GroupBroadcast from '../models/GroupBroadcast.js';
 import GroupRemovalLog from '../models/GroupRemovalLog.js';
 import { getEffectiveUserId } from '../middleware/auth.js';
@@ -12,7 +13,7 @@ import { getEffectiveUserId } from '../middleware/auth.js';
 // ── Broadcast Queue (per-user) ────────────────────────────────────────────────
 // Ensures broadcasts for the same user run one at a time, never in parallel.
 const broadcastQueues = new Map(); // userId -> { running: boolean, queue: Array }
-
+  
 // ── Scheduled broadcast ticker ────────────────────────────────────────────────
 // Every 60s, find broadcasts whose scheduled_at has arrived and fire them via the
 // normal per-user queue — exactly like an immediate send.
@@ -21,7 +22,7 @@ setInterval(async () => {
     const due = await GroupBroadcast.find({
       status: 'scheduled',
       scheduled_at: { $lte: new Date() },
-    }).select('_id user_id group_id is_template template_data message media');
+    }).select('_id user_id group_id group_name audience_type audience_contact_ids is_template template_data message media');
 
     for (const rec of due) {
       // Atomically claim this broadcast — prevents double-firing if two ticks overlap
@@ -35,13 +36,20 @@ setInterval(async () => {
       console.log(`[scheduledTicker] ⏰ Firing broadcast ${rec._id} for user ${rec.user_id}`);
 
       try {
-        const group = await Group.findById(rec.group_id);
-        if (!group) {
-          console.error(`[scheduledTicker] Group ${rec.group_id} not found for broadcast ${rec._id} — marking failed`);
-          await GroupBroadcast.findByIdAndUpdate(rec._id, { status: 'failed', completed_at: new Date() });
-          continue;
+        let group;
+        let contacts;
+        if (rec.audience_type === 'custom') {
+          group = { name: rec.group_name };
+          contacts = await Contact.find({ _id: { $in: rec.audience_contact_ids }, user_id: rec.user_id });
+        } else {
+          group = await Group.findById(rec.group_id);
+          if (!group) {
+            console.error(`[scheduledTicker] Group ${rec.group_id} not found for broadcast ${rec._id} — marking failed`);
+            await GroupBroadcast.findByIdAndUpdate(rec._id, { status: 'failed', completed_at: new Date() });
+            continue;
+          }
+          contacts = await Contact.find({ _id: { $in: group.contact_ids }, user_id: rec.user_id });
         }
-        const contacts = await Contact.find({ _id: { $in: group.contact_ids }, user_id: rec.user_id });
         const opts = {
           isTemplate: claimed.is_template,
           templateData: claimed.template_data,
@@ -155,9 +163,7 @@ export const listGroups = async (req, res) => {
       _id: g._id,
       name: g.name,
       is_blocklist: g.is_blocklist,
-      contact_count: g.is_blocklist
-        ? (g.phones?.length || 0) + (g.contact_ids?.length || 0)
-        : (g.contact_ids?.length || 0),
+      contact_count: g.contact_ids?.length || 0,
       createdAt: g.createdAt,
       updatedAt: g.updatedAt,
     }));
@@ -280,15 +286,8 @@ export const addMembers = async (req, res) => {
     for (const cid of idSet) existing.add(cid);
     group.contact_ids = Array.from(existing).map(s => new mongoose.Types.ObjectId(s));
 
-    // Blocklist may also store raw phone strings
-    if (group.is_blocklist) {
-      const phoneSet = new Set((group.phones || []).map(String));
-      for (const rawPhone of phones) {
-        const phone = String(rawPhone || '').trim();
-        if (phone) phoneSet.add(phone);
-      }
-      group.phones = Array.from(phoneSet);
-    }
+    // Note: phones added above are already resolved into contact_ids[],
+    // so we do NOT add them to phones[] to avoid double-counting.
 
     await group.save();
     res.json({ success: true, contact_count: group.contact_ids.length });
@@ -495,6 +494,251 @@ export const sendToGroup = async (req, res) => {
   }
 };
 
+// ── Custom (multi-source) audience broadcast ─────────────────────────────────
+// Combines individually-picked contacts, whole distribution lists, and manually
+// typed phone numbers into ONE deduplicated recipient set — the same phone can
+// never receive the broadcast twice even if it came in via more than one source.
+async function resolveCustomAudience(userId, { contact_ids = [], phones = [], group_ids = [] } = {}) {
+  const idSet = new Set((contact_ids || []).map(String));
+
+  // 1. Union in every contact belonging to each selected distribution list
+  const resolvedGroupIds = [];
+  for (const gid of (group_ids || [])) {
+    const group = await Group.findOne({ _id: gid, user_id: userId, is_blocklist: { $ne: true } });
+    if (!group) continue;
+    resolvedGroupIds.push(group._id);
+    for (const cid of (group.contact_ids || [])) idSet.add(String(cid));
+  }
+
+  // 2. Resolve manually typed phones → existing or newly-created Contact records
+  const cleanPhones = [];
+  for (const rawPhone of (phones || [])) {
+    const normalized = normalizePhone(rawPhone);
+    if (!normalized) continue;
+    cleanPhones.push(normalized);
+    let contact = await Contact.findOne({ user_id: userId, phone: normalized });
+    if (!contact) {
+      contact = await Contact.create({ user_id: userId, phone: normalized });
+    }
+    idSet.add(String(contact._id));
+  }
+
+  // 3. Fetch — always scoped to the caller's own user_id, never trusts stray ids from other users
+  const rawContacts = idSet.size
+    ? await Contact.find({ _id: { $in: Array.from(idSet) }, user_id: userId })
+    : [];
+
+  // 4. Re-key by normalized phone — collapses any residual duplicates so the same
+  //    phone can only appear once in the final list, regardless of how many sources named it.
+  const byPhone = new Map();
+  for (const c of rawContacts) {
+    const np = normalizePhone(c.phone);
+    if (np && !byPhone.has(np)) byPhone.set(np, c);
+  }
+
+  // 5. Apply the existing blocklist filter, same as classic group broadcasts
+  const blocked = await getBlockedPhones(userId);
+  const contacts = Array.from(byPhone.values()).filter(c => !blocked.has(normalizePhone(c.phone)));
+
+  // Build a human-readable audience summary label, e.g. "2 רשימות + 5 אנשי קשר + 3 מספרים"
+  const parts = [];
+  if (resolvedGroupIds.length) parts.push(`${resolvedGroupIds.length} רשימות`);
+  if (contact_ids.length) parts.push(`${contact_ids.length} אנשי קשר`);
+  if (cleanPhones.length) parts.push(`${cleanPhones.length} מספרים`);
+  const audienceSummary = parts.length ? parts.join(' + ') : 'שליחה מותאמת אישית';
+
+  return { contacts, audienceSummary, resolvedGroupIds, manualPhones: cleanPhones };
+}
+
+// POST /api/groups/broadcast-custom/preview — resolve+dedupe the audience, no DB writes
+export const previewCustomAudience = async (req, res) => {
+  try {
+    const userId = getEffectiveUserId(req);
+    const { contact_ids, phones, group_ids } = req.body || {};
+    const { contacts, audienceSummary } = await resolveCustomAudience(userId, { contact_ids, phones, group_ids });
+    res.json({
+      total: contacts.length,
+      audience_summary: audienceSummary,
+      contacts: contacts.map(c => ({ _id: c._id, phone: c.phone, full_name: c.full_name, whatsapp_name: c.whatsapp_name })),
+    });
+  } catch (err) {
+    console.error('[groups.previewCustomAudience] error:', err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// POST /api/groups/broadcast-custom — enqueue a multi-source broadcast (mirrors sendToGroup)
+export const sendCustomBroadcast = async (req, res) => {
+  try {
+    const userId = getEffectiveUserId(req);
+    const { message, isTemplate, templateData, media, bot_id, scheduled_at, contact_ids, phones, group_ids } = req.body || {};
+
+    const hasMedia = media && media.url && media.type;
+    if (!isTemplate && !hasMedia && (!message || !String(message).trim())) {
+      return res.status(400).json({ error: 'message or media is required' });
+    }
+
+    const scheduledAt = scheduled_at ? Number(scheduled_at) : null;
+    if (scheduledAt && (isNaN(scheduledAt) || scheduledAt <= Date.now())) {
+      return res.status(400).json({ error: 'scheduled_at must be a future Unix timestamp in milliseconds' });
+    }
+
+    const { contacts, audienceSummary, resolvedGroupIds, manualPhones } = await resolveCustomAudience(userId, { contact_ids, phones, group_ids });
+    const msgText = String(message || '').trim();
+
+    const broadcast = await GroupBroadcast.create({
+      user_id: userId,
+      audience_type: 'custom',
+      group_name: audienceSummary,
+      audience_contact_ids: contacts.map(c => c._id),
+      source_group_ids: resolvedGroupIds,
+      manual_phones: manualPhones,
+      is_template: !!isTemplate,
+      message: isTemplate ? '' : msgText,
+      template_name: isTemplate && templateData ? (templateData.name || '') : '',
+      template_language: isTemplate && templateData ? (templateData.language || '') : '',
+      template_data: isTemplate ? templateData : undefined,
+      media: hasMedia ? media : undefined,
+      total: contacts.length,
+      processed: 0,
+      sent: 0,
+      failed: 0,
+      skipped: 0,
+      status: scheduledAt ? 'scheduled' : 'queued',
+      scheduled_at: scheduledAt ? new Date(scheduledAt) : undefined,
+      sent_by: req.user?.email || req.user?.name || '',
+    });
+
+    const queueStatusBefore = getBroadcastQueueStatus(userId);
+    const willBeQueued = queueStatusBefore.running;
+    const queuePosition = willBeQueued ? queueStatusBefore.queued + 1 : 0;
+
+    res.json({
+      success: true,
+      broadcast_id: broadcast._id,
+      status: scheduledAt ? 'scheduled' : 'queued',
+      total: contacts.length,
+      scheduled_at: scheduledAt || undefined,
+      queued_behind: willBeQueued,
+      queue_position: queuePosition,
+    });
+
+    if (!scheduledAt) {
+      enqueueBroadcast(userId, broadcast._id, { name: audienceSummary }, contacts, { isTemplate, templateData, msgText, media: hasMedia ? media : null, bot_id: bot_id || null, scheduled_at: null })
+        .catch(err => console.error('[groups.sendCustomBroadcast] queue error:', err));
+    }
+  } catch (err) {
+    console.error('[groups.sendCustomBroadcast] error:', err);
+    if (!res.headersSent) res.status(500).json({ error: err.message });
+  }
+};
+
+// Resolve a __field:<ref> personalization token to the actual value for one specific contact.
+// Supports the same field refs the frontend offers: full_name, whatsapp_name, phone, email, custom:<fieldId>.
+function resolveContactField(contact, fieldRef) {
+  if (!contact) return '';
+  if (fieldRef === 'full_name') return contact.full_name || contact.whatsapp_name || '';
+  if (fieldRef === 'whatsapp_name') return contact.whatsapp_name || contact.full_name || '';
+  if (fieldRef === 'phone') return contact.phone || '';
+  if (fieldRef === 'email') return contact.email || '';
+  if (fieldRef.startsWith('custom:')) {
+    const fieldId = fieldRef.slice(7);
+    const val = contact.custom_field_values?.[fieldId];
+    return val != null ? String(val) : '';
+  }
+  return '';
+}
+
+// Render a WhatsApp template's BODY text with its actual sent params substituted in,
+// so the session history shows real content instead of just the template's internal name.
+// `contact` (when provided) is used to resolve __field: personalization tokens per-recipient.
+function renderTemplateBodyText(templateData, contact) {
+  const bodyComponent = (templateData.components || []).find(c => c.type === 'BODY');
+  let bodyText = bodyComponent?.text || '';
+  if (Array.isArray(templateData.params?.body)) {
+    templateData.params.body.forEach((val, i) => {
+      const placeholder = new RegExp(`\\{\\{${i + 1}\\}\\}`, 'g');
+      const raw = String(val || '');
+      const displayVal = raw.startsWith('__field:')
+        ? resolveContactField(contact, raw.slice(8))
+        : raw;
+      bodyText = bodyText.replace(placeholder, displayVal);
+    });
+  }
+  return bodyText;
+}
+
+// Build the process_history-shaped entry representing a group broadcast message.
+// `contact` (optional) lets template body params personalized via __field: be resolved
+// to that specific recipient's real value instead of a generic placeholder.
+function buildBroadcastHistoryEntry(groupName, broadcastId, flowId, { isTemplate, templateData, msgText, media }, contact) {
+  const base = {
+    sender: 'broadcast',
+    name: groupName,
+    node_id: 'broadcast',
+    flow_id: flowId,
+    broadcast_id: String(broadcastId),
+    broadcast_group: groupName,
+    created: new Date().toISOString(),
+  };
+
+  if (isTemplate && templateData) {
+    const bodyText = renderTemplateBodyText(templateData, contact);
+    const templateMeta = { template_name: templateData.name || '' };
+    const headerUrl = templateData.params?.header?.url;
+    const headerType = templateData.params?.header?.type; // 'image' | 'video' | 'document'
+    if (headerUrl && headerType) {
+      const typeMap = { image: 'Image', video: 'Video', document: 'Document' };
+      return {
+        ...base, ...templateMeta,
+        type: typeMap[headerType] || 'Text',
+        url: headerUrl,
+        text: bodyText || `📢 תבנית: ${templateData.name || ''}`,
+      };
+    }
+    return { ...base, ...templateMeta, type: 'Text', text: bodyText || `📢 תבנית: ${templateData.name || ''}` };
+  }
+  if (media?.url && media?.type) {
+    const typeMap = { image: 'Image', video: 'Video', document: 'Document' };
+    return { ...base, type: typeMap[media.type] || 'Text', url: media.url, filename: media.filename || '', text: msgText || '' };
+  }
+  return { ...base, type: 'Text', text: msgText || '' };
+}
+
+// After a successful broadcast send, reflect the message into each recipient's conversation:
+// - if they already have a BotSession with this bot, push it straight into process_history
+// - otherwise, queue it on Contact.pending_history — drained when their next session opens (chatController.js)
+// Each recipient gets its OWN history entry (not a shared one) so personalized template
+// params (__field:full_name etc.) show the real value for that specific contact.
+async function saveBroadcastToSessions(userId, flowId, broadcastId, groupName, sendOpts, phonesArr) {
+  const normalizedPhones = phonesArr.map(p => p.phone);
+  if (normalizedPhones.length === 0) return;
+
+  // Find the most recent session per phone for this bot
+  const latestSessions = await BotSession.aggregate([
+    { $match: { user_id: String(userId), flow_id: flowId, sender: { $in: normalizedPhones } } },
+    { $sort: { createdAt: -1 } },
+    { $group: { _id: '$sender', sessionId: { $first: '$_id' } } },
+  ]);
+  const sessionIdByPhone = new Map(latestSessions.map(s => [s._id, s.sessionId]));
+
+  const sessionOps = [];
+  const contactOps = [];
+
+  for (const p of phonesArr) {
+    const entry = buildBroadcastHistoryEntry(groupName, broadcastId, flowId, sendOpts, p.contact);
+    const sessionId = sessionIdByPhone.get(p.phone);
+    if (sessionId) {
+      sessionOps.push({ updateOne: { filter: { _id: sessionId }, update: { $push: { process_history: entry } } } });
+    } else if (p.contact?._id) {
+      contactOps.push({ updateOne: { filter: { _id: p.contact._id }, update: { $push: { pending_history: entry } } } });
+    }
+  }
+
+  if (sessionOps.length > 0) await BotSession.bulkWrite(sessionOps);
+  if (contactOps.length > 0) await Contact.bulkWrite(contactOps);
+}
+
 // Background worker: sends one-by-one and updates progress on the broadcast record
 async function processBroadcast(broadcastId, userId, group, contacts, opts) {
   const { isTemplate, templateData, msgText, media, bot_id, resumeFrom } = opts;
@@ -505,6 +749,7 @@ async function processBroadcast(broadcastId, userId, group, contacts, opts) {
 
     // Resolve endpoint ID dynamically from the user's first connected bot (without dialog360/ prefix)
     let sheetEndpointId = null;
+    let flowId = null;
     {
       const query = bot_id
         ? { _id: bot_id, user_id: userId, endpoint: { $nin: ['', null] } }
@@ -513,6 +758,7 @@ async function processBroadcast(broadcastId, userId, group, contacts, opts) {
       if (bot?.endpoint) {
         const ep = bot.endpoint.includes('/') ? bot.endpoint.split('/').pop() : bot.endpoint;
         sheetEndpointId = ep;
+        flowId = bot._id.toString();
       }
     }
     if (!sheetEndpointId) {
@@ -542,7 +788,7 @@ async function processBroadcast(broadcastId, userId, group, contacts, opts) {
         skipped++;
         recipients.push({ phone: contact.phone, name: contactName, status: 'skipped', reason: 'blocklist' });
       } else {
-        phonesArr.push({ phone: normalized, name: contactName });
+        phonesArr.push({ phone: normalized, name: contactName, contact });
       }
     }
 
@@ -616,6 +862,14 @@ async function processBroadcast(broadcastId, userId, group, contacts, opts) {
         skipped,
         recipients,
       });
+
+      // Reflect the broadcast message into each recipient's conversation history —
+      // existing sessions get it right away; contacts with no session yet get it
+      // queued in Contact.pending_history and drained when their next session opens.
+      if (flowId) {
+        saveBroadcastToSessions(userId, flowId, broadcastId, group.name, { isTemplate, templateData, msgText, media }, phonesArr)
+          .catch(err => console.error(`${TAG} Failed to save broadcast to session histories:`, err));
+      }
     } else {
       console.error(`${TAG} ❌ Sheet API error: HTTP ${waRes.status} — ${responseText}`);
       await GroupBroadcast.findByIdAndUpdate(broadcastId, {
@@ -731,8 +985,19 @@ export const resumeBroadcast = async (req, res) => {
     }
 
     const queueStatus = getBroadcastQueueStatus(userId);
-    const group = await Group.findOne({ _id: broadcast.group_id, user_id: userId });
-    if (!group) return res.status(404).json({ error: 'Group not found' });
+
+    // Custom (multi-source) broadcasts have no single live group — re-fetch the
+    // immutable audience snapshot taken at send time instead of live group membership.
+    let group;
+    let allContacts;
+    if (broadcast.audience_type === 'custom') {
+      group = { name: broadcast.group_name };
+      allContacts = await Contact.find({ _id: { $in: broadcast.audience_contact_ids }, user_id: userId });
+    } else {
+      group = await Group.findOne({ _id: broadcast.group_id, user_id: userId });
+      if (!group) return res.status(404).json({ error: 'Group not found' });
+      allContacts = await Contact.find({ _id: { $in: group.contact_ids }, user_id: userId });
+    }
 
     // Build set of phones already successfully sent (from previous run's recipients)
     const alreadySentPhones = new Set(
@@ -742,8 +1007,7 @@ export const resumeBroadcast = async (req, res) => {
         .filter(Boolean)
     );
 
-    // Get current group contacts and filter to only those not yet sent
-    const allContacts = await Contact.find({ _id: { $in: group.contact_ids }, user_id: userId });
+    // Filter to only contacts not yet sent
     const remainingContacts = allContacts.filter(c => {
       const np = normalizePhone(c.phone);
       return !np || !alreadySentPhones.has(np);

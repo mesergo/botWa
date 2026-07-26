@@ -569,15 +569,26 @@ export const updateUserRole = async (req, res) => {
 // Create a new user directly from the admin panel
 export const createUser = async (req, res) => {
   try {
-    const { name, email, phone, password, account_type, user_type_id, manager_id, allowed_bot_ids } = req.body;
+    const { name, email, phone, password, account_type, user_type_id, manager_id, allowed_bot_ids, allowDuplicateEmail } = req.body;
 
     if (!name || !email) {
       return res.status(400).json({ error: 'שם ואימייל נדרשים' });
     }
 
-    const existing = await User.findOne({ email: email.toLowerCase().trim() });
-    if (existing) {
-      return res.status(400).json({ error: 'כתובת האימייל כבר קיימת במערכת' });
+    const normalizedEmail = email.toLowerCase().trim();
+    const existingAccounts = await User.find({ email: normalizedEmail }).select('name account_type role createdAt');
+    if (existingAccounts.length > 0 && allowDuplicateEmail !== true) {
+      return res.status(409).json({
+        emailExists: true,
+        count: existingAccounts.length,
+        accounts: existingAccounts.map(u => ({
+          id: u._id.toString(),
+          name: u.name,
+          account_type: u.account_type || 'Basic',
+          role: u.role || 'user',
+          created_at: u.createdAt
+        }))
+      });
     }
 
     // Determine role from user_type if provided

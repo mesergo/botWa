@@ -1,4 +1,5 @@
 import BotFlow from '../models/BotFlow.js';
+import { normalizePhone } from '../utils/phone.js';
 
 /**
  * GET /api/whatsapp/webhook — Meta verification handshake.
@@ -114,7 +115,7 @@ export const receiveWebhook = async (req, res) => {
               registered: bot.whatsapp_registered,
             };
 
-            if (value.display_phone_number)         bot.display_phone_number = value.display_phone_number;
+            if (value.display_phone_number)         bot.display_phone_number = normalizePhone(value.display_phone_number);
             if (value.verified_name)                bot.whatsapp_verified_name = value.verified_name;
             if (value.status)                       bot.whatsapp_status = value.status;
             if (value.quality_rating)               bot.whatsapp_quality_rating = value.quality_rating;

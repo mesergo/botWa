@@ -1,13 +1,15 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-  Phone, Search, Users, LogOut, List, Shield, Settings, UserCog, Plus,
+  Phone, Search, Users, List, Settings, UserCog, Plus,
   Edit2, Trash2, X, Check, Bot, Send, UserPlus, UserMinus, Ban, Layers,
   ChevronRight, ChevronLeft, ArrowRight, MessageSquare, FileText, History,
   Calendar, Eye, AlertTriangle, CheckCircle2, Clock, Paperclip, Image as ImageIcon, Video, File as FileLucide, RotateCcw, Copy, Download
 } from 'lucide-react';
 import ImpersonationBanner from './ImpersonationBanner';
 import { FileUploader } from './FileUploader';
+import { TemplateHeaderMediaField } from './TemplateHeaderMediaField';
 import { usePermission } from '../hooks/usePermission';
+import PageTopBar from './PageTopBar';
 import AppNav from './AppNav';
 import { useContactFields } from '../context/ContactFieldsContext';
 
@@ -44,12 +46,16 @@ interface GroupsPageProps {
   onLogout: () => void;
   onOpenContacts?: (phone?: string) => void;
   onOpenSessions?: (phone?: string) => void;
+  onOpenSendMessages?: () => void;
   onOpenSmsIn?: () => void;
   onOpenAdminPanel?: () => void;
   onOpenSettings?: () => void;
   onOpenSubUsers?: () => void;
   onStopImpersonation?: () => void;
+  onSwitchAccount?: (accountId: string) => void;
   onGoHome?: () => void;
+  /** Render without the page's own navbar/sidebar chrome — used when hosted inside another page (e.g. as a tab) */
+  embedded?: boolean;
 }
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -61,8 +67,8 @@ const API_BASE = window.location.hostname === 'localhost'
 // ─── Component ────────────────────────────────────────────────────────────────
 
 const GroupsPage: React.FC<GroupsPageProps> = ({
-  token, currentUser, onBack, onLogout, onOpenContacts, onOpenSessions,onOpenSmsIn,
-  onOpenAdminPanel, onOpenSettings, onOpenSubUsers, onStopImpersonation, onGoHome,
+  token, currentUser, onBack, onLogout, onOpenContacts, onOpenSessions,onOpenSendMessages,onOpenSmsIn,
+  onOpenAdminPanel, onOpenSettings, onOpenSubUsers, onStopImpersonation, onSwitchAccount, onGoHome, embedded = false,
 }) => {
   const [groups, setGroups] = useState<GroupSummary[]>([]);
   const [selectedGroup, setSelectedGroup] = useState<GroupDetail | null>(null);
@@ -125,6 +131,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
   const [templatesLoading, setTemplatesLoading] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<any | null>(null);
   const [templateParams, setTemplateParams] = useState<any>({});
+  const [templateDefaultMedia, setTemplateDefaultMedia] = useState<Record<string, { url: string; type: 'image' | 'video' | 'document' }>>({});
 
   // Free-form media attachment (when not using a template)
   const [mediaType, setMediaType] = useState<'image' | 'video' | 'document' | null>(null);
@@ -154,6 +161,11 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
   const [allBroadcastsGroupFilter, setAllBroadcastsGroupFilter] = useState<string>('');
   const [allBroadcastsCopiedId, setAllBroadcastsCopiedId] = useState<string | null>(null);
   const [allBroadcastsSelectedDetail, setAllBroadcastsSelectedDetail] = useState<any | null>(null);
+
+  // Members / history / removals search
+  const [memberSearch, setMemberSearch] = useState('');
+  const [historySearch, setHistorySearch] = useState('');
+  const [removalsSearch, setRemovalsSearch] = useState('');
 
   // Remove-member confirmation + removals report
   const [removeTarget, setRemoveTarget] = useState<ContactRecord | null>(null);
@@ -560,12 +572,34 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
     }
   }, [token, authHeader]);
 
+  // Fetch admin-configured default header media per template (for the "use default image" option)
+  const fetchTemplateDefaultMedia = useCallback(async () => {
+    if (!token) return;
+    try {
+      const res = await fetch(`${API_BASE}/dialog360-templates`, { headers: authHeader });
+      if (!res.ok) return;
+      const data = await res.json();
+      const settingsList = data.success && Array.isArray(data.settings) ? data.settings : [];
+      const defaultMediaMap: Record<string, { url: string; type: 'image' | 'video' | 'document' }> = {};
+      settingsList.forEach((s: any) => {
+        if (s.defaultHeaderMediaUrl && s.defaultHeaderMediaType) {
+          defaultMediaMap[s.templateName] = { url: s.defaultHeaderMediaUrl, type: s.defaultHeaderMediaType };
+        }
+      });
+      setTemplateDefaultMedia(defaultMediaMap);
+    } catch (e) {
+      console.error('Failed to fetch template default media', e);
+    }
+  }, [token, authHeader]);
+
   const initTemplateParams = (template: any) => {
     const params: any = {};
+    const templateName = template.name || template.elementName || template.template_name || '';
     if (template.components && Array.isArray(template.components)) {
       template.components.forEach((comp: any) => {
         if (comp.type === 'HEADER' && ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(comp.format)) {
-          params.header = { type: comp.format.toLowerCase(), url: '' };
+          const defaultMedia = templateDefaultMedia[templateName];
+          params.header = { type: comp.format.toLowerCase(), url: defaultMedia?.url || '' };
         }
         if (comp.type === 'BODY' && comp.text) {
           const matches = comp.text.match(/\{\{\d+\}\}/g);
@@ -681,6 +715,9 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
   // Reset to members tab when switching group; auto-load history when tab=history
   useEffect(() => {
     setActiveTab('members');
+    setMemberSearch('');
+    setHistorySearch('');
+    setRemovalsSearch('');
     setBroadcasts([]);
     setSelectedBroadcast(null);
   }, [selectedGroup?._id]);
@@ -764,6 +801,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
     setSendText('');
     setExcludeGroupId('');
     if (templates.length === 0) fetchTemplates();
+    fetchTemplateDefaultMedia();
     // Fetch bots with endpoints for number selection
     setSendBotsLoading(true);
     setSelectedSendBotId('');
@@ -784,51 +822,47 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
   const firstName = currentUser?.name?.charAt(0)?.toUpperCase() ?? currentUser?.email?.charAt(0)?.toUpperCase() ?? '?';
   const blocklist = groups.find(g => g.is_blocklist);
   const regularGroups = groups.filter(g => !g.is_blocklist);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   // ── Render ─────────────────────────────────────────────────────────────
 
   return (
-    <div className="h-screen w-screen bg-[#f8fafc] flex flex-col font-medium text-right overflow-hidden" dir="rtl">
-      <ImpersonationBanner currentUser={currentUser} onStopImpersonation={onStopImpersonation} />
+    <div className={embedded ? "h-full w-full flex flex-col font-medium text-right overflow-hidden" : "h-screen w-screen bg-[#f8fafc] flex flex-col font-medium text-right overflow-hidden"} dir="rtl">
+      {!embedded && <ImpersonationBanner currentUser={currentUser} onStopImpersonation={onStopImpersonation} token={token} onSwitchAccount={onSwitchAccount} />}
 
       {/* Navbar */}
-      <nav className="h-20 bg-white border-b border-slate-100 flex items-center justify-between px-10 z-20 flex-shrink-0" dir="ltr">
-        <div className="flex items-center gap-4">
-          <button onClick={onLogout} className="p-2.5 text-slate-300 hover:text-red-500 transition-colors rounded-xl hover:bg-red-50">
-            <LogOut size={22} />
-          </button>
-          <img src="/images/mesergo-logo.png" alt="Logo" className="h-10 w-auto cursor-pointer" onClick={onBack} />
-        </div>
-
-<div className="flex items-center gap-4">
-          {currentUser && (
-            <span className="text-sm font-bold text-slate-600">שלום, {currentUser.name ?? currentUser.email}</span>
-          )}
-          {currentUser?.role === 'admin' && onOpenAdminPanel && (
-            <button onClick={onOpenAdminPanel} className="flex items-center gap-2 px-4 py-2 bg-blue-100 text-blue-700 rounded-lg font-bold hover:bg-blue-200 transition-colors">
-              <Shield size={18} /> פאנל ניהול
-            </button>
-          )}
-          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-sm shadow-md select-none cursor-pointer hover:scale-105 transition-transform" onClick={onBack}>
-            {firstName}
-          </div>
-        </div>
-      </nav>
+      {!embedded && (
+        <PageTopBar
+          currentUser={currentUser}
+          onBack={onBack}
+          onLogout={onLogout}
+          onOpenAdminPanel={onOpenAdminPanel}
+          showMobileNavToggle
+          mobileNavOpen={mobileNavOpen}
+          onMobileNavToggle={() => setMobileNavOpen((prev) => !prev)}
+        />
+      )}
 
       {/* Content */}
       <div className="flex-1 overflow-hidden flex">
         {/* ── App nav sidebar ── */}
+        {!embedded && (
         <AppNav
           mode="sidebar"
           activePage="groups"
+          hideMobileTrigger
+          mobileMenuOpen={mobileNavOpen}
+          onMobileMenuOpenChange={setMobileNavOpen}
           onGoHome={onGoHome}
           onBots={can('bots.view_tab') ? onBack : undefined}
           onSessions={onOpenSessions ? () => onOpenSessions() : undefined}
           onContacts={onOpenContacts ? () => onOpenContacts() : undefined}
           onSmsIn={onOpenSmsIn}
+          onSendMessages={onOpenSendMessages}
           onSettings={onOpenSettings}
           onUsers={onOpenSubUsers && can('users.view') ? onOpenSubUsers : undefined}
         />
+        )}
         {/* Sidebar — list of groups */}
         <aside className="w-72 border-l border-slate-100 bg-white flex flex-col flex-shrink-0">
           <div className="p-6 border-b border-slate-100">
@@ -868,6 +902,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
               <input
                 value={newGroupName}
                 onChange={e => setNewGroupName(e.target.value)}
+                maxLength={50}
                 onKeyDown={e => { if (e.key === 'Enter') createGroup(); }}
                 placeholder="שם רשימה חדשה..."
                 className="flex-1 px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-500 transition-all"
@@ -924,7 +959,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                     <div
                       key={g._id}
                       onClick={() => fetchGroupDetail(g._id)}
-                      className={`group flex items-center justify-between gap-3 px-4 py-3 mb-2 rounded-2xl cursor-pointer transition-all border ${
+                      className={`group relative flex items-center gap-3 px-4 py-3 mb-2 rounded-2xl cursor-pointer transition-all border ${
                         selectedGroup?._id === g._id
                           ? 'bg-blue-50 border-blue-200'
                           : 'bg-white border-slate-100 hover:bg-slate-50'
@@ -949,14 +984,14 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                             />
                           ) : (
                             <>
-                              <p className="text-sm font-bold text-slate-900 truncate">{g.name}</p>
+                              <p className="text-sm font-bold text-slate-900 truncate" title={g.name}>{g.name}</p>
                               <p className="text-xs font-semibold text-slate-400">{g.contact_count} אנשי קשר</p>
                             </>
                           )}
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
+                      <div className="absolute left-2 bottom-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
                         {renamingId === g._id ? (
                           <>
                             <button onClick={saveRename} className="p-1.5 text-green-600 hover:bg-green-50 rounded-lg"><Check size={14} /></button>
@@ -1164,37 +1199,73 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                 </div>
               </div>
 
-              {/* Tabs */}
-              <div className="flex items-center gap-1 bg-slate-100 rounded-2xl p-1 mb-6 w-fit">
-                <button
-                  onClick={() => setActiveTab('members')}
-                  className={`flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm transition-all ${
-                    activeTab === 'members' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-                  }`}
-                >
-                  <Users size={16} /> אנשי קשר
-                </button>
-                {!selectedGroup.is_blocklist && (
+              {/* Tabs + search row */}
+              <div className="flex items-center justify-between gap-3 mb-6">
+                <div className="flex items-center gap-1 bg-slate-100 rounded-2xl p-1">
                   <button
-                    onClick={() => setActiveTab('history')}
+                    onClick={() => setActiveTab('members')}
                     className={`flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm transition-all ${
-                      activeTab === 'history' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                      activeTab === 'members' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
                     }`}
                   >
-                    <History size={16} /> דוח שליחות
+                    <Users size={16} /> אנשי קשר
                   </button>
+                  {!selectedGroup.is_blocklist && (
+                    <button
+                      onClick={() => setActiveTab('history')}
+                      className={`flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm transition-all ${
+                        activeTab === 'history' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                      }`}
+                    >
+                      <History size={16} /> דוח שליחות
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setActiveTab('removals')}
+                    className={`flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm transition-all ${
+                      activeTab === 'removals' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                    }`}
+                  >
+                    <Trash2 size={16} /> דוח מחיקות
+                  </button>
+                </div>
+                {activeTab === 'members' && (
+                  <div className="relative w-64">
+                    <Search size={15} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                    <input
+                      type="text"
+                      placeholder="חיפוש לפי טלפון, שם או מייל..."
+                      value={memberSearch}
+                      onChange={e => setMemberSearch(e.target.value)}
+                      className="w-full pr-9 pl-4 py-2 bg-white border border-slate-200 rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-300"
+                    />
+                  </div>
                 )}
-                <button
-                  onClick={() => setActiveTab('removals')}
-                  className={`flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm transition-all ${
-                    activeTab === 'removals' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-                  }`}
-                >
-                  <Trash2 size={16} /> דוח מחיקות
-                </button>
+                {activeTab === 'history' && (
+                  <div className="relative w-64">
+                    <Search size={15} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                    <input
+                      type="text"
+                      placeholder="חיפוש לפי תוכן, תבנית או ID..."
+                      value={historySearch}
+                      onChange={e => setHistorySearch(e.target.value)}
+                      className="w-full pr-9 pl-4 py-2 bg-white border border-slate-200 rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-300"
+                    />
+                  </div>
+                )}
+                {activeTab === 'removals' && (
+                  <div className="relative w-64">
+                    <Search size={15} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                    <input
+                      type="text"
+                      placeholder="חיפוש לפי טלפון, שם או סיבה..."
+                      value={removalsSearch}
+                      onChange={e => setRemovalsSearch(e.target.value)}
+                      className="w-full pr-9 pl-4 py-2 bg-white border border-slate-200 rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-300"
+                    />
+                  </div>
+                )}
               </div>
-
-              {/* Members table */}
               {activeTab === 'members' && (loadingDetail ? (
                 <div className="flex items-center justify-center py-24 text-slate-300">
                   <div className="animate-spin w-10 h-10 border-4 border-slate-200 border-t-blue-500 rounded-full" />
@@ -1221,8 +1292,21 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                     <span>מייל</span>
                     <span></span>
                   </div>
-                  {selectedGroup.contacts.map((c, idx) => (
-                    <div key={c._id} className={`grid grid-cols-[1.6fr_1.5fr_1.3fr_1.6fr_5rem] gap-3 px-6 py-3.5 items-center hover:bg-slate-50/70 transition-colors ${idx !== selectedGroup.contacts.length - 1 ? 'border-b border-slate-100' : ''}`}>
+                  {(() => {
+                    const q = memberSearch.trim().toLowerCase();
+                    const filtered = q
+                      ? selectedGroup.contacts.filter(c =>
+                          c.phone.includes(q) ||
+                          (c.full_name?.toLowerCase().includes(q)) ||
+                          (c.whatsapp_name?.toLowerCase().includes(q)) ||
+                          (c.email?.toLowerCase().includes(q))
+                        )
+                      : selectedGroup.contacts;
+                    if (q && filtered.length === 0) return (
+                      <div className="py-10 text-center text-slate-400 text-sm">לא נמצאו תוצאות עבור &ldquo;{memberSearch}&rdquo;</div>
+                    );
+                    return filtered.map((c, idx) => (
+                    <div key={c._id} className={`grid grid-cols-[1.6fr_1.5fr_1.3fr_1.6fr_5rem] gap-3 px-6 py-3.5 items-center hover:bg-slate-50/70 transition-colors ${idx !== filtered.length - 1 ? 'border-b border-slate-100' : ''}`}>
                       <div className="flex items-center gap-3 min-w-0">
                         <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-500 flex items-center justify-center flex-shrink-0">
                           <Phone size={15} />
@@ -1250,7 +1334,8 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                         )}
                       </div>
                     </div>
-                  ))}
+                    ));
+                  })()}
                 </div>
               ))}
 
@@ -1279,7 +1364,14 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                       <span>סטטוס</span>
                       <span></span>
                     </div>
-                    {broadcasts.map((b, idx) => {
+                    {(() => {
+                      const hq = historySearch.trim().toLowerCase();
+                      return (hq ? broadcasts.filter(b =>
+                        (b._id?.toLowerCase().includes(hq)) ||
+                        (b.message?.toLowerCase().includes(hq)) ||
+                        (b.template_name?.toLowerCase().includes(hq))
+                      ) : broadcasts);
+                    })().map((b, idx) => {
                       // isStopped: any non-completed broadcast that has sent some but not all
                       // Includes status='running' — covers server-restart orphan (stuck in DB as running)
                       const isPartial = b.processed > 0 && b.processed < b.total;
@@ -1372,6 +1464,13 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                       </div>
                       );
                     })}
+                    {historySearch.trim() && broadcasts.filter(b =>
+                      (b._id?.toLowerCase().includes(historySearch.trim().toLowerCase())) ||
+                      (b.message?.toLowerCase().includes(historySearch.trim().toLowerCase())) ||
+                      (b.template_name?.toLowerCase().includes(historySearch.trim().toLowerCase()))
+                    ).length === 0 && (
+                      <div className="py-10 text-center text-slate-400 text-sm">לא נמצאו תוצאות עבור &ldquo;{historySearch}&rdquo;</div>
+                    )}
                   </div>
                 )
               )}
@@ -1396,7 +1495,16 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                       <span>סיבת הסרה</span>
                       <span>בוצע ע"י</span>
                     </div>
-                    {removals.map((r, idx) => (
+                    {(() => {
+                      const rq = removalsSearch.trim().toLowerCase();
+                      return rq ? removals.filter(r =>
+                        (r.phone?.includes(rq)) ||
+                        (r.full_name?.toLowerCase().includes(rq)) ||
+                        (r.whatsapp_name?.toLowerCase().includes(rq)) ||
+                        (r.reason?.toLowerCase().includes(rq)) ||
+                        (r.removed_by?.toLowerCase().includes(rq))
+                      ) : removals;
+                    })().map((r, idx) => (
                       <div
                         key={r._id}
                         className={`grid grid-cols-[10rem_1.4fr_1.4fr_2fr_1fr] gap-3 px-6 py-3.5 items-center hover:bg-slate-50/70 transition-colors ${idx !== removals.length - 1 ? 'border-b border-slate-100' : ''}`}
@@ -1411,6 +1519,15 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                         <p className="text-xs font-semibold text-slate-400 truncate">{r.removed_by || '—'}</p>
                       </div>
                     ))}
+                    {removalsSearch.trim() && removals.filter(r =>
+                      (r.phone?.includes(removalsSearch.trim().toLowerCase())) ||
+                      (r.full_name?.toLowerCase().includes(removalsSearch.trim().toLowerCase())) ||
+                      (r.whatsapp_name?.toLowerCase().includes(removalsSearch.trim().toLowerCase())) ||
+                      (r.reason?.toLowerCase().includes(removalsSearch.trim().toLowerCase())) ||
+                      (r.removed_by?.toLowerCase().includes(removalsSearch.trim().toLowerCase()))
+                    ).length === 0 && (
+                      <div className="py-10 text-center text-slate-400 text-sm">לא נמצאו תוצאות עבור &ldquo;{removalsSearch}&rdquo;</div>
+                    )}
                   </div>
                 )
               )}
@@ -1627,22 +1744,20 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                         (Array.isArray(headerComp?.example?.header_handle) ? headerComp.example.header_handle[0] : undefined) ||
                         headerComp?.example?.header_handle ||
                         undefined;
+                      const templateName = selectedTemplate.name || selectedTemplate.elementName || selectedTemplate.template_name || '';
+                      const defaultMedia = templateDefaultMedia[templateName];
                       return (
                         <div className="mt-3">
                           <label className="text-xs font-bold text-slate-500 block mb-1">
                             {templateParams.header.type === 'image' ? '🖼️ תמונה' : templateParams.header.type === 'video' ? '🎥 וידאו' : '📄 מסמך'}
                           </label>
-                          <FileUploader
+                          <TemplateHeaderMediaField
+                            mediaType={templateParams.header.type}
                             value={templateParams.header.url || ''}
                             onChange={(url: string) => setTemplateParams((p: any) => ({ ...p, header: { ...p.header, url } }))}
-                            accept={
-                              templateParams.header.type === 'image' ? 'image/*' :
-                              templateParams.header.type === 'video' ? 'video/*' : '*/*'
-                            }
-                            label={templateParams.header.type === 'image' ? 'תמונה' : templateParams.header.type === 'video' ? 'וידאו' : 'מסמך'}
-                            mediaType={templateParams.header.type}
                             token={token || ''}
                             sampleUrl={sampleUrl}
+                            defaultUrl={defaultMedia?.url}
                           />
                         </div>
                       );
@@ -1709,7 +1824,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                   </div>
                 ) : (
                   <button
-                    onClick={() => { setShowTemplatePicker(true); if (templates.length === 0) fetchTemplates(); }}
+                    onClick={() => { setShowTemplatePicker(true); if (templates.length === 0) fetchTemplates(); fetchTemplateDefaultMedia(); }}
                     className="w-full px-4 py-3 bg-purple-50 hover:bg-purple-100 border-2 border-dashed border-purple-200 text-purple-700 rounded-2xl text-sm font-bold flex items-center justify-center gap-2 transition-colors"
                   >
                     <FileText size={16} /> בחר תבנית הודעה

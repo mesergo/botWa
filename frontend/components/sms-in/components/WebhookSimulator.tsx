@@ -27,25 +27,25 @@ export default function WebhookSimulator({ logs, onClearLogs, defaultWebhookUrl 
     <div className="space-y-6 text-right">
       {/* Title */}
       <div>
-        <h2 className="text-xl font-bold text-slate-900">מדריך וסימולטור חיבור ל-Google Sheets Webhook</h2>
-        <p className="text-sm text-slate-500 mt-1">חיבור מהיר של מערכת SMS מסרגו לטבלאות גוגל עם תמיכה בריבוי משתמשים ולקוחות.</p>
+        <h2 className="text-xl font-black text-slate-900">מדריך וסימולטור חיבור ל-Google Sheets Webhook</h2>
+        <p className="text-sm text-slate-400 font-semibold mt-0.5">חיבור מהיר של מערכת SMS מסרגו לטבלאות גוגל עם תמיכה בריבוי משתמשים ולקוחות.</p>
       </div>
 
       {/* Grid Guide & Code */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         
         {/* Step Guide Card */}
-        <div className="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
+        <div className="bg-white rounded-2xl border border-slate-100 p-5 space-y-4 shadow-sm">
           <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
-            <div className="p-1.5 bg-sky-50 text-sky-600 rounded-lg">
+            <div className="p-1.5 bg-sky-50 text-sky-600 rounded-xl">
               <HelpCircle size={18} />
             </div>
-            <h3 className="font-bold text-slate-900 text-base">הוראות שלב אחר שלב</h3>
+            <h3 className="font-black text-slate-900 text-base">הוראות שלב אחר שלב</h3>
           </div>
 
-          <div className="space-y-3.5 text-xs text-slate-600 leading-relaxed font-normal">
+          <div className="space-y-3.5 text-sm text-slate-600 leading-relaxed font-medium">
             <div className="flex gap-2.5 items-start">
-              <span className="flex items-center justify-center font-bold bg-sky-100 text-sky-800 rounded-full w-5 h-5 text-[10px] shrink-0 mt-0.5">1</span>
+              <span className="flex items-center justify-center font-bold bg-sky-100 text-sky-800 rounded-lg w-5 h-5 text-xs shrink-0 mt-0.5">1</span>
               <div>
                 <p className="font-bold text-slate-800">צור גיליון גוגל חדש</p>
                 <p className="mt-0.5">פתח את <a href="https://sheets.new" target="_blank" rel="noreferrer" className="text-sky-600 hover:underline inline-flex items-center gap-0.5">Google Sheets<ExternalLink size={10} /></a> וצור גיליון חדש שבו תעדיף לרכז את הודעות ה-SMS הנכנסות.</p>
@@ -53,7 +53,7 @@ export default function WebhookSimulator({ logs, onClearLogs, defaultWebhookUrl 
             </div>
 
             <div className="flex gap-2.5 items-start">
-              <span className="flex items-center justify-center font-bold bg-sky-100 text-sky-800 rounded-full w-5 h-5 text-[10px] shrink-0 mt-0.5">2</span>
+              <span className="flex items-center justify-center font-bold bg-sky-100 text-sky-800 rounded-lg w-5 h-5 text-xs shrink-0 mt-0.5">2</span>
               <div>
                 <p className="font-bold text-slate-800">פתח את עורך ה-Apps Script</p>
                 <p className="mt-0.5">בתפריט העליון לחץ על <b>"Extensions" (תוספים)</b> &larr; <b>"Apps Script"</b>.</p>
@@ -61,7 +61,7 @@ export default function WebhookSimulator({ logs, onClearLogs, defaultWebhookUrl 
             </div>
 
             <div className="flex gap-2.5 items-start">
-              <span className="flex items-center justify-center font-bold bg-sky-100 text-sky-800 rounded-full w-5 h-5 text-[10px] shrink-0 mt-0.5">3</span>
+              <span className="flex items-center justify-center font-bold bg-sky-100 text-sky-800 rounded-lg w-5 h-5 text-xs shrink-0 mt-0.5">3</span>
               <div>
                 <p className="font-bold text-slate-800">הדבק ושמור את הקוד</p>
                 <p className="mt-0.5">מחק את כל הקוד הקיים בעורך, העתק את הקוד מפה משמאל והדבק במקום, ואז לחץ על סמל הדיסקט (<kbd className="bg-slate-100 px-1 rounded font-mono">Ctrl+S</kbd> / <kbd className="bg-slate-100 px-1 rounded font-mono">⌘+S</kbd>) לשמירה.</p>
@@ -69,7 +69,7 @@ export default function WebhookSimulator({ logs, onClearLogs, defaultWebhookUrl 
             </div>
 
             <div className="flex gap-2.5 items-start">
-              <span className="flex items-center justify-center font-bold bg-sky-100 text-sky-800 rounded-full w-5 h-5 text-[10px] shrink-0 mt-0.5">4</span>
+              <span className="flex items-center justify-center font-bold bg-sky-100 text-sky-800 rounded-lg w-5 h-5 text-xs shrink-0 mt-0.5">4</span>
               <div>
                 <p className="font-bold text-slate-800">פרוס את ה-Script</p>
                 <p className="mt-0.5">לחץ על כפתור <b>"Deploy" (פריסה) &larr; "New deployment" (פריסה חדשה)</b>. <br />בחר סוג: <b>"Web app" (יישום אינטרנט)</b>. <br />הגדר: <br />- <i>Execute as:</i> <b>"Me" (אני)</b> <br />- <i>Who has access:</i> <b>"Anyone" (כולל כולם) <span className="text-red-500 font-bold">*קריטי*</span></b>. לחץ על Deploy ואשר גישה לחשבונך במידה וגוגל שואל.</p>
@@ -77,7 +77,7 @@ export default function WebhookSimulator({ logs, onClearLogs, defaultWebhookUrl 
             </div>
 
             <div className="flex gap-2.5 items-start">
-              <span className="flex items-center justify-center font-bold bg-sky-100 text-sky-800 rounded-full w-5 h-5 text-[10px] shrink-0 mt-0.5">5</span>
+              <span className="flex items-center justify-center font-bold bg-sky-100 text-sky-800 rounded-lg w-5 h-5 text-xs shrink-0 mt-0.5">5</span>
               <div>
                 <p className="font-bold text-slate-800">צמד את קישור הפריסה במסרגו</p>
                 <p className="mt-0.5">העתק את קישור ה-URL שיתקבל (הנקרא <b>Web app URL</b>), וערוך את הגדרות הניתוב למספר המבוקש במערכת על ידי הדבקת הלינק שם ומזל טוב!</p>
@@ -87,7 +87,7 @@ export default function WebhookSimulator({ logs, onClearLogs, defaultWebhookUrl 
         </div>
 
         {/* Script copy panel */}
-        <div className="bg-slate-900 rounded-xl p-5 border border-slate-800 flex flex-col justify-between" dir="ltr">
+        <div className="bg-slate-900 rounded-2xl p-5 border border-slate-800 flex flex-col justify-between shadow-sm" dir="ltr">
           <div className="flex items-center justify-between border-b border-slate-800 pb-3 mb-3">
             <span className="text-xs font-mono text-slate-400 flex items-center gap-1.5 font-semibold">
               <Terminal size={14} className="text-sky-400" /> google-apps-script.js
@@ -117,7 +117,7 @@ export default function WebhookSimulator({ logs, onClearLogs, defaultWebhookUrl 
       </div>
 
       {/* Webhook Activity Logs */}
-      <div className="bg-white rounded-xl border border-slate-200">
+      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm">
         <div className="p-4 border-b border-slate-100 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></div>

@@ -204,6 +204,13 @@ const getFlowData = async (flowId, processId = null) => {
             const [fromDate, toDate] = o.value.split('|');
             return { fromDate, toDate };
           });
+      } else if (routingMode === 'weekday') {
+        ranges.weekdayRanges = nodeOptions
+          .filter(o => o.operator === 'weekday_range')
+          .map(o => {
+            const [fromDay, toDay] = o.value.split('-').map(Number);
+            return { fromDay, toDay };
+          });
       } else {
         ranges.timeRanges = nodeOptions
           .filter(o => o.operator === 'time_range')
@@ -267,7 +274,7 @@ const getFlowData = async (flowId, processId = null) => {
           const sourceHandle = o.operator === 'default' ? 'option-default' : `option-${rangeIndex}`;
           edges.push({ id: `e-${w.id}-${sourceHandle}-${o.next}`, source: w.id, sourceHandle, target: o.next });
         }
-        if (o.operator === 'time_range' || o.operator === 'date_range') rangeIndex++;
+        if (o.operator === 'time_range' || o.operator === 'date_range' || o.operator === 'weekday_range') rangeIndex++;
       });
     } else if (w.type === 'action_web_service') {
       // For action_web_service: build conditional option edges with sequential indices
@@ -814,6 +821,26 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
               break;
             }
           }
+        } else if (routingMode === 'weekday') {
+          const israelDay = israelTime.getDay(); // 0=Sunday ... 6=Saturday
+          const weekdayRanges = nodeData.weekdayRanges || [];
+          for (let i = 0; i < weekdayRanges.length; i++) {
+            const range = weekdayRanges[i];
+            const fromDay = Number.isInteger(range.fromDay) ? range.fromDay : 0;
+            const toDay = Number.isInteger(range.toDay) ? range.toDay : 6;
+
+            let inRange = false;
+            if (fromDay <= toDay) {
+              inRange = israelDay >= fromDay && israelDay <= toDay;
+            } else {
+              inRange = israelDay >= fromDay || israelDay <= toDay;
+            }
+
+            if (inRange) {
+              matchedIndex = i;
+              break;
+            }
+          }
         } else {
           const israelHour = israelTime.getHours();
           const timeRanges = nodeData.timeRanges || [];
@@ -902,11 +929,24 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
         console.log(`[WALK]    action_web_service → default exit → nextNode=${nextNode || '(none)'}`);
         
         if (!nextNode) {
+          // No default edge connected — only now surface the error to the user
+          // (so they aren't left with no response at all).
+          if (wsResult.error) {
+            console.log(`[WALK]    ⚠️ action_web_service failed and no default edge → showing error message`);
+            const errMsg = { type: 'Text', text: `❌ שגיאה בחיבור לשרת ה-Webservice: ${wsResult.errorText}`, created: new Date().toISOString() };
+            messages.push(errMsg);
+            addToHistory(session, errMsg, currentNodeId);
+          }
           console.log(`[WALK]    ⏹ action_web_service: no default edge → returnToMenu()`);
           returnToMenu();
           return messages;
         }
         
+        // A component is connected to 'default' — continue to it silently,
+        // even if the webservice call failed (wsResult.error === true).
+        if (wsResult.error) {
+          console.log(`[WALK]    ⚠️ action_web_service failed but default edge exists → continuing silently to ${nextNode}`);
+        }
         currentNodeId = nextNode;
         break;
       }
@@ -1151,25 +1191,9 @@ const performAutoRemoval = async (user, sender, phone, text, name = '') => {
       { _id: blocklist._id },
       { $addToSet: { phones: sender, contact_ids: contact._id } }
     );
-    if (updateRes.modifiedCount > 0) {
-      try {
-        await GroupRemovalLog.create({
-          user_id: userId,
-          group_id: blocklist._id,
-          group_name: blocklist.name,
-          is_blocklist: true,
-          contact_id: contact?._id || null,
-          phone: sender,
-          full_name: contact?.full_name || '',
-          whatsapp_name: contact?.whatsapp_name || name || '',
-          email: contact?.email || '',
-          reason: `מילת מפתח: ${matched}`,
-          removed_by: 'auto-keyword'
-        });
-      } catch (logErr) {
-        console.error('[BOT] removal-keyword log write failed:', logErr.message);
-      }
-    }
+    // NOTE: We intentionally do NOT create a GroupRemovalLog entry here.
+    // Adding to blocklist via opt-out keyword appears under "אנשי קשר" in the blocklist.
+    // GroupRemovalLog is only for manual removals FROM the blocklist by a user.
  
     try {
       await BotSession.updateMany(
@@ -1481,6 +1505,31 @@ export const respondToMessage = async (req, res) => {
           updateOp,
           { upsert: true, new: true }
         ).catch(err => console.error('[BOT] Failed to upsert contact:', err.message));
+
+        // Drain any group-broadcast messages that were queued on this contact while
+        // no session existed yet, so the new conversation opens with that history included.
+        try {
+          const flowIdStr = bot._id.toString();
+          const contactWithPending = await Contact.findOne({
+            user_id: String(user._id),
+            phone: sender,
+            'pending_history.0': { $exists: true },
+          });
+          const pendingForThisBot = (contactWithPending?.pending_history || [])
+            .filter(h => h.flow_id === flowIdStr);
+          if (pendingForThisBot.length > 0) {
+            pendingForThisBot.sort((a, b) => new Date(a.created) - new Date(b.created));
+            session.process_history = [...pendingForThisBot, ...(session.process_history || [])];
+            session.markModified('process_history');
+            await Contact.updateOne(
+              { _id: contactWithPending._id },
+              { $pull: { pending_history: { flow_id: flowIdStr } } }
+            );
+            console.log(`[BOT] 📢 Injected ${pendingForThisBot.length} pending broadcast message(s) into new session ${session._id}`);
+          }
+        } catch (err) {
+          console.error('[BOT] Failed to drain pending broadcast history:', err.message);
+        }
       }
 
       isNewSession = true;

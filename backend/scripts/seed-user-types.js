@@ -20,7 +20,8 @@ const SEEDED_TYPES = [
       settings: { view: true, edit_profile: true },
       users:    { view: true, add: true, edit: true, delete: true },
       rep_groups: { view: true, add: true, delete: true },
-      sms_in:   { view: true }
+      sms_in:   { view: true },
+      send_messages: { view: true, send: true }
     }
   },
   {
@@ -37,7 +38,8 @@ const SEEDED_TYPES = [
       settings: { view: true, edit_profile: true },
       users:    { view: true, add: true, edit: true, delete: true },
       rep_groups: { view: true, add: true, delete: true },
-      sms_in:   { view: true }
+      sms_in:   { view: true },
+      send_messages: { view: true, send: true }
     }
   },
   {
@@ -54,7 +56,8 @@ const SEEDED_TYPES = [
       settings: { view: true, edit_profile: true },
       users:    { view: false, add: false, edit: false, delete: false },
       rep_groups: { view: false, add: false, delete: false },
-      sms_in:   { view: false }
+      sms_in:   { view: false },
+      send_messages: { view: true, send: true }
     }
   },
   {
@@ -71,7 +74,8 @@ const SEEDED_TYPES = [
       settings: { view: true, edit_profile: true },
       users:    { view: false, add: false, edit: false, delete: false },
       rep_groups: { view: false, add: false, delete: false },
-      sms_in:   { view: false }
+      sms_in:   { view: false },
+      send_messages: { view: false, send: false }
     }
   }
 ];
@@ -110,6 +114,32 @@ export const seedUserTypes = async () => {
   await UserType.updateMany(
     { system_role: { $in: ['rep_manager', 'rep'] }, is_seeded: true },
     { $set: { 'permissions.sms_in': { view: false } } }
+  );
+
+  // Ensure send_messages permission exists on seeded types (idempotent patch for existing DBs)
+  await UserType.updateOne(
+    { system_role: 'admin', is_seeded: true },
+    { $set: { 'permissions.send_messages': { view: true, send: true } } }
+  );
+  await UserType.updateOne(
+    { system_role: 'user', is_seeded: true },
+    { $set: { 'permissions.send_messages': { view: true, send: true } } }
+  );
+  await UserType.updateOne(
+    { system_role: 'rep_manager', is_seeded: true },
+    { $set: { 'permissions.send_messages': { view: true, send: true } } }
+  );
+  await UserType.updateOne(
+    { system_role: 'rep', is_seeded: true },
+    { $set: { 'permissions.send_messages': { view: false, send: false } } }
+  );
+
+  // Idempotent patch for existing DBs: the admin user type must never be selectable from
+  // the Sub-Users tab. Older documents created before `show_in_users_tab` existed on this
+  // type fell back to the schema default (true), incorrectly exposing "מנהל מערכת" there.
+  await UserType.updateOne(
+    { system_role: 'admin', is_seeded: true },
+    { $set: { show_in_users_tab: false } }
   );
 };
 

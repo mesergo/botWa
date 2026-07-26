@@ -361,14 +361,15 @@ export const handleWebService = async (node, session, userInput = null) => {
   
   console.error('[WS] All retries failed. Last error:', errorDetails);
   
+  // NOTE: we intentionally do NOT put the error text into `messages` here.
+  // The caller (chatController.walkChain) decides whether to show it —
+  // only when there's no 'default' exit connected to continue the flow silently.
   return {
-    messages: [{
-      type: 'Text',
-      text: `❌ שגיאה בחיבור לשרת ה-Webservice: ${errorDetails}`,
-      created: new Date().toISOString()
-    }],
+    messages: [],
     returnValue: null,
-    waitingInput: false
+    waitingInput: false,
+    error: true,
+    errorText: errorDetails
   };
 };
 

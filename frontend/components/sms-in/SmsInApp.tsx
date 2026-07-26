@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   INITIAL_CLIENTS, 
@@ -45,6 +45,8 @@ const API_BASE = window.location.hostname === 'localhost'
   ? 'http://localhost:3001/api/sms-in'
   : `${window.location.origin}/api/sms-in`;
 
+type SmsInTab = 'dashboard' | 'sms_in' | 'routing' | 'clients' | 'integrations';
+
 interface SmsInAppProps {
   embedded?: boolean;
   userEmail?: string;
@@ -54,6 +56,10 @@ interface SmsInAppProps {
   isAdmin?: boolean;
   /** Auth token for fetching platform clients from MongoDB */
   token?: string | null;
+  /** Open on a specific tab (e.g. Settings → שיוך קווים). */
+  initialTab?: SmsInTab;
+  /** When set, only this tab is shown and the tab switcher is hidden. */
+  lockedTab?: SmsInTab;
 }
 
 export default function SmsInApp({
@@ -63,6 +69,8 @@ export default function SmsInApp({
   userName,
   isAdmin: isAdminProp,
   token,
+  initialTab,
+  lockedTab,
 }: SmsInAppProps) {
   // Standalone demo = full admin UI; when embedded in botWa, only real admins get assignment tabs
   const isAdmin = isAdminProp ?? !embedded;
@@ -104,15 +112,21 @@ export default function SmsInApp({
   });
 
   // Navigation state
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'sms_in' | 'routing' | 'clients' | 'integrations'>('sms_in');
+  const [activeTab, setActiveTab] = useState<SmsInTab>(() => lockedTab || initialTab || 'sms_in');
+
+  // Keep locked tab in sync (e.g. Settings embed always on routing)
+  useEffect(() => {
+    if (lockedTab) setActiveTab(lockedTab);
+  }, [lockedTab]);
 
   // Non-admins never stay on admin-only setup tabs
   useEffect(() => {
+    if (lockedTab) return;
     if (!isAdmin && (activeTab === 'routing' || activeTab === 'clients')) {
       setActiveTab('sms_in');
       setEditingDestSetting(null);
     }
-  }, [isAdmin, activeTab]);
+  }, [isAdmin, activeTab, lockedTab]);
 
   // Filters State
   const [searchText, setSearchText] = useState('');
@@ -120,6 +134,7 @@ export default function SmsInApp({
   const [filterClient, setFilterClient] = useState('all');
   const [filterDateStart, setFilterDateStart] = useState('');
   const [filterDateEnd, setFilterDateEnd] = useState('');
+  const [routingDestSearch, setRoutingDestSearch] = useState('');
   const [messagesPage, setMessagesPage] = useState(1);
 
   // Modals & Panels State
@@ -141,6 +156,8 @@ export default function SmsInApp({
   }>({ connected: false, configured: false });
   const [messagesSource, setMessagesSource] = useState<'mongodb' | 'local' | null>(null);
   const [isLoadingMessages, setIsLoadingMessages] = useState<boolean>(false);
+  const [searchTotal, setSearchTotal] = useState<number | null>(null);
+  const lastServerSearchRef = useRef('');
 
   // Fetch real-time connection status of database
   const fetchDbStatus = async () => {
@@ -165,6 +182,7 @@ export default function SmsInApp({
       const data = await res.json();
       if (data.source === 'mongodb' && Array.isArray(data.messages)) {
         setMessages(data.messages);
+        setSearchTotal(null);
         setMessagesSource('mongodb');
         if (!silent) {
           showToastMsg(`הנתונים נטענו בהצלחה מ-MongoDB (${data.messages.length} SMS)`, 'success');
@@ -245,6 +263,62 @@ export default function SmsInApp({
     }
   }, [embedded, token, isAdmin]);
 
+  // Search MongoDB itself so results are not limited to the 500 recent messages.
+  useEffect(() => {
+    const query = searchText.trim();
+    const destQuery = filterDest !== 'all' ? filterDest.trim() : '';
+    const hasServerQuery = query.length > 0 || destQuery.length > 0;
+    const searchKey = `${query}||${destQuery}`;
+
+    if (!hasServerQuery) {
+      if (lastServerSearchRef.current) {
+        lastServerSearchRef.current = '';
+        fetchRealMessages(true);
+      }
+      setSearchTotal(null);
+      return;
+    }
+
+    lastServerSearchRef.current = searchKey;
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      setIsLoadingMessages(true);
+      try {
+        const headers: HeadersInit = {};
+        if (token) headers.Authorization = `Bearer ${token}`;
+        const params = new URLSearchParams({
+          page: String(messagesPage),
+          limit: String(MESSAGES_PAGE_SIZE),
+        });
+        if (query) params.set('q', query);
+        if (destQuery) params.set('dest', destQuery);
+        const res = await fetch(`${API_BASE}/messages?${params.toString()}`, {
+          headers,
+          signal: controller.signal,
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        if (data.source === 'mongodb' && Array.isArray(data.messages)) {
+          setMessages(data.messages);
+          setSearchTotal(Number(data.total) || 0);
+          setMessagesSource('mongodb');
+        }
+      } catch (e) {
+        if ((e as Error).name !== 'AbortError') {
+          console.error('Error searching SMS messages:', e);
+          showToastMsg('החיפוש בכל טבלת ה-SMS נכשל', 'error');
+        }
+      } finally {
+        if (!controller.signal.aborted) setIsLoadingMessages(false);
+      }
+    }, 350);
+
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [searchText, filterDest, messagesPage, token]);
+
   // Sync state to LocalStorage
   useEffect(() => {
     // Don't overwrite local demo clients when using MongoDB accounts
@@ -297,9 +371,20 @@ export default function SmsInApp({
     });
   }, [messageDestNumbers, isAdmin]);
 
-  const visibleDestSettings = useMemo(() => {
+  const sortedDestSettings = useMemo(() => {
     return [...destSettings].sort((a, b) => a.dest.localeCompare(b.dest));
   }, [destSettings]);
+
+  const visibleDestSettings = useMemo(() => {
+    const query = routingDestSearch.trim().toLowerCase();
+    if (!query) return sortedDestSettings;
+    return sortedDestSettings.filter((ds) => {
+      const dest = ds.dest.toLowerCase();
+      const clientName = (ds.assignedClientName || '').toLowerCase();
+      const notes = (ds.notes || '').toLowerCase();
+      return dest.includes(query) || clientName.includes(query) || notes.includes(query);
+    });
+  }, [sortedDestSettings, routingDestSearch]);
 
   const resolveClientLabel = (idOrName: string) => {
     const byId = clients.find(c => c.id === idOrName);
@@ -391,6 +476,10 @@ export default function SmsInApp({
     }
   };
 
+  const isServerSearch =
+    (searchText.trim().length > 0 || (filterDest !== 'all' && filterDest.trim().length > 0)) &&
+    searchTotal !== null;
+
   // Filter messages logic
   const filteredMessages = messages.filter(msg => {
     // Customer scope from assignments (server already scopes; defense in depth)
@@ -404,14 +493,19 @@ export default function SmsInApp({
 
     // 1. Text Search (Sender phone, content message, id_, destination)
     const textLower = searchText.toLowerCase();
-    const matchText = !searchText || 
+    const matchText = isServerSearch || !searchText || 
       msg.phone.toLowerCase().includes(textLower) || 
       msg.message.toLowerCase().includes(textLower) || 
       msg.id_.toLowerCase().includes(textLower) || 
       msg.dest.toLowerCase().includes(textLower);
 
-    // 2. Destination filter
-    const matchDest = filterDest === 'all' || msg.dest === filterDest;
+    // 2. Destination filter (exact when selected from list; partial when typed)
+    const destLower = filterDest === 'all' ? '' : filterDest.trim().toLowerCase();
+    const matchDest = !destLower || (
+      isServerSearch
+        ? true // server already filtered by dest
+        : msg.dest.toLowerCase().includes(destLower)
+    );
 
     // 3. Associated Client filter (admin only)
     let matchClient = true;
@@ -438,13 +532,16 @@ export default function SmsInApp({
     return matchText && matchDest && matchClient && matchDateRange;
   });
 
-  const totalPages = Math.max(1, Math.ceil(filteredMessages.length / MESSAGES_PAGE_SIZE));
-  const pageStart = filteredMessages.length === 0 ? 0 : (messagesPage - 1) * MESSAGES_PAGE_SIZE + 1;
-  const pageEnd = Math.min(messagesPage * MESSAGES_PAGE_SIZE, filteredMessages.length);
-  const paginatedMessages = filteredMessages.slice(
-    (messagesPage - 1) * MESSAGES_PAGE_SIZE,
-    messagesPage * MESSAGES_PAGE_SIZE
-  );
+  const messageResultCount = isServerSearch ? (searchTotal ?? 0) : filteredMessages.length;
+  const totalPages = Math.max(1, Math.ceil(messageResultCount / MESSAGES_PAGE_SIZE));
+  const pageStart = messageResultCount === 0 ? 0 : (messagesPage - 1) * MESSAGES_PAGE_SIZE + 1;
+  const pageEnd = Math.min(messagesPage * MESSAGES_PAGE_SIZE, messageResultCount);
+  const paginatedMessages = isServerSearch
+    ? filteredMessages
+    : filteredMessages.slice(
+        (messagesPage - 1) * MESSAGES_PAGE_SIZE,
+        messagesPage * MESSAGES_PAGE_SIZE
+      );
 
   useEffect(() => {
     setMessagesPage(1);
@@ -749,27 +846,33 @@ export default function SmsInApp({
   // Custom visual CSS statistics counts
   const totalMessageCount = messages.length;
   const filteredMessageCount = filteredMessages.length;
-  const activeRoutesCount = visibleDestSettings.filter(d => d.isActive).length;
+  const activeRoutesCount = sortedDestSettings.filter(d => d.isActive).length;
   const totalClientsCount = clients.length;
 
   const displayEmail = userEmail || loginEmail;
 
-  const tabButtons = (
+  const embeddedTabClass = (active: boolean) =>
+    `px-4 py-2 rounded-2xl text-sm font-bold transition cursor-pointer ${
+      active ? 'bg-sky-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+    }`;
+
+  const sidebarTabClass = (active: boolean) =>
+    `w-full text-right flex items-center justify-between px-3 py-2.5 rounded-2xl text-sm font-bold transition cursor-pointer ${
+      active ? 'bg-sky-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+    }`;
+
+  const tabButtons = !lockedTab ? (
     <>
       <button
         onClick={() => setActiveTab('sms_in')}
-        className={`${embedded ? 'shrink-0' : 'w-full text-right'} flex items-center ${embedded ? 'gap-1.5 px-3 py-2' : 'justify-between px-3 py-2.5'} rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-          activeTab === 'sms_in'
-            ? 'bg-sky-600 text-white shadow-sm'
-            : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/80'
-        }`}
+        className={embedded ? embeddedTabClass(activeTab === 'sms_in') : sidebarTabClass(activeTab === 'sms_in')}
       >
         <span className="flex items-center gap-2">
           <MessageSquare size={16} />
           <span>הודעות נכנסות</span>
         </span>
         {!embedded && totalMessageCount > 0 && (
-          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+          <span className={`text-xs font-bold px-1.5 py-0.5 rounded-lg ${
             activeTab === 'sms_in' ? 'bg-white text-sky-800' : 'bg-slate-100 text-slate-600'
           }`}>{totalMessageCount}</span>
         )}
@@ -778,11 +881,9 @@ export default function SmsInApp({
       {isAdmin && (
         <button
           onClick={() => setActiveTab('routing')}
-          className={`${embedded ? 'shrink-0' : 'w-full text-right'} flex items-center gap-2 ${embedded ? 'px-3 py-2' : 'px-3 py-2.5'} rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-            activeTab === 'routing'
-              ? 'bg-sky-600 text-white shadow-sm'
-              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/80'
-          }`}
+          className={embedded
+            ? `flex items-center gap-2 ${embeddedTabClass(activeTab === 'routing')}`
+            : `flex items-center gap-2 ${sidebarTabClass(activeTab === 'routing')}`}
         >
           <GitFork size={16} />
           <span>שיוך קווים</span>
@@ -792,11 +893,9 @@ export default function SmsInApp({
       {isAdmin && (
         <button
           onClick={() => setActiveTab('clients')}
-          className={`${embedded ? 'shrink-0' : 'w-full text-right'} flex items-center gap-2 ${embedded ? 'px-3 py-2' : 'px-3 py-2.5'} rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-            activeTab === 'clients'
-              ? 'bg-sky-600 text-white shadow-sm'
-              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/80'
-          }`}
+          className={embedded
+            ? `flex items-center gap-2 ${embeddedTabClass(activeTab === 'clients')}`
+            : `flex items-center gap-2 ${sidebarTabClass(activeTab === 'clients')}`}
         >
           <Users size={16} />
           <span>ניהול לקוחות</span>
@@ -805,11 +904,9 @@ export default function SmsInApp({
 
       <button
         onClick={() => setActiveTab('integrations')}
-        className={`${embedded ? 'shrink-0' : 'w-full text-right'} flex items-center gap-2 ${embedded ? 'px-3 py-2' : 'px-3 py-2.5'} rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-          activeTab === 'integrations'
-            ? 'bg-sky-600 text-white shadow-sm'
-            : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/80'
-        }`}
+        className={embedded
+          ? `flex items-center gap-2 ${embeddedTabClass(activeTab === 'integrations')}`
+          : `flex items-center gap-2 ${sidebarTabClass(activeTab === 'integrations')}`}
       >
         <FileSpreadsheet size={16} />
         <span>ווב-הוקס</span>
@@ -817,20 +914,36 @@ export default function SmsInApp({
 
       <button
         onClick={() => setActiveTab('dashboard')}
-        className={`${embedded ? 'shrink-0' : 'w-full text-right'} flex items-center gap-2 ${embedded ? 'px-3 py-2' : 'px-3 py-2.5'} rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-          activeTab === 'dashboard'
-            ? 'bg-sky-600 text-white shadow-sm'
-            : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/80'
-        }`}
+        className={embedded
+          ? `flex items-center gap-2 ${embeddedTabClass(activeTab === 'dashboard')}`
+          : `flex items-center gap-2 ${sidebarTabClass(activeTab === 'dashboard')}`}
       >
         <LayoutDashboard size={16} />
         <span>סטטיסטיקה</span>
       </button>
     </>
-  );
+  ) : null;
+
+  const tabTitle =
+    activeTab === 'sms_in' ? 'הודעות SMS נכנסות' :
+    activeTab === 'routing' ? 'שיוך וניתוב קווים' :
+    activeTab === 'clients' ? 'ניהול לקוחות' :
+    activeTab === 'integrations' ? 'ווב-הוקס וחיבורים' :
+    'סקירה וסטטיסטיקה';
+
+  const tabSubtitle =
+    activeTab === 'sms_in' ? 'צפייה, סינון וייצוא של הודעות SMS שנכנסו למערכת' :
+    activeTab === 'routing' ? 'שיוך קווי destination ללקוחות קצה' :
+    activeTab === 'clients' ? 'ניהול לקוחות הקצה במערכת' :
+    activeTab === 'integrations' ? 'חיבור ל-Google Sheets ו-Webhook' :
+    'תמונת מצב כללית של הניתוב וההודעות';
 
   return (
-    <div className={`${embedded ? 'h-full' : 'min-h-screen'} bg-slate-50 text-right flex flex-col font-sans`} dir="rtl">
+    <div
+      className={`${embedded ? 'h-full' : 'min-h-screen'} bg-[#f8fafc] text-right flex flex-col font-medium`}
+      dir="rtl"
+      style={{ fontFamily: "'Heebo', sans-serif" }}
+    >
       
       {/* Toast Notification */}
       <AnimatePresence>
@@ -848,7 +961,7 @@ export default function SmsInApp({
             }`}
           >
             {toast.type === 'success' ? <CheckCircle2 size={18} /> : <AlertCircle size={18} />}
-            <span className="text-xs font-bold leading-relaxed">{toast.text}</span>
+            <span className="text-sm font-bold leading-relaxed">{toast.text}</span>
           </motion.div>
         )}
       </AnimatePresence>
@@ -976,66 +1089,70 @@ export default function SmsInApp({
           </aside>
           )}
 
-          <main className="flex-1 flex flex-col min-w-0 bg-slate-50 overflow-hidden">
+          <main className="flex-1 flex flex-col min-w-0 bg-[#f8fafc] overflow-hidden">
             
-            {/* TOP ACTIONS RIBBON */}
-            <header className="bg-white border-b border-slate-200 px-6 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 z-10">
-              <div>
-                <span className="text-[10px] text-sky-600 font-extrabold uppercase tracking-widest block">Mesergo SMS Core Router</span>
-                <h1 className="text-xl font-bold text-slate-900 mt-0.5">
-                  {activeTab === 'sms_in' && 'הודעות SMS נכנסות מהטבלה'}
-                  {activeTab === 'routing' && 'שיוך וניתוב קווי destination ללקוחות קצה'}
-                  {activeTab === 'clients' && 'ניהול לקוחות קצה'}
-                  {activeTab === 'integrations' && 'חיבור ל-Google Sheets Webhook'}
-                  {activeTab === 'dashboard' && 'סקירה כללית וסטטיסטיקה'}
-                </h1>
-              </div>
+            {/* TOP HEADER — matches bot pages (SendMessages / Contacts) */}
+            <header className="bg-white border-b border-slate-100 px-6 py-4 z-10">
+              <div className="flex flex-col lg:flex-row-reverse lg:items-center lg:justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-sky-50 text-sky-600 flex items-center justify-center">
+                    <MessageSquare size={18} />
+                  </div>
+                  <div>
+                    <h1 className="text-xl font-black text-slate-900">{tabTitle}</h1>
+                    <p className="text-slate-400 text-xs font-semibold mt-0.5">{tabSubtitle}</p>
+                  </div>
+                </div>
 
+                {embedded && tabButtons && (
+                  <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-1.5">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {tabButtons}
+                    </div>
+                  </div>
+                )}
+              </div>
             </header>
 
-            {embedded && (
-              <nav className="bg-white border-b border-slate-200 px-4 py-2 flex flex-wrap gap-1.5 overflow-x-auto shrink-0">
-                {tabButtons}
-              </nav>
-            )}
-
             {/* MAIN INTERNAL ROUTE VIEWS */}
-            <div className="p-6 flex-1 overflow-y-auto max-w-7xl w-full mx-auto">
+            <div className="p-6 lg:p-8 flex-1 overflow-y-auto max-w-7xl w-full mx-auto">
               
-              {/* STATUS WIDGET BAR - Always visible for quick insights */}
+              {/* STATUS WIDGET BAR — hide when locked to a single setup tab (e.g. Settings) */}
+              {!lockedTab && (
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-                <div className="bg-white rounded-xl border border-slate-200 p-4 shrink-0 shadow-xs">
-                  <span className="text-slate-400 text-xs font-semibold block uppercase">סך כל ה-SMS</span>
+                <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm">
+                  <span className="text-slate-400 text-xs font-semibold block">סך כל ה-SMS</span>
                   <div className="flex items-baseline gap-2 mt-1">
-                    <span className="text-2xl font-black text-slate-900 font-mono">{totalMessageCount}</span>
-                    <span className="text-[10px] text-slate-500 font-bold">הודעות רשומות</span>
+                    <span className="text-2xl font-black text-slate-900">{totalMessageCount}</span>
+                    <span className="text-xs text-slate-500 font-bold">הודעות רשומות</span>
                   </div>
                 </div>
 
-                <div className="bg-white rounded-xl border border-slate-200 p-4 shrink-0 shadow-xs">
-                  <span className="text-slate-400 text-xs font-semibold block uppercase">מסוננות בטבלה</span>
+                <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm">
+                  <span className="text-slate-400 text-xs font-semibold block">מסוננות בטבלה</span>
                   <div className="flex items-baseline gap-2 mt-1">
-                    <span className="text-2xl font-black text-sky-700 font-mono">{filteredMessageCount}</span>
-                    <span className="text-[10px] text-slate-500 font-bold">מתוך {totalMessageCount}</span>
+                    <span className="text-2xl font-black text-sky-700">{filteredMessageCount}</span>
+                    <span className="text-xs text-slate-500 font-bold">מתוך {totalMessageCount}</span>
                   </div>
                 </div>
 
-                <div className="bg-white rounded-xl border border-slate-200 p-4 shrink-0 shadow-xs">
-                  <span className="text-slate-400 text-xs font-semibold block uppercase">קווים מנותבים פעילים</span>
+                <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm">
+                  <span className="text-slate-400 text-xs font-semibold block">קווים מנותבים פעילים</span>
                   <div className="flex items-baseline gap-2 mt-1">
-                    <span className="text-2xl font-black text-emerald-600 font-mono">{activeRoutesCount}</span>
-                    <span className="text-[10px] text-slate-500 font-bold">מתוך {visibleDestSettings.length} במסגרת</span>
+                    <span className="text-2xl font-black text-emerald-600">{activeRoutesCount}</span>
+                    <span className="text-xs text-slate-500 font-bold">מתוך {sortedDestSettings.length} במסגרת</span>
                   </div>
                 </div>
 
-                <div className="bg-white rounded-xl border border-slate-200 p-4 shrink-0 shadow-xs">
-                  <span className="text-slate-400 text-xs font-semibold block uppercase">מאגר לקוחות קצה</span>
+                <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm">
+                  <span className="text-slate-400 text-xs font-semibold block">מאגר לקוחות קצה</span>
                   <div className="flex items-baseline gap-2 mt-1">
-                    <span className="text-2xl font-black text-indigo-600 font-mono">{totalClientsCount}</span>
-                    <span className="text-[10px] text-slate-500 font-bold">חברות שונות</span>
+                    <span className="text-2xl font-black text-indigo-600">{totalClientsCount}</span>
+                    <span className="text-xs text-slate-500 font-bold">חברות שונות</span>
                   </div>
                 </div>
               </div>
+              )}
 
               {/* VIEW SWITCHER CONTAINER */}
               <div>
@@ -1045,51 +1162,61 @@ export default function SmsInApp({
                   <div className="space-y-4">
 
                     {/* ADVANCED FILTER BAR */}
-                    <div className="bg-white shadow-xs rounded-xl border border-slate-200 p-4 space-y-4">
-                      <div className="flex items-center gap-1.5 border-b border-slate-100 pb-2">
-                        <Filter size={15} className="text-sky-600" />
-                        <h3 className="font-bold text-slate-800 text-xs uppercase tracking-wider">מסננים מובנים וניהול חיפוש</h3>
+                    <div className="bg-white shadow-sm rounded-2xl border border-slate-100 p-5 space-y-4">
+                      <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
+                        <Filter size={16} className="text-sky-600" />
+                        <h3 className="font-black text-slate-900 text-sm">מסננים וחיפוש</h3>
                       </div>
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
                         {/* Search keyword input */}
                         <div className="lg:col-span-2 relative">
-                          <label className="block text-[10px] font-bold text-slate-500 mb-1">חפש לפי מספר שולח / תוכן הודעה / מזהה</label>
+                          <label className="block text-xs font-bold text-slate-500 mb-1.5">חפש לפי מספר שולח / תוכן הודעה / מזהה</label>
                           <div className="relative">
                             <input 
                               type="text" 
                               value={searchText}
                               onChange={(e) => setSearchText(e.target.value)}
-                              placeholder="סינון חופשי עפ מספר או טקסט וכו..." 
-                              className="w-full text-xs pr-8 pl-3 py-2 border border-slate-200 rounded-lg bg-slate-50/50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-sky-500 focus:border-sky-500 transition-all font-medium"
+                              placeholder="סינון חופשי לפי מספר או טקסט..." 
+                              className="w-full text-sm pr-9 pl-3 py-2.5 border border-slate-200 rounded-2xl bg-slate-50 focus:bg-white focus:outline-none focus:ring-4 focus:ring-sky-600/10 focus:border-sky-600 transition-all font-medium"
                             />
-                            <Search size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                            <Search size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
                           </div>
                         </div>
 
-                        {/* Filter by dest input */}
+                        {/* Filter by dest — searchable input + suggestions */}
                         <div>
-                          <label className="block text-[10px] font-bold text-slate-500 mb-1">נתב / קו נמען (dest)</label>
-                          <select 
-                            value={filterDest}
-                            onChange={(e) => setFilterDest(e.target.value)}
-                            className="w-full text-xs border border-slate-200 rounded-lg p-2 bg-white focus:outline-none focus:ring-1 focus:ring-sky-500 focus:border-sky-500"
-                          >
-                            <option value="all">כל המספרים המקבלים (הכל)</option>
-                            {messageDestNumbers.map(dest => (
-                              <option key={dest} value={dest}>{dest}</option>
-                            ))}
-                          </select>
+                          <label className="block text-xs font-bold text-slate-500 mb-1.5">נתב / קו נמען (dest)</label>
+                          <div className="relative">
+                            <input
+                              type="text"
+                              value={filterDest === 'all' ? '' : filterDest}
+                              onChange={(e) => {
+                                const value = e.target.value;
+                                setFilterDest(value.trim() ? value : 'all');
+                              }}
+                              list="dest-numbers-list"
+                              placeholder="חפש מספר נמען..."
+                              dir="ltr"
+                              className="w-full text-sm pr-9 pl-3 py-2.5 border border-slate-200 rounded-2xl bg-slate-50 focus:bg-white focus:outline-none focus:ring-4 focus:ring-sky-600/10 focus:border-sky-600 transition-all font-medium text-left"
+                            />
+                            <Search size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                            <datalist id="dest-numbers-list">
+                              {messageDestNumbers.map(dest => (
+                                <option key={dest} value={dest} />
+                              ))}
+                            </datalist>
+                          </div>
                         </div>
 
                         {/* Filter by clients associated — admin only */}
                         {isAdmin && (
                           <div>
-                            <label className="block text-[10px] font-bold text-slate-500 mb-1">לקוח משויך לקו</label>
+                            <label className="block text-xs font-bold text-slate-500 mb-1.5">לקוח משויך לקו</label>
                             <select 
                               value={filterClient}
                               onChange={(e) => setFilterClient(e.target.value)}
-                              className="w-full text-xs border border-slate-200 rounded-lg p-2 bg-white focus:outline-none focus:ring-1 focus:ring-sky-500 focus:border-sky-500"
+                              className="w-full text-sm border border-slate-200 rounded-2xl px-3 py-2.5 bg-white focus:outline-none focus:ring-4 focus:ring-sky-600/10 focus:border-sky-600 font-medium"
                             >
                               <option value="all">כל הלקוחות</option>
                               {clients.map(c => (
@@ -1100,44 +1227,44 @@ export default function SmsInApp({
                         )}
 
                         {/* Range/Date Filter elements wrapper */}
-                        <div className="flex gap-1 items-end sm:col-span-2 lg:col-span-1">
+                        <div className="flex gap-2 items-end sm:col-span-2 lg:col-span-1">
                           <div className="flex-1">
-                            <label className="block text-[10px] font-bold text-slate-500 mb-1">מתאריך</label>
+                            <label className="block text-xs font-bold text-slate-500 mb-1.5">מתאריך</label>
                             <input 
                               type="date"
                               value={filterDateStart}
                               onChange={(e) => setFilterDateStart(e.target.value)}
-                              className="w-full text-xs border border-slate-200 rounded-lg p-1.5 bg-white text-left"
+                              className="w-full text-sm border border-slate-200 rounded-2xl px-3 py-2.5 bg-white text-left font-medium focus:outline-none focus:ring-4 focus:ring-sky-600/10 focus:border-sky-600"
                             />
                           </div>
                           <div className="flex-1">
-                            <label className="block text-[10px] font-bold text-slate-500 mb-1">עד תאריך</label>
+                            <label className="block text-xs font-bold text-slate-500 mb-1.5">עד תאריך</label>
                             <input 
                               type="date"
                               value={filterDateEnd}
                               onChange={(e) => setFilterDateEnd(e.target.value)}
-                              className="w-full text-xs border border-slate-200 rounded-lg p-1.5 bg-white text-left"
+                              className="w-full text-sm border border-slate-200 rounded-2xl px-3 py-2.5 bg-white text-left font-medium focus:outline-none focus:ring-4 focus:ring-sky-600/10 focus:border-sky-600"
                             />
                           </div>
                         </div>
                       </div>
 
                       {/* Action options in filter bank */}
-                      <div className="flex flex-wrap items-center justify-between gap-3 pt-2.5 border-t border-slate-100">
+                      <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-100">
                         <div className="flex flex-wrap gap-2">
                           <button
                             onClick={() => handleExportCSV()}
-                            className="bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-lg px-3.5 py-2 text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                            className="bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-2xl px-4 py-2.5 text-sm flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
                           >
-                            <Download size={13} />
+                            <Download size={14} />
                             <span>יצא הכל ל-CSV ({filteredMessageCount})</span>
                           </button>
                           
                           <button
                             onClick={() => setShowExportDateModal(true)}
-                            className="bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold rounded-lg px-3.5 py-2 text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                            className="bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold rounded-2xl px-4 py-2.5 text-sm flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
                           >
-                            <Calendar size={13} className="text-slate-500" />
+                            <Calendar size={14} className="text-slate-500" />
                             <span>יצא לפי תאריך ספציפי</span>
                           </button>
                         </div>
@@ -1152,7 +1279,7 @@ export default function SmsInApp({
                               setFilterDateEnd('');
                               showToastMsg('המסננים נוקו בהצלחה', 'info');
                             }}
-                            className="text-xs text-sky-600 hover:text-sky-700 font-bold underline"
+                            className="text-sm text-sky-600 hover:text-sky-700 font-bold"
                           >
                             נקה מסננים פעילים
                           </button>
@@ -1161,14 +1288,14 @@ export default function SmsInApp({
                     </div>
 
                     {/* TABLE CONTROLLER & VISUAL */}
-                    <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
+                    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
                       <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex flex-wrap justify-between items-center gap-2">
-                        <span className="text-xs text-slate-500 font-bold">
-                          {filteredMessageCount > 0 ? (
+                        <span className="text-sm text-slate-500 font-bold">
+                          {messageResultCount > 0 ? (
                             <>
-                              מציג <span className="text-sky-600 font-extrabold">{pageStart}-{pageEnd}</span> מתוך{' '}
-                              <span className="font-extrabold">{filteredMessageCount}</span> הודעות
-                              {filteredMessageCount !== totalMessageCount && (
+                              מציג <span className="text-sky-600 font-black">{pageStart}-{pageEnd}</span> מתוך{' '}
+                              <span className="font-black text-slate-800">{messageResultCount}</span> הודעות
+                              {!isServerSearch && filteredMessageCount !== totalMessageCount && (
                                 <> (סוננו מ-{totalMessageCount})</>
                               )}
                             </>
@@ -1181,9 +1308,9 @@ export default function SmsInApp({
 
                       {/* RESPONSIVE TABLE FRAMEWORK */}
                       <div className="overflow-x-auto">
-                        <table className="w-full text-right border-collapse text-xs">
+                        <table className="w-full text-right border-collapse text-sm">
                           <thead>
-                            <tr className="bg-slate-50 text-slate-500 uppercase font-bold text-[10px] tracking-wider border-b border-slate-100">
+                            <tr className="bg-slate-50 text-slate-500 font-bold text-xs border-b border-slate-100">
                               <th className="p-4 text-right">נמען</th>
                               <th className="p-4 text-right">מי שלח</th>
                               <th className="p-4 text-right whitespace-nowrap">תאריך</th>
@@ -1196,20 +1323,20 @@ export default function SmsInApp({
                                   key={msg.id_}
                                   className="hover:bg-slate-50 transition-colors group"
                                 >
-                                  <td className="p-4 font-mono font-bold text-slate-800 align-middle">
+                                  <td className="p-4 font-bold text-slate-800 align-middle">
                                     {msg.dest}
                                   </td>
 
                                   <td className="p-4 font-bold text-slate-700 align-middle">
-                                    <span className="bg-slate-100 text-slate-800 px-2.5 py-1 rounded font-mono text-xs">{msg.phone}</span>
+                                    <span className="bg-slate-100 text-slate-800 px-2.5 py-1 rounded-lg text-sm font-bold">{msg.phone}</span>
                                   </td>
 
-                                  <td className="p-4 text-slate-600 align-middle whitespace-nowrap font-mono text-[11px]">
+                                  <td className="p-4 text-slate-600 align-middle whitespace-nowrap text-sm font-medium">
                                     {msg.date}
                                   </td>
 
-                                  <td className="p-4 text-slate-800 align-middle leading-relaxed font-normal whitespace-normal break-words max-w-md">
-                                    <span className="text-slate-800 text-[12px] font-medium pre-wrap text-right">{msg.message}</span>
+                                  <td className="p-4 text-slate-800 align-middle leading-relaxed font-medium whitespace-normal break-words max-w-md">
+                                    <span className="text-slate-800 text-sm font-medium text-right whitespace-pre-wrap">{msg.message}</span>
                                   </td>
                                 </tr>
                             ))}
@@ -1219,8 +1346,8 @@ export default function SmsInApp({
                                 <td colSpan={4} className="p-12 text-center text-slate-400 text-sm font-medium">
                                   <div className="max-w-xs mx-auto space-y-1">
                                     <AlertCircle className="mx-auto text-slate-300" size={32} />
-                                    <p className="font-bold text-slate-700 mt-2">לא נמצאו הודעות SMS תואמות</p>
-                                    <p className="text-xs text-slate-400">
+                                    <p className="font-black text-slate-700 mt-2 text-base">לא נמצאו הודעות SMS תואמות</p>
+                                    <p className="text-sm text-slate-400 font-semibold">
                                       {!isAdmin && myAssignedDests && myAssignedDests.size === 0
                                         ? 'עדיין לא שויך אליך קו SMS. פנה למנהל המערכת לשיוך קו.'
                                         : 'נסה לשנות את פרמטרי החיפוש או לבטל מסננים קיימים.'}
@@ -1233,19 +1360,19 @@ export default function SmsInApp({
                         </table>
                       </div>
 
-                      {filteredMessages.length > MESSAGES_PAGE_SIZE && (
+                      {messageResultCount > MESSAGES_PAGE_SIZE && (
                         <div className="flex items-center justify-between gap-3 p-4 border-t border-slate-100 bg-slate-50/50">
                           <button
                             type="button"
                             disabled={messagesPage <= 1}
                             onClick={() => setMessagesPage(p => p - 1)}
-                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border border-slate-200 bg-white text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                            className="flex items-center gap-1.5 px-4 py-2 rounded-2xl text-sm font-bold border border-slate-200 bg-white text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
                           >
                             <ChevronRight size={14} />
                             <span>הקודם</span>
                           </button>
 
-                          <span className="text-xs text-slate-500 font-bold">
+                          <span className="text-sm text-slate-500 font-bold">
                             עמוד <span className="text-sky-600">{messagesPage}</span> מתוך {totalPages}
                           </span>
 
@@ -1253,7 +1380,7 @@ export default function SmsInApp({
                             type="button"
                             disabled={messagesPage >= totalPages}
                             onClick={() => setMessagesPage(p => p + 1)}
-                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border border-slate-200 bg-white text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                            className="flex items-center gap-1.5 px-4 py-2 rounded-2xl text-sm font-bold border border-slate-200 bg-white text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
                           >
                             <span>הבא</span>
                             <ChevronLeft size={14} />
@@ -1268,15 +1395,34 @@ export default function SmsInApp({
                 {/* 2. ROUTING & LINE SETTINGS TAB (admin only) */}
                 {isAdmin && activeTab === 'routing' && (
                   <div className="space-y-4">
-                    <div className="bg-sky-50/60 rounded-xl border border-sky-100 p-4 text-xs text-sky-900">
+                    <div className="bg-sky-50 rounded-2xl border border-sky-100 p-4 text-sm text-sky-900 font-semibold">
                       קווים מוצגים אוטומטית מתוך מספרי הנמען (dest) שנכנסו להודעות ממסד הנתונים. לחץ על שורה לעריכת שיוך לקוח, Google Sheets ו-Webhook.
                     </div>
 
-                    <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
+                    <div className="bg-white shadow-sm rounded-2xl border border-slate-100 p-4">
+                      <label className="block text-xs font-bold text-slate-500 mb-1.5">חפש קו נמען</label>
+                      <div className="relative max-w-md">
+                        <input
+                          type="text"
+                          value={routingDestSearch}
+                          onChange={(e) => setRoutingDestSearch(e.target.value)}
+                          placeholder="חפש לפי מספר נמען / לקוח / הערה..."
+                          className="w-full text-sm pr-9 pl-3 py-2.5 border border-slate-200 rounded-2xl bg-slate-50 focus:bg-white focus:outline-none focus:ring-4 focus:ring-sky-600/10 focus:border-sky-600 transition-all font-medium"
+                        />
+                        <Search size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                      </div>
+                      {routingDestSearch.trim() && (
+                        <p className="mt-2 text-xs text-slate-500 font-bold">
+                          מציג {visibleDestSettings.length} מתוך {destSettings.length} קווים
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
                       <div className="overflow-x-auto">
-                        <table className="w-full text-xs text-right">
+                        <table className="w-full text-sm text-right">
                           <thead>
-                            <tr className="bg-slate-50 border-b border-slate-200 text-[10px] font-bold text-slate-500 uppercase tracking-wide">
+                            <tr className="bg-slate-50 border-b border-slate-100 text-xs font-bold text-slate-500">
                               <th className="px-4 py-3 text-right">קו נמען (dest)</th>
                               <th className="px-4 py-3 text-right">סטטוס</th>
                               <th className="px-4 py-3 text-right">לקוח משויך</th>
@@ -1289,15 +1435,17 @@ export default function SmsInApp({
                           <tbody className="divide-y divide-slate-100">
                             {visibleDestSettings.length === 0 ? (
                               <tr>
-                                <td colSpan={7} className="px-4 py-10 text-center text-slate-400">
-                                  אין קווים להצגה — טען הודעות ממסד הנתונים או המתן להודעות נכנסות
+                                <td colSpan={7} className="px-4 py-10 text-center text-slate-400 font-semibold">
+                                  {routingDestSearch.trim()
+                                    ? 'לא נמצאו קווים תואמים לחיפוש'
+                                    : 'אין קווים להצגה — טען הודעות ממסד הנתונים או המתן להודעות נכנסות'}
                                 </td>
                               </tr>
                             ) : visibleDestSettings.map((ds) => (
                               <tr key={ds.dest} className="hover:bg-slate-50/80 transition-colors">
-                                <td className="px-4 py-3 font-mono font-bold text-slate-900 whitespace-nowrap">{ds.dest}</td>
+                                <td className="px-4 py-3 font-bold text-slate-900 whitespace-nowrap">{ds.dest}</td>
                                 <td className="px-4 py-3 whitespace-nowrap">
-                                  <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full ${
+                                  <span className={`px-2.5 py-1 text-xs font-bold rounded-lg ${
                                     ds.isActive
                                       ? 'bg-emerald-50 text-emerald-800 border border-emerald-100'
                                       : 'bg-slate-100 text-slate-500 border border-slate-200'
@@ -1307,16 +1455,16 @@ export default function SmsInApp({
                                 </td>
                                 <td className="px-4 py-3 max-w-[160px]">
                                   {ds.assignedClients[0] ? (
-                                    <span className="text-slate-700 font-medium truncate block">
+                                    <span className="text-slate-700 font-semibold truncate block">
                                       {ds.assignedClientName || resolveClientLabel(ds.assignedClients[0])}
                                     </span>
                                   ) : (
-                                    <span className="text-rose-500 italic font-medium">לא משויך</span>
+                                    <span className="text-rose-500 italic font-semibold">לא משויך</span>
                                   )}
                                 </td>
                                 <td className="px-4 py-3 max-w-[180px]">
                                   {ds.googleSheetsUrl ? (
-                                    <span className="font-mono text-[10px] text-sky-700 truncate block" dir="ltr" title={ds.googleSheetsUrl}>
+                                    <span className="text-xs text-sky-700 truncate block font-medium" dir="ltr" title={ds.googleSheetsUrl}>
                                       {ds.googleSheetsUrl}
                                     </span>
                                   ) : (
@@ -1325,7 +1473,7 @@ export default function SmsInApp({
                                 </td>
                                 <td className="px-4 py-3 max-w-[180px]">
                                   {ds.webhookUrl ? (
-                                    <span className="font-mono text-[10px] text-indigo-700 truncate block" dir="ltr" title={ds.webhookUrl}>
+                                    <span className="text-xs text-indigo-700 truncate block font-medium" dir="ltr" title={ds.webhookUrl}>
                                       {ds.webhookUrl}
                                     </span>
                                   ) : (
@@ -1333,12 +1481,12 @@ export default function SmsInApp({
                                   )}
                                 </td>
                                 <td className="px-4 py-3 max-w-[140px]">
-                                  <span className="text-slate-500 truncate block">{ds.notes || '—'}</span>
+                                  <span className="text-slate-500 truncate block font-medium">{ds.notes || '—'}</span>
                                 </td>
                                 <td className="px-4 py-3 text-center">
                                   <button
                                     onClick={() => setEditingDestSetting(ds)}
-                                    className="bg-slate-800 hover:bg-slate-700 text-white font-bold text-[10px] py-1.5 px-3 rounded-lg transition-colors cursor-pointer inline-flex items-center gap-1"
+                                    className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs py-2 px-3 rounded-2xl transition-colors cursor-pointer inline-flex items-center gap-1"
                                   >
                                     <Link2 size={12} />
                                     עריכה
@@ -1372,7 +1520,7 @@ export default function SmsInApp({
                   <WebhookSimulator 
                     logs={webhookLogs} 
                     onClearLogs={() => setWebhookLogs([])}
-                    defaultWebhookUrl={visibleDestSettings.length > 0 ? (visibleDestSettings[0].googleSheetsUrl || visibleDestSettings[0].webhookUrl) : ''}
+                    defaultWebhookUrl={sortedDestSettings.length > 0 ? (sortedDestSettings[0].googleSheetsUrl || sortedDestSettings[0].webhookUrl) : ''}
                   />
                 )}
 
@@ -1380,9 +1528,9 @@ export default function SmsInApp({
                 {/* 5. DASHBOARD STATS OVERVIEW TAB */}
                 {activeTab === 'dashboard' && (
                   <div className="space-y-6">
-                    <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-xs">
-                      <h2 className="text-lg font-bold text-slate-900 mb-2">סקירת מערכת ניתוב SMS - מסרגו</h2>
-                      <p className="text-sm text-slate-500 leading-relaxed">
+                    <div className="bg-white rounded-2xl border border-slate-100 p-6 shadow-sm">
+                      <h2 className="text-lg font-black text-slate-900 mb-2">סקירת מערכת ניתוב SMS</h2>
+                      <p className="text-sm text-slate-500 font-semibold leading-relaxed">
                         מערכת זו מאפשרת לקבל הודעות נכנסות ממכשירי הקצה של לקוחותינו ולנתב אותם בזמן אמת אל קובצי Google Sheets וניהול לקוחות מרובים במקביל בצורה מאובטחת.
                       </p>
                     </div>
@@ -1390,17 +1538,17 @@ export default function SmsInApp({
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       
                       {/* Distribution statistics chart placeholder (simulated clean CSS layout) */}
-                      <div className="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
-                        <h3 className="font-bold text-slate-900 text-sm">פופולריות קווים (סך הודעות נכנסות לקו)</h3>
+                      <div className="bg-white rounded-2xl border border-slate-100 p-5 space-y-4 shadow-sm">
+                        <h3 className="font-black text-slate-900 text-sm">פופולריות קווים (סך הודעות נכנסות לקו)</h3>
                         <div className="space-y-3.5 pt-2">
                           {messageDestNumbers.map(dest => {
                             const count = messages.filter(m => m.dest === dest).length;
                             const percentage = totalMessageCount > 0 ? (count / totalMessageCount) * 100 : 0;
                             return (
                               <div key={dest} className="space-y-1">
-                                <div className="flex justify-between items-center text-xs">
-                                  <span className="font-mono text-slate-700 font-bold">{dest}</span>
-                                  <span className="text-slate-500">{count} SMS ({Math.round(percentage)}%)</span>
+                                <div className="flex justify-between items-center text-sm">
+                                  <span className="text-slate-700 font-bold">{dest}</span>
+                                  <span className="text-slate-500 font-semibold">{count} SMS ({Math.round(percentage)}%)</span>
                                 </div>
                                 <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden border border-slate-200">
                                   <div 
@@ -1415,21 +1563,21 @@ export default function SmsInApp({
                       </div>
 
                       {/* Quick helpers links */}
-                      <div className="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
-                        <h3 className="font-bold text-slate-900 text-sm">מדריכים וכלים חיצוניים</h3>
-                        <div className="space-y-2 text-xs">
+                      <div className="bg-white rounded-2xl border border-slate-100 p-5 space-y-4 shadow-sm">
+                        <h3 className="font-black text-slate-900 text-sm">מדריכים וכלים חיצוניים</h3>
+                        <div className="space-y-2 text-sm">
                           <a 
                             href="https://script.google.com" 
                             target="_blank" 
                             rel="noreferrer"
-                            className="p-3 bg-slate-50 hover:bg-slate-100 rounded-lg border block transition-colors font-medium text-slate-700 flex items-center justify-between"
+                            className="p-3 bg-slate-50 hover:bg-slate-100 rounded-2xl border border-slate-100 block transition-colors font-bold text-slate-700 flex items-center justify-between"
                           >
-                            <span>פתח את Google Apps Script Console 📊</span>
+                            <span>פתח את Google Apps Script Console</span>
                             <ExternalLink size={14} className="text-slate-400" />
                           </a>
-                          <div className="p-3 bg-slate-50 rounded-lg border text-slate-600 leading-relaxed text-[11px] space-y-1">
-                            <span className="font-bold text-slate-800 block">עצה לפריסת Webhook מנצחת:</span>
-                            <p>במידה ומשתמשים בקוד ה-Apps Script, מומלץ תמיד לקבוע הרשאת ריצה של "Everyone - כולל כולם" כדי לאפשר לנתב מסרגו לקשר את הודעות ה-SMS בצורה חופשית ללא הפרעה.</p>
+                          <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100 text-slate-600 leading-relaxed text-sm space-y-1">
+                            <span className="font-black text-slate-800 block">עצה לפריסת Webhook מנצחת:</span>
+                            <p className="font-semibold">במידה ומשתמשים בקוד ה-Apps Script, מומלץ תמיד לקבוע הרשאת ריצה של "Everyone - כולל כולם" כדי לאפשר לנתב מסרגו לקשר את הודעות ה-SMS בצורה חופשית ללא הפרעה.</p>
                           </div>
                         </div>
                       </div>
@@ -1442,7 +1590,7 @@ export default function SmsInApp({
             </div>
 
             {!embedded && (
-            <footer className="bg-white border-t border-slate-200 px-6 py-4 text-center text-[10px] text-slate-400">
+            <footer className="bg-white border-t border-slate-100 px-6 py-4 text-center text-xs text-slate-400 font-semibold">
               כל הזכויות שמורות למנהל אדמין Mesergo Solutions. מחובר כעת: {displayEmail}
             </footer>
             )}
@@ -1466,40 +1614,40 @@ export default function SmsInApp({
       {/* ==================== 2. MODAL: EXPORT BY DATE PICKER ==================== */}
       {showExportDateModal && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-sm w-full p-5 border border-slate-100 space-y-4">
-            <div className="flex items-center justify-between border-b pb-2">
-              <h4 className="font-bold text-slate-900 text-sm">ייצוא הודעות SMS לפי תאריך מוגדר</h4>
+          <div className="bg-white rounded-3xl shadow-2xl max-w-sm w-full p-6 border border-slate-100 space-y-4" style={{ fontFamily: "'Heebo', sans-serif" }}>
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h4 className="font-black text-slate-900 text-base">ייצוא הודעות SMS לפי תאריך</h4>
               <button 
                 onClick={() => setShowExportDateModal(false)}
-                className="text-slate-400 hover:text-slate-600 block"
+                className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg"
               >
                 <X size={18} />
               </button>
             </div>
 
             <div className="space-y-3">
-              <label className="block text-xs font-bold text-slate-700">בחר תאריך יעד לייצוא</label>
+              <label className="block text-xs font-bold text-slate-500">בחר תאריך יעד לייצוא</label>
               <input 
                 type="date"
                 value={expDateStr}
                 onChange={(e) => setExpDateStr(e.target.value)}
-                className="w-full text-xs border border-slate-200 rounded-lg p-2.5 bg-slate-50 text-left font-mono focus:bg-white focus:outline-none"
+                className="w-full text-sm border border-slate-200 rounded-2xl px-4 py-2.5 bg-slate-50 text-left font-medium focus:bg-white focus:outline-none focus:ring-4 focus:ring-sky-600/10 focus:border-sky-600"
               />
-              <p className="text-[10px] text-slate-400">כל הודעות ה-SMS אשר הגיעו למערכת בתאריך נבחר זה, יסוננו וייוצאו כקובץ Excel CSV קריא.</p>
+              <p className="text-xs text-slate-400 font-semibold">כל הודעות ה-SMS אשר הגיעו למערכת בתאריך נבחר זה יסוננו וייוצאו כקובץ CSV.</p>
             </div>
 
-            <div className="flex gap-2.5 justify-end text-xs font-semibold pt-2">
+            <div className="flex gap-2.5 justify-end text-sm font-bold pt-2">
               <button
                 onClick={() => setShowExportDateModal(false)}
-                className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-lg"
+                className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2.5 rounded-2xl"
               >
                 ביטול
               </button>
               <button
                 onClick={handleExportByParticularDate}
-                className="bg-sky-600 hover:bg-sky-500 text-white px-5 py-2 rounded-lg flex items-center gap-1"
+                className="bg-sky-600 hover:bg-sky-500 text-white px-5 py-2.5 rounded-2xl flex items-center gap-1.5"
               >
-                <Download size={13} />
+                <Download size={14} />
                 ייצא והורד
               </button>
             </div>

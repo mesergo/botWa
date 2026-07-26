@@ -98,8 +98,8 @@ export default function ClientsManager({
       {/* Overview Head */}
       <div className="flex flex-wrap justify-between items-center gap-4">
         <div>
-          <h2 className="text-xl font-bold text-slate-900">ניהול לקוחות קצה</h2>
-          <p className="text-sm text-slate-500 mt-1">
+          <h2 className="text-xl font-black text-slate-900">ניהול לקוחות קצה</h2>
+          <p className="text-sm text-slate-400 font-semibold mt-0.5">
             {readOnly
               ? 'לקוחות מחשבונות המערכת (MongoDB). שיוך קווי SMS ללקוחות אלו בלשונית "שיוך קווים".'
               : 'נהל את משתמשי הקצה של ה-SMS. לקוחות אלו ישוייכו לקווי ה-dest לקבלת ניתובים.'}
@@ -108,7 +108,7 @@ export default function ClientsManager({
         {!readOnly && (
           <button
             onClick={() => setShowAddForm(!showAddForm)}
-            className="bg-sky-600 hover:bg-sky-500 text-white rounded-lg px-4 py-2 text-xs font-semibold flex items-center gap-1.5 shadow-xs hover:shadow-md transition-all cursor-pointer"
+            className="bg-sky-600 hover:bg-sky-500 text-white rounded-2xl px-4 py-2.5 text-sm font-bold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
           >
             {showAddForm ? <X size={15} /> : <Plus size={15} />}
             <span>{showAddForm ? 'סגור טופס' : 'הוסף לקוח חדש'}</span>

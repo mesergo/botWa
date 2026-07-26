@@ -92,6 +92,14 @@ const PERMISSION_GROUPS: Array<{
       { key: 'view', label: 'הצגת לשונית' },
     ]
   },
+  {
+    key: 'send_messages',
+    label: 'שליחת הודעות',
+    actions: [
+      { key: 'view', label: 'הצגת לשונית' },
+      { key: 'send', label: 'שליחת הודעה' },
+    ]
+  },
 ];
 
 const emptyPermissions = (): UserTypePermissions => ({
@@ -103,6 +111,7 @@ const emptyPermissions = (): UserTypePermissions => ({
   users:    { view: false, add: false, edit: false, delete: false },
   rep_groups: { view: false, add: false, delete: false },
   sms_in:   { view: false },
+  send_messages: { view: false, send: false },
 });
 
 const UserTypesManager: React.FC<Props> = ({ token, apiBase }) => {

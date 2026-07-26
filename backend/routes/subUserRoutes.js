@@ -1,5 +1,5 @@
 import express from 'express';
-import { authenticateToken, requireCompanyManager, requireManagerOrRepManager } from '../middleware/auth.js';
+import { authenticateToken, requireManagerOrRepManager, requirePermission } from '../middleware/auth.js';
 import {
   getSubUsers,
   createSubUser,
@@ -9,12 +9,12 @@ import {
 
 const router = express.Router();
 
-// GET: company managers AND rep_managers may list sub-users (needed for assign modal)
+// GET: company managers AND rep_managers (and users with users.view permission) may list sub-users
 router.get('/', authenticateToken, requireManagerOrRepManager, getSubUsers);
 
-// Mutations: only company managers
-router.post('/', authenticateToken, requireCompanyManager, createSubUser);
-router.patch('/:id', authenticateToken, requireCompanyManager, updateSubUser);
-router.delete('/:id', authenticateToken, requireCompanyManager, deleteSubUser);
+// Mutations: company managers OR users with the matching permission
+router.post('/', authenticateToken, requirePermission('users.add'), createSubUser);
+router.patch('/:id', authenticateToken, requirePermission('users.edit'), updateSubUser);
+router.delete('/:id', authenticateToken, requirePermission('users.delete'), deleteSubUser);
 
 export default router;

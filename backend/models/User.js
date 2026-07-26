@@ -2,7 +2,9 @@ import mongoose from 'mongoose';
 
 const userSchema = new mongoose.Schema({
   name: { type: String, required: true },
-  email: { type: String, required: true, unique: true },
+  // NOTE: intentionally NOT unique — multiple accounts (companies) can share the same
+  // login email (e.g. Google login account picker). See plan: multipleAccountsPerEmail.
+  email: { type: String, required: true, index: true },
   phone: String,
   password: { type: String, required: false },
   googleId: { type: String, sparse: true },

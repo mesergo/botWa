@@ -1,11 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, Bot, ArrowLeft, Trash2, Calendar, LogOut, Shield, UserCog, Users, List, Settings, Save, User as UserIcon, Phone, Mail, Star, Copy, Check, Wifi, Gauge, MessageSquare, Globe, Layers, CheckCircle, Eye, EyeOff, X, Image as ImageIcon, Link as LinkIcon, Unlink, UserMinus, AlertTriangle, RefreshCcw, ToggleLeft, ToggleRight, Zap } from 'lucide-react';
+import { Plus, Bot, ArrowLeft, Trash2, Calendar, LogOut, Shield, UserCog, Users, List, Settings, Save, User as UserIcon, Phone, Mail, Star, Copy, Check, Wifi, Gauge, MessageSquare, Globe, Layers, CheckCircle, Eye, EyeOff, X, Menu, Image as ImageIcon, FileText, Link as LinkIcon, Unlink, UserMinus, AlertTriangle, RefreshCcw, ToggleLeft, ToggleRight, Zap, GitFork } from 'lucide-react';
 import ImpersonationBanner from './ImpersonationBanner';
 import { BotFlow, User } from '../types';
 import SubUsersTab from './SubUsersTab';
 import BotSettingsModal from './BotSettingsModal';
+import { FileUploader } from './FileUploader';
 import { usePermission } from '../hooks/usePermission';
 import AppNav from './AppNav';
+import { MobileNavToggle } from './PageTopBar';
+import SmsInApp from './sms-in/SmsInApp';
 
 const API_BASE = window.location.hostname === 'localhost'
   ? 'http://localhost:3001/api'
@@ -18,12 +21,14 @@ interface DashboardProps {
   onDeleteBot: (id: string) => void;
   onSetDefaultBot: (id: string) => void;
   onLogout: () => void;
-  currentUser?: { name?: string; email?: string; role?: string; isImpersonating?: boolean; availability_status?: 'available' | 'unavailable' | 'on_break' } | null;
+  currentUser?: { id?: string; name?: string; email?: string; role?: string; isImpersonating?: boolean; availability_status?: 'available' | 'unavailable' | 'on_break' } | null;
   onOpenAdminPanel?: () => void;
   onStopImpersonation?: () => void;
+  onSwitchAccount?: (accountId: string) => void;
   onOpenContacts?: () => void;
   onOpenSessions?: () => void;
   onOpenGroups?: () => void;
+  onOpenSendMessages?: () => void;
   onOpenSmsIn?: () => void;
   onConnectFacebook?: (bot: BotFlow) => Promise<void>;
   onUpdateBotPublicId?: (id: string, publicId: string) => Promise<void>;
@@ -149,7 +154,7 @@ const AvailabilityBadge: React.FC<{
   );
 };
 
-const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, onDeleteBot, onSetDefaultBot, onLogout, currentUser, onOpenAdminPanel, onStopImpersonation, onOpenContacts, onOpenSessions, onOpenGroups, onConnectFacebook, onUpdateBotPublicId, onUpdateBotEndpoint, onUpdateBotRestartKeyword, onUpdateAvailability, onGoHome,onOpenSmsIn, token, initialTab }) => {
+const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, onDeleteBot, onSetDefaultBot, onLogout, currentUser, onOpenAdminPanel, onStopImpersonation, onSwitchAccount, onOpenContacts, onOpenSessions, onOpenGroups, onOpenSendMessages, onConnectFacebook, onUpdateBotPublicId, onUpdateBotEndpoint, onUpdateBotRestartKeyword, onUpdateAvailability, onGoHome,onOpenSmsIn, token, initialTab }) => {
   const can = usePermission(currentUser as User | null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newBotName, setNewBotName] = useState('');
@@ -169,10 +174,36 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
     }
     return requested;
   });
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [isMobileTopBar, setIsMobileTopBar] = useState<boolean>(() => window.innerWidth <= 900);
+
+  // Sync activeTab when navigating between routes that share this component instance
+  useEffect(() => {
+    if (!initialTab) return;
+    setActiveTab(initialTab);
+  }, [initialTab]);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(max-width: 900px)');
+    const update = (event: MediaQueryListEvent | MediaQueryList) => setIsMobileTopBar(event.matches);
+
+    update(mediaQuery);
+    const handleChange = (event: MediaQueryListEvent) => update(event);
+    mediaQuery.addEventListener('change', handleChange);
+
+    return () => mediaQuery.removeEventListener('change', handleChange);
+  }, []);
 
   // Settings tab section
-  type SettingsSection = 'profile' | 'account' | 'connection' | 'quota' | 'numbers' | 'templates' | 'removal';
+  type SettingsSection = 'profile' | 'account' | 'connection' | 'quota' | 'numbers' | 'routing' | 'templates' | 'removal';
   const [settingsSection, setSettingsSection] = useState<SettingsSection>('profile');
+  const isRealAdmin = currentUser?.role === 'admin' && !currentUser?.isImpersonating;
+
+  useEffect(() => {
+    if (!isRealAdmin && settingsSection === 'routing') {
+      setSettingsSection('numbers');
+    }
+  }, [isRealAdmin, settingsSection]);
 
   // Settings tab state
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -192,6 +223,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
   const [waTemplates, setWaTemplates] = useState<any[]>([]);
   const [waTemplatesLoading, setWaTemplatesLoading] = useState(false);
   const [templateSettings, setTemplateSettings] = useState<Record<string, boolean>>({});
+  const [templateDefaultMedia, setTemplateDefaultMedia] = useState<Record<string, { url: string; type: 'image' | 'video' | 'document' }>>({});
   const [previewTemplate, setPreviewTemplate] = useState<any | null>(null);
 
   // Connected WhatsApp numbers (Settings tab)
@@ -292,15 +324,61 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
       const data = await res.json();
       if (data.success && Array.isArray(data.settings)) {
         const settingsMap: Record<string, boolean> = {};
+        const defaultMediaMap: Record<string, { url: string; type: 'image' | 'video' | 'document' }> = {};
         data.settings.forEach((s: any) => {
           if (s.templateName) {
             settingsMap[s.templateName] = s.showInChat ?? true;
+            if (s.defaultHeaderMediaUrl && s.defaultHeaderMediaType) {
+              defaultMediaMap[s.templateName] = { url: s.defaultHeaderMediaUrl, type: s.defaultHeaderMediaType };
+            }
           }
         });
         setTemplateSettings(settingsMap);
+        setTemplateDefaultMedia(defaultMediaMap);
       }
     } catch (err) {
       console.error('Failed to fetch template settings:', err);
+    }
+  };
+
+  // Set or clear the default header media (image/video/document) configured
+  // for a template, so agents can reuse it instead of uploading a file each time.
+  const updateTemplateDefaultMedia = async (
+    template: any,
+    url: string | null,
+    mediaType: 'image' | 'video' | 'document' | null
+  ) => {
+    if (!token) return;
+    const templateName = template.name || template.elementName || template.template_name || '';
+    try {
+      const res = await fetch(`${API_BASE}/dialog360-templates/default-media`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          templateName,
+          templateId: template.id,
+          url: url || undefined,
+          mediaType: url ? mediaType : undefined,
+        }),
+      });
+      if (res.ok) {
+        setTemplateDefaultMedia(prev => {
+          const next = { ...prev };
+          if (url && mediaType) {
+            next[templateName] = { url, type: mediaType };
+          } else {
+            delete next[templateName];
+          }
+          return next;
+        });
+      } else {
+        console.error('Failed to update template default media');
+      }
+    } catch (err) {
+      console.error('Error updating template default media:', err);
     }
   };
 
@@ -777,9 +855,9 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
   return (
     <div className="h-screen w-screen bg-[#f8fafc] flex flex-col font-medium text-right overflow-hidden">
       {/* Impersonation Banner */}
-      <ImpersonationBanner currentUser={currentUser} onStopImpersonation={onStopImpersonation} />
+      <ImpersonationBanner currentUser={currentUser} onStopImpersonation={onStopImpersonation} token={token} onSwitchAccount={onSwitchAccount} />
       
-      <nav className="h-20 bg-white border-b border-slate-100 flex items-center justify-between px-10 z-20">
+      <nav className="h-20 bg-white border-b border-slate-100 flex items-center justify-between px-4 md:px-10 z-20">
         <div className="flex items-center gap-4">
           <button onClick={onLogout} className="p-2.5 text-slate-300 hover:text-red-500 transition-colors rounded-xl hover:bg-red-50"><LogOut size={22} /></button>
           <img src="/images/mesergo-logo.png" alt="Logo" className="h-10 w-auto cursor-pointer hover:scale-105 transition-transform" onClick={() => setActiveTab('bots')} />
@@ -823,6 +901,9 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
               );
             })()}
           </div>
+          {isMobileTopBar && (
+            <MobileNavToggle open={mobileNavOpen} onToggle={() => setMobileNavOpen((prev) => !prev)} />
+          )}
         </div>
       </nav>
 
@@ -833,11 +914,15 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
         <AppNav
           mode="sidebar"
           activePage={activeTab}
+          hideMobileTrigger
+          mobileMenuOpen={mobileNavOpen}
+          onMobileMenuOpenChange={setMobileNavOpen}
           onGoHome={onGoHome}
           onBots={can('bots.view_tab') ? () => setActiveTab('bots') : undefined}
           onSessions={onOpenSessions && can('sessions.view') ? onOpenSessions : undefined}
           onContacts={onOpenContacts && can('contacts.view') ? onOpenContacts : undefined}
           onGroups={onOpenGroups && can('groups.view') ? onOpenGroups : undefined}
+          onSendMessages={onOpenSendMessages && can('send_messages.view') ? onOpenSendMessages : undefined}
           onSmsIn={onOpenSmsIn && can('sms_in.view') ? onOpenSmsIn : undefined}
           onSettings={can('settings.view') ? () => setActiveTab('settings') : undefined}
           onUsers={can('users.view') ? () => setActiveTab('users') : undefined}
@@ -848,24 +933,26 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
 
       {/* ── Settings Tab ── */}
       {activeTab === 'settings' && (
-        <div className="flex-1 flex overflow-hidden" dir="rtl">
+        <div className="flex-1 flex flex-col md:flex-row overflow-hidden" dir="rtl">
 
           {/* ── Inner settings sidebar ── */}
-          <aside className="w-56 bg-white border-l border-slate-100 flex flex-col py-6 px-3 gap-1 flex-shrink-0 overflow-y-auto">
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider px-3 mb-2">הגדרות</p>
+          <aside className="w-full md:w-56 bg-white border-b md:border-b-0 md:border-l border-slate-100 py-3 md:py-6 px-3 flex-shrink-0 overflow-x-auto md:overflow-y-auto">
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider px-1 md:px-3 mb-2">הגדרות</p>
+            <div className="flex md:flex-col gap-2 md:gap-1 min-w-max md:min-w-0">
             {([
               { key: 'profile',    label: 'פרטים אישיים',     icon: <UserIcon size={16} /> },
               { key: 'account',    label: 'פרטי חשבון',        icon: <Shield size={16} /> },
               { key: 'connection', label: 'הגדרות חיבור',      icon: <Wifi size={16} /> },
               { key: 'quota',      label: 'מכסות אישיות',      icon: <Gauge size={16} /> },
               { key: 'numbers',    label: 'מספרים מחוברים',    icon: <Phone size={16} /> },
+              ...(isRealAdmin ? [{ key: 'routing' as const, label: 'שיוך קווים SMS ', icon: <GitFork size={16} /> }] : []),
               { key: 'templates',  label: 'הודעות תבנית',      icon: <MessageSquare size={16} /> },
               { key: 'removal',    label: 'ניהול הסרה מקבוצה', icon: <UserMinus size={16} /> },
             ] as { key: SettingsSection; label: string; icon: React.ReactNode }[]).map(({ key, label, icon }) => (
               <button
                 key={key}
                 onClick={() => setSettingsSection(key)}
-                className={`flex items-center gap-3 px-4 py-3 rounded-2xl font-bold text-sm transition-all w-full text-right ${
+                className={`flex items-center gap-3 px-4 py-3 rounded-2xl font-bold text-sm transition-all w-auto md:w-full text-right whitespace-nowrap ${
                   settingsSection === key
                     ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20'
                     : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700'
@@ -875,10 +962,25 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                 <span>{label}</span>
               </button>
             ))}
+            </div>
           </aside>
 
           {/* ── Settings content ── */}
-          <div className="flex-1 overflow-y-auto p-10">
+          <div className={`flex-1 ${settingsSection === 'routing' && isRealAdmin ? 'overflow-hidden p-0' : 'overflow-y-auto p-4 sm:p-6 md:p-8 lg:p-10'}`}>
+            {settingsSection === 'routing' && isRealAdmin ? (
+              <div className="h-full w-full">
+                <SmsInApp
+                  embedded
+                  lockedTab="routing"
+                  initialTab="routing"
+                  userEmail={currentUser?.email}
+                  userId={currentUser?.id}
+                  userName={currentUser?.name}
+                  isAdmin
+                  token={token}
+                />
+              </div>
+            ) : (
             <div className="max-w-2xl mx-auto">
 
             {profileLoading ? (
@@ -1053,8 +1155,8 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
               )}
 
               {settingsSection === 'numbers' && (
-              <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-8">
-                <div className="flex items-center justify-between border-b border-slate-100 pb-4 mb-6">
+              <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-5 sm:p-6 lg:p-8">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-slate-100 pb-4 mb-6">
                   <h2 className="text-xs font-black text-slate-400 uppercase tracking-wider flex items-center gap-2">
                     <Phone size={14} /> מספרים מחוברים
                   </h2>
@@ -1514,6 +1616,14 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                       const bodyText = bodyComponent?.text || '';
                       const hasImage = headerComponent?.format === 'IMAGE';
                       const buttonCount = buttonsComponent?.buttons?.length || 0;
+                      // Templates whose header requires a media file (image/video/document)
+                      // can have a default file configured here, so agents can reuse it
+                      // instead of uploading a new one every time they send it in chat.
+                      const headerMediaType: 'image' | 'video' | 'document' | null =
+                        headerComponent && ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(headerComponent.format)
+                          ? (headerComponent.format.toLowerCase() as 'image' | 'video' | 'document')
+                          : null;
+                      const defaultMedia = templateDefaultMedia[name];
                       return (
                         <div 
                           key={tmpl.id || idx} 
@@ -1571,6 +1681,48 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                             ) : (
                               <p className="text-xs text-slate-400 italic">אין תוכן</p>
                             )}
+
+                            {/* Default header media (image/video/document) — reusable when sending in chat */}
+                            {headerMediaType && (
+                              <div className="mt-3" onClick={(e) => e.stopPropagation()}>
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-wide mb-1.5 flex items-center gap-1">
+                                  <ImageIcon size={11} />
+                                  תמונת ברירת מחדל
+                                </label>
+                                {defaultMedia?.url ? (
+                                  <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl p-2">
+                                    <div className="w-10 h-10 rounded-lg overflow-hidden border border-slate-200 bg-slate-50 flex-shrink-0 flex items-center justify-center">
+                                      {headerMediaType === 'image' ? (
+                                        <img src={defaultMedia.url} alt="ברירת מחדל" className="w-full h-full object-cover" />
+                                      ) : headerMediaType === 'video' ? (
+                                        <video src={defaultMedia.url} className="w-full h-full object-cover" />
+                                      ) : (
+                                        <FileText size={16} className="text-slate-400" />
+                                      )}
+                                    </div>
+                                    <span className="flex-1 text-[11px] text-slate-500 font-bold">הוגדרה</span>
+                                    <button
+                                      type="button"
+                                      onClick={() => updateTemplateDefaultMedia(tmpl, null, null)}
+                                      className="p-1.5 rounded-lg text-rose-600 hover:bg-rose-50 transition-colors border border-rose-200"
+                                      title="הסר תמונת ברירת מחדל"
+                                    >
+                                      <X size={12} />
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <FileUploader
+                                    value=""
+                                    onChange={(url) => updateTemplateDefaultMedia(tmpl, url, headerMediaType)}
+                                    accept={headerMediaType === 'image' ? 'image/*' : headerMediaType === 'video' ? 'video/*' : '*/*'}
+                                    label={headerMediaType === 'image' ? 'תמונה' : headerMediaType === 'video' ? 'וידאו' : 'מסמך'}
+                                    mediaType={headerMediaType}
+                                    token={token || ''}
+                                  />
+                                )}
+                              </div>
+                            )}
+
                             <div className="flex items-center gap-3 mt-3 text-[10px] text-slate-400 font-bold">
                               <span className="flex items-center gap-1"><Layers size={11} />{components.length} רכיבים</span>
                               {buttonCount > 0 && <span>{buttonCount} כפתורים</span>}
@@ -1801,36 +1953,37 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
               </>
             )}
             </div>
+            )}
           </div>
         </div>
       )}
 
       {/* ── Bots Tab ── */}
       {activeTab === 'bots' && can('bots.view_tab') && (
-      <div className="flex-1 overflow-y-auto p-12">
+      <div className="flex-1 overflow-y-auto px-4 py-6 sm:px-6 sm:py-8 lg:px-10 lg:py-10 xl:px-12">
         <div className="max-w-6xl mx-auto">
-          <div className="flex items-center justify-between mb-10 flex-row-reverse">
-            <h1 className="text-3xl font-black text-slate-900">הבוטים שלי</h1>
+          <div className="flex flex-col-reverse sm:flex-row-reverse sm:items-center sm:justify-between gap-4 mb-6 sm:mb-8 lg:mb-10">
+            <h1 className="text-2xl sm:text-3xl font-black text-slate-900 text-right">הבוטים שלי</h1>
             {can('bots.create') && (
               <button 
                 onClick={() => setIsModalOpen(true)}
-                className="flex items-center gap-3 px-8 py-4 bg-blue-600 text-white rounded-2xl font-bold shadow-lg shadow-blue-600/20 hover:bg-blue-700 transition-all scale-100 active:scale-95"
+                className="w-full sm:w-auto justify-center flex items-center gap-3 px-5 sm:px-7 lg:px-8 py-3 sm:py-4 bg-blue-600 text-white rounded-2xl font-bold text-sm sm:text-base shadow-lg shadow-blue-600/20 hover:bg-blue-700 transition-all scale-100 active:scale-95"
               >
                 <Plus size={20} /> צור תזרים חדש
               </button>
             )}
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5 lg:gap-6">
             {bots.map((bot) => (
               <div 
                 key={bot.id}
-                className={`bg-white border border-slate-100 rounded-[2.5rem] p-8 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all group flex flex-col justify-between h-[280px] ${can('bots.edit') ? 'cursor-pointer' : 'cursor-default'}`}
+                className={`bg-white border border-slate-100 rounded-[2rem] sm:rounded-[2.5rem] p-5 sm:p-6 lg:p-8 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all group flex flex-col justify-between min-h-[230px] sm:h-[280px] ${can('bots.edit') ? 'cursor-pointer' : 'cursor-default'}`}
                 onClick={() => can('bots.edit') && onEnterBot(bot)}
               >
                 <div>
-                  <div className="flex items-center justify-between mb-6 flex-row-reverse">
-                    <div className="p-4 bg-blue-50 text-blue-600 rounded-2xl group-hover:bg-blue-600 group-hover:text-white transition-colors">
+                  <div className="flex items-center justify-between mb-4 sm:mb-6 flex-row-reverse">
+                    <div className="p-3 sm:p-4 bg-blue-50 text-blue-600 rounded-2xl group-hover:bg-blue-600 group-hover:text-white transition-colors">
                       <Bot size={28} />
                     </div>
                     <div className="flex items-center gap-2">
@@ -1853,7 +2006,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                       )}
                     </div>
                   </div>
-                  <h3 className="text-2xl font-black text-slate-900 mb-2 truncate">{bot.name}</h3>
+                  <h3 className="text-xl sm:text-2xl font-black text-slate-900 mb-2 truncate">{bot.name}</h3>
                   <p className="text-slate-400 text-sm font-bold flex items-center justify-end gap-2 uppercase tracking-widest">
                     <span>{formatDate(bot.created_at)}</span>
                     <Calendar size={14} />
@@ -1884,9 +2037,9 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
             ))}
             
             {bots.length === 0 && (
-              <div className="col-span-full py-20 bg-white border-2 border-dashed border-slate-200 rounded-[2.5rem] flex flex-col items-center justify-center gap-4 text-slate-300">
-                <Bot size={64} strokeWidth={1} />
-                <p className="text-xl font-bold">אין לך בוטים עדיין. בוא ניצור את הראשון!</p>
+              <div className="col-span-full py-12 sm:py-16 lg:py-20 px-6 text-center bg-white border-2 border-dashed border-slate-200 rounded-[2rem] sm:rounded-[2.5rem] flex flex-col items-center justify-center gap-4 text-slate-300">
+                <Bot size={56} strokeWidth={1} />
+                <p className="text-lg sm:text-xl font-bold">אין לך בוטים עדיין. בוא ניצור את הראשון!</p>
               </div>
             )}
           </div>
