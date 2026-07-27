@@ -42,6 +42,15 @@ interface ActiveBroadcast {
   queuePosition: number;
 }
 
+interface BroadcastCompletionToast {
+  id: string;
+  sent: number;
+  failed: number;
+  skipped: number;
+  total: number;
+  status: 'completed' | 'failed';
+}
+
 interface SendMessagesPageProps {
   token: string | null;
   currentUser?: { name?: string; email?: string; role?: string; isImpersonating?: boolean } | null;
@@ -114,6 +123,7 @@ const SendMessagesPage: React.FC<SendMessagesPageProps> = ({
   const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
   const [scheduleDateTime, setScheduleDateTime] = useState('');
   const [activeBroadcast, setActiveBroadcast] = useState<ActiveBroadcast | null>(null);
+  const [completionToast, setCompletionToast] = useState<BroadcastCompletionToast | null>(null);
 
   const fetchGroups = useCallback(async () => {
     if (!token) return;
@@ -374,16 +384,34 @@ const SendMessagesPage: React.FC<SendMessagesPageProps> = ({
         const res = await fetch(`${API_BASE}/groups/broadcasts/${activeBroadcast.id}`, { headers: authHeader });
         if (!res.ok) return;
         const data = await res.json();
-        setActiveBroadcast(prev => prev && prev.id === data._id ? {
-          ...prev,
-          processed: data.processed ?? prev.processed,
-          sent: data.sent ?? prev.sent,
-          failed: data.failed ?? prev.failed,
-          skipped: data.skipped ?? prev.skipped,
-          status: data.status || prev.status,
-          queuedBehind: data.status === 'running' ? false : prev.queuedBehind,
-          queuePosition: data.status === 'running' ? 0 : prev.queuePosition,
-        } : prev);
+        setActiveBroadcast(prev => {
+          if (!prev || prev.id !== data._id) return prev;
+
+          const nextStatus = (data.status || prev.status) as ActiveBroadcast['status'];
+          const next: ActiveBroadcast = {
+            ...prev,
+            processed: data.processed ?? prev.processed,
+            sent: data.sent ?? prev.sent,
+            failed: data.failed ?? prev.failed,
+            skipped: data.skipped ?? prev.skipped,
+            status: nextStatus,
+            queuedBehind: data.status === 'running' ? false : prev.queuedBehind,
+            queuePosition: data.status === 'running' ? 0 : prev.queuePosition,
+          };
+
+          if (nextStatus === 'completed' || nextStatus === 'failed') {
+            setCompletionToast({
+              id: next.id,
+              sent: next.sent,
+              failed: next.failed,
+              skipped: next.skipped,
+              total: data.total ?? next.total,
+              status: nextStatus,
+            });
+          }
+
+          return next;
+        });
       } catch (e) {
         console.error('Poll broadcast failed', e);
       }
@@ -391,6 +419,15 @@ const SendMessagesPage: React.FC<SendMessagesPageProps> = ({
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeBroadcast?.id, activeBroadcast?.status, authHeader]);
+
+  useEffect(() => {
+    if (!completionToast) return;
+    const t = setTimeout(() => {
+      setCompletionToast(null);
+      setActiveBroadcast(prev => (prev?.id === completionToast.id ? null : prev));
+    }, 8000);
+    return () => clearTimeout(t);
+  }, [completionToast]);
 
   const loadAllBroadcasts = useCallback(async () => {
     setAllBroadcastsLoading(true);
@@ -497,28 +534,6 @@ const SendMessagesPage: React.FC<SendMessagesPageProps> = ({
               </div>
             </div>
 
-            {activeBroadcast && (
-              <div className={`mb-6 p-4 rounded-2xl border flex items-center gap-4 ${
-                activeBroadcast.status === 'completed' ? 'bg-green-50 border-green-200' :
-                activeBroadcast.status === 'failed' ? 'bg-red-50 border-red-200' :
-                'bg-blue-50 border-blue-200'
-              }`}>
-                {activeBroadcast.status === 'completed' ? <CheckCircle2 size={22} className="text-green-600 flex-shrink-0" /> :
-                 activeBroadcast.status === 'failed' ? <AlertTriangle size={22} className="text-red-600 flex-shrink-0" /> :
-                 <Clock size={22} className="text-blue-600 flex-shrink-0 animate-pulse" />}
-                <div className="flex-1 text-sm font-bold">
-                  {activeBroadcast.status === 'scheduled' && 'ההודעה תוזמנה לשליחה'}
-                  {activeBroadcast.status === 'queued' && (activeBroadcast.queuedBehind ? `ממתין בתור (מיקום ${activeBroadcast.queuePosition})...` : 'מתחיל שליחה...')}
-                  {activeBroadcast.status === 'running' && `שולח... ${activeBroadcast.processed}/${activeBroadcast.total}`}
-                  {activeBroadcast.status === 'completed' && `הושלם — נשלחו ${activeBroadcast.sent} · נכשלו ${activeBroadcast.failed} · דולגו ${activeBroadcast.skipped} · סה"כ ${activeBroadcast.total}`}
-                  {activeBroadcast.status === 'failed' && 'השליחה נכשלה'}
-                </div>
-                <button onClick={() => setActiveBroadcast(null)} className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-white/60 rounded-lg">
-                  <X size={16} />
-                </button>
-              </div>
-            )}
-
             {pageView === 'broadcasts' ? (
               <BroadcastsView
                 allBroadcastsLoading={allBroadcastsLoading}
@@ -614,6 +629,78 @@ const SendMessagesPage: React.FC<SendMessagesPageProps> = ({
         sending={sending}
         onConfirm={ms => submitSend(ms)}
       />
+
+      {activeBroadcast && activeBroadcast.status !== 'completed' && activeBroadcast.status !== 'failed' && (
+        <div
+          className="fixed left-6 z-[70] bg-white border border-slate-200 shadow-2xl rounded-2xl p-4 w-80"
+          style={{ bottom: '1.5rem' }}
+          dir="rtl"
+        >
+          <div className="flex items-center gap-3 mb-3">
+            <div className="w-10 h-10 rounded-2xl bg-blue-100 text-blue-600 flex items-center justify-center flex-shrink-0">
+              <Send size={18} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <h4 className="font-black text-slate-900 text-sm truncate">שולח הודעה</h4>
+              <p className="text-xs font-semibold text-slate-500 mt-0.5 truncate">
+                {activeBroadcast.status === 'scheduled' && 'ההודעה תוזמנה לשליחה'}
+                {activeBroadcast.status === 'queued' && (activeBroadcast.queuedBehind ? `ממתין בתור (מיקום ${activeBroadcast.queuePosition})...` : 'מתחיל שליחה...')}
+                {activeBroadcast.status === 'running' && `${activeBroadcast.processed}/${activeBroadcast.total} עובדו`}
+              </p>
+            </div>
+            {(activeBroadcast.status === 'scheduled' || activeBroadcast.status === 'queued') ? (
+              <Clock size={18} className="text-blue-500 flex-shrink-0" />
+            ) : (
+              <div className="animate-spin w-5 h-5 border-2 border-blue-200 border-t-blue-500 rounded-full flex-shrink-0" />
+            )}
+          </div>
+          <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+            <div
+              className="h-full bg-blue-500 transition-all duration-300"
+              style={{ width: `${activeBroadcast.total > 0 ? (activeBroadcast.processed / activeBroadcast.total) * 100 : 0}%` }}
+            />
+          </div>
+          <div className="flex items-center justify-between mt-2 text-xs font-bold">
+            <span className="text-green-600">✓ {activeBroadcast.sent}</span>
+            <span className="text-red-500">✗ {activeBroadcast.failed}</span>
+            <span className="text-amber-500">⊘ {activeBroadcast.skipped}</span>
+          </div>
+        </div>
+      )}
+
+      {completionToast && (
+        <div
+          className={`fixed left-6 z-[70] shadow-2xl rounded-2xl p-4 w-80 bg-white ${
+            completionToast.status === 'completed' ? 'border border-green-200' : 'border border-red-200'
+          }`}
+          style={{ bottom: '1.5rem' }}
+          dir="rtl"
+        >
+          <div className="flex items-start gap-3">
+            <div className={`w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0 ${
+              completionToast.status === 'completed' ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'
+            }`}>
+              {completionToast.status === 'completed' ? <CheckCircle2 size={20} /> : <AlertTriangle size={20} />}
+            </div>
+            <div className="flex-1 min-w-0">
+              <h4 className="font-black text-slate-900 text-sm">{completionToast.status === 'completed' ? 'השליחה הסתיימה' : 'השליחה נכשלה'}</h4>
+              <p className="text-xs font-semibold text-slate-500 mt-1">
+                נשלחו {completionToast.sent} · נכשלו {completionToast.failed} · דולגו {completionToast.skipped}
+              </p>
+              <p className="text-xs font-semibold text-slate-400 mt-1">סה"כ {completionToast.total} נמענים</p>
+            </div>
+            <button
+              onClick={() => {
+                setCompletionToast(null);
+                setActiveBroadcast(prev => (prev?.id === completionToast.id ? null : prev));
+              }}
+              className="p-1 text-slate-300 hover:text-slate-600 rounded-lg flex-shrink-0"
+            >
+              <X size={16} />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

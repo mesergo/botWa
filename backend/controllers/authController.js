@@ -1,5 +1,6 @@
 
 import mongoose from 'mongoose';
+import crypto from 'crypto';
 import User from '../models/User.js';
 import BotFlow from '../models/BotFlow.js';
 import Version from '../models/Version.js';
@@ -16,6 +17,242 @@ import AuditLog from '../models/AuditLog.js';
 import { buildRemovalConfigDiff } from './adminController.js';
 
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+
+const hashInviteToken = (token) => crypto.createHash('sha256').update(token).digest('hex');
+const asBoolean = (value) => value === true || value === 'true' || value === 1 || value === '1';
+const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const inviteRequiresLoginConfirmation = async (user) => {
+  if (!user) return false;
+
+  const normalizedEmail = (user.email || '').trim().toLowerCase();
+  if (!normalizedEmail) return false;
+
+  const emailMatcher = new RegExp(`^${escapeRegex(normalizedEmail)}$`, 'i');
+  const existingActiveSibling = await User.exists({
+    _id: { $ne: user._id },
+    email: emailMatcher,
+    status: 'active',
+  });
+
+  return !!existingActiveSibling;
+};
+
+const findInviteUserByToken = async (inviteToken) => {
+  if (!inviteToken || typeof inviteToken !== 'string') return null;
+  const providedHash = hashInviteToken(inviteToken);
+  const user = await User.findOne({ invite_status: 'pending', invite_token_hash: providedHash });
+  if (!user || !user.invite_token_hash) return null;
+
+  const stored = Buffer.from(user.invite_token_hash, 'hex');
+  const provided = Buffer.from(providedHash, 'hex');
+  if (stored.length !== provided.length || !crypto.timingSafeEqual(stored, provided)) {
+    return null;
+  }
+  return user;
+};
+
+export const verifyInviteToken = async (req, res) => {
+  const { inviteToken } = req.query;
+  if (!inviteToken || typeof inviteToken !== 'string') {
+    return res.status(400).json({ error: 'inviteToken is required' });
+  }
+
+  try {
+    const user = await findInviteUserByToken(inviteToken);
+    if (!user) {
+      return res.status(404).json({ error: 'הזמנה לא תקינה' });
+    }
+
+    if (!user.invite_token_expires_at || new Date(user.invite_token_expires_at).getTime() < Date.now()) {
+      user.invite_status = 'expired';
+      await user.save();
+      return res.status(410).json({ error: 'ההזמנה פגה' });
+    }
+
+    const inviter = user.invite_created_by
+      ? await User.findById(user.invite_created_by).select('name').lean()
+      : null;
+
+    return res.json({
+      valid: true,
+      email: user.email,
+      name: user.name,
+      inviterName: inviter?.name || '',
+      requiresLoginConfirmation: await inviteRequiresLoginConfirmation(user)
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+};
+
+export const registerFromInvite = async (req, res) => {
+  const { inviteToken, email, name, password, phone, confirmLogin } = req.body;
+  if (!inviteToken || typeof inviteToken !== 'string') {
+    return res.status(400).json({ error: 'inviteToken is required' });
+  }
+  if (!password || typeof password !== 'string') {
+    return res.status(400).json({ error: 'password is required' });
+  }
+
+  try {
+    const user = await findInviteUserByToken(inviteToken);
+    if (!user) {
+      return res.status(404).json({ error: 'הזמנה לא תקינה' });
+    }
+
+    if (!user.invite_token_expires_at || new Date(user.invite_token_expires_at).getTime() < Date.now()) {
+      user.invite_status = 'expired';
+      await user.save();
+      return res.status(410).json({ error: 'ההזמנה פגה' });
+    }
+
+    if (typeof email === 'string' && email.trim().toLowerCase() !== user.email.toLowerCase()) {
+      return res.status(400).json({ error: 'לא ניתן לשנות את כתובת האימייל בהזמנה זו' });
+    }
+    if (typeof name === 'string' && name.trim() !== user.name) {
+      return res.status(400).json({ error: 'לא ניתן לשנות את השם המלא בהזמנה זו' });
+    }
+    const requiresLoginConfirmation = await inviteRequiresLoginConfirmation(user);
+    if (requiresLoginConfirmation && !asBoolean(confirmLogin)) {
+      return res.status(400).json({ error: 'יש לאשר התחברות לחשבון המוזמן לפני השלמת ההרשמה' });
+    }
+
+    user.password = password;
+    if (typeof phone === 'string') user.phone = phone.trim();
+    user.status = 'active';
+    user.registration_completed_at = new Date();
+    user.invite_status = 'accepted';
+    user.invite_token_hash = null;
+    user.invite_token_expires_at = null;
+    await user.save();
+
+    const userId = user._id.toString();
+    const userRole = user.role || 'user';
+    const managerId = user.manager_id || null;
+    const jwtToken = jwt.sign({
+      id: userId,
+      email: user.email,
+      role: userRole,
+      manager_id: managerId,
+      user_type_id: user.user_type_id || null
+    }, SECRET_KEY, { expiresIn: '24h' });
+
+    const permissions = await resolvePermissions(user);
+
+    return res.json({
+      token: jwtToken,
+      user: {
+        id: userId,
+        name: user.name,
+        email: user.email,
+        role: userRole,
+        manager_id: managerId,
+        public_id: user.public_id,
+        account_type: user.account_type || 'Basic',
+        status: user.status || 'active',
+        availability_status: user.availability_status || 'unavailable',
+        trial_expires_at: user.trial_expires_at || null,
+        api_token: user.token,
+        user_type_id: user.user_type_id || null,
+        permissions
+      }
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+};
+
+export const registerFromInviteGoogle = async (req, res) => {
+  const { inviteToken, credential, confirmLogin } = req.body;
+  if (!inviteToken || typeof inviteToken !== 'string') {
+    return res.status(400).json({ error: 'inviteToken is required' });
+  }
+  if (!credential || typeof credential !== 'string') {
+    return res.status(400).json({ error: 'Missing Google credential' });
+  }
+
+  try {
+    const user = await findInviteUserByToken(inviteToken);
+    if (!user) {
+      return res.status(404).json({ error: 'הזמנה לא תקינה' });
+    }
+
+    if (!user.invite_token_expires_at || new Date(user.invite_token_expires_at).getTime() < Date.now()) {
+      user.invite_status = 'expired';
+      await user.save();
+      return res.status(410).json({ error: 'ההזמנה פגה' });
+    }
+
+    const ticket = await googleClient.verifyIdToken({
+      idToken: credential,
+      audience: process.env.GOOGLE_CLIENT_ID,
+    });
+    const payload = ticket.getPayload();
+    const googleEmail = (payload?.email || '').toLowerCase().trim();
+    const inviteEmail = (user.email || '').toLowerCase().trim();
+
+    if (!googleEmail || googleEmail !== inviteEmail) {
+      return res.status(400).json({ error: 'האימייל של חשבון Google אינו תואם להזמנה' });
+    }
+    const requiresLoginConfirmation = await inviteRequiresLoginConfirmation(user);
+    if (requiresLoginConfirmation && !asBoolean(confirmLogin)) {
+      return res.status(400).json({ error: 'יש לאשר התחברות לחשבון המוזמן לפני השלמת ההרשמה' });
+    }
+
+    // Link googleId to this invited account if missing.
+    if (!user.googleId && payload?.sub) {
+      user.googleId = payload.sub;
+    }
+
+    user.status = 'active';
+    user.registration_completed_at = new Date();
+    user.invite_status = 'accepted';
+    user.invite_token_hash = null;
+    user.invite_token_expires_at = null;
+    await user.save();
+
+    const userId = user._id.toString();
+    const userRole = user.role || 'user';
+    const managerId = user.manager_id || null;
+
+    if (userRole === 'rep' || userRole === 'rep_manager') {
+      user.availability_status = 'available';
+      await user.save();
+    }
+
+    const jwtToken = jwt.sign({
+      id: userId,
+      email: user.email,
+      role: userRole,
+      manager_id: managerId,
+      user_type_id: user.user_type_id || null
+    }, SECRET_KEY, { expiresIn: '24h' });
+
+    const permissions = await resolvePermissions(user);
+
+    return res.json({
+      token: jwtToken,
+      user: {
+        id: userId,
+        name: user.name,
+        email: user.email,
+        role: userRole,
+        manager_id: managerId,
+        public_id: user.public_id,
+        account_type: user.account_type || 'Basic',
+        status: user.status || 'active',
+        availability_status: user.availability_status || 'unavailable',
+        trial_expires_at: user.trial_expires_at || null,
+        api_token: user.token,
+        user_type_id: user.user_type_id || null,
+        permissions
+      }
+    });
+  } catch (err) {
+    console.error('Invite Google auth error:', err.message);
+    return res.status(401).json({ error: 'אימות גוגל נכשל, נסה שנית' });
+  }
+};
 
 export const register = async (req, res) => {
   const { name, email, phone, password, role } = req.body;

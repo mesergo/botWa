@@ -1,9 +1,20 @@
 import mongoose from 'mongoose';
 import User from '../models/User.js';
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 import { SECRET_KEY } from '../middleware/auth.js';
 import UserType from '../models/UserType.js';
 import { resolvePermissions, hasPermission } from '../middleware/auth.js';
+
+const INVITE_EXPIRY_DAYS = 7;
+
+const generateInviteToken = () => crypto.randomBytes(32).toString('hex');
+const hashInviteToken = (token) => crypto.createHash('sha256').update(token).digest('hex');
+
+const getSystemBaseUrl = () => {
+  const raw = (process.env.SYSTEM_URL || 'https://botwa.message.co.il').trim();
+  return raw.replace(/\/+$/, '');
+};
 
 // Returns the root company manager ID for the given userId.
 // If the user is a sub-user (rep/rep_manager with a manager_id), returns that manager_id.
@@ -80,7 +91,7 @@ export const getSubUsers = async (req, res) => {
 export const createSubUser = async (req, res) => {
   try {
     const managerId = await getRootManagerId(req.userId);
-    const { name, email, password, phone, role, rep_group_ids, allowed_bot_ids, user_type_id, allowDuplicateEmail } = req.body;
+    const { name, email, role, rep_group_ids, allowed_bot_ids, user_type_id, allowDuplicateEmail } = req.body;
 
     const actor = await User.findById(req.userId).select('role user_type_id').lean();
     const actorPerms = await resolvePermissions(actor || { role: req.user?.role });
@@ -98,8 +109,8 @@ export const createSubUser = async (req, res) => {
       return res.status(403).json({ error: 'סוג המשתמש שלך אינו מורשה להוסיף משתמשים' });
     }
 
-    if (!name || !email || !password) {
-      return res.status(400).json({ error: 'שם, אימייל וסיסמה הם שדות חובה' });
+    if (!name || !email) {
+      return res.status(400).json({ error: 'שם ואימייל הם שדות חובה' });
     }
 
     if (!user_type_id) {
@@ -143,18 +154,28 @@ export const createSubUser = async (req, res) => {
       });
     }
 
+    const inviteToken = generateInviteToken();
+    const inviteTokenHash = hashInviteToken(inviteToken);
+    const inviteExpiresAt = new Date(Date.now() + INVITE_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
+
     const publicId = Math.random().toString(36).substring(2, 15);
     const repData = {
       name: name.trim(),
       email: normalizedEmail,
-      password,
-      phone: phone || '',
+      password: '',
+      phone: '',
       role: effectiveRole,
       user_type_id: targetType._id,
       manager_id: managerId,
       public_id: publicId,
       account_type: '',
-      status: 'active',
+      status: 'pending',
+      invite_token_hash: inviteTokenHash,
+      invite_token_expires_at: inviteExpiresAt,
+      invite_sent_at: new Date(),
+      invite_created_by: req.userId,
+      invite_status: 'pending',
+      registration_completed_at: null,
     };
     if (effectiveRole === 'rep' && Array.isArray(rep_group_ids) && rep_group_ids.length > 0) {
       repData.rep_group_ids = rep_group_ids.map(id => new mongoose.Types.ObjectId(id));
@@ -163,26 +184,25 @@ export const createSubUser = async (req, res) => {
       repData.allowed_bot_ids = allowed_bot_ids.map(id => new mongoose.Types.ObjectId(id));
     }
     const rep = await User.create(repData);
+    const inviteLink = `${getSystemBaseUrl()}/?register=1&inviteToken=${encodeURIComponent(inviteToken)}`;
 
-    // Send invitation email if requested
-    if (req.body.send_invite && rep.email) {
+    // Send invitation email immediately for every created sub-user.
+    if (rep.email) {
       try {
         const manager = await User.findById(managerId).select('name').lean();
         const managerName = (manager?.name || '').replace(/[<>'"]/g, '');
         const repNameSafe = rep.name.replace(/[<>'"]/g, '');
-        const systemUrl = process.env.SYSTEM_URL || 'https://botwa.message.co.il/';
-        const inviteLink = `${systemUrl}?name=${encodeURIComponent(managerName)}`;
 
         const emailUsername = process.env.MESERGO_EMAIL_USERNAME || 'admin@chatgo.live';
         const emailToken = process.env.MESERGO_EMAIL_TOKEN || '1aa14226-ceae-4104-ba86-899eca88631d';
         const fromAddress = process.env.MESERGO_FROM_ADDRESS || 'admin@chatgo.live';
 
-        const subject = 'הוזמנת להצטרף למערכת';
+            const subject = 'הוזמנת להשלמת הרשמה למערכת';
         const htmlBody = `<div dir="rtl" style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
   <h2 style="color:#2563eb;">שלום ${repNameSafe},</h2>
   <p>הוזמנת להצטרף למערכת ניהול הבוטים של <strong>${managerName}</strong>.</p>
-  <p>לחץ על הקישור הבא כדי להיכנס למערכת:</p>
-  <a href="${inviteLink}" style="display:inline-block;background:#2563eb;color:white;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:bold;font-size:16px;margin:16px 0;">כניסה למערכת</a>
+          <p>לחץ על הקישור הבא כדי להשלים הרשמה ולהגדיר סיסמה:</p>
+          <a href="${inviteLink}" style="display:inline-block;background:#2563eb;color:white;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:bold;font-size:16px;margin:16px 0;">השלמת הרשמה</a>
   <p style="margin-top:20px;color:#64748b;font-size:14px;">שם המשתמש שלך: <strong>${rep.email}</strong></p>
 </div>`;
 
@@ -222,6 +242,7 @@ export const createSubUser = async (req, res) => {
       phone: rep.phone || '',
       role: rep.role,
       status: rep.status,
+      inviteLink,
       createdAt: rep.createdAt,
       user_type_id: rep.user_type_id || null,
       repGroupIds: (rep.rep_group_ids || []).map(id => id.toString()),

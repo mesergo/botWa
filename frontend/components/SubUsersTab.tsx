@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { UserCog, Users, Plus, Trash2, Edit2, Check, X, Eye, EyeOff, Settings, Clock, MessageSquare } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { UserCog, Users, Plus, Trash2, Edit2, Check, X, Settings, Clock, MessageSquare, Copy } from 'lucide-react';
 import { usePermission } from '../hooks/usePermission';
 import { User } from '../types';
 
@@ -87,7 +87,7 @@ const AVAILABILITY_LABELS: Record<string, { label: string; dot: string; text: st
 };
 
   // Reps state 
-const emptyForm = { name: '', email: '', password: '', phone: '', role: 'rep' as 'rep' | 'rep_manager' | 'user', user_type_id: '', repGroupIds: [] as string[], allowedBotIds: [] as string[] };
+const emptyForm = { name: '', email: '', role: 'rep' as 'rep' | 'rep_manager' | 'user', user_type_id: '', repGroupIds: [] as string[], allowedBotIds: [] as string[] };
 
 const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
   const can = usePermission(currentUser ?? null);
@@ -115,8 +115,9 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
   const [formError, setFormError] = useState<string | null>(null);
   const [formSaving, setFormSaving] = useState(false);
   const [duplicateEmailInfo, setDuplicateEmailInfo] = useState<{ count: number; accounts: any[] } | null>(null);
-  const [showPassword, setShowPassword] = useState(false);
-  const [sendInvite, setSendInvite] = useState(false);
+  const [inviteSuccessLink, setInviteSuccessLink] = useState<string | null>(null);
+  const [inviteLinkCopied, setInviteLinkCopied] = useState(false);
+  const inviteCopiedTimeoutRef = useRef<number | null>(null);
 
   // Delete confirm
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -211,6 +212,14 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
     loadBots();
   }, []);
 
+  useEffect(() => {
+    return () => {
+      if (inviteCopiedTimeoutRef.current) {
+        window.clearTimeout(inviteCopiedTimeoutRef.current);
+      }
+    };
+  }, []);
+
   // Live-update reps availability while the "reps" tab is visible.
   // Polls every 8s and immediately on window focus / tab visibility.
   useEffect(() => {
@@ -232,8 +241,6 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
     const firstSystemRole = availableUserTypes[0]?.system_role || 'rep';
     setForm({ ...emptyForm, user_type_id: firstType, role: (firstSystemRole as any) || 'rep' });
     setFormError(null);
-    setShowPassword(false);
-    setSendInvite(false);
     setDuplicateEmailInfo(null);
     setShowRepModal(true);
   };
@@ -243,15 +250,12 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
     setForm({
       name: u.name,
       email: u.email,
-      password: '',
-      phone: u.phone,
       role: u.role as 'rep' | 'rep_manager' | 'user',
       user_type_id: u.user_type_id || '',
       repGroupIds: u.role === 'rep' ? (u.repGroupIds || []) : [],
       allowedBotIds: u.role === 'rep' ? (u.allowedBotIds || []) : [],
     });
     setFormError(null);
-    setShowPassword(false);
     setDuplicateEmailInfo(null);
     setShowRepModal(true);
   };
@@ -261,17 +265,12 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
     setEditingId(null);
     setForm(emptyForm);
     setFormError(null);
-    setSendInvite(false);
     setDuplicateEmailInfo(null);
   };
 
   const handleSave = async (allowDuplicateEmail: boolean = false) => {
-    if (!form.name.trim() || !form.email.trim()) {
-      setFormError('שם ואימייל הם שדות חובה');
-      return;
-    }
-    if (!editingId && !form.password.trim()) {
-      setFormError('סיסמה היא שדה חובה בעת יצירת נציג');
+    if (!form.name.trim() || !form.email.trim() || !form.user_type_id) {
+      setFormError('שם, אימייל וסוג משתמש הם שדות חובה');
       return;
     }
     if (!allowDuplicateEmail) setDuplicateEmailInfo(null);
@@ -281,14 +280,11 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
       const body: any = {
         name: form.name.trim(),
         email: form.email.trim(),
-        phone: form.phone.trim(),
         role: form.role,
         user_type_id: form.user_type_id || null,
       };
-      if (form.password.trim()) body.password = form.password.trim();
       if (form.role === 'rep') body.rep_group_ids = form.repGroupIds;
       if (form.role === 'rep') body.allowed_bot_ids = form.allowedBotIds;
-      if (!editingId && sendInvite) body.send_invite = true;
       body.allowDuplicateEmail = allowDuplicateEmail;
 
       const url = editingId ? `${API_BASE}/sub-users/${editingId}` : `${API_BASE}/sub-users`;
@@ -301,6 +297,10 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
       }
       if (!res.ok) throw new Error(data.error || 'שגיאה בשמירה');
       await loadUsers();
+      if (!editingId && data.inviteLink) {
+        setInviteSuccessLink(data.inviteLink);
+        setInviteLinkCopied(false);
+      }
       closeForm();
     } catch (e: any) {
       setFormError(e.message || 'שגיאה לא צפויה');
@@ -745,41 +745,6 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
                   dir="ltr"
                 />
               </div>
-              {/* Password */}
-              <div>
-                <label className="block text-sm font-bold text-slate-600 mb-1">
-                  סיסמה {editingId ? '(השאר ריק לאי-שינוי)' : '*'}
-                </label>
-                <div className="relative">
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    value={form.password}
-                    onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
-                    className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:border-blue-500 pl-12"
-                    placeholder="••••••••"
-                    dir="ltr"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(v => !v)}
-                    className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                  >
-                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                  </button>
-                </div>
-              </div>
-              {/* Phone */}
-              <div>
-                <label className="block text-sm font-bold text-slate-600 mb-1">טלפון נייד</label>
-                <input
-                  type="tel"
-                  value={form.phone}
-                  onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}
-                  className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:border-blue-500"
-                  placeholder="050-1234567"
-                  dir="ltr"
-                />
-              </div>
               {/* Role */}
               <div className="md:col-span-2">
                 <label className="block text-sm font-bold text-slate-600 mb-1">סוג משתמש *</label>
@@ -872,24 +837,6 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
               )}
             </div>
 
-            {/* Send invite checkbox — only when creating a new rep */}
-            {!editingId && (
-              <div className="md:col-span-2 mt-4">
-                <label className="flex items-center gap-3 cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    checked={sendInvite}
-                    onChange={e => setSendInvite(e.target.checked)}
-                    className="w-4 h-4 accent-blue-600 cursor-pointer flex-shrink-0"
-                  />
-                  <span className="text-sm font-bold text-slate-700">שלח הזמנה לנציג במייל</span>
-                </label>
-                {sendInvite && (
-                  <p className="mt-1 text-xs text-slate-400 mr-7">יישלח מייל הזמנה עם קישור כניסה למערכת לכתובת {form.email || '...'}</p>
-                )}
-              </div>
-            )}
-
             {formError && (
               <div className="mt-4 p-3 bg-red-50 text-red-700 rounded-xl text-sm font-bold">{formError}</div>
             )}
@@ -925,13 +872,73 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
                 disabled={formSaving}
                 className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-all disabled:opacity-60"
               >
-                <Check size={16} /> {formSaving ? 'שומר...' : 'שמור'}
+                <Check size={16} /> {formSaving ? (editingId ? 'שומר...' : 'שולח הזמנה...') : (editingId ? 'שמור' : 'שליחת הזמנה')}
               </button>
               <button
                 onClick={closeForm}
                 className="flex items-center gap-2 px-6 py-3 bg-slate-100 text-slate-700 rounded-xl font-bold hover:bg-slate-200 transition-all"
               >
                 <X size={16} /> ביטול
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Invite success modal */}
+      {inviteSuccessLink && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[110] p-6">
+          <div className="bg-white w-full max-w-2xl rounded-[2rem] shadow-2xl border border-slate-100 overflow-hidden" dir="rtl">
+            <div className="px-8 py-6 bg-gradient-to-l from-blue-50 via-white to-blue-50 border-b border-slate-100">
+              <h3 className="text-2xl font-black text-slate-900 mb-1">ההזמנה נשלחה בהצלחה</h3>
+            </div>
+
+            <div className="px-8 py-6">
+              <p className="text-sm text-slate-600 font-bold mb-2">קישור הרשמה:</p>
+              <div className="relative" dir="ltr">
+                <div className="bg-slate-50 border border-slate-200 rounded-xl px-4 pr-12 py-3 text-xs text-slate-700 break-all leading-6">
+                  {inviteSuccessLink}
+                </div>
+                <button
+                  type="button"
+                  aria-label="העתק קישור"
+                  title="העתק קישור"
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(inviteSuccessLink);
+                      setInviteLinkCopied(true);
+                      if (inviteCopiedTimeoutRef.current) {
+                        window.clearTimeout(inviteCopiedTimeoutRef.current);
+                      }
+                      inviteCopiedTimeoutRef.current = window.setTimeout(() => {
+                        setInviteLinkCopied(false);
+                        inviteCopiedTimeoutRef.current = null;
+                      }, 3000);
+                    } catch {
+                      // ignore clipboard failures
+                    }
+                  }}
+                  className={`absolute right-3 top-1/2 -translate-y-1/2 p-0 bg-transparent border-0 shadow-none transition-colors ${inviteLinkCopied ? 'text-emerald-600' : 'text-slate-400 hover:text-blue-600'}`}
+                >
+                  {inviteLinkCopied ? <Check size={18} /> : <Copy size={18} />}
+                </button>
+              </div>
+            </div>
+
+            <div className="px-8 pb-7 w-full flex justify-end">
+              <button
+                type="button"
+                onClick={() => {
+                  setInviteSuccessLink(null);
+                  setInviteLinkCopied(false);
+                  if (inviteCopiedTimeoutRef.current) {
+                    window.clearTimeout(inviteCopiedTimeoutRef.current);
+                    inviteCopiedTimeoutRef.current = null;
+                  }
+                }}
+                className="flex items-center gap-2 px-5 py-2.5 bg-slate-100 text-slate-700 rounded-xl font-bold hover:bg-slate-200 transition-all"
+              >
+                סגור
               </button>
             </div>
           </div>
