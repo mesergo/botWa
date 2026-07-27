@@ -1927,7 +1927,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                   </div>
                 </div>
 
-                <div className="overflow-y-auto p-3 space-y-2 bg-slate-50/50 h-[12.5rem] sm:h-[13.5rem] lg:h-[14.5rem]">
+                <div className="overflow-y-auto p-3 space-y-2 bg-slate-50/50 h-[12.5rem] sm:h-[13.5rem] md:h-[14.5rem] lg:h-auto lg:flex-1">
                   {loading ? (
                      <div className="flex flex-col items-center justify-center h-48 text-slate-400">
                         <div className="w-10 h-10 border-4 border-slate-200 border-t-sky-500 rounded-full animate-spin mb-3"></div>
