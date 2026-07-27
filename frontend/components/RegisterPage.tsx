@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { CheckCircle, Mail, Phone, Lock, Eye, EyeOff, AlertCircle, Building2, Clock, ShieldCheck } from 'lucide-react';
 
 declare global {
@@ -23,13 +23,23 @@ interface FieldErrors {
   phone?: string;
   email?: string;
   password?: string;
+  confirmLogin?: string;
   general?: string;
+}
+
+interface InvitePrefill {
+  email: string;
+  name: string;
+  inviterName: string;
 }
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PHONE_REGEX = /^[\d\s\-+()]{7,15}$/;
 
 const RegisterPage: React.FC = () => {
+  const inviteToken = useMemo(() => new URLSearchParams(window.location.search).get('inviteToken') || '', []);
+  const inviteMode = !!inviteToken;
+
   const [form, setForm] = useState<RegisterForm>({
     company: '',
     phone: '',
@@ -44,6 +54,10 @@ const RegisterPage: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [registeredEmail, setRegisteredEmail] = useState('');
+  const [invitePrefill, setInvitePrefill] = useState<InvitePrefill | null>(null);
+  const [inviteLoading, setInviteLoading] = useState(inviteMode);
+  const [inviteRequiresLoginConfirmation, setInviteRequiresLoginConfirmation] = useState(false);
+  const [confirmInviteLogin, setConfirmInviteLogin] = useState(false);
   // Non-blocking duplicate-email confirm choice: "create another account with this email" vs "go to login"
   const [duplicateEmailChoice, setDuplicateEmailChoice] = useState(false);
   const [confirmedDuplicate, setConfirmedDuplicate] = useState(false);
@@ -54,17 +68,65 @@ const RegisterPage: React.FC = () => {
     return () => { document.body.style.overflow = ''; };
   }, []);
 
+  useEffect(() => {
+    if (!inviteMode) return;
+    let isCancelled = false;
+
+    const verifyInvite = async () => {
+      setInviteLoading(true);
+      setErrors({});
+      try {
+        const res = await fetch(`${API_BASE}/auth/invite/verify?inviteToken=${encodeURIComponent(inviteToken)}`);
+        const data = await res.json();
+        if (!res.ok) {
+          setErrors({ general: data.error || 'הקישור אינו תקין או שפג תוקפו' });
+          return;
+        }
+        if (isCancelled) return;
+        setInvitePrefill({
+          email: data.email || '',
+          name: data.name || '',
+          inviterName: data.inviterName || ''
+        });
+        setInviteRequiresLoginConfirmation(!!data.requiresLoginConfirmation);
+        setForm((prev) => ({
+          ...prev,
+          company: data.name || prev.company,
+          email: data.email || prev.email,
+        }));
+      } catch {
+        if (!isCancelled) setErrors({ general: 'אין חיבור לשרת. אנא נסה שנית מאוחר יותר.' });
+      } finally {
+        if (!isCancelled) setInviteLoading(false);
+      }
+    };
+
+    verifyInvite();
+    return () => { isCancelled = true; };
+  }, [inviteMode, inviteToken]);
+
   const handleGoogleSignIn = useCallback(async (credential: string) => {
+    if (inviteMode && inviteRequiresLoginConfirmation && !confirmInviteLogin) {
+      setErrors((prev) => ({
+        ...prev,
+        confirmLogin: 'יש לאשר התחברות לחשבון המוזמן לפני המשך עם Google',
+      }));
+      return;
+    }
     setIsSubmitting(true);
     try {
-      const res = await fetch(`${API_BASE}/auth/google`, {
+      const endpoint = inviteMode ? `${API_BASE}/auth/invite/google` : `${API_BASE}/auth/google`;
+      const payload = inviteMode
+        ? { credential, inviteToken, confirmLogin: confirmInviteLogin }
+        : { credential };
+      const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ credential }),
+        body: JSON.stringify(payload),
       });
       const data = await res.json();
       if (res.ok && data.token) {
-        setRegisteredEmail(data.user.email);
+        setRegisteredEmail((data.user?.email || form.email || invitePrefill?.email || '').trim());
         setSubmitted(true);
       } else {
         setErrors({ general: data.error || 'שגיאה בהתחברות עם גוגל' });
@@ -74,7 +136,7 @@ const RegisterPage: React.FC = () => {
     } finally {
       setIsSubmitting(false);
     }
-  }, []);
+  }, [inviteMode, inviteToken, form.email, invitePrefill?.email, inviteRequiresLoginConfirmation, confirmInviteLogin]);
 
   useEffect(() => {
     if (!GOOGLE_CLIENT_ID) return;
@@ -153,6 +215,7 @@ const RegisterPage: React.FC = () => {
   );
 
   const handleChange = (field: keyof RegisterForm, value: string) => {
+    if (inviteMode && (field === 'company' || field === 'email')) return;
     const newForm = { ...form, [field]: value };
     setForm(newForm);
     if (touched[field]) {
@@ -170,7 +233,7 @@ const RegisterPage: React.FC = () => {
     const err = validateField(field, form[field] as string);
     setErrors((prev) => ({ ...prev, [field]: err }));
 
-    if (field === 'email' && !err && form.email.trim()) {
+    if (!inviteMode && field === 'email' && !err && form.email.trim()) {
       setEmailChecking(true);
       try {
         const res = await fetch(
@@ -202,33 +265,59 @@ const RegisterPage: React.FC = () => {
 
     setIsSubmitting(true);
     try {
-      const emailRes = await fetch(
-        `${API_BASE}/auth/check-email?email=${encodeURIComponent(form.email.trim())}`
-      );
-      const emailData = await emailRes.json();
-      if (emailData.exists && !confirmedDuplicate) {
-        setDuplicateEmailChoice(true);
-        setIsSubmitting(false);
-        return;
+      let res: Response;
+      if (inviteMode) {
+        if (inviteRequiresLoginConfirmation && !confirmInviteLogin) {
+          setErrors((prev) => ({
+            ...prev,
+            confirmLogin: 'יש לאשר התחברות לחשבון המוזמן לפני השלמת ההרשמה',
+          }));
+          setIsSubmitting(false);
+          return;
+        }
+        const payload = {
+          inviteToken,
+          name: invitePrefill?.name || form.company.trim(),
+          email: invitePrefill?.email || form.email.trim().toLowerCase(),
+          phone: form.phone.trim(),
+          password: form.password,
+          confirmLogin: confirmInviteLogin,
+        };
+        res = await fetch(`${API_BASE}/auth/invite/register`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+      } else {
+        const emailRes = await fetch(
+          `${API_BASE}/auth/check-email?email=${encodeURIComponent(form.email.trim())}`
+        );
+        const emailData = await emailRes.json();
+        if (emailData.exists && !confirmedDuplicate) {
+          setDuplicateEmailChoice(true);
+          setIsSubmitting(false);
+          return;
+        }
+
+        const payload = {
+          name: form.company.trim(),
+          email: form.email.trim().toLowerCase(),
+          phone: form.phone.trim(),
+          password: form.password,
+          account_type: 'Trial',
+        };
+
+        res = await fetch(`${API_BASE}/auth/register`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
       }
 
-      const payload = {
-        name: form.company.trim(),
-        email: form.email.trim().toLowerCase(),
-        phone: form.phone.trim(),
-        password: form.password,
-        account_type: 'Trial',
-      };
-
-      const res = await fetch(`${API_BASE}/auth/register`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
       const data = await res.json();
 
       if (res.ok && data.token) {
-        setRegisteredEmail(form.email.trim());
+        setRegisteredEmail((invitePrefill?.email || form.email).trim());
         setSubmitted(true);
       } else {
         setErrors({ general: data.error || 'אירעה שגיאה בעת ההרשמה, נסה שנית' });
@@ -250,13 +339,14 @@ const RegisterPage: React.FC = () => {
               <CheckCircle className="w-10 h-10 text-green-600" strokeWidth={2} />
             </div>
           </div>
-          <h2 className="text-3xl font-bold text-slate-800 mb-4">ההרשמה הושלמה!</h2>
+          <h2 className="text-3xl font-bold text-slate-800 mb-4">{inviteMode ? 'ההרשמה הושלמה בהצלחה!' : 'ההרשמה הושלמה!'}</h2>
           <p className="text-slate-500 mb-6">
             חשבון חדש נוצר עבור
             <br />
             <span className="font-semibold text-slate-900">{registeredEmail}</span>
           </p>
           
+          {!inviteMode && (
           <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-8 text-right">
             <div className="flex items-center gap-2 mb-2">
               <Clock className="w-4 h-4 text-amber-600" />
@@ -268,6 +358,7 @@ const RegisterPage: React.FC = () => {
               <li>• גישה לסימולטור בלבד (ללא פרסום)</li>
             </ul>
           </div>
+          )}
 
           <a
             href="/"
@@ -275,6 +366,16 @@ const RegisterPage: React.FC = () => {
           >
             מעבר לכניסה למערכת
           </a>
+        </div>
+      </div>
+    );
+  }
+
+  if (inviteMode && inviteLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-6 bg-slate-50" dir="rtl">
+        <div className="bg-white rounded-3xl shadow-xl w-full max-w-lg p-10 text-center border border-slate-100">
+          <p className="text-slate-700 font-bold">מאמתים את ההזמנה שלך...</p>
         </div>
       </div>
     );
@@ -293,12 +394,21 @@ const RegisterPage: React.FC = () => {
             alt="MeserGo"
           />
           <h2 className="text-4xl font-extrabold text-slate-900 tracking-tight">
-            הצטרפות למערכת
+            {inviteMode ? 'השלמת הרשמה' : 'הצטרפות למערכת'}
           </h2>
           <p className="text-lg text-slate-500 max-w-xl mx-auto">
-            מלא את הפרטים הבאים כדי לפתוח חשבון חדש ולהתחיל לנהל את הבוטים שלך בצורה חכמה.
+            {inviteMode
+              ? 'מלא את הפרטים הנותרים כדי להשלים את ההרשמה שלך למערכת.'
+              : 'מלא את הפרטים הבאים כדי לפתוח חשבון חדש ולהתחיל לנהל את הבוטים שלך בצורה חכמה.'}
           </p>
+          {inviteMode && invitePrefill && (
+            <div className="inline-flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-2xl px-6 py-3 mt-2">
+              <ShieldCheck className="w-5 h-5 text-blue-600 flex-shrink-0" />
+              <p className="text-sm font-black text-blue-800">הוזמנת על ידי {invitePrefill.inviterName || 'מנהל המערכת'}</p>
+            </div>
+          )}
           {/* Trial account notice */}
+          {!inviteMode && (
           <div className="inline-flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-2xl px-6 py-3 mt-2">
             <Clock className="w-5 h-5 text-amber-600 flex-shrink-0" />
             <div className="text-right">
@@ -306,6 +416,7 @@ const RegisterPage: React.FC = () => {
               <p className="text-xs text-amber-600 font-medium">בוט אחד · סימולטור בלבד · ללא פרסום</p>
             </div>
           </div>
+          )}
         </div>
 
         {/* Form Section - Clean & Flat */}
@@ -317,7 +428,7 @@ const RegisterPage: React.FC = () => {
             <div className="space-y-8">
                 {/* Company */}
                 <div className="space-y-2">
-                <label className="text-base font-bold text-slate-900">שם העסק</label>
+                <label className="text-base font-bold text-slate-900">{inviteMode ? 'שם מלא' : 'שם העסק'}</label>
                 <div className="relative group">
                   <div className="absolute inset-y-0 right-0 pr-0 flex items-center pointer-events-none">
                      <Building2 className="h-5 w-5 text-slate-400 group-focus-within:text-blue-600 transition-colors" />
@@ -327,12 +438,13 @@ const RegisterPage: React.FC = () => {
                     value={form.company}
                     onBlur={() => handleBlur('company')}
                     onChange={(e) => handleChange('company', e.target.value)}
+                    disabled={inviteMode}
                     className={`block w-full pr-8 pl-0 py-3 bg-transparent border-b-2 outline-none transition-all placeholder:text-slate-300 font-medium text-lg ${
                       touched.company && errors.company 
                         ? 'border-red-300 focus:border-red-500' 
                         : 'border-slate-200 focus:border-blue-600'
                     }`}
-                    placeholder="שם החברה בע״מ"
+                    placeholder={inviteMode ? 'שם מלא' : 'שם החברה בע״מ'}
                   />
                   {touched.company && errors.company && (
                     <p className="text-red-500 text-sm mt-1 font-medium">{errors.company}</p>
@@ -352,6 +464,7 @@ const RegisterPage: React.FC = () => {
                     value={form.email}
                     onBlur={() => handleBlur('email')}
                     onChange={(e) => handleChange('email', e.target.value)}
+                    disabled={inviteMode}
                     className={`block w-full pr-8 pl-8 py-3 bg-transparent border-b-2 outline-none transition-all placeholder:text-slate-300 font-medium text-lg ${
                       touched.email && errors.email 
                         ? 'border-red-300 focus:border-red-500' 
@@ -373,7 +486,7 @@ const RegisterPage: React.FC = () => {
                 {touched.email && errors.email && (
                   <p className="text-red-500 text-sm mt-1 font-medium">{errors.email}</p>
                 )}
-                {duplicateEmailChoice && (
+                {!inviteMode && duplicateEmailChoice && (
                   <div className="mt-3 bg-amber-50 border border-amber-200 rounded-xl p-4 text-right space-y-3">
                     <p className="text-sm font-bold text-amber-800">
                       כתובת אימייל זו כבר קיימת במערכת — ליצור חשבון נוסף בכל זאת?
@@ -395,7 +508,7 @@ const RegisterPage: React.FC = () => {
                     </div>
                   </div>
                 )}
-                {confirmedDuplicate && !duplicateEmailChoice && (
+                {!inviteMode && confirmedDuplicate && !duplicateEmailChoice && (
                   <p className="text-amber-700 text-sm mt-2 font-bold">
                     ✓ ייווצר חשבון נוסף עבור כתובת אימייל זו
                   </p>
@@ -491,6 +604,28 @@ const RegisterPage: React.FC = () => {
             </div>
           )}
 
+          {inviteMode && inviteRequiresLoginConfirmation && (
+            <div className="mt-8 max-w-xl mx-auto bg-slate-50 border border-slate-200 rounded-xl p-4 text-right space-y-2">
+              <label className="flex items-start gap-3 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={confirmInviteLogin}
+                  onChange={(e) => {
+                    setConfirmInviteLogin(e.target.checked);
+                    setErrors((prev) => ({ ...prev, confirmLogin: '' }));
+                  }}
+                  className="w-4 h-4 mt-0.5 accent-blue-600 cursor-pointer flex-shrink-0"
+                />
+                <span className="text-sm font-bold text-slate-700">
+                  אני מאשר/ת התחברות לחשבון שהוזמנתי אליו
+                </span>
+              </label>
+              {errors.confirmLogin && (
+                <p className="text-xs text-red-600 font-bold">{errors.confirmLogin}</p>
+              )}
+            </div>
+          )}
+
           {/* Google Sign-In */}
           <div className="mt-12 max-w-sm mx-auto space-y-4">
             {GOOGLE_CLIENT_ID ? (
@@ -509,7 +644,7 @@ const RegisterPage: React.FC = () => {
           <div className="mt-4 max-w-sm mx-auto">
             <button
               type="submit"
-              disabled={isSubmitting || emailChecking}
+              disabled={isSubmitting || emailChecking || (inviteMode && !invitePrefill)}
               className="w-full bg-blue-600 text-white py-5 rounded-full font-bold text-xl shadow-xl shadow-blue-600/20 hover:bg-blue-700 hover:shadow-blue-600/30 active:scale-[0.98] disabled:opacity-70 disabled:cursor-not-allowed transition-all flex justify-center items-center gap-3"
             >
               {isSubmitting ? (
@@ -521,7 +656,7 @@ const RegisterPage: React.FC = () => {
                   יוצר חשבון...
                 </>
               ) : (
-                'צור חשבון חדש'
+                inviteMode ? 'השלם הרשמה' : 'צור חשבון חדש'
               )}
             </button>
 

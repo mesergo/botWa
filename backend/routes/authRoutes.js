@@ -1,10 +1,13 @@
 import express from 'express';
-import { register, login, getApiToken, checkEmail, listAccountsForEmail, googleAuth, getTemplates, updateDialog360Credentials, getProfile, updateProfile, updateAvailability, logout, getUserRemovalConfig, updateUserRemovalConfig, getMyAccounts, switchAccount } from '../controllers/authController.js';
+import { register, login, getApiToken, checkEmail, listAccountsForEmail, googleAuth, getTemplates, updateDialog360Credentials, getProfile, updateProfile, updateAvailability, logout, getUserRemovalConfig, updateUserRemovalConfig, getMyAccounts, switchAccount, verifyInviteToken, registerFromInvite, registerFromInviteGoogle } from '../controllers/authController.js';
 import { authenticate } from '../middleware/auth.js';
 
 const router = express.Router();
 
 router.post('/register', register);
+router.get('/invite/verify', verifyInviteToken);
+router.post('/invite/register', registerFromInvite);
+router.post('/invite/google', registerFromInviteGoogle);
 router.post('/login', login);
 router.post('/google', googleAuth);
 router.get('/check-email', checkEmail); // Check if email already exists

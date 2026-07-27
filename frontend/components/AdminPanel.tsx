@@ -1292,7 +1292,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
               {activeTab === 'user-types' && 'הגדרת הרשאות לכל סוג משתמש במערכת'}
               {activeTab === 'sessions' && 'צפייה בכל הסשנים של כל המשתמשים במערכת'}
               {activeTab === 'dialog360' && 'צפייה בהודעות תבנית מ-Dialog360'}
-              {activeTab === 'sms-in' && 'צפייה בכל הודעות ה-SMS הנכנסות במערכת'}
+              {activeTab === 'sms-in' && 'הודעות נכנסות, שיוך קווים, לקוחות וווב-הוקס'}
               {activeTab === 'templates' && 'ניהול ותחזוקת מאגר התבניות הגלובלי'}
               {activeTab === 'settings' && 'הגדרת מגבלות, מחירים ופרמטרים למערכת'}
               {activeTab === 'removal-log' && 'היסטוריית שינויים בהגדרות ההסרה האוטומטית'}
@@ -1303,6 +1303,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
         </header>
 
         {/* Content Scroll Area */}
+        {/* <div className={`flex-1 min-h-0 z-10 ${activeTab === 'sessions' ? 'overflow-hidden' : 'overflow-visible px-4 sm:px-6 lg:px-10 pb-6 sm:pb-10 pt-2'}`}> */}
+
         <div className={`flex-1 min-h-0 z-10 ${activeTab === 'sessions' || activeTab === 'sms-in' ? 'overflow-hidden' : 'overflow-visible px-4 sm:px-6 lg:px-10 pb-6 sm:pb-10 pt-2'}`}>
           
           {error && (
@@ -1313,12 +1315,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
             </div>
           )}
 
-          {/* SMS INBOX TAB — full system view */}
+          {/* SMS INBOX TAB — full system view (messages + routing + webhooks) */}
           {activeTab === 'sms-in' && (
             <div className="h-[calc(100vh-5.5rem)] w-full overflow-hidden">
               <SmsInApp
                 embedded
-                lockedTab="sms_in"
                 initialTab="sms_in"
                 userEmail={currentUser?.email}
                 userId={currentUser?.id}
@@ -1925,7 +1926,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                   </div>
                 </div>
 
-                <div className="flex-1 overflow-y-auto p-3 space-y-2 bg-slate-50/50">
+                <div className="overflow-y-auto p-3 space-y-2 bg-slate-50/50 h-[12.5rem] sm:h-[13.5rem] md:h-[14.5rem] lg:h-auto lg:flex-1">
                   {loading ? (
                      <div className="flex flex-col items-center justify-center h-48 text-slate-400">
                         <div className="w-10 h-10 border-4 border-slate-200 border-t-sky-500 rounded-full animate-spin mb-3"></div>

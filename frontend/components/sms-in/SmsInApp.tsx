@@ -1113,8 +1113,8 @@ export default function SmsInApp({
           <main className="flex-1 flex flex-col min-w-0 bg-[#f8fafc] overflow-hidden">
             
             {/* TOP HEADER — matches bot pages (SendMessages / Contacts) */}
-            <header className="bg-white border-b border-slate-100 px-6 py-4 z-10">
-              <div className="flex flex-col lg:flex-row-reverse lg:items-center lg:justify-between gap-4">
+            <header className="bg-transparent px-6 py-4 z-10">
+              {/* <div className="flex flex-col lg:flex-row-reverse lg:items-center lg:justify-between gap-4">
                 <div className="flex items-center gap-3">
                   <div className="w-9 h-9 rounded-xl bg-sky-50 text-sky-600 flex items-center justify-center">
                     <MessageSquare size={18} />
@@ -1123,23 +1123,23 @@ export default function SmsInApp({
                     <h1 className="text-xl font-black text-slate-900">{tabTitle}</h1>
                     <p className="text-slate-400 text-xs font-semibold mt-0.5">{tabSubtitle}</p>
                   </div>
-                </div>
+                </div> */}
 
                 {embedded && tabButtons && (
-                  <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-1.5">
+                  <div className="flex justify-center p-1.5">
                     <div className="flex flex-wrap items-center gap-2">
                       {tabButtons}
                     </div>
                   </div>
                 )}
-              </div>
+              {/* </div> */}
             </header>
 
             {/* MAIN INTERNAL ROUTE VIEWS */}
             <div className="p-6 lg:p-8 flex-1 overflow-y-auto max-w-7xl w-full mx-auto">
               
-              {/* STATUS WIDGET BAR — hide when locked to a single setup tab (e.g. Settings) */}
-              {!lockedTab && (
+              {/* STATUS WIDGET BAR — statistics tab only */}
+              {activeTab === 'dashboard' && (
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
                 <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm">
                   <span className="text-slate-400 text-xs font-semibold block">סך כל ה-SMS</span>
@@ -1321,7 +1321,7 @@ export default function SmsInApp({
                               )}
                             </>
                           ) : (
-                            <>אין הודעות תואמות (נטענו {totalMessageCount} מ-MongoDB)</>
+                            <>אין הודעות תואמות</>
                           )}
                         </span>
                         

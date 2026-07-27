@@ -966,6 +966,8 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
           </aside>
 
           {/* ── Settings content ── */}
+          {/* <div className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8 lg:p-10"> */}
+
           <div className={`flex-1 ${settingsSection === 'routing' && isRealAdmin ? 'overflow-hidden p-0' : 'overflow-y-auto p-4 sm:p-6 md:p-8 lg:p-10'}`}>
             {settingsSection === 'routing' && isRealAdmin ? (
               <div className="h-full w-full">
