@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, Bot, ArrowLeft, Trash2, Calendar, LogOut, Shield, UserCog, Users, List, Settings, Save, User as UserIcon, Phone, Mail, Star, Copy, Check, Wifi, Gauge, MessageSquare, Globe, Layers, CheckCircle, Eye, EyeOff, X, Menu, Image as ImageIcon, FileText, Link as LinkIcon, Unlink, UserMinus, AlertTriangle, RefreshCcw, ToggleLeft, ToggleRight, Zap } from 'lucide-react';
+import { Plus, Bot, ArrowLeft, Trash2, Calendar, LogOut, Shield, UserCog, Users, List, Settings, Save, User as UserIcon, Phone, Mail, Star, Copy, Check, Wifi, Gauge, MessageSquare, Globe, Layers, CheckCircle, Eye, EyeOff, X, Menu, Image as ImageIcon, FileText, Link as LinkIcon, Unlink, UserMinus, AlertTriangle, RefreshCcw, ToggleLeft, ToggleRight, Zap, GitFork } from 'lucide-react';
 import ImpersonationBanner from './ImpersonationBanner';
 import { BotFlow, User } from '../types';
 import SubUsersTab from './SubUsersTab';
@@ -8,6 +8,7 @@ import { FileUploader } from './FileUploader';
 import { usePermission } from '../hooks/usePermission';
 import AppNav from './AppNav';
 import { MobileNavToggle } from './PageTopBar';
+import SmsInApp from './sms-in/SmsInApp';
 
 const API_BASE = window.location.hostname === 'localhost'
   ? 'http://localhost:3001/api'
@@ -20,7 +21,7 @@ interface DashboardProps {
   onDeleteBot: (id: string) => void;
   onSetDefaultBot: (id: string) => void;
   onLogout: () => void;
-  currentUser?: { name?: string; email?: string; role?: string; isImpersonating?: boolean; availability_status?: 'available' | 'unavailable' | 'on_break' } | null;
+  currentUser?: { id?: string; name?: string; email?: string; role?: string; isImpersonating?: boolean; availability_status?: 'available' | 'unavailable' | 'on_break' } | null;
   onOpenAdminPanel?: () => void;
   onStopImpersonation?: () => void;
   onSwitchAccount?: (accountId: string) => void;
@@ -194,8 +195,15 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
   }, []);
 
   // Settings tab section
-  type SettingsSection = 'profile' | 'account' | 'connection' | 'quota' | 'numbers' | 'templates' | 'removal';
+  type SettingsSection = 'profile' | 'account' | 'connection' | 'quota' | 'numbers' | 'routing' | 'templates' | 'removal';
   const [settingsSection, setSettingsSection] = useState<SettingsSection>('profile');
+  const isRealAdmin = currentUser?.role === 'admin' && !currentUser?.isImpersonating;
+
+  useEffect(() => {
+    if (!isRealAdmin && settingsSection === 'routing') {
+      setSettingsSection('numbers');
+    }
+  }, [isRealAdmin, settingsSection]);
 
   // Settings tab state
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -937,6 +945,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
               { key: 'connection', label: 'הגדרות חיבור',      icon: <Wifi size={16} /> },
               { key: 'quota',      label: 'מכסות אישיות',      icon: <Gauge size={16} /> },
               { key: 'numbers',    label: 'מספרים מחוברים',    icon: <Phone size={16} /> },
+              ...(isRealAdmin ? [{ key: 'routing' as const, label: 'שיוך קווים SMS ', icon: <GitFork size={16} /> }] : []),
               { key: 'templates',  label: 'הודעות תבנית',      icon: <MessageSquare size={16} /> },
               { key: 'removal',    label: 'ניהול הסרה מקבוצה', icon: <UserMinus size={16} /> },
             ] as { key: SettingsSection; label: string; icon: React.ReactNode }[]).map(({ key, label, icon }) => (
@@ -957,7 +966,23 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
           </aside>
 
           {/* ── Settings content ── */}
-          <div className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8 lg:p-10">
+          {/* <div className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8 lg:p-10"> */}
+
+          <div className={`flex-1 ${settingsSection === 'routing' && isRealAdmin ? 'overflow-hidden p-0' : 'overflow-y-auto p-4 sm:p-6 md:p-8 lg:p-10'}`}>
+            {settingsSection === 'routing' && isRealAdmin ? (
+              <div className="h-full w-full">
+                <SmsInApp
+                  embedded
+                  lockedTab="routing"
+                  initialTab="routing"
+                  userEmail={currentUser?.email}
+                  userId={currentUser?.id}
+                  userName={currentUser?.name}
+                  isAdmin
+                  token={token}
+                />
+              </div>
+            ) : (
             <div className="max-w-2xl mx-auto">
 
             {profileLoading ? (
@@ -1930,6 +1955,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
               </>
             )}
             </div>
+            )}
           </div>
         </div>
       )}

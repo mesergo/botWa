@@ -17,23 +17,39 @@ function toClientShape(doc) {
 
 /**
  * GET /api/sms-in/dest-settings
- * Admin: all lines. Customer: only lines assigned to them.
+ * Always scoped to the logged-in user (admin accounts included).
  */
 export async function getDestSettings(req, res) {
   try {
-    const role = req.user?.role;
-    const isAdmin = role === 'admin' && !req.user?.isImpersonating;
     const userId = req.userId;
-
-    const query = isAdmin ? {} : { assignedClientId: userId };
-    const docs = await SmsDestSetting.find(query).sort({ dest: 1 }).lean();
+    const docs = await SmsDestSetting.find({ assignedClientId: userId }).sort({ dest: 1 }).lean();
 
     res.json({
       settings: docs.map(toClientShape),
       source: 'mongodb',
+      scoped: true,
     });
   } catch (err) {
     console.error('[sms-in] getDestSettings error:', err);
+    res.status(500).json({ error: err.message || 'Failed to load dest settings' });
+  }
+}
+
+/**
+ * GET /api/sms-in/admin/dest-settings
+ * /admin panel only — ALWAYS every line. Protected by requireAdmin.
+ */
+export async function getAdminDestSettings(req, res) {
+  try {
+    const docs = await SmsDestSetting.find({}).sort({ dest: 1 }).lean();
+
+    res.json({
+      settings: docs.map(toClientShape),
+      source: 'mongodb',
+      scoped: false,
+    });
+  } catch (err) {
+    console.error('[sms-in] getAdminDestSettings error:', err);
     res.status(500).json({ error: err.message || 'Failed to load dest settings' });
   }
 }

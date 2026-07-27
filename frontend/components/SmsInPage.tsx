@@ -84,7 +84,9 @@ const SmsInPage: React.FC<SmsInPageProps> = ({
             userEmail={currentUser?.email}
             userId={currentUser?.id}
             userName={currentUser?.name}
-            isAdmin={currentUser?.role === 'admin' && !currentUser?.isImpersonating}
+            // Admin user accounts see only lines assigned to them.
+            // Full inbox lives in פאנל ניהול.
+            isAdmin={false}
             token={_token}
           />
         </div>
