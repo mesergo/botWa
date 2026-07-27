@@ -66,6 +66,13 @@ const userSchema = new mongoose.Schema({
   user_type_id: { type: mongoose.Schema.Types.ObjectId, ref: 'UserType', default: null },
   // Per-client toggle (set by admin): show the "SMS נכנס" tab. Admins always see it.
   sms_in_enabled: { type: Boolean, default: false },
+  // Invite-only onboarding fields for sub-users (reps/rep_managers).
+  invite_token_hash: { type: String, default: null },
+  invite_token_expires_at: { type: Date, default: null },
+  invite_sent_at: { type: Date, default: null },
+  invite_created_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+  invite_status: { type: String, enum: ['pending', 'accepted', 'expired', 'cancelled'], default: null },
+  registration_completed_at: { type: Date, default: null },
 }, { 
   timestamps: true,
   collection: 'User'
