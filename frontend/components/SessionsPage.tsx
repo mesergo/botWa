@@ -23,6 +23,16 @@ interface Session {
   status?: 'bot' | 'waiting' | 'handling' | 'closed' | 'resolved';
 }
 
+/** Internal (self-authored) template - text + optional single header attachment,
+ *  sent as a regular WhatsApp message (not the WA Template API). */
+interface InternalTemplate {
+  _id: string;
+  name: string;
+  body: string;
+  mediaType: 'image' | 'video' | 'document' | null;
+  mediaUrl: string;
+}
+
 interface Contact {
   phone: string;
   sessionCount: number;
@@ -99,7 +109,11 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
   const [selectedTemplate, setSelectedTemplate] = useState<any>(null);
   const [templateSettings, setTemplateSettings] = useState<Record<string, 'hidden' | 'manager' | 'agent'>>({});
   const [templateDefaultMedia, setTemplateDefaultMedia] = useState<Record<string, { url: string; type: 'image' | 'video' | 'document' }>>({});
-  
+
+  // Internal (self-authored) templates dropdown state
+  const [internalTemplates, setInternalTemplates] = useState<InternalTemplate[]>([]);
+  const [internalTemplatesLoading, setInternalTemplatesLoading] = useState(false);
+
   // Template parameters modal
   const [showTemplateParamsModal, setShowTemplateParamsModal] = useState(false);
   const [templateParams, setTemplateParams] = useState<Record<string, any>>({});
@@ -893,7 +907,16 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
           const isTemplate = messageToSend.startsWith('/') && selectedTemplate;
           let requestBody: any = { message: messageToSend };
           
-          if (isTemplate) {
+          if (isTemplate && selectedTemplate.isInternal) {
+            requestBody.message = buildInternalTemplateMessage(selectedTemplate, templateParams);
+            if (templateParams.header?.url) {
+              requestBody.mediaType = templateParams.header.type;
+              requestBody.mediaUrl = templateParams.header.url;
+              if (templateParams.header.type === 'document') {
+                requestBody.mediaFilename = selectedTemplate.name || 'document';
+              }
+            }
+          } else if (isTemplate) {
             requestBody.isTemplate = true;
             requestBody.templateData = {
               id: selectedTemplate.id,
@@ -1056,6 +1079,8 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
 
     // לקוח חדש ללא שיחות — שלח תבנית ישירות לטלפון (ללא session)
     if (phoneSessions.length === 0) {
+      // תבניות פנימיות דורשות חלון שיחה פעיל של 24 שעות — לא זמינות ללקוח חדש ללא session
+      if (selectedTemplate?.isInternal) return;
       // ── הגבלת תבנית בלבד ללקוח חדש — מבוטל זמנית (ניתן להחזיר ע"י ביטול ההערה) ──
       // if (!selectedTemplate) return;
       if (!selectedTemplate) return; // משאיר כברירת מחדל כי backend תומך רק ב-template-to-phone לסשן חדש
@@ -1140,7 +1165,17 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
     const isTemplate = msgText.startsWith('/') && selectedTemplate;
     let requestBody: any = { message: msgText };
     
-    if (isTemplate) {
+    if (isTemplate && selectedTemplate.isInternal) {
+      // Internal template: substitute {{n}} placeholders and send as a regular text/media message
+      requestBody.message = buildInternalTemplateMessage(selectedTemplate, templateParams);
+      if (templateParams.header?.url) {
+        requestBody.mediaType = templateParams.header.type;
+        requestBody.mediaUrl = templateParams.header.url;
+        if (templateParams.header.type === 'document') {
+          requestBody.mediaFilename = selectedTemplate.name || 'document';
+        }
+      }
+    } else if (isTemplate) {
       // Build template data with user parameters
       requestBody.isTemplate = true;
       requestBody.templateData = {
@@ -1333,6 +1368,79 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
     setShowTemplateParamsModal(false);
     // Send immediately after confirming parameters
     setTimeout(() => sendAgentMsg(), 0);
+  };
+
+  // ── Internal (self-authored) templates ──────────────────────────────────
+  // Fetch internal templates ("תבניות פנימיות") for the "/" picker
+  const fetchInternalTemplates = async () => {
+    setInternalTemplatesLoading(true);
+    try {
+      const response = await fetch(`${API_BASE}/internal-templates`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setInternalTemplates(data.success && Array.isArray(data.templates) ? data.templates : []);
+      } else {
+        setInternalTemplates([]);
+      }
+    } catch (err) {
+      console.error('[SessionsPage] Error fetching internal templates:', err);
+      setInternalTemplates([]);
+    } finally {
+      setInternalTemplatesLoading(false);
+    }
+  };
+
+  // Handle internal template selection — represent it as a WA-template-shaped object
+  // (synthetic HEADER/BODY components) so the existing params modal/preview work unchanged.
+  const handleInternalTemplateSelect = (template: InternalTemplate) => {
+    const components: any[] = [];
+    if (template.mediaType) {
+      components.push({ type: 'HEADER', format: template.mediaType.toUpperCase() });
+    }
+    components.push({ type: 'BODY', text: template.body });
+    const syntheticTemplate = { ...template, isInternal: true, components };
+
+    setAgentMessage(`/${template.name}`);
+    setSelectedTemplate(syntheticTemplate);
+    setShowTemplates(false);
+
+    const needsParams = checkTemplateNeedsParams(syntheticTemplate);
+    if (needsParams) {
+      const initialParams: Record<string, any> = {};
+      if (template.mediaType) {
+        initialParams.header = { type: template.mediaType, url: template.mediaUrl || '' };
+      }
+      const matches = template.body.match(/\{\{\d+\}\}/g);
+      if (matches) {
+        initialParams.body = matches.map(() => '');
+      }
+      setTemplateParams(initialParams);
+      setShowTemplateParamsModal(true);
+      if (selectedPhone && token) {
+        fetch(`${API_BASE}/contacts?search=${encodeURIComponent(selectedPhone)}&limit=1`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+          .then(r => r.ok ? r.json() : null)
+          .then(data => {
+            const rec = data?.contacts?.[0] ?? null;
+            setContactRecord(rec);
+          })
+          .catch(() => setContactRecord(null));
+      }
+    }
+  };
+
+  // Substitute {{1}}, {{2}}... placeholders in an internal template's body with the
+  // values the agent filled in (mirrors the server-side substitution shown in history).
+  const buildInternalTemplateMessage = (template: any, params: Record<string, any>): string => {
+    let text = template.body || '';
+    const bodyValues: string[] = params.body || [];
+    bodyValues.forEach((val, i) => {
+      text = text.split(`{{${i + 1}}}`).join(val ?? '');
+    });
+    return text;
   };
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -2577,13 +2685,14 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                   <div className="flex flex-wrap sm:flex-nowrap items-end gap-2 sm:gap-3 relative">
                     {/* Template dropdown */}
                     {showTemplates && selectedPhone && (
-                      <div className="absolute bottom-full left-0 right-0 mb-2 bg-white border border-slate-200 rounded-xl shadow-xl max-h-80 overflow-y-auto z-50">
+                      <div className="absolute bottom-full left-0 right-0 mb-2 bg-white border border-slate-200 rounded-xl shadow-xl max-h-96 overflow-y-auto z-50">
+                        <div className="px-3 pt-2 pb-1 text-[10px] font-black text-slate-400 uppercase tracking-wider">הודעות תבנית</div>
                         {templatesLoading ? (
                           <div className="p-4 text-center text-slate-400 text-sm">טוען טמפלייטים...</div>
                         ) : templates.length === 0 ? (
                           <div className="p-4 text-center text-slate-400 text-sm">לא נמצאו טמפלייטים</div>
                         ) : (
-                          <div className="p-2">
+                          <div className="p-2 pt-0">
                             {(() => {
                               const role = currentUser?.role;
                               // Determine tier from the actual granted permission (works for
@@ -2652,6 +2761,44 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                               );
                             })()}
                           </div>
+                        )}
+
+                        {phoneSessions.length > 0 && (
+                          <>
+                            <div className="border-t border-slate-100 mx-2 my-1" />
+                            <div className="px-3 pt-1 pb-1 text-[10px] font-black text-indigo-400 uppercase tracking-wider">תבניות פנימיות</div>
+                            {internalTemplatesLoading ? (
+                              <div className="p-4 text-center text-slate-400 text-sm">טוען תבניות פנימיות...</div>
+                            ) : (
+                              <div className="p-2 pt-0">
+                                {(() => {
+                                  const searchQuery = agentMessage.startsWith('/') ? agentMessage.slice(1).toLowerCase() : '';
+                                  const filteredInternal = internalTemplates.filter(t => !searchQuery || t.name.toLowerCase().includes(searchQuery));
+                                  return filteredInternal.length > 0 ? (
+                                    filteredInternal.map((template) => (
+                                      <button
+                                        key={template._id}
+                                        onClick={() => handleInternalTemplateSelect(template)}
+                                        className="w-full text-right px-3 py-2 hover:bg-indigo-50 rounded-lg transition-colors"
+                                      >
+                                        <div className="flex items-center justify-between mb-1">
+                                          <span className="font-medium text-slate-800 text-sm">/{template.name}</span>
+                                          {template.mediaType && (
+                                            <span className="text-xs bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded">
+                                              {template.mediaType === 'image' ? 'תמונה' : template.mediaType === 'video' ? 'וידאו' : 'מסמך'}
+                                            </span>
+                                          )}
+                                        </div>
+                                        <div className="text-xs text-slate-500 line-clamp-1">{template.body}</div>
+                                      </button>
+                                    ))
+                                  ) : (
+                                    <div className="p-4 text-center text-slate-400 text-sm">לא נמצאו תוצאות</div>
+                                  );
+                                })()}
+                              </div>
+                            )}
+                          </>
                         )}
                       </div>
                     )}
@@ -2729,7 +2876,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                           setAgentMessage(value);
                           if (value === '/' || value.startsWith('/')) {
                             setShowTemplates(true);
-                            if (value === '/') fetchTemplates();
+                            if (value === '/') { fetchTemplates(); fetchInternalTemplates(); }
                           } else {
                             setShowTemplates(false);
                           }

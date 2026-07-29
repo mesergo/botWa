@@ -166,6 +166,21 @@ export interface PredefinedTemplate {
   fields: TemplateField[];
 }
 
+/** Internal (self-authored) template ("תבניות פנימיות") - a text + optional single
+ *  header attachment sent as a regular WhatsApp message (not the WA Template API).
+ *  Supports numbered placeholders like {{1}}, {{2}} in `body`.
+ */
+export interface InternalTemplate {
+  _id: string;
+  userId: string;
+  name: string;
+  body: string;
+  mediaType: 'image' | 'video' | 'document' | null;
+  mediaUrl: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface UserTypePermissions {
   bots:     { view_tab: boolean; create: boolean; edit: boolean; delete: boolean; settings: boolean; publish: boolean };
   sessions: { view: boolean; add: boolean; view_all: boolean; view_assigned_only: boolean; templates_as_rep: boolean; templates_as_manager: boolean };

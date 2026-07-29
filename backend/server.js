@@ -15,6 +15,7 @@ import sessionRoutes from './routes/sessionRoutes.js';
 import versionRoutes from './routes/versionRoutes.js';
 import templateRoutes from './routes/templateRoutes.js';
 import dialog360TemplateRoutes from './routes/dialog360TemplateRoutes.js';
+import internalTemplateRoutes from './routes/internalTemplateRoutes.js';
 import adminRoutes from './routes/adminRoutes.js';
 import uploadRoutes from './routes/uploadRoutes.js';
 import subUserRoutes from './routes/subUserRoutes.js';
@@ -83,6 +84,7 @@ async function startServer() {
     app.use('/api/versions', versionRoutes);
     app.use('/api/templates', templateRoutes);
     app.use('/api/dialog360-templates', dialog360TemplateRoutes);
+    app.use('/api/internal-templates', internalTemplateRoutes);
     app.use('/api/admin', adminRoutes);
     app.use('/api/sub-users', subUserRoutes);
     app.use('/api/rep-groups', repGroupRoutes);

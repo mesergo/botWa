@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, Bot, ArrowLeft, Trash2, Calendar, LogOut, Shield, UserCog, Users, List, Settings, Save, User as UserIcon, Phone, Mail, Star, Copy, Check, Wifi, Gauge, MessageSquare, Globe, Layers, CheckCircle, Eye, EyeOff, X, Menu, Image as ImageIcon, FileText, Link as LinkIcon, Unlink, UserMinus, AlertTriangle, RefreshCcw, ToggleLeft, ToggleRight, Zap, GitFork } from 'lucide-react';
+import { Plus, Bot, ArrowLeft, Trash2, Calendar, LogOut, Shield, UserCog, Users, List, Settings, Save, User as UserIcon, Phone, Mail, Star, Copy, Check, Wifi, Gauge, MessageSquare, MessageCircle, Globe, Layers, CheckCircle, Eye, EyeOff, X, Menu, Image as ImageIcon, FileText, Link as LinkIcon, Unlink, UserMinus, AlertTriangle, RefreshCcw, ToggleLeft, ToggleRight, Zap, GitFork, Edit2 } from 'lucide-react';
 import ImpersonationBanner from './ImpersonationBanner';
 import { BotFlow, User } from '../types';
 import SubUsersTab from './SubUsersTab';
@@ -13,6 +13,17 @@ import SmsInApp from './sms-in/SmsInApp';
 const API_BASE = window.location.hostname === 'localhost'
   ? 'http://localhost:3001/api'
   : `${window.location.origin}/api`;
+
+/** Internal (self-authored) template - text + optional single header attachment,
+ *  sent as a regular WhatsApp message (not the WA Template API), shared per-account. */
+interface InternalTemplate {
+  _id: string;
+  name: string;
+  body: string;
+  mediaType: 'image' | 'video' | 'document' | null;
+  mediaUrl: string;
+  createdAt?: string;
+}
 
 interface DashboardProps {
   bots: BotFlow[];
@@ -196,6 +207,9 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
 
   // Settings tab section
   type SettingsSection = 'profile' | 'account' | 'connection' | 'quota' | 'numbers' | 'routing' | 'templates' | 'removal';
+  // Sub-tab within the 'templates' settings section: official WA templates vs. internal (self-authored) ones
+  type TemplatesSubTab = 'wa' | 'internal';
+  const [templatesSubTab, setTemplatesSubTab] = useState<TemplatesSubTab>('wa');
   const [settingsSection, setSettingsSection] = useState<SettingsSection>('profile');
   const isRealAdmin = currentUser?.role === 'admin' && !currentUser?.isImpersonating;
 
@@ -225,6 +239,15 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
   const [templateSettings, setTemplateSettings] = useState<Record<string, boolean>>({});
   const [templateDefaultMedia, setTemplateDefaultMedia] = useState<Record<string, { url: string; type: 'image' | 'video' | 'document' }>>({});
   const [previewTemplate, setPreviewTemplate] = useState<any | null>(null);
+
+  // Internal (self-authored) templates state (Settings tab)
+  const [internalTemplates, setInternalTemplates] = useState<InternalTemplate[]>([]);
+  const [internalTemplatesLoading, setInternalTemplatesLoading] = useState(false);
+  const [showInternalTemplateModal, setShowInternalTemplateModal] = useState(false);
+  const [editingInternalTemplate, setEditingInternalTemplate] = useState<InternalTemplate | null>(null);
+  const [internalTemplateForm, setInternalTemplateForm] = useState<{ name: string; body: string; mediaType: 'image' | 'video' | 'document' | null; mediaUrl: string }>({ name: '', body: '', mediaType: null, mediaUrl: '' });
+  const [savingInternalTemplate, setSavingInternalTemplate] = useState(false);
+  const [deleteInternalTemplateConfirmId, setDeleteInternalTemplateConfirmId] = useState<string | null>(null);
 
   // Connected WhatsApp numbers (Settings tab)
   interface ConnectedNumber {
@@ -419,6 +442,78 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
     }
   };
 
+  // ── Internal (self-authored) templates ──────────────────────────────────
+  const loadInternalTemplates = async () => {
+    if (!token) return;
+    setInternalTemplatesLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/internal-templates`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) { setInternalTemplates([]); return; }
+      const data = await res.json();
+      setInternalTemplates(data.success && Array.isArray(data.templates) ? data.templates : []);
+    } catch {
+      setInternalTemplates([]);
+    } finally {
+      setInternalTemplatesLoading(false);
+    }
+  };
+
+  const openEditInternalTemplateModal = (tpl: InternalTemplate) => {
+    setEditingInternalTemplate(tpl);
+    setInternalTemplateForm({ name: tpl.name, body: tpl.body, mediaType: tpl.mediaType, mediaUrl: tpl.mediaUrl });
+    setShowInternalTemplateModal(true);
+  };
+
+  const saveInternalTemplate = async () => {
+    if (!token || !internalTemplateForm.name.trim() || !internalTemplateForm.body.trim()) return;
+    setSavingInternalTemplate(true);
+    try {
+      const url = editingInternalTemplate
+        ? `${API_BASE}/internal-templates/${editingInternalTemplate._id}`
+        : `${API_BASE}/internal-templates`;
+      const method = editingInternalTemplate ? 'PUT' : 'POST';
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(internalTemplateForm)
+      });
+      if (res.ok) {
+        setShowInternalTemplateModal(false);
+        loadInternalTemplates();
+      } else {
+        const errData = await res.json().catch(() => ({} as any));
+        alert(`שגיאה בשמירת התבנית: ${errData.error || 'Unknown error'}`);
+      }
+    } catch (err) {
+      console.error('Error saving internal template:', err);
+      alert('שגיאה בשמירת התבנית');
+    } finally {
+      setSavingInternalTemplate(false);
+    }
+  };
+
+  const handleDeleteInternalTemplate = async (id: string) => {
+    if (!token) return;
+    try {
+      const res = await fetch(`${API_BASE}/internal-templates/${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        setInternalTemplates(prev => prev.filter(t => t._id !== id));
+      } else {
+        alert('שגיאה במחיקת התבנית');
+      }
+    } catch (err) {
+      console.error('Error deleting internal template:', err);
+      alert('שגיאה במחיקת התבנית');
+    } finally {
+      setDeleteInternalTemplateConfirmId(null);
+    }
+  };
+
   useEffect(() => {
     if (activeTab === 'settings') {
       if (!profile) {
@@ -429,6 +524,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
       }
       loadConnectedNumbers();
       loadRemovalConfig();
+      loadInternalTemplates();
     }
   }, [activeTab]);
 
@@ -1588,10 +1684,31 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
               {/* ── הודעות תבנית ── */}
               {settingsSection === 'templates' && (
               <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-8">
-                <h2 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-6 flex items-center gap-2 border-b border-slate-100 pb-4">
-                  <MessageSquare size={14} /> הודעות תבנית
-                </h2>
-                {waTemplatesLoading ? (
+                <div className="flex items-center justify-between mb-6 border-b border-slate-100 pb-4">
+                  <h2 className="text-xs font-black text-slate-400 uppercase tracking-wider flex items-center gap-2">
+                    <MessageSquare size={14} /> הודעות תבנית
+                  </h2>
+                  <div className="flex items-center gap-1 bg-slate-100 rounded-xl p-1">
+                    <button
+                      onClick={() => setTemplatesSubTab('wa')}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                        templatesSubTab === 'wa' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                      }`}
+                    >
+                      <MessageSquare size={13} /> תבניות WhatsApp
+                    </button>
+                    <button
+                      onClick={() => setTemplatesSubTab('internal')}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                        templatesSubTab === 'internal' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                      }`}
+                    >
+                      <MessageCircle size={13} /> תבניות פנימיות
+                    </button>
+                  </div>
+                </div>
+
+                {templatesSubTab === 'wa' && (waTemplatesLoading ? (
                   <div className="flex items-center justify-center py-12">
                     <div className="text-center text-slate-400">
                       <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-sky-600 mx-auto mb-3"></div>
@@ -1734,6 +1851,77 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                       );
                     })}
                   </div>
+                ))}
+
+                {templatesSubTab === 'internal' && (
+                  <>
+                    <div className="flex justify-end mb-5">
+                      <button
+                        onClick={() => { setEditingInternalTemplate(null); setInternalTemplateForm({ name: '', body: '', mediaType: null, mediaUrl: '' }); setShowInternalTemplateModal(true); }}
+                        className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-xl font-bold text-xs hover:bg-blue-700 transition-colors shadow-sm"
+                      >
+                        <Plus size={14} />
+                        הוסף תבנית
+                      </button>
+                    </div>
+
+                    {internalTemplatesLoading ? (
+                      <div className="flex items-center justify-center py-12">
+                        <div className="text-center text-slate-400">
+                          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-3"></div>
+                          <div className="text-sm font-bold">טוען תבניות פנימיות...</div>
+                        </div>
+                      </div>
+                    ) : internalTemplates.length === 0 ? (
+                      <div className="text-center py-12">
+                        <MessageCircle size={32} className="text-slate-300 mx-auto mb-3" />
+                        <p className="text-sm font-bold text-slate-500">אין עדיין תבניות פנימיות</p>
+                        <p className="text-xs text-slate-400 mt-1">תבניות פנימיות נשלחות כהודעת טקסט/מדיה רגילה בתוך שיחה פעילה, ולא דרך ה-API הרשמי של WhatsApp</p>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                        {internalTemplates.map(tpl => {
+                          const MediaIcon = tpl.mediaType === 'video' ? Layers : tpl.mediaType === 'document' ? FileText : ImageIcon;
+                          return (
+                            <div key={tpl._id} className="group bg-slate-50 border border-slate-200 rounded-2xl overflow-hidden hover:shadow-md transition-all hover:border-blue-300 p-5 flex flex-col">
+                              <div className="flex justify-between items-start mb-3">
+                                <div className="p-2 bg-blue-50 text-blue-600 rounded-lg group-hover:bg-blue-600 group-hover:text-white transition-colors">
+                                  <MessageCircle size={16} />
+                                </div>
+                                <div className="flex gap-1.5">
+                                  <button onClick={() => openEditInternalTemplateModal(tpl)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="ערוך">
+                                    <Edit2 size={14} />
+                                  </button>
+                                  {deleteInternalTemplateConfirmId === tpl._id ? (
+                                    <button onClick={() => handleDeleteInternalTemplate(tpl._id)} className="p-1.5 text-white bg-rose-600 hover:bg-rose-700 rounded-lg transition-colors" title="אשר מחיקה">
+                                      <CheckCircle size={14} />
+                                    </button>
+                                  ) : (
+                                    <button onClick={() => setDeleteInternalTemplateConfirmId(tpl._id)} className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg transition-colors" title="מחק">
+                                      <Trash2 size={14} />
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                              <h3 className="text-sm font-black text-slate-800 mb-1.5">{tpl.name}</h3>
+                              <p className="text-xs text-slate-500 leading-relaxed line-clamp-3 whitespace-pre-wrap bg-white border border-slate-100 rounded-xl p-3 mb-3">
+                                {tpl.body}
+                              </p>
+                              <div className="mt-auto flex items-center justify-between text-[10px] text-slate-400 font-bold">
+                                <span>{tpl.createdAt ? new Date(tpl.createdAt).toLocaleDateString() : ''}</span>
+                                {tpl.mediaType && (
+                                  <span className="flex items-center gap-1 text-blue-600 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded font-bold">
+                                    <MediaIcon size={10} />
+                                    {tpl.mediaType === 'image' ? 'תמונה' : tpl.mediaType === 'video' ? 'וידאו' : 'מסמך'}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
               )}{/* end templates */}
@@ -2162,6 +2350,94 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                 <button onClick={() => setIsModalOpen(false)} className="flex-1 py-4 border border-slate-200 text-slate-400 rounded-2xl font-bold text-xs uppercase hover:bg-slate-50">ביטול</button>
                 <button onClick={handleCreate} className="flex-1 py-4 bg-blue-600 text-white rounded-2xl font-bold text-xs uppercase shadow-lg shadow-blue-600/20 hover:bg-blue-700">יצירה</button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Internal Template Create/Edit Modal ── */}
+      {showInternalTemplateModal && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4" dir="rtl">
+          <div className="bg-white p-8 rounded-3xl w-full max-w-xl shadow-2xl max-h-[90vh] flex flex-col overflow-y-auto">
+            <div className="flex justify-between items-center mb-6 flex-shrink-0">
+              <h3 className="text-xl font-black text-slate-800">{editingInternalTemplate ? 'עריכת תבנית פנימית' : 'תבנית פנימית חדשה'}</h3>
+              <button onClick={() => setShowInternalTemplateModal(false)} className="p-3 bg-slate-100 rounded-full hover:bg-slate-200 transition-colors">
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="space-y-5">
+              <div>
+                <label className="block text-xs font-black text-slate-400 uppercase tracking-wider mb-1.5">שם התבנית</label>
+                <input
+                  type="text"
+                  value={internalTemplateForm.name}
+                  onChange={e => setInternalTemplateForm(f => ({ ...f, name: e.target.value }))}
+                  placeholder="לדוגמה: הודעת סיום"
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-right outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-black text-slate-400 uppercase tracking-wider mb-1.5">תוכן ההודעה</label>
+                <textarea
+                  value={internalTemplateForm.body}
+                  onChange={e => setInternalTemplateForm(f => ({ ...f, body: e.target.value }))}
+                  rows={5}
+                  placeholder="לדוגמה: שלום {{1}}, תודה שפנית אלינו..."
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-right outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all resize-none"
+                />
+                <p className="text-[11px] text-slate-400 mt-1.5 font-medium">
+                  ניתן להשתמש בפרמטרים ממוספרים כמו <span className="font-mono font-black bg-slate-100 px-1 rounded">{'{{1}}'}</span>, <span className="font-mono font-black bg-slate-100 px-1 rounded">{'{{2}}'}</span> שהנציג ימלא בעת השליחה.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-black text-slate-400 uppercase tracking-wider mb-1.5">מדיה בכותרת (אופציונלי)</label>
+                <div className="flex gap-2 mb-3">
+                  {(['none', 'image', 'video', 'document'] as const).map(opt => (
+                    <button
+                      key={opt}
+                      type="button"
+                      onClick={() => setInternalTemplateForm(f => ({ ...f, mediaType: opt === 'none' ? null : opt, mediaUrl: opt === 'none' ? '' : f.mediaUrl }))}
+                      className={`flex-1 py-2 rounded-lg text-xs font-bold border transition-colors ${
+                        (internalTemplateForm.mediaType ?? 'none') === opt
+                          ? 'bg-blue-600 text-white border-blue-600'
+                          : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      {opt === 'none' ? 'ללא' : opt === 'image' ? 'תמונה' : opt === 'video' ? 'וידאו' : 'מסמך'}
+                    </button>
+                  ))}
+                </div>
+                {internalTemplateForm.mediaType && (
+                  <FileUploader
+                    value={internalTemplateForm.mediaUrl}
+                    onChange={(url) => setInternalTemplateForm(f => ({ ...f, mediaUrl: url }))}
+                    accept={internalTemplateForm.mediaType === 'image' ? 'image/*' : internalTemplateForm.mediaType === 'video' ? 'video/*' : '*/*'}
+                    label={internalTemplateForm.mediaType === 'image' ? 'תמונה' : internalTemplateForm.mediaType === 'video' ? 'וידאו' : 'מסמך'}
+                    mediaType={internalTemplateForm.mediaType}
+                    token={token || ''}
+                  />
+                )}
+              </div>
+            </div>
+
+            <div className="flex gap-3 pt-5 border-t border-slate-100 mt-5 flex-shrink-0">
+              <button
+                onClick={() => setShowInternalTemplateModal(false)}
+                className="flex-1 py-3 border border-slate-200 text-slate-500 rounded-2xl font-bold text-sm hover:bg-slate-50 transition-colors"
+              >
+                ביטול
+              </button>
+              <button
+                onClick={saveInternalTemplate}
+                disabled={savingInternalTemplate || !internalTemplateForm.name.trim() || !internalTemplateForm.body.trim()}
+                className="flex-[2] py-3 bg-blue-600 text-white rounded-2xl font-bold text-sm shadow-lg hover:bg-blue-700 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                <Save size={16} />
+                {savingInternalTemplate ? 'שומר...' : 'שמור תבנית'}
+              </button>
             </div>
           </div>
         </div>
