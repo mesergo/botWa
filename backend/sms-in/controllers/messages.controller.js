@@ -2,22 +2,13 @@ import * as smsService from '../services/sms.service.js';
 import { getSmsDbName, getSmsCollectionName } from '../repositories/sms.repository.js';
 import { getAssignedDestsForUser } from './destSettings.controller.js';
 
-async function filterMessagesForUser(req, messages) {
-  // No auth → unscoped (legacy/public callers). Authenticated users are always scoped
-  // to their assigned lines — including role=admin on the regular user SMS tab.
-  if (!req.user) return messages;
-
-  const userId = req.userId;
-  const assignedDests = await getAssignedDestsForUser(userId);
-  if (assignedDests.length === 0) return [];
-
-  const allowed = new Set(assignedDests);
-  return messages.filter((m) => allowed.has(m.dest));
-}
-
 /**
  * Regular / user SMS tab — always scoped to the logged-in account's lines
  * (admin user accounts included).
+ *
+ * Important: never "fetch global recent then filter in memory". On a busy inbox
+ * the customer's messages can fall outside the latest N rows and disappear even
+ * though the line is assigned. Always query Mongo by allowed dests.
  */
 export async function getMessages(req, res, next) {
   try {
@@ -36,11 +27,28 @@ export async function getMessages(req, res, next) {
     let messages;
     let total;
 
-    if (isSearch) {
-      let allowedDests;
-      if (req.user) {
-        allowedDests = await getAssignedDestsForUser(req.userId);
+    // Authenticated callers are always scoped to assigned lines.
+    let allowedDests;
+    if (req.user) {
+      allowedDests = await getAssignedDestsForUser(req.userId);
+      if (allowedDests.length === 0) {
+        return res.json({
+          source: 'mongodb',
+          dbName: getSmsDbName(),
+          collection: getSmsCollectionName(),
+          messages: [],
+          total: 0,
+          page,
+          limit,
+          mode: isSearch ? 'search' : 'recent',
+          scoped: true,
+        });
       }
+    }
+
+    if (isSearch || allowedDests) {
+      // Search path, OR default inbox for a scoped user — both must hit Mongo with
+      // dest ∈ allowedDests so older messages on the customer's lines still appear.
       const result = await smsService.searchMessages({
         search,
         destQuery,
@@ -51,8 +59,8 @@ export async function getMessages(req, res, next) {
       messages = result.messages;
       total = result.total;
     } else {
+      // Unauthenticated / legacy callers — global recent only.
       messages = await smsService.getRecentMessages(limit);
-      messages = await filterMessagesForUser(req, messages);
       total = messages.length;
     }
 

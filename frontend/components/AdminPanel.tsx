@@ -1292,7 +1292,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
               {activeTab === 'user-types' && 'הגדרת הרשאות לכל סוג משתמש במערכת'}
               {activeTab === 'sessions' && 'צפייה בכל הסשנים של כל המשתמשים במערכת'}
               {activeTab === 'dialog360' && 'צפייה בהודעות תבנית מ-Dialog360'}
-              {activeTab === 'sms-in' && 'צפייה בכל הודעות ה-SMS הנכנסות במערכת'}
+              {activeTab === 'sms-in' && 'הודעות נכנסות, שיוך קווים, לקוחות וווב-הוקס'}
               {activeTab === 'templates' && 'ניהול ותחזוקת מאגר התבניות הגלובלי'}
               {activeTab === 'settings' && 'הגדרת מגבלות, מחירים ופרמטרים למערכת'}
               {activeTab === 'removal-log' && 'היסטוריית שינויים בהגדרות ההסרה האוטומטית'}
@@ -1315,12 +1315,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
             </div>
           )}
 
-          {/* SMS INBOX TAB — full system view */}
+          {/* SMS INBOX TAB — full system view (messages + routing + webhooks) */}
           {activeTab === 'sms-in' && (
             <div className="h-[calc(100vh-5.5rem)] w-full overflow-hidden">
               <SmsInApp
                 embedded
-                lockedTab="sms_in"
                 initialTab="sms_in"
                 userEmail={currentUser?.email}
                 userId={currentUser?.id}

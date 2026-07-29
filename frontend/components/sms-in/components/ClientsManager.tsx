@@ -99,11 +99,6 @@ export default function ClientsManager({
       <div className="flex flex-wrap justify-between items-center gap-4">
         <div>
           <h2 className="text-xl font-black text-slate-900">ניהול לקוחות קצה</h2>
-          <p className="text-sm text-slate-400 font-semibold mt-0.5">
-            {readOnly
-              ? 'לקוחות מחשבונות המערכת (MongoDB). שיוך קווי SMS ללקוחות אלו בלשונית "שיוך קווים".'
-              : 'נהל את משתמשי הקצה של ה-SMS. לקוחות אלו ישוייכו לקווי ה-dest לקבלת ניתובים.'}
-          </p>
         </div>
         {!readOnly && (
           <button
