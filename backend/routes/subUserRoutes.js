@@ -5,6 +5,7 @@ import {
   createSubUser,
   updateSubUser,
   deleteSubUser,
+  resendSubUserInvite,
 } from '../controllers/subUserController.js';
 
 const router = express.Router();
@@ -14,6 +15,7 @@ router.get('/', authenticateToken, requireManagerOrRepManager, getSubUsers);
 
 // Mutations: company managers OR users with the matching permission
 router.post('/', authenticateToken, requirePermission('users.add'), createSubUser);
+router.post('/:id/resend-invite', authenticateToken, requirePermission('users.edit'), resendSubUserInvite);
 router.patch('/:id', authenticateToken, requirePermission('users.edit'), updateSubUser);
 router.delete('/:id', authenticateToken, requirePermission('users.delete'), deleteSubUser);
 

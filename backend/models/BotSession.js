@@ -19,15 +19,59 @@ const botSessionSchema = new mongoose.Schema({
   agent_since: { type: Date, default: null },
   rep_group_id: { type: String, default: null },
   rep_user_id: { type: String, default: null },
+  // Snapshot of the rep-waiting context saved when the case2_waiting_30m system
+  // trigger auto-transitions a session from rep-waiting mode into an interactive
+  // bot step (menu/input). Restored by the "extend_30m" rep-component action.
+  bot_override: {
+    active: { type: Boolean, default: false },
+    reason: { type: String, default: null },
+    started_at: { type: Date, default: null },
+    prev_rep_group_id: { type: String, default: null },
+    prev_rep_user_id: { type: String, default: null },
+    prev_status: { type: String, default: null }
+  },
   // Conversation status:
   //   'bot'      — default; bot handles the conversation
   //   'waiting'  — transferred to a representative, waiting for response
   //   'handling' — a representative has replied with a free-text message
   //   'closed'   — representative marked the conversation as ended
-  status: { type: String, enum: ['bot', 'waiting', 'handling', 'closed'], default: 'bot' }
+  status: { type: String, enum: ['bot', 'waiting', 'handling', 'closed', 'resolved'], default: 'bot' },
+  reminder_case1: {
+    next_due_at: { type: Date, default: null },
+    last_notified_at: { type: Date, default: null },
+    last_rep_message_at: { type: Date, default: null },
+    last_rep_user_id: { type: String, default: null },
+    reminded_count: { type: Number, default: 0 },
+    claim_until: { type: Date, default: null }
+  },
+  reminder_case2: {
+    next_due_at: { type: Date, default: null },
+    last_notified_at: { type: Date, default: null },
+    last_customer_message_at: { type: Date, default: null },
+    reminded_count: { type: Number, default: 0 },
+    claim_until: { type: Date, default: null }
+  }
 }, {
   timestamps: true,
   collection: 'BotSession'
 });
+
+// Fast periodic scan for active rep-handled sessions and due reminder windows.
+botSessionSchema.index({
+  is_agent: 1,
+  status: 1,
+  'reminder_case1.next_due_at': 1,
+  'reminder_case1.claim_until': 1
+});
+
+// Optional quick lookup for timeline checks/debugging around last rep message.
+botSessionSchema.index({ 'reminder_case1.last_rep_message_at': 1 });
+botSessionSchema.index({
+  is_agent: 1,
+  status: 1,
+  'reminder_case2.next_due_at': 1,
+  'reminder_case2.claim_until': 1
+});
+botSessionSchema.index({ 'reminder_case2.last_customer_message_at': 1 });
 
 export default mongoose.model('BotSession', botSessionSchema);

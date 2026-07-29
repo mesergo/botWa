@@ -27,9 +27,28 @@ const notificationSchema = new mongoose.Schema({
 
   // Whether the customer requested a phone callback when the conversation was transferred
   wants_phone: { type: Boolean, default: false },
+
+  // Notification type keeps backward compatibility with existing transfer alerts.
+  type: {
+    type: String,
+    enum: ['transfer', 'session_case1_reminder', 'session_case2_waiting'],
+    default: 'transfer',
+    index: true
+  },
+
+  // Optional machine-readable action keys for inline toast buttons.
+  actions: { type: [String], default: [] },
+
+  // Optional metadata used by reminder-type notifications.
+  reminder_case: { type: Number, default: null },
+  reminder_next_due_at: { type: Date, default: null },
+  reminder_count: { type: Number, default: 0 },
 }, {
   timestamps: true,
   collection: 'Notification'
 });
+
+notificationSchema.index({ user_id: 1, dismissed: 1, createdAt: -1 });
+notificationSchema.index({ type: 1, user_id: 1, dismissed: 1 });
 
 export default mongoose.model('Notification', notificationSchema);

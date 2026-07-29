@@ -2160,7 +2160,7 @@ const FlowBuilder: React.FC = () => {
       [NodeType.ACTION_TIME_ROUTING]: 'ניתוב לפי שעה/תאריך/יום',
       [NodeType.ACTION_ADD_TO_GROUP]: 'הוספה/הסרה מקבוצה',
       [NodeType.ACTION_REMOVE_FROM_GROUP]: 'הסר מקבוצה',
-      [NodeType.ACTION_TRANSFER_TO_AGENT]: 'העברה לנציג',
+      [NodeType.ACTION_TRANSFER_TO_AGENT]: 'נציגים',
       [NodeType.FIXED_PROCESS]: 'תהליך',
     };
     const newNode = bindNodeCallbacks({

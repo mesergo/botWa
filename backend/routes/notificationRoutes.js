@@ -1,6 +1,7 @@
 import express from 'express';
 import { authenticateToken } from '../middleware/auth.js';
 import Notification from '../models/Notification.js';
+import { applyCase1ReminderAction } from '../controllers/sessionController.js';
 
 const router = express.Router();
 
@@ -32,6 +33,27 @@ router.patch('/:id/dismiss', authenticateToken, async (req, res) => {
   } catch (err) {
     console.error('PATCH /notifications/:id/dismiss error:', err);
     res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH /api/notifications/:id/action — apply inline action for reminder notifications
+router.patch('/:id/action', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { action } = req.body || {};
+    const result = await applyCase1ReminderAction({
+      notificationId: id,
+      userId: String(req.userId),
+      action: String(action || '')
+    });
+
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error || 'הפעולה נכשלה' });
+    }
+    return res.json(result.data);
+  } catch (err) {
+    console.error('PATCH /notifications/:id/action error:', err);
+    return res.status(500).json({ error: err.message });
   }
 });
 

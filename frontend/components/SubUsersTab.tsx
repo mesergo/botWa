@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { UserCog, Users, Plus, Trash2, Edit2, Check, X, Settings, Clock, MessageSquare, Copy } from 'lucide-react';
+import { UserCog, Users, Plus, Trash2, Edit2, Check, X, Settings, Clock, MessageSquare, Copy, Send, Link as LinkIcon } from 'lucide-react';
 import { usePermission } from '../hooks/usePermission';
 import { User } from '../types';
 
@@ -58,6 +58,10 @@ interface SubUser {
   user_type_id?: string | null;
   status: string;
   availability_status?: 'available' | 'unavailable' | 'on_break';
+  invite_status?: 'pending' | 'accepted' | 'expired' | 'cancelled' | null;
+  invite_sent_at?: string | null;
+  registration_completed_at?: string | null;
+  registration_completed?: boolean;
   createdAt: string;
   repGroupIds: string[];
   allowedBotIds: string[];
@@ -117,6 +121,8 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
   const [duplicateEmailInfo, setDuplicateEmailInfo] = useState<{ count: number; accounts: any[] } | null>(null);
   const [inviteSuccessLink, setInviteSuccessLink] = useState<string | null>(null);
   const [inviteLinkCopied, setInviteLinkCopied] = useState(false);
+  const [inviteActionMessage, setInviteActionMessage] = useState<string | null>(null);
+  const [inviteActionLoadingByUserId, setInviteActionLoadingByUserId] = useState<Record<string, boolean>>({});
   const inviteCopiedTimeoutRef = useRef<number | null>(null);
 
   // Delete confirm
@@ -266,6 +272,52 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
     setForm(emptyForm);
     setFormError(null);
     setDuplicateEmailInfo(null);
+  };
+
+  const isRegisteredUser = (u: SubUser) => !!(u.registration_completed || u.registration_completed_at || u.invite_status === 'accepted');
+
+  const setInviteRowLoading = (userId: string, loading: boolean) => {
+    setInviteActionLoadingByUserId(prev => ({ ...prev, [userId]: loading }));
+  };
+
+  const getInviteLinkForUser = async (userId: string, sendEmail: boolean): Promise<string> => {
+    const res = await fetch(`${API_BASE}/sub-users/${userId}/resend-invite`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ sendEmail }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'שגיאה ביצירת קישור הזמנה');
+    if (!data.inviteLink) throw new Error('לא התקבל קישור הזמנה מהשרת');
+    await loadUsers();
+    return data.inviteLink;
+  };
+
+  const handleResendInvite = async (u: SubUser) => {
+    setInviteActionMessage(null);
+    setInviteRowLoading(u.id, true);
+    try {
+      await getInviteLinkForUser(u.id, true);
+      setInviteActionMessage(`הזמנה נשלחה מחדש ל־${u.email}`);
+    } catch (e: any) {
+      setError(e.message || 'שגיאה בשליחה מחדש של ההזמנה');
+    } finally {
+      setInviteRowLoading(u.id, false);
+    }
+  };
+
+  const handleCopyInviteLink = async (u: SubUser) => {
+    setInviteActionMessage(null);
+    setInviteRowLoading(u.id, true);
+    try {
+      const inviteLink = await getInviteLinkForUser(u.id, false);
+      await navigator.clipboard.writeText(inviteLink);
+      setInviteActionMessage(`קישור ההזמנה הועתק עבור ${u.email}`);
+    } catch (e: any) {
+      setError(e.message || 'שגיאה בהעתקת קישור ההזמנה');
+    } finally {
+      setInviteRowLoading(u.id, false);
+    }
   };
 
   const handleSave = async (allowDuplicateEmail: boolean = false) => {
@@ -490,6 +542,10 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
         <div className="mb-6 p-4 bg-red-50 text-red-700 rounded-2xl font-bold text-sm">{error}</div>
       )}
 
+      {inviteActionMessage && (
+        <div className="mb-6 p-4 bg-emerald-50 text-emerald-700 rounded-2xl font-bold text-sm">{inviteActionMessage}</div>
+      )}
+
       {/* ── REPS TAB ──────────────────────────────────────────────────── */}
       {activeTab === 'reps' && (
         <>
@@ -503,13 +559,14 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
             </div>
           ) : (
             <div className="bg-white border border-slate-100 rounded-[2rem] shadow-sm overflow-x-auto">
-              <table className="w-full text-sm min-w-[800px]">
+              <table className="w-full text-sm min-w-[980px]">
                 <thead>
                   <tr className="border-b border-slate-100 bg-slate-50 text-slate-500 font-bold">
                     <th className="px-6 py-4 text-right">שם</th>
                     <th className="px-6 py-4 text-right">אימייל</th>
                     <th className="px-6 py-4 text-right">טלפון</th>
                     <th className="px-6 py-4 text-right">סוג</th>
+                    <th className="px-6 py-4 text-right">סטטוס הרשמה</th>
                     <th className="px-6 py-4 text-right">קבוצות</th>
                     <th className="px-6 py-4 text-right">מספרים מורשים</th>
                     <th className="px-6 py-4 text-right">זמינות</th>
@@ -533,6 +590,25 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
                                 : 'bg-slate-100 text-slate-600'
                             }`}>
                               {label}
+                            </span>
+                          );
+                        })()}
+                      </td>
+                      <td className="px-6 py-4">
+                        {(() => {
+                          const registered = isRegisteredUser(u);
+                          if (registered) {
+                            return (
+                              <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-black bg-emerald-50 text-emerald-700">
+                                <span className="inline-block h-2 w-2 rounded-full bg-emerald-500"></span>
+                                פעיל
+                              </span>
+                            );
+                          }
+                          return (
+                            <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-black bg-amber-50 text-amber-700">
+                              <span className="inline-block h-2 w-2 rounded-full bg-amber-500"></span>
+                              ממתין לאישור
                             </span>
                           );
                         })()}
@@ -594,6 +670,26 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-2">
+                          {!isRegisteredUser(u) && can('users.edit') && (
+                            <>
+                              <button
+                                onClick={() => handleResendInvite(u)}
+                                disabled={!!inviteActionLoadingByUserId[u.id]}
+                                className="p-2 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-xl transition-all disabled:opacity-40"
+                                title="שלח שוב הזמנה במייל"
+                              >
+                                <Send size={16} />
+                              </button>
+                              <button
+                                onClick={() => handleCopyInviteLink(u)}
+                                disabled={!!inviteActionLoadingByUserId[u.id]}
+                                className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-xl transition-all disabled:opacity-40"
+                                title="העתק קישור הזמנה"
+                              >
+                                <LinkIcon size={16} />
+                              </button>
+                            </>
+                          )}
                           {can('users.edit') && (
                           <button
                             onClick={() => openEdit(u)}
@@ -894,6 +990,9 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
             </div>
 
             <div className="px-8 py-6">
+              <div className="mb-4 p-4 bg-blue-50 border border-blue-100 rounded-xl text-sm text-blue-800 font-bold leading-6">
+                זהו קישור הרשמה אישי לנציג החדש. הקישור מאפשר לנציג לאשר את החשבון ולהגדיר סיסמה בפעם הראשונה.
+              </div>
               <p className="text-sm text-slate-600 font-bold mb-2">קישור הרשמה:</p>
               <div className="relative" dir="ltr">
                 <div className="bg-slate-50 border border-slate-200 rounded-xl px-4 pr-12 py-3 text-xs text-slate-700 break-all leading-6">

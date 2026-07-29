@@ -4,14 +4,832 @@ import jwt from 'jsonwebtoken';
 import { mongoose } from '../config/db.js';
 import BotFlow from '../models/BotFlow.js';
 import Widget from '../models/Widget.js';
+import Option from '../models/Option.js';
 import User from '../models/User.js';
 import Contact from '../models/Contact.js';
+import Notification from '../models/Notification.js';
 import fetch from 'node-fetch';
 import { getEffectiveUserId, resolvePermissions, hasPermission } from '../middleware/auth.js';
 import { pushMessagesToWhatsApp } from '../utils/whatsappSender.js';
 import eventBus from '../utils/eventBus.js';
+import { buildConversationClosedHistoryEntry, buildConversationClosedSetFragment } from '../utils/conversationActions.js';
 
 const SSE_SECRET_KEY = 'dfghjukiolp;[p0o9i8uytgbhnjmk,l.;p9876543t4rre2asd';
+const CASE1_REMINDER_MINUTES = 30;
+// const CASE1_REMINDER_MINUTES = 2;
+const CASE1_REMINDER_MS = CASE1_REMINDER_MINUTES * 60 * 1000;
+const CASE2_REMINDER_MINUTES = 30;
+// const CASE2_REMINDER_MINUTES = 2;
+const CASE2_REMINDER_MS = CASE2_REMINDER_MINUTES * 60 * 1000;
+// One-time rep notification fired earlier than the 30-minute bot-trigger stage.
+const CASE2_NOTIFY_MINUTES = 10;
+const CASE2_NOTIFY_MS = CASE2_NOTIFY_MINUTES * 60 * 1000;
+const CASE1_TICK_MS = 60 * 1000;
+const CASE1_CLAIM_MS = 55 * 1000;
+const CASE1_ENABLED = process.env.SESSION_REMINDER_CASE1_ENABLED !== 'false';
+const CASE2_ENABLED = process.env.SESSION_REMINDER_CASE2_ENABLED !== 'false';
+
+const toDateSafe = (value) => {
+  if (!value) return null;
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+};
+
+const getHistoryCreatedAt = (entry) => {
+  if (!entry || typeof entry !== 'object') return null;
+  return toDateSafe(entry.created || entry.timestamp || entry.createdAt || entry.updatedAt);
+};
+
+const getLastRelevantSpeaker = (history = []) => {
+  for (let i = history.length - 1; i >= 0; i -= 1) {
+    const entry = history[i];
+    const sender = String(entry?.sender || '').toLowerCase();
+    if (sender !== 'agent' && sender !== 'user') continue;
+    return {
+      sender,
+      createdAt: getHistoryCreatedAt(entry),
+      agentUserId: sender === 'agent'
+        ? String(entry?.agent_user_id || entry?.from_user_id || '').trim() || null
+        : null
+    };
+  }
+  return null;
+};
+
+const emitSessionUpdateForReminder = (session, actorUserId = null) => {
+  const ownerId = String(session?.user_id || '').trim();
+  const phone = String(session?.sender || session?.customer_phone || '');
+  if (ownerId) {
+    eventBus.emit('session:update', { userId: ownerId, phone });
+  }
+  if (actorUserId && String(actorUserId) !== ownerId) {
+    eventBus.emit('session:update', { userId: String(actorUserId), phone });
+  }
+};
+
+const buildReminderClaimQuery = (reminderKey, nowDate) => ({
+  is_agent: true,
+  status: { $in: ['waiting', 'handling'] },
+  $and: [
+    {
+      $or: [
+        { [`${reminderKey}.next_due_at`]: { $lte: nowDate } },
+        { [`${reminderKey}.next_due_at`]: { $exists: false } },
+        { [`${reminderKey}.next_due_at`]: null }
+      ]
+    },
+    {
+      $or: [
+        { [`${reminderKey}.claim_until`]: { $lte: nowDate } },
+        { [`${reminderKey}.claim_until`]: { $exists: false } },
+        { [`${reminderKey}.claim_until`]: null }
+      ]
+    }
+  ]
+});
+
+const buildCase2Recipients = async (session) => {
+  const recipients = new Set();
+  const ownerId = String(session?.user_id || '').trim();
+  const sessionPhone = String(session?.sender || session?.customer_phone || '').trim();
+
+  if (String(session?.rep_user_id || '').trim()) {
+    recipients.add(String(session.rep_user_id));
+  }
+
+  if (String(session?.rep_group_id || '').trim()) {
+    const groupReps = await User.find({ rep_group_ids: String(session.rep_group_id) }).select('_id').lean();
+    groupReps.forEach(rep => recipients.add(String(rep._id)));
+  }
+
+  if (ownerId && sessionPhone) {
+    const contactDoc = await Contact.findOne({ user_id: ownerId, phone: sessionPhone }).select('assigned_to').lean();
+    (contactDoc?.assigned_to || []).forEach(userId => recipients.add(String(userId)));
+  }
+
+  return [...recipients].filter(Boolean);
+};
+
+const replaceRuntimeParameters = (text, parameters = {}) => {
+  if (!text || typeof text !== 'string') return '';
+  return text.replace(/--(.+?)--/g, (match, paramName) => {
+    const value = parameters[paramName];
+    return value !== undefined ? String(value) : 'null';
+  });
+};
+
+const findNextEdgeTarget = (edges, sourceId, sourceHandle = null) => {
+  const edge = edges.find(e => e.source === sourceId && (sourceHandle ? e.sourceHandle === sourceHandle : !e.sourceHandle));
+  return edge ? edge.target : null;
+};
+
+const buildCase2TriggerFlowGraph = async (session) => {
+  const flowId = String(session?.flow_id || '').trim();
+  if (!flowId) return { nodesById: new Map(), edges: [] };
+
+  const widgets = await Widget.find({
+    flow_id: flowId,
+    $or: [{ standard_process_id: null }, { isStandardProcess: 1 }]
+  }).lean();
+  if (!widgets.length) return { nodesById: new Map(), edges: [] };
+
+  const options = await Option.find({ widget_id: { $in: widgets.map(w => w.id) } }).lean();
+  const nodesById = new Map();
+  const edges = [];
+
+  for (const w of widgets) {
+    const metadata = w.image_file || {};
+    const wOptions = options.filter(o => o.widget_id === w.id);
+    const conditionalOptions = w.type === 'action_web_service'
+      ? wOptions.filter(o => o.operator !== 'default')
+      : wOptions;
+
+    const runtimeNode = {
+      id: w.id,
+      type: w.type,
+      data: {
+        ...metadata,
+        label: metadata.label !== undefined ? metadata.label : (w.value || ''),
+        content: metadata.content !== undefined ? metadata.content : (w.value || ''),
+        options: conditionalOptions.length > 0 ? conditionalOptions.map(o => o.value) : [],
+        optionOperators: conditionalOptions.length > 0 ? conditionalOptions.map(o => o.operator || 'eq') : []
+      }
+    };
+
+    if (w.type === 'output_menu') {
+      runtimeNode.data.options = wOptions.filter(o => o.operator !== 'default').map(o => o.value);
+    }
+
+    if (w.next) {
+      edges.push({ source: w.id, target: w.next });
+    }
+
+    if (w.type === 'action_time_routing') {
+      let rangeIndex = 0;
+      wOptions.forEach((o) => {
+        if (o.next) {
+          const sourceHandle = o.operator === 'default' ? 'option-default' : `option-${rangeIndex}`;
+          edges.push({ source: w.id, sourceHandle, target: o.next });
+        }
+        if (o.operator === 'time_range' || o.operator === 'date_range' || o.operator === 'weekday_range') rangeIndex += 1;
+      });
+    } else if (w.type === 'action_web_service') {
+      const defaultOpts = wOptions.filter(o => o.operator === 'default');
+      const conditionalOptsWs = wOptions.filter(o => o.operator !== 'default');
+      conditionalOptsWs.forEach((o, i) => {
+        if (o.next) edges.push({ source: w.id, sourceHandle: `option-${i}`, target: o.next });
+      });
+      defaultOpts.forEach((o) => {
+        if (o.next) edges.push({ source: w.id, sourceHandle: 'default', target: o.next });
+      });
+    } else if (w.type === 'output_menu') {
+      const defaultOpts = wOptions.filter(o => o.operator === 'default');
+      const conditionalOptsMenu = wOptions.filter(o => o.operator !== 'default');
+      conditionalOptsMenu.forEach((o, i) => {
+        if (o.next) edges.push({ source: w.id, sourceHandle: `option-${i}`, target: o.next });
+      });
+      defaultOpts.forEach((o) => {
+        if (o.next) edges.push({ source: w.id, sourceHandle: 'option-default', target: o.next });
+      });
+    } else if (w.type === 'automatic_responses') {
+      const triggerOpt = wOptions.find(o => o.operator === 'system_trigger');
+      if (triggerOpt?.next) {
+        edges.push({ source: w.id, sourceHandle: 'option-system-case2', target: triggerOpt.next });
+      }
+      const conditionalOptsAuto = wOptions.filter(o => o.operator !== 'system_trigger' && o.operator !== 'default');
+      conditionalOptsAuto.forEach((o, i) => {
+        if (o.next) edges.push({ source: w.id, sourceHandle: `option-${i}`, target: o.next });
+      });
+    } else {
+      wOptions.forEach((o, i) => {
+        if (o.next) edges.push({ source: w.id, sourceHandle: `option-${i}`, target: o.next });
+      });
+    }
+
+    nodesById.set(w.id, runtimeNode);
+  }
+
+  return { nodesById, edges };
+};
+
+// Walks the case2-trigger flow graph starting at `startNodeId`, collecting the
+// outbound WhatsApp messages generated along the way. Stops at the first node
+// that requires customer interaction (menu/input) or at a node type this
+// lightweight walker doesn't support, so the caller can decide whether it's
+// safe to hand the session back to the interactive bot engine at that node.
+// Returns { messages, stopNodeId, waitingTextInput, supported }.
+const buildCase2TriggerMessages = async (session, startNodeId) => {
+  const { nodesById, edges } = await buildCase2TriggerFlowGraph(session);
+  if (!startNodeId || !nodesById.has(startNodeId)) {
+    return { messages: [], stopNodeId: null, waitingTextInput: false, supported: false };
+  }
+
+  const params = session?.parameters || {};
+  const messages = [];
+  let currentNodeId = startNodeId;
+  let depth = 0;
+  const MAX_DEPTH = 120;
+
+  while (currentNodeId && depth < MAX_DEPTH) {
+    depth += 1;
+    const node = nodesById.get(currentNodeId);
+    if (!node) break;
+
+    const nodeData = node.data || {};
+    switch (node.type) {
+      case 'start': {
+        currentNodeId = findNextEdgeTarget(edges, currentNodeId);
+        break;
+      }
+      case 'output_text': {
+        const text = replaceRuntimeParameters(nodeData.content || '', params);
+        messages.push({ type: 'Text', text, created: new Date().toISOString() });
+        currentNodeId = findNextEdgeTarget(edges, currentNodeId);
+        break;
+      }
+      case 'output_image': {
+        const url = replaceRuntimeParameters(nodeData.url || '', params);
+        const mediaType = nodeData.mediaType || 'image';
+        const caption = replaceRuntimeParameters(nodeData.caption || '', params);
+        messages.push({
+          type: mediaType === 'video' ? 'Video' : mediaType === 'pdf' ? 'Document' : 'Image',
+          url,
+          created: new Date().toISOString()
+        });
+        if (caption && caption.trim()) {
+          messages.push({ type: 'Text', text: caption, created: new Date().toISOString() });
+        }
+        currentNodeId = findNextEdgeTarget(edges, currentNodeId);
+        break;
+      }
+      case 'output_link': {
+        const text = replaceRuntimeParameters(nodeData.linkLabel || 'קישור', params);
+        const url = replaceRuntimeParameters(nodeData.url || '', params);
+        messages.push({ type: 'URL', text, url, created: new Date().toISOString() });
+        currentNodeId = findNextEdgeTarget(edges, currentNodeId);
+        break;
+      }
+      case 'output_menu': {
+        const menuText = replaceRuntimeParameters(nodeData.content || '', params);
+        const options = Array.isArray(nodeData.options)
+          ? nodeData.options.filter(opt => String(opt) !== 'default').map(opt => String(opt))
+          : [];
+        messages.push({ type: 'Options', text: menuText || '', options, created: new Date().toISOString() });
+        return { messages, stopNodeId: node.id, waitingTextInput: false, supported: true };
+      }
+      case 'action_time_routing': {
+        const routingMode = nodeData.routingMode || 'time';
+        const now = new Date();
+        const israelTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Jerusalem' }));
+        let matchedIndex = -1;
+
+        if (routingMode === 'date') {
+          const israelDateStr = [
+            israelTime.getFullYear(),
+            String(israelTime.getMonth() + 1).padStart(2, '0'),
+            String(israelTime.getDate()).padStart(2, '0')
+          ].join('-');
+          const dateRanges = Array.isArray(nodeData.dateRanges) ? nodeData.dateRanges : [];
+          for (let i = 0; i < dateRanges.length; i += 1) {
+            const range = dateRanges[i];
+            if (range?.fromDate && range?.toDate && israelDateStr >= range.fromDate && israelDateStr <= range.toDate) {
+              matchedIndex = i;
+              break;
+            }
+          }
+        } else if (routingMode === 'weekday') {
+          const israelDay = israelTime.getDay();
+          const weekdayRanges = Array.isArray(nodeData.weekdayRanges) ? nodeData.weekdayRanges : [];
+          for (let i = 0; i < weekdayRanges.length; i += 1) {
+            const range = weekdayRanges[i] || {};
+            const fromDay = Number.isInteger(range.fromDay) ? range.fromDay : 0;
+            const toDay = Number.isInteger(range.toDay) ? range.toDay : 6;
+            const inRange = fromDay <= toDay
+              ? (israelDay >= fromDay && israelDay <= toDay)
+              : (israelDay >= fromDay || israelDay <= toDay);
+            if (inRange) {
+              matchedIndex = i;
+              break;
+            }
+          }
+        } else {
+          const israelHour = israelTime.getHours();
+          const timeRanges = Array.isArray(nodeData.timeRanges) ? nodeData.timeRanges : [];
+          for (let i = 0; i < timeRanges.length; i += 1) {
+            const range = timeRanges[i] || {};
+            const fromHour = parseInt(range.fromHour, 10) || 0;
+            const toHour = parseInt(range.toHour, 10) || 23;
+            const inRange = fromHour <= toHour
+              ? (israelHour >= fromHour && israelHour < toHour)
+              : (israelHour >= fromHour || israelHour < toHour);
+            if (inRange) {
+              matchedIndex = i;
+              break;
+            }
+          }
+        }
+
+        currentNodeId = matchedIndex >= 0
+          ? findNextEdgeTarget(edges, currentNodeId, `option-${matchedIndex}`)
+          : findNextEdgeTarget(edges, currentNodeId, 'option-default');
+        break;
+      }
+      case 'action_wait': {
+        // Ticker path is background and should stay non-blocking.
+        currentNodeId = findNextEdgeTarget(edges, currentNodeId);
+        break;
+      }
+      case 'input_text':
+      case 'input_date':
+      case 'input_file': {
+        // Send the input prompt so the customer knows what to reply with, then
+        // stop here — the customer's next message will be handled as an
+        // interactive answer to this node once the session is handed back to
+        // the bot engine.
+        const promptText = replaceRuntimeParameters(nodeData.label || '', params);
+        if (promptText && promptText.trim()) {
+          messages.push({ type: 'Text', text: promptText, created: new Date().toISOString() });
+        }
+        return { messages, stopNodeId: node.id, waitingTextInput: true, supported: true };
+      }
+      case 'action_web_service':
+      case 'fixed_process':
+      case 'automatic_responses':
+      default:
+        // Not supported by this lightweight walker — stop without handing
+        // interactive control back to the bot (legacy one-shot behavior).
+        return { messages, stopNodeId: node.id, waitingTextInput: false, supported: false };
+    }
+  }
+
+  return { messages, stopNodeId: currentNodeId, waitingTextInput: false, supported: false };
+};
+
+const runCase2SystemTrigger = async (session, systemTrigger, nowDate) => {
+  const nextNodeId = String(systemTrigger?.nextNodeId || '').trim();
+  if (!nextNodeId) return { sentCount: 0, waPushed: false, modeSwitched: false };
+
+  const sessionPhone = String(session?.sender || session?.customer_phone || '').trim();
+  if (!sessionPhone) return { sentCount: 0, waPushed: false, modeSwitched: false };
+
+  const { messages: waMessages, stopNodeId, waitingTextInput, supported } = await buildCase2TriggerMessages(session, nextNodeId);
+  if (!waMessages.length) return { sentCount: 0, waPushed: false, modeSwitched: false };
+
+  const user = await User.findById(session.user_id).lean();
+  const bot = await BotFlow.findById(session.flow_id).select('_id endpoint public_id user_id').lean();
+  const { anySuccess: waPushed, wamidPerMsg } = await pushMessagesToWhatsApp(sessionPhone, waMessages, user, bot);
+
+  const created = nowDate.toISOString();
+  const historyEntries = waMessages.map((msg, i) => ({
+    ...msg,
+    sender: 'bot',
+    name: 'בוט',
+    node_id: 'system_case2_trigger',
+    trigger_type: systemTrigger.type,
+    created,
+    wa_sent: waPushed,
+    wamid: wamidPerMsg?.[i] || null,
+    deliveryStatus: null
+  }));
+
+  const update = { $push: { process_history: { $each: historyEntries } } };
+
+  // Hand the conversation back to the interactive bot engine so the customer
+  // can actually respond to the menu/input step the trigger landed on. We
+  // snapshot the current rep assignment so the "extend_30m" rep action can
+  // restore it later (state machine: waiting → bot → waiting).
+  const modeSwitched = !!(supported && stopNodeId);
+  if (modeSwitched) {
+    update.$set = {
+      bot_override: {
+        active: true,
+        reason: 'case2_waiting_30m',
+        started_at: nowDate,
+        prev_rep_group_id: session.rep_group_id || null,
+        prev_rep_user_id: session.rep_user_id || null,
+        prev_status: session.status || 'waiting'
+      },
+      is_agent: false,
+      agent_since: null,
+      status: 'bot',
+      current_node_id: stopNodeId,
+      waiting_text_input: waitingTextInput,
+      waiting_webservice: false,
+      execution_stack: []
+    };
+  }
+
+  await mongoose.connection.collection('BotSession').updateOne(
+    { _id: session._id },
+    update
+  );
+
+  if (String(session?.user_id || '').trim()) {
+    eventBus.emit('session:update', {
+      userId: String(session.user_id),
+      phone: sessionPhone
+    });
+  }
+
+  return { sentCount: historyEntries.length, waPushed, modeSwitched };
+};
+
+const getCase2SystemTriggerConfig = async (session) => {
+  if (!session?.flow_id) return null;
+  try {
+    const autoNode = await Widget.findOne({
+      flow_id: String(session.flow_id),
+      user_id: String(session.user_id || ''),
+      type: 'automatic_responses'
+    }).lean();
+    const triggerType = autoNode?.image_file?.systemTriggerType || autoNode?.data?.systemTriggerType;
+    if (triggerType === 'case2_waiting_30m') {
+      const triggerOption = autoNode?.id
+        ? await Option.findOne({
+          widget_id: autoNode.id,
+          operator: 'system_trigger',
+          value: triggerType
+        }).lean()
+        : null;
+      return {
+        type: triggerType,
+        label: 'תגובה לאחר המתנה ללא מענה נציג',
+        nextNodeId: triggerOption?.next || null
+      };
+    }
+  } catch (err) {
+    console.error('[sessionCase2Trigger] lookup error:', err.message);
+  }
+  return null;
+};
+
+const processCase1ReminderCandidate = async (candidate, now) => {
+  const collection = mongoose.connection.collection('BotSession');
+  const nowDate = new Date(now);
+  const claimUntil = new Date(now + CASE1_CLAIM_MS);
+  const reminderBlock = candidate.reminder_case1 || {};
+
+  const claimed = await collection.findOneAndUpdate(
+    {
+      _id: candidate._id,
+      ...buildReminderClaimQuery('reminder_case1', nowDate)
+    },
+    {
+      $set: { 'reminder_case1.claim_until': claimUntil }
+    },
+    { returnDocument: 'after' }
+  );
+  if (!claimed) return;
+
+  const history = Array.isArray(claimed.process_history) ? claimed.process_history : [];
+  const lastSpeaker = getLastRelevantSpeaker(history);
+
+  if (!lastSpeaker || lastSpeaker.sender !== 'agent') {
+    await collection.updateOne(
+      { _id: claimed._id },
+      {
+        $set: {
+          'reminder_case1.next_due_at': new Date(now + CASE1_REMINDER_MS),
+          'reminder_case1.claim_until': null
+        }
+      }
+    );
+    return;
+  }
+
+  const repMessageAt = lastSpeaker.createdAt;
+  if (!repMessageAt) {
+    await collection.updateOne(
+      { _id: claimed._id },
+      {
+        $set: {
+          'reminder_case1.next_due_at': new Date(now + CASE1_REMINDER_MS),
+          'reminder_case1.claim_until': null
+        }
+      }
+    );
+    return;
+  }
+
+  const silenceMs = now - repMessageAt.getTime();
+  const recipientUserId = lastSpeaker.agentUserId || String(claimed.rep_user_id || '').trim() || null;
+
+  if (silenceMs < CASE1_REMINDER_MS || !recipientUserId) {
+    const nextDueAt = silenceMs < CASE1_REMINDER_MS
+      ? new Date(repMessageAt.getTime() + CASE1_REMINDER_MS)
+      : new Date(now + CASE1_REMINDER_MS);
+    await collection.updateOne(
+      { _id: claimed._id },
+      {
+        $set: {
+          'reminder_case1.last_rep_message_at': repMessageAt,
+          'reminder_case1.last_rep_user_id': recipientUserId,
+          'reminder_case1.next_due_at': nextDueAt,
+          'reminder_case1.claim_until': null
+        }
+      }
+    );
+    return;
+  }
+
+  const nextDueAt = new Date(now + CASE1_REMINDER_MS);
+  const notif = await Notification.create({
+    user_id: recipientUserId,
+    session_id: String(claimed._id),
+    session_phone: String(claimed.sender || claimed.customer_phone || ''),
+    from_user_name: 'מערכת',
+    target_label: 'תזכורת המשך טיפול',
+    is_simulator: String(claimed.sender || claimed.customer_phone || '').toLowerCase() === 'simulated',
+    type: 'session_case1_reminder',
+    actions: ['close', 'extend_30m'],
+    reminder_case: 1,
+    reminder_next_due_at: nextDueAt,
+    reminder_count: Number(reminderBlock.reminded_count || 0) + 1
+  });
+
+  eventBus.emit('notification:new', { userId: recipientUserId, notification: notif.toObject() });
+
+  await collection.updateOne(
+    { _id: claimed._id },
+    {
+      $set: {
+        'reminder_case1.last_rep_message_at': repMessageAt,
+        'reminder_case1.last_rep_user_id': recipientUserId,
+        'reminder_case1.last_notified_at': nowDate,
+        'reminder_case1.next_due_at': nextDueAt,
+        'reminder_case1.claim_until': null
+      },
+      $inc: { 'reminder_case1.reminded_count': 1 }
+    }
+  );
+};
+
+const processCase2ReminderCandidate = async (candidate, now) => {
+  const collection = mongoose.connection.collection('BotSession');
+  const nowDate = new Date(now);
+  const claimUntil = new Date(now + CASE1_CLAIM_MS);
+  const reminderBlock = candidate.reminder_case2 || {};
+
+  const claimed = await collection.findOneAndUpdate(
+    {
+      _id: candidate._id,
+      ...buildReminderClaimQuery('reminder_case2', nowDate)
+    },
+    {
+      $set: { 'reminder_case2.claim_until': claimUntil }
+    },
+    { returnDocument: 'after' }
+  );
+  if (!claimed) return;
+
+  const history = Array.isArray(claimed.process_history) ? claimed.process_history : [];
+  const lastSpeaker = getLastRelevantSpeaker(history);
+
+  if (!lastSpeaker || lastSpeaker.sender !== 'user') {
+    // Rep already answered (or no relevant messages yet) — clear the one-time
+    // notification flag so the next silent stretch gets a fresh notification.
+    await collection.updateOne(
+      { _id: claimed._id },
+      {
+        $set: {
+          'reminder_case2.next_due_at': new Date(now + CASE2_REMINDER_MS),
+          'reminder_case2.claim_until': null,
+          'reminder_case2.notified_at': null
+        }
+      }
+    );
+    return;
+  }
+
+  const customerMessageAt = lastSpeaker.createdAt;
+  if (!customerMessageAt) {
+    await collection.updateOne(
+      { _id: claimed._id },
+      {
+        $set: {
+          'reminder_case2.next_due_at': new Date(now + CASE2_NOTIFY_MS),
+          'reminder_case2.claim_until': null
+        }
+      }
+    );
+    return;
+  }
+
+  const silenceMs = now - customerMessageAt.getTime();
+  const alreadyNotified = !!reminderBlock.notified_at;
+
+  // ── Stage 1: one-time rep notification after CASE2_NOTIFY_MINUTES (10m) of
+  // unanswered customer silence. Fires only once per silent stretch — cleared
+  // above whenever a rep replies.
+  if (!alreadyNotified) {
+    if (silenceMs < CASE2_NOTIFY_MS) {
+      await collection.updateOne(
+        { _id: claimed._id },
+        {
+          $set: {
+            'reminder_case2.last_customer_message_at': customerMessageAt,
+            'reminder_case2.next_due_at': new Date(customerMessageAt.getTime() + CASE2_NOTIFY_MS),
+            'reminder_case2.claim_until': null
+          }
+        }
+      );
+      return;
+    }
+
+    const recipients = await buildCase2Recipients(claimed);
+    const sessionPhone = String(claimed.sender || claimed.customer_phone || '');
+    const isSimulatorSession = sessionPhone === 'Simulated' || sessionPhone === 'simulator' || sessionPhone.toLowerCase() === 'simulated';
+    for (const recipientUserId of recipients) {
+      // eslint-disable-next-line no-await-in-loop
+      const notif = await Notification.create({
+        user_id: recipientUserId,
+        session_id: String(claimed._id),
+        session_phone: sessionPhone,
+        from_user_name: 'מערכת',
+        target_label: 'המשתמש מחכה למענה',
+        is_simulator: isSimulatorSession,
+        type: 'session_case2_waiting',
+        actions: [],
+        reminder_case: 2,
+        reminder_next_due_at: new Date(customerMessageAt.getTime() + CASE2_REMINDER_MS),
+        reminder_count: Number(reminderBlock.reminded_count || 0) + 1
+      });
+      eventBus.emit('notification:new', { userId: recipientUserId, notification: notif.toObject() });
+    }
+
+    await collection.updateOne(
+      { _id: claimed._id },
+      {
+        $set: {
+          'reminder_case2.last_customer_message_at': customerMessageAt,
+          'reminder_case2.notified_at': nowDate,
+          'reminder_case2.last_notified_at': nowDate,
+          'reminder_case2.next_due_at': new Date(customerMessageAt.getTime() + CASE2_REMINDER_MS),
+          'reminder_case2.claim_until': null
+        },
+        $inc: { 'reminder_case2.reminded_count': 1 }
+      }
+    );
+    return;
+  }
+
+  // ── Stage 2: after CASE2_REMINDER_MINUTES (30m) of total silence, fire the
+  // "automatic responses" system trigger connected to the
+  // "תגובה לאחר המתנה ללא מענה נציג" option — only if a node is actually
+  // connected to that handle (Option.next). The one-time rep notification
+  // already went out at the 10m mark, so this stage never sends another one.
+  if (silenceMs < CASE2_REMINDER_MS) {
+    await collection.updateOne(
+      { _id: claimed._id },
+      {
+        $set: {
+          'reminder_case2.next_due_at': new Date(customerMessageAt.getTime() + CASE2_REMINDER_MS),
+          'reminder_case2.claim_until': null
+        }
+      }
+    );
+    return;
+  }
+
+  const systemTrigger = await getCase2SystemTriggerConfig(claimed);
+  if (systemTrigger?.nextNodeId) {
+    const triggerHistoryEntry = {
+      type: 'System',
+      text: `טריגר מערכת הופעל: ${systemTrigger.label}`,
+      sender: 'system',
+      name: 'מערכת',
+      node_id: 'system',
+      event: 'case2_system_trigger_detected',
+      trigger_type: systemTrigger.type,
+      created: nowDate.toISOString()
+    };
+    await collection.updateOne(
+      { _id: claimed._id },
+      { $push: { process_history: triggerHistoryEntry } }
+    );
+    try {
+      const triggerResult = await runCase2SystemTrigger(claimed, systemTrigger, nowDate);
+      if (triggerResult?.modeSwitched) {
+        // Session was handed back to the interactive bot — it's no longer
+        // rep-waiting, so clear both reminder timers.
+        await collection.updateOne(
+          { _id: claimed._id },
+          {
+            $set: {
+              'reminder_case1.next_due_at': null,
+              'reminder_case1.claim_until': null,
+              'reminder_case2.next_due_at': null,
+              'reminder_case2.claim_until': null,
+              'reminder_case2.notified_at': null
+            }
+          }
+        );
+        return;
+      }
+    } catch (err) {
+      console.error('[sessionCase2Trigger] execution error:', err.message);
+    }
+  }
+
+  // No node is connected to the system-trigger option (or none configured) —
+  // there's nothing left to send automatically for this stretch. The one-time
+  // notification already went out at the 10m mark, so avoid rechecking every
+  // minute; re-check once a day in case a trigger gets connected later while
+  // the customer is still waiting.
+  await collection.updateOne(
+    { _id: claimed._id },
+    {
+      $set: {
+        'reminder_case2.next_due_at': new Date(now + 24 * 60 * 60 * 1000),
+        'reminder_case2.claim_until': null
+      }
+    }
+  );
+};
+
+const runCase1ReminderTicker = async () => {
+  if (!CASE1_ENABLED) return;
+  if (!mongoose.connection || mongoose.connection.readyState !== 1) return;
+
+  const nowDate = new Date();
+  const collection = mongoose.connection.collection('BotSession');
+  const candidates = await collection.find(
+    {
+      ...buildReminderClaimQuery('reminder_case1', nowDate)
+    },
+    {
+      projection: {
+        _id: 1,
+        user_id: 1,
+        sender: 1,
+        customer_phone: 1,
+        rep_user_id: 1,
+        process_history: 1,
+        reminder_case1: 1
+      }
+    }
+  )
+    .sort({ 'reminder_case1.next_due_at': 1, updatedAt: 1 })
+    .limit(150)
+    .toArray();
+
+  for (const candidate of candidates) {
+    try {
+      // Sequential by design to keep DB contention and duplicate risk low.
+      // eslint-disable-next-line no-await-in-loop
+      await processCase1ReminderCandidate(candidate, nowDate.getTime());
+    } catch (err) {
+      console.error('[sessionCase1Reminder] candidate error:', err.message);
+    }
+  }
+};
+
+const runCase2ReminderTicker = async () => {
+  if (!CASE2_ENABLED) return;
+  if (!mongoose.connection || mongoose.connection.readyState !== 1) return;
+
+  const nowDate = new Date();
+  const collection = mongoose.connection.collection('BotSession');
+  const candidates = await collection.find(
+    {
+      ...buildReminderClaimQuery('reminder_case2', nowDate)
+    },
+    {
+      projection: {
+        _id: 1,
+        user_id: 1,
+        sender: 1,
+        customer_phone: 1,
+        rep_user_id: 1,
+        rep_group_id: 1,
+        process_history: 1,
+        reminder_case2: 1
+      }
+    }
+  )
+    .sort({ 'reminder_case2.next_due_at': 1, updatedAt: 1 })
+    .limit(150)
+    .toArray();
+
+  for (const candidate of candidates) {
+    try {
+      // Sequential by design to keep DB contention and duplicate risk low.
+      // eslint-disable-next-line no-await-in-loop
+      await processCase2ReminderCandidate(candidate, nowDate.getTime());
+    } catch (err) {
+      console.error('[sessionCase2Reminder] candidate error:', err.message);
+    }
+  }
+};
+
+setInterval(() => {
+  runCase1ReminderTicker().catch((err) => {
+    console.error('[sessionCase1Reminder] ticker error:', err.message);
+  });
+  runCase2ReminderTicker().catch((err) => {
+    console.error('[sessionCase2Reminder] ticker error:', err.message);
+  });
+}, CASE1_TICK_MS);
 
 export const startSession = async (req, res) => {
   // Safe extraction: explicitly check for req.user to avoid 'undefined' values in DB insert
@@ -825,7 +1643,17 @@ export const setAgentMode = async (req, res) => {
     const newStatus = session.status === 'handling' ? 'handling' : 'waiting';
     await collection.updateOne(
       { _id: new mongoose.Types.ObjectId(id) },
-      { $set: { is_agent: true, agent_since, status: newStatus } }
+      {
+        $set: {
+          is_agent: true,
+          agent_since,
+          status: newStatus,
+          'reminder_case1.next_due_at': null,
+          'reminder_case1.claim_until': null,
+          'reminder_case2.next_due_at': null,
+          'reminder_case2.claim_until': null
+        }
+      }
     );
     eventBus.emit('session:update', { userId: String(req.userId), phone: String(session.sender || session.customer_phone || '') });
     res.json({ success: true, agent_since: agent_since.toISOString(), status: newStatus });
@@ -843,7 +1671,18 @@ export const clearAgentMode = async (req, res) => {
 
     await collection.updateOne(
       { _id: new mongoose.Types.ObjectId(id) },
-      { $set: { is_agent: false, agent_since: null, status: 'bot', wants_phone: false } }
+      {
+        $set: {
+          is_agent: false,
+          agent_since: null,
+          status: 'bot',
+          wants_phone: false,
+          'reminder_case1.next_due_at': null,
+          'reminder_case1.claim_until': null,
+          'reminder_case2.next_due_at': null,
+          'reminder_case2.claim_until': null
+        }
+      }
     );
     eventBus.emit('session:update', { userId: String(req.userId), phone: String(session.sender || session.customer_phone || '') });
     res.json({ success: true, status: 'bot' });
@@ -862,20 +1701,12 @@ export const closeConversation = async (req, res) => {
     if (error) return res.status(status).json({ error });
 
     const now = new Date();
-    const historyEntry = {
-      type: 'System',
-      text: 'השיחה הסתיימה',
-      sender: 'system',
-      name: 'מערכת',
-      node_id: 'system',
-      event: 'conversation_closed',
-      created: now.toISOString()
-    };
+    const historyEntry = buildConversationClosedHistoryEntry(now);
 
     await collection.updateOne(
       { _id: new mongoose.Types.ObjectId(id) },
       {
-        $set: { is_agent: false, agent_since: null, status: 'closed', ended_at: now },
+        $set: buildConversationClosedSetFragment(now),
         $push: { process_history: historyEntry }
       }
     );
@@ -885,6 +1716,128 @@ export const closeConversation = async (req, res) => {
     console.error('closeConversation error:', err);
     res.status(500).json({ error: err.message });
   }
+};
+
+export const applyCase1ReminderAction = async ({ notificationId, userId, action }) => {
+  if (!mongoose.Types.ObjectId.isValid(String(notificationId || ''))) {
+    return { ok: false, status: 400, error: 'notification id לא תקין' };
+  }
+  if (!['close', 'extend_30m'].includes(String(action || ''))) {
+    return { ok: false, status: 400, error: 'action לא תקין' };
+  }
+
+  const notif = await Notification.findOne({
+    _id: String(notificationId),
+    user_id: String(userId),
+    dismissed: false,
+    type: 'session_case1_reminder'
+  });
+
+  if (!notif) {
+    return { ok: false, status: 404, error: 'התזכורת לא נמצאה' };
+  }
+
+  const sessionId = String(notif.session_id || '');
+  if (!mongoose.Types.ObjectId.isValid(sessionId)) {
+    await Notification.updateOne({ _id: notif._id }, { $set: { dismissed: true } });
+    return { ok: false, status: 400, error: 'session id בהתראה אינו תקין' };
+  }
+
+  const collection = mongoose.connection.collection('BotSession');
+  const session = await collection.findOne({ _id: new mongoose.Types.ObjectId(sessionId) });
+  if (!session) {
+    await Notification.updateOne({ _id: notif._id }, { $set: { dismissed: true } });
+    return { ok: false, status: 404, error: 'השיחה לא נמצאה' };
+  }
+
+  const now = new Date();
+  let status = String(session.status || 'waiting');
+  let historyEntry;
+
+  if (action === 'close') {
+    status = 'closed';
+    historyEntry = {
+      type: 'System',
+      text: 'השיחה הסתיימה (מתוך תזכורת חוסר פעילות)',
+      sender: 'system',
+      name: 'מערכת',
+      node_id: 'system',
+      event: 'conversation_closed_by_reminder',
+      reminder_case: 1,
+      action_by_user_id: String(userId),
+      created: now.toISOString()
+    };
+
+    await collection.updateOne(
+      { _id: new mongoose.Types.ObjectId(sessionId) },
+      {
+        $set: {
+          is_agent: false,
+          agent_since: null,
+          status: 'closed',
+          ended_at: now,
+          'reminder_case1.next_due_at': null,
+          'reminder_case1.claim_until': null,
+          'reminder_case2.next_due_at': null,
+          'reminder_case2.claim_until': null
+        },
+        $push: { process_history: historyEntry }
+      }
+    );
+  } else {
+    const nextDueAt = new Date(now.getTime() + CASE1_REMINDER_MS);
+    historyEntry = {
+      type: 'System',
+      text: 'זמן ההמתנה הוארך ב-30 דקות',
+      sender: 'system',
+      name: 'מערכת',
+      node_id: 'system',
+      event: 'conversation_wait_extended_by_reminder',
+      reminder_case: 1,
+      action_by_user_id: String(userId),
+      created: now.toISOString()
+    };
+
+    await collection.updateOne(
+      { _id: new mongoose.Types.ObjectId(sessionId) },
+      {
+        $set: {
+          'reminder_case1.next_due_at': nextDueAt,
+          'reminder_case1.claim_until': null,
+          'reminder_case1.last_notified_at': now,
+          'reminder_case2.next_due_at': null,
+          'reminder_case2.claim_until': null
+        },
+        $push: { process_history: historyEntry }
+      }
+    );
+  }
+
+  await Notification.updateMany(
+    {
+      session_id: sessionId,
+      user_id: String(userId),
+      dismissed: false,
+      type: 'session_case1_reminder'
+    },
+    { $set: { dismissed: true } }
+  );
+
+  const refreshed = await collection.findOne({ _id: new mongoose.Types.ObjectId(sessionId) });
+  emitSessionUpdateForReminder(refreshed || session, String(userId));
+
+  return {
+    ok: true,
+    statusCode: 200,
+    data: {
+      success: true,
+      action,
+      status,
+      session_id: sessionId,
+      next_due_at: action === 'extend_30m' ? new Date(now.getTime() + CASE1_REMINDER_MS).toISOString() : null,
+      historyEntry
+    }
+  };
 };
 
 // Mark a conversation as resolved by the representative (טופל).
@@ -986,7 +1939,14 @@ export const transferConversation = async (req, res) => {
 
     // Validate target belongs to the same company.
     let targetLabel = '';
-    const update = { is_agent: true, agent_since: new Date(), status: 'waiting', wants_phone: !!wantsPhone };
+    const update = {
+      is_agent: true,
+      agent_since: new Date(),
+      status: 'waiting',
+      wants_phone: !!wantsPhone,
+      'reminder_case1.next_due_at': null,
+      'reminder_case1.claim_until': null
+    };
     let groupUnavailableMessage = ''; // group's message when no one is available
 
     if (targetType === 'group') {
@@ -1457,6 +2417,7 @@ export const sendAgentMessage = async (req, res) => {
       sender: 'agent',
       name: 'נציג',
       agent_name: agentName,
+      agent_user_id: String(req.userId || ''),
       node_id: 'agent',
       created,
       wa_sent: waSent,
@@ -1540,6 +2501,17 @@ export const sendAgentMessage = async (req, res) => {
       newStatus = 'handling';
       update.$set = { status: 'handling', is_agent: true, agent_since: new Date() };
     }
+
+    const repReplyAt = toDateSafe(created) || new Date();
+    update.$set = {
+      ...(update.$set || {}),
+      'reminder_case1.last_rep_message_at': repReplyAt,
+      'reminder_case1.last_rep_user_id': String(req.userId || ''),
+      'reminder_case1.next_due_at': new Date(repReplyAt.getTime() + CASE1_REMINDER_MS),
+      'reminder_case1.claim_until': null,
+      'reminder_case2.next_due_at': null,
+      'reminder_case2.claim_until': null
+    };
 
     await collection.updateOne(
       { _id: new mongoose.Types.ObjectId(id) },

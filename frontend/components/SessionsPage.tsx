@@ -154,9 +154,15 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
     target_label: string;
     is_simulator: boolean;
     wants_phone?: boolean;
+    type?: 'transfer' | 'session_case1_reminder' | 'session_case2_waiting';
+    actions?: string[];
+    reminder_case?: number | null;
+    reminder_next_due_at?: string | null;
+    reminder_count?: number;
     createdAt: string;
   }
   const [pendingNotifications, setPendingNotifications] = useState<PendingNotification[]>([]);
+  const [notifActionLoading, setNotifActionLoading] = useState<Record<string, string | null>>({});
 
   // Bot picker state
   interface BotEntry { id: string; name: string; display_phone_number: string; }
@@ -171,17 +177,20 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
   const [loadingMoreMsgs, setLoadingMoreMsgs] = useState(false);
   const prevScrollHeightRef = useRef(0);
 
-  // Fetch contacts (sorted most-recent-first by backend)
-  const fetchContacts = React.useCallback(() => {
+  // Fetch contacts (sorted most-recent-first by backend).
+  // `silent` skips the contactsLoading spinner — used for background
+  // refreshes (SSE events, polling) so the whole list doesn't flash a
+  // loading spinner every few seconds; only the initial mount shows it.
+  const fetchContacts = React.useCallback((silent = false) => {
     if (!token) return;
-    setContactsLoading(true);
+    if (!silent) setContactsLoading(true);
     fetch(`${API_BASE}/sessions/contacts`, {
       headers: { Authorization: `Bearer ${token}` }
     })
       .then(r => r.ok ? r.json() : Promise.reject(r))
       .then(data => setContacts(data))
       .catch(e => console.error('Failed to load contacts', e))
-      .finally(() => setContactsLoading(false));
+      .finally(() => { if (!silent) setContactsLoading(false); });
   }, [token]);
 
   useEffect(() => {
@@ -262,7 +271,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
       try {
         const eventData = JSON.parse(e.data);
         if (eventData.type === 'session_update') {
-          fetchContacts();
+          fetchContacts(true);
           const phone = selectedPhoneRef.current;
           if (phone) {
             fetchPhoneSessionsRef.current(phone, activeBotFilterRef.current);
@@ -333,6 +342,65 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
     dismissNotification(notif._id);
   };
 
+  const applyReminderAction = async (notif: PendingNotification, action: 'close' | 'extend_30m') => {
+    setNotifActionLoading(prev => ({ ...prev, [notif._id]: action }));
+    try {
+      const r = await fetch(`${API_BASE}/notifications/${notif._id}/action`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ action })
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        alert(err.error || 'לא ניתן לבצע פעולה על התזכורת');
+        return;
+      }
+
+      const data = await r.json().catch(() => ({}));
+      if (action === 'close' && notif.session_phone) {
+        setContacts(prev => prev.map(c =>
+          c.phone === notif.session_phone ? { ...c, status: 'closed' as const } : c
+        ));
+        if (selectedPhone === notif.session_phone) {
+          setPhoneSessions(prev => prev.map((s, i) =>
+            i === prev.length - 1
+              ? {
+                  ...s,
+                  is_agent: false,
+                  agent_since: null,
+                  status: 'closed' as const,
+                  process_history: data.historyEntry
+                    ? [...s.process_history, data.historyEntry]
+                    : s.process_history
+                }
+              : s
+          ));
+          setIsAgentMode(false);
+          setAgentSessionId(null);
+        }
+      }
+
+      if (action === 'extend_30m' && selectedPhone === notif.session_phone && data.historyEntry) {
+        setPhoneSessions(prev => prev.map((s, i) =>
+          i === prev.length - 1
+            ? { ...s, process_history: [...s.process_history, data.historyEntry] }
+            : s
+        ));
+      }
+
+      dismissNotification(notif._id);
+      fetchContacts();
+    } catch (e) {
+      console.error('Failed to apply reminder action', e);
+      alert('שגיאת רשת בביצוע פעולה');
+    } finally {
+      setNotifActionLoading(prev => ({ ...prev, [notif._id]: null }));
+    }
+  };
+
   // 4s polling fallback — only for the currently open conversation.
   // Cheap: one DB query per 4s. Catches cases where SSE dropped/missed an event.
   useEffect(() => {
@@ -342,6 +410,21 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
     }, 4000);
     return () => clearInterval(interval);
   }, [selectedPhone, token]);
+
+  // Polling fallback for the sidebar contacts list — until now this list only
+  // refreshed on the SSE `session_update` event, with no safety net. If that
+  // single SSE event was ever dropped/missed (e.g. flaky connection), a
+  // bot-flow-triggered status change (like "close conversation" from the
+  // representatives node) would leave the sidebar badge stale until the user
+  // manually refreshed the page. Mirror the conversation-panel polling above
+  // so the sidebar self-heals the same way.
+  useEffect(() => {
+    if (!token) return;
+    const interval = setInterval(() => {
+      fetchContacts(true);
+    }, 6000);
+    return () => clearInterval(interval);
+  }, [token, fetchContacts]);
 
   // Auto-scroll to bottom only when new messages arrive AND the user is already
   // near the bottom (so we don't yank them away while they scroll up to read).
@@ -3408,22 +3491,44 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
             <div
               key={notif._id}
               className={`rounded-2xl shadow-lg px-4 py-3 flex gap-3 items-start animate-fade-in border ${
-                notif.wants_phone
+                notif.type === 'session_case1_reminder'
+                  ? 'bg-amber-50 border-amber-200'
+                  : notif.type === 'session_case2_waiting'
+                    ? 'bg-sky-50 border-sky-200'
+                  : notif.wants_phone
                   ? 'bg-green-50 border-green-200'
                   : 'bg-white border-indigo-100'
               }`}
             >
               <div className={`mt-0.5 flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
-                notif.wants_phone ? 'bg-green-100' : 'bg-indigo-50'
+                notif.type === 'session_case1_reminder'
+                  ? 'bg-amber-100'
+                  : notif.type === 'session_case2_waiting'
+                    ? 'bg-sky-100'
+                  : notif.wants_phone ? 'bg-green-100' : 'bg-indigo-50'
               }`}>
-                {notif.wants_phone
+                {notif.type === 'session_case1_reminder'
+                  ? <Clock size={16} className="text-amber-700" />
+                  : notif.type === 'session_case2_waiting'
+                    ? <MessageSquare size={16} className="text-sky-600" />
+                  : notif.wants_phone
                   ? <Phone size={16} className="text-green-600" />
                   : <Bell size={16} className="text-indigo-500" />
                 }
               </div>
               <div className="flex-1 min-w-0">
-                <p className={`text-xs font-black leading-snug ${notif.wants_phone ? 'text-green-900' : 'text-slate-800'}`}>
-                  {notif.wants_phone ? '📞 בקשת שיחה טלפונית!' : 'שיחה חדשה הועברה אליך'}
+                <p className={`text-xs font-black leading-snug ${
+                  notif.type === 'session_case1_reminder'
+                    ? 'text-amber-900'
+                    : notif.type === 'session_case2_waiting'
+                      ? 'text-sky-900'
+                    : notif.wants_phone ? 'text-green-900' : 'text-slate-800'
+                }`}>
+                  {notif.type === 'session_case1_reminder'
+                    ? 'תזכורת: הלקוח שקט 30 דקות לאחר תגובת נציג'
+                    : notif.type === 'session_case2_waiting'
+                      ? 'המשתמש מחכה למענה'
+                    : notif.wants_phone ? '📞 בקשת שיחה טלפונית!' : 'שיחה חדשה הועברה אליך'}
                 </p>
                 <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">
                   {notif.from_user_name && <span>מאת <span className="font-bold">{notif.from_user_name}</span> · </span>}
@@ -3437,6 +3542,11 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 {notif.wants_phone && (
                   <span className="inline-flex items-center gap-1 mt-1 text-[10px] font-black px-2 py-0.5 rounded-full bg-green-200 text-green-800 ring-1 ring-green-400/50">
                     <Phone size={10} /> טלפוני
+                  </span>
+                )}
+                {notif.type === 'session_case1_reminder' && (
+                  <span className="inline-flex items-center gap-1 mt-1 text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-200 text-amber-900 ring-1 ring-amber-300/70">
+                    <Clock size={10} /> תזכורת #{notif.reminder_count || 1}
                   </span>
                 )}
                 <div className="flex items-center gap-2 mt-1.5 flex-wrap">
@@ -3463,6 +3573,26 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                     >
                       <Check size={10} /> טופל
                     </button>
+                  )}
+                  {notif.type === 'session_case1_reminder' && (
+                    <>
+                      <button
+                        onClick={() => applyReminderAction(notif, 'close')}
+                        disabled={!!notifActionLoading[notif._id]}
+                        className="flex items-center gap-1 text-[11px] font-black px-2 py-0.5 rounded-full bg-rose-600 text-white hover:bg-rose-700 transition-colors disabled:opacity-60"
+                        title="סיום שיחה"
+                      >
+                        {notifActionLoading[notif._id] === 'close' ? 'סוגר...' : 'סגור שיחה'}
+                      </button>
+                      <button
+                        onClick={() => applyReminderAction(notif, 'extend_30m')}
+                        disabled={!!notifActionLoading[notif._id]}
+                        className="flex items-center gap-1 text-[11px] font-black px-2 py-0.5 rounded-full bg-amber-600 text-white hover:bg-amber-700 transition-colors disabled:opacity-60"
+                        title="הארכת המתנה ב-30 דקות"
+                      >
+                        {notifActionLoading[notif._id] === 'extend_30m' ? 'מאריך...' : 'הארך 30 דק'}
+                      </button>
+                    </>
                   )}
                 </div>
               </div>
