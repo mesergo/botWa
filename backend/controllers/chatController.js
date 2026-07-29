@@ -18,6 +18,7 @@ import { normalizePhone } from '../utils/phone.js';
 import { getEffectiveRemovalConfig, matchRemovalKeywordWithLang, DEFAULT_REMOVAL_CONFIG } from '../utils/removalConfig.js';
 import { pushMessagesToWhatsApp } from '../utils/whatsappSender.js';
 import eventBus from '../utils/eventBus.js';
+import { applyConversationClosedToDoc } from '../utils/conversationActions.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -227,11 +228,18 @@ const getFlowData = async (flowId, processId = null) => {
       };
     }
     
-    // For action_web_service: exclude the 'default' option from the conditional options
-    // so that findMatchingOption uses the correct indices (matching flowController behaviour).
+    // Keep runtime option indices aligned with editor/save logic.
+    // - action_web_service: exclude default from conditional options
+    // - automatic_responses: exclude system trigger + legacy default from opener options
     const conditionalOptions = w.type === 'action_web_service'
       ? nodeOptions.filter(o => o.operator !== 'default')
-      : nodeOptions;
+      : (w.type === 'automatic_responses'
+        ? nodeOptions.filter(o => o.operator !== 'system_trigger' && o.operator !== 'default')
+        : nodeOptions);
+
+    const systemTriggerOption = w.type === 'automatic_responses'
+      ? nodeOptions.find(o => o.operator === 'system_trigger')
+      : null;
 
     return { 
       id: w.id, 
@@ -241,6 +249,7 @@ const getFlowData = async (flowId, processId = null) => {
         ...metadata,
         label: metadata.label !== undefined ? metadata.label : (w.value || ''), 
         content: metadata.content !== undefined ? metadata.content : (w.value || ''), 
+        systemTriggerType: systemTriggerOption?.value || undefined,
         options: conditionalOptions.length > 0 ? conditionalOptions.map(o => o.value) : undefined, 
         optionOperators: conditionalOptions.length > 0 ? conditionalOptions.map(o => o.operator || 'eq') : undefined,
         optionImages: conditionalOptions.length > 0 ? conditionalOptions.map(o => o.image_url) : undefined,
@@ -300,6 +309,17 @@ const getFlowData = async (flowId, processId = null) => {
       if (defaultOpts.length === 0) {
         console.log(`[getFlowData]   ⚠️ NO default option found in DB for WS node ${w.id} — default exit will be null!`);
       }
+    } else if (w.type === 'automatic_responses') {
+      const triggerOpt = wOptions.find(o => o.operator === 'system_trigger');
+      if (triggerOpt && triggerOpt.next) {
+        edges.push({ id: `e-${w.id}-option-system-case2-${triggerOpt.next}`, source: w.id, sourceHandle: 'option-system-case2', target: triggerOpt.next });
+      }
+      const conditionalOpts = wOptions.filter(o => o.operator !== 'system_trigger' && o.operator !== 'default');
+      conditionalOpts.forEach((o, i) => {
+        if (o.next) {
+          edges.push({ id: `e-${w.id}-opt-${i}`, source: w.id, sourceHandle: `option-${i}`, target: o.next });
+        }
+      });
     } else {
       wOptions.forEach((o, i) => { 
         if (o.next) { 
@@ -714,11 +734,70 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
       }
 
       case 'action_transfer_to_agent': {
-        // Hand the conversation off to a human agent.
-        // - Mark the session as is_agent=true with a fresh agent_since (bot pauses for 30 min)
-        // - Store the selected RepGroup so a rep from that group can pick up the conversation
-        // - Optionally store a specific rep_user_id if the editor configured "specific rep"
-        // - Stop the flow execution (terminal node)
+        // Unified "Representatives" node actions:
+        // 1) transfer: assign to reps and pause bot for 30 min
+        // 2) close: end conversation immediately
+        // 3) extend_30m: keep waiting for rep for another 30 min
+        const repActionType = nodeData.repActionType === 'close'
+          ? 'close'
+          : nodeData.repActionType === 'extend_30m'
+            ? 'extend_30m'
+            : 'transfer';
+
+        if (repActionType === 'close') {
+          const now = new Date();
+          applyConversationClosedToDoc(session, now);
+
+          console.log(`[BOT] ✅ action_transfer_to_agent(close) | session=${session._id} | conversation closed`);
+          return messages;
+        }
+
+        if (repActionType === 'extend_30m') {
+          const now = new Date();
+          // If this node is reached right after the case2_waiting_30m system trigger
+          // auto-handed the conversation back to the bot, restore the previous rep
+          // assignment instead of leaving it empty (waiting → bot → waiting).
+          const override = session.bot_override?.active ? session.bot_override : null;
+
+          const historyEntry = {
+            type: 'System',
+            text: override
+              ? 'הלקוח הוחזר להמתנה לנציג (המשך מהמתנה קודמת)'
+              : 'זמן ההמתנה הוארך ב-30 דקות',
+            sender: 'system',
+            name: 'מערכת',
+            node_id: 'system',
+            event: 'conversation_wait_extended_by_reminder',
+            reminder_case: 1,
+            created: now.toISOString()
+          };
+          if (override) {
+            historyEntry.restored_from_bot_override = true;
+          }
+
+          session.is_agent = true;
+          session.agent_since = now;
+          session.status = 'waiting';
+          session.current_node_id = currentNodeId;
+          session.waiting_text_input = false;
+          session.waiting_webservice = false;
+
+          if (override) {
+            session.rep_group_id = override.prev_rep_group_id ?? session.rep_group_id ?? null;
+            session.rep_user_id = override.prev_rep_user_id ?? session.rep_user_id ?? null;
+            session.bot_override = { active: false };
+            session.markModified('bot_override');
+          }
+
+          session.process_history = session.process_history || [];
+          session.process_history.push(historyEntry);
+          session.markModified('process_history');
+
+          console.log(`[BOT] ✅ action_transfer_to_agent(extend_30m) | session=${session._id} | waiting extended by 30 minutes${override ? ' | restored bot_override context' : ''}`);
+          return messages;
+        }
+
+        // transfer mode (existing behavior)
         const repGroupId = nodeData.repGroupId || null;
         const repAssignmentMode = nodeData.repAssignmentMode === 'specific' ? 'specific' : 'any';
         const repUserId = repAssignmentMode === 'specific' ? (nodeData.repUserId || null) : null;
@@ -781,6 +860,10 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
         }
         session.current_node_id = currentNodeId;
         session.waiting_text_input = false;
+        if (session.bot_override?.active) {
+          session.bot_override = { active: false };
+          session.markModified('bot_override');
+        }
 
         addToHistory(
           session,
@@ -1328,6 +1411,18 @@ export const respondToMessage = async (req, res) => {
         if (agentCheckSession.status === 'resolved') {
           agentCheckSession.status = 'waiting';
         }
+        const customerMessageAt = new Date();
+        agentCheckSession.reminder_case2 = agentCheckSession.reminder_case2 || {};
+        agentCheckSession.reminder_case2.last_customer_message_at = customerMessageAt;
+        // 30 minutes in production. Kept at 2 minutes for current test window.
+        // agentCheckSession.reminder_case2.next_due_at = new Date(customerMessageAt.getTime() + 30 * 60 * 1000);
+        agentCheckSession.reminder_case2.next_due_at = new Date(customerMessageAt.getTime() + 2 * 60 * 1000);
+        agentCheckSession.reminder_case2.claim_until = null;
+        agentCheckSession.reminder_case1 = agentCheckSession.reminder_case1 || {};
+        agentCheckSession.reminder_case1.next_due_at = null;
+        agentCheckSession.reminder_case1.claim_until = null;
+        agentCheckSession.markModified('reminder_case1');
+        agentCheckSession.markModified('reminder_case2');
         await agentCheckSession.save();
         eventBus.emit('session:update', { userId: String(user._id), phone: sender });
         console.log(`[BOT] 🙋 AGENT MODE active for sessionId=${agentCheckSession._id} phone=${phone} — bot suppressed, message recorded`);
@@ -1344,6 +1439,12 @@ export const respondToMessage = async (req, res) => {
         agentCheckSession.current_node_id = null;
         agentCheckSession.waiting_text_input = false;
         agentCheckSession.waiting_webservice = false;
+        agentCheckSession.reminder_case1 = agentCheckSession.reminder_case1 || {};
+        agentCheckSession.reminder_case2 = agentCheckSession.reminder_case2 || {};
+        agentCheckSession.reminder_case1.next_due_at = null;
+        agentCheckSession.reminder_case1.claim_until = null;
+        agentCheckSession.reminder_case2.next_due_at = null;
+        agentCheckSession.reminder_case2.claim_until = null;
         if (agentCheckSession.status === 'waiting' || agentCheckSession.status === 'handling') {
           agentCheckSession.status = 'bot';
         }

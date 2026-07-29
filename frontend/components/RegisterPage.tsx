@@ -11,6 +11,15 @@ const API_BASE = window.location.hostname === 'localhost'
   ? 'http://localhost:3001/api'
   : `${window.location.origin}/api`;
 
+const persistRegisteredAuth = (token: string, user: any) => {
+  // Registration defaults to session-only auth to reduce persistence risk on shared devices.
+  localStorage.removeItem('flowbot_token');
+  localStorage.removeItem('flowbot_user');
+  sessionStorage.setItem('flowbot_token', token);
+  sessionStorage.setItem('flowbot_user', JSON.stringify(user));
+  window.dispatchEvent(new Event('flowbot-auth-change'));
+};
+
 interface RegisterForm {
   company: string;
   phone: string;
@@ -126,6 +135,7 @@ const RegisterPage: React.FC = () => {
       });
       const data = await res.json();
       if (res.ok && data.token) {
+        persistRegisteredAuth(data.token, data.user);
         setRegisteredEmail((data.user?.email || form.email || invitePrefill?.email || '').trim());
         setSubmitted(true);
       } else {
@@ -317,6 +327,7 @@ const RegisterPage: React.FC = () => {
       const data = await res.json();
 
       if (res.ok && data.token) {
+        persistRegisteredAuth(data.token, data.user);
         setRegisteredEmail((invitePrefill?.email || form.email).trim());
         setSubmitted(true);
       } else {
@@ -364,7 +375,7 @@ const RegisterPage: React.FC = () => {
             href="/"
             className="block w-full bg-slate-900 text-white py-4 rounded-xl font-medium shadow-lg shadow-slate-900/20 hover:bg-slate-800 transition-all"
           >
-            מעבר לכניסה למערכת
+            מעבר ישיר למערכת
           </a>
         </div>
       </div>

@@ -57,12 +57,16 @@ export interface NodeData {
   removalReason?: string;
   /** For action_transfer_to_agent: which RepGroup the conversation is assigned to */
   repGroupId?: string;
+  /** For action_transfer_to_agent: which action to perform */
+  repActionType?: 'transfer' | 'close' | 'extend_30m';
   /** For action_transfer_to_agent: 'any' rep from the group, or a 'specific' rep */
   repAssignmentMode?: 'any' | 'specific';
   /** For action_transfer_to_agent: the specific rep user id (when mode='specific') */
   repUserId?: string;
   /** Unified add/remove group component: which action to perform */
   groupActionMode?: 'add' | 'remove';
+  /** For automatic_responses: optional system trigger condition */
+  systemTriggerType?: 'case2_waiting_30m';
   /** For action_set_parameter: the parameter name to set */
   parameterName?: string;
   /** For action_set_parameter: the value to assign (supports --varName-- syntax) */

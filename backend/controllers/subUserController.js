@@ -16,6 +16,54 @@ const getSystemBaseUrl = () => {
   return raw.replace(/\/+$/, '');
 };
 
+const buildInviteLink = (inviteToken) => `${getSystemBaseUrl()}/?register=1&inviteToken=${encodeURIComponent(inviteToken)}`;
+
+const getEffectiveInviteStatus = (user) => user?.invite_status || 'accepted';
+
+const sendInviteEmail = async ({ managerId, repEmail, repName, inviteLink }) => {
+  if (!repEmail) return;
+
+  const manager = await User.findById(managerId).select('name').lean();
+  const managerName = (manager?.name || '').replace(/[<>'"]/g, '');
+  const repNameSafe = (repName || '').replace(/[<>'"]/g, '');
+
+  const emailUsername = process.env.MESERGO_EMAIL_USERNAME || 'admin@chatgo.live';
+  const emailToken = process.env.MESERGO_EMAIL_TOKEN || '1aa14226-ceae-4104-ba86-899eca88631d';
+  const fromAddress = process.env.MESERGO_FROM_ADDRESS || 'admin@chatgo.live';
+
+  const subject = 'הוזמנת להשלמת הרשמה למערכת';
+  const htmlBody = `<div dir="rtl" style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
+  <h2 style="color:#2563eb;">שלום ${repNameSafe},</h2>
+  <p>הוזמנת להצטרף למערכת ניהול הבוטים של <strong>${managerName}</strong>.</p>
+  <p>לחץ על הקישור הבא כדי להשלים הרשמה ולהגדיר סיסמה:</p>
+  <a href="${inviteLink}" style="display:inline-block;background:#2563eb;color:white;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:bold;font-size:16px;margin:16px 0;">השלמת הרשמה</a>
+  <p style="margin-top:20px;color:#64748b;font-size:14px;">שם המשתמש שלך: <strong>${repEmail}</strong></p>
+</div>`;
+
+  const xmlString = `<InfoMailClient>
+<SendEmails>
+<User>
+<Username>${emailUsername}</Username>
+<Token>${emailToken}</Token>
+</User>
+<Message>
+<CampaignName>הזמנת נציג - ${repNameSafe}</CampaignName>
+<FromAddress>${fromAddress}</FromAddress>
+<FromName>Bot Flow</FromName>
+<Subject><![CDATA[${subject}]]></Subject>
+<Body><![CDATA[${htmlBody}]]></Body>
+</Message>
+<Recipients>
+<Email address="${repEmail}" />
+</Recipients>
+</SendEmails>
+</InfoMailClient>`;
+
+  const encodedXml = encodeURIComponent(xmlString);
+  const mailUrl = `https://capi.mesergo.co.il/mail/api.php?xml=${encodedXml}`;
+  await fetch(mailUrl, { method: 'GET' });
+};
+
 // Returns the root company manager ID for the given userId.
 // If the user is a sub-user (rep/rep_manager with a manager_id), returns that manager_id.
 // Otherwise returns the user's own _id (they are the company owner).
@@ -64,22 +112,29 @@ export const getSubUsers = async (req, res) => {
     }
 
     const reps = await User.find({ manager_id: managerId }).select(
-      'name email phone role status availability_status createdAt rep_group_ids allowed_bot_ids user_type_id'
+      'name email phone role status availability_status createdAt rep_group_ids allowed_bot_ids user_type_id invite_status invite_sent_at registration_completed_at'
     ).sort({ createdAt: -1 });
     res.json({
-      users: reps.map(r => ({
-      id: r._id.toString(),
-      name: r.name,
-      email: r.email,
-      phone: r.phone || '',
-      role: r.role,
-      status: r.status,
-      availability_status: r.availability_status || 'unavailable',
-      createdAt: r.createdAt,
-      user_type_id: r.user_type_id || null,
-      repGroupIds: (r.rep_group_ids || []).map(id => id.toString()),
-      allowedBotIds: (r.allowed_bot_ids || []).map(id => id.toString()),
-      })),
+      users: reps.map(r => {
+        const effectiveInviteStatus = getEffectiveInviteStatus(r);
+        return {
+          id: r._id.toString(),
+          name: r.name,
+          email: r.email,
+          phone: r.phone || '',
+          role: r.role,
+          status: r.status,
+          invite_status: effectiveInviteStatus,
+          invite_sent_at: r.invite_sent_at || null,
+          registration_completed_at: r.registration_completed_at || null,
+          registration_completed: !!r.registration_completed_at || effectiveInviteStatus === 'accepted',
+          availability_status: r.availability_status || 'unavailable',
+          createdAt: r.createdAt,
+          user_type_id: r.user_type_id || null,
+          repGroupIds: (r.rep_group_ids || []).map(id => id.toString()),
+          allowedBotIds: (r.allowed_bot_ids || []).map(id => id.toString()),
+        };
+      }),
       availableUserTypes
     });
   } catch (err) {
@@ -184,50 +239,17 @@ export const createSubUser = async (req, res) => {
       repData.allowed_bot_ids = allowed_bot_ids.map(id => new mongoose.Types.ObjectId(id));
     }
     const rep = await User.create(repData);
-    const inviteLink = `${getSystemBaseUrl()}/?register=1&inviteToken=${encodeURIComponent(inviteToken)}`;
+    const inviteLink = buildInviteLink(inviteToken);
 
     // Send invitation email immediately for every created sub-user.
     if (rep.email) {
       try {
-        const manager = await User.findById(managerId).select('name').lean();
-        const managerName = (manager?.name || '').replace(/[<>'"]/g, '');
-        const repNameSafe = rep.name.replace(/[<>'"]/g, '');
-
-        const emailUsername = process.env.MESERGO_EMAIL_USERNAME || 'admin@chatgo.live';
-        const emailToken = process.env.MESERGO_EMAIL_TOKEN || '1aa14226-ceae-4104-ba86-899eca88631d';
-        const fromAddress = process.env.MESERGO_FROM_ADDRESS || 'admin@chatgo.live';
-
-            const subject = 'הוזמנת להשלמת הרשמה למערכת';
-        const htmlBody = `<div dir="rtl" style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
-  <h2 style="color:#2563eb;">שלום ${repNameSafe},</h2>
-  <p>הוזמנת להצטרף למערכת ניהול הבוטים של <strong>${managerName}</strong>.</p>
-          <p>לחץ על הקישור הבא כדי להשלים הרשמה ולהגדיר סיסמה:</p>
-          <a href="${inviteLink}" style="display:inline-block;background:#2563eb;color:white;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:bold;font-size:16px;margin:16px 0;">השלמת הרשמה</a>
-  <p style="margin-top:20px;color:#64748b;font-size:14px;">שם המשתמש שלך: <strong>${rep.email}</strong></p>
-</div>`;
-
-        const xmlString = `<InfoMailClient>
-<SendEmails>
-<User>
-<Username>${emailUsername}</Username>
-<Token>${emailToken}</Token>
-</User>
-<Message>
-<CampaignName>הזמנת נציג - ${repNameSafe}</CampaignName>
-<FromAddress>${fromAddress}</FromAddress>
-<FromName>Bot Flow</FromName>
-<Subject><![CDATA[${subject}]]></Subject>
-<Body><![CDATA[${htmlBody}]]></Body>
-</Message>
-<Recipients>
-<Email address="${rep.email}" />
-</Recipients>
-</SendEmails>
-</InfoMailClient>`;
-
-        const encodedXml = encodeURIComponent(xmlString);
-        const mailUrl = `https://capi.mesergo.co.il/mail/api.php?xml=${encodedXml}`;
-        await fetch(mailUrl, { method: 'GET' });
+        await sendInviteEmail({
+          managerId,
+          repEmail: rep.email,
+          repName: rep.name,
+          inviteLink,
+        });
         console.log(`✅ Invite email sent to ${rep.email}`);
       } catch (mailErr) {
         console.error('❌ Failed to send invite email:', mailErr);
@@ -347,5 +369,67 @@ export const deleteSubUser = async (req, res) => {
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+};
+
+// POST /api/sub-users/:id/resend-invite — re-issue an invite link and optionally send email
+export const resendSubUserInvite = async (req, res) => {
+  try {
+    const managerId = await getRootManagerId(req.userId);
+    const { id } = req.params;
+    const sendEmail = req.body?.sendEmail !== false;
+
+    const rep = await User.findOne({ _id: id, manager_id: managerId });
+    if (!rep) {
+      return res.status(404).json({ error: 'נציג לא נמצא' });
+    }
+
+    if (!rep.email) {
+      return res.status(400).json({ error: 'אין אימייל לנציג זה' });
+    }
+
+    const effectiveInviteStatus = getEffectiveInviteStatus(rep);
+    if (rep.registration_completed_at || effectiveInviteStatus === 'accepted') {
+      return res.status(400).json({ error: 'הנציג כבר השלים הרשמה' });
+    }
+
+    const inviteToken = generateInviteToken();
+    const inviteTokenHash = hashInviteToken(inviteToken);
+    const inviteExpiresAt = new Date(Date.now() + INVITE_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
+    const inviteLink = buildInviteLink(inviteToken);
+
+    rep.invite_token_hash = inviteTokenHash;
+    rep.invite_token_expires_at = inviteExpiresAt;
+    rep.invite_sent_at = new Date();
+    rep.invite_created_by = req.userId;
+    rep.invite_status = 'pending';
+    if (rep.status !== 'active') {
+      rep.status = 'pending';
+    }
+    await rep.save();
+
+    if (sendEmail) {
+      try {
+        await sendInviteEmail({
+          managerId,
+          repEmail: rep.email,
+          repName: rep.name,
+          inviteLink,
+        });
+      } catch (mailErr) {
+        console.error('❌ Failed to resend invite email:', mailErr);
+        return res.status(500).json({ error: 'הקישור נוצר, אך שליחת המייל נכשלה' });
+      }
+    }
+
+    return res.json({
+      success: true,
+      inviteLink,
+      emailed: sendEmail,
+      invite_sent_at: rep.invite_sent_at,
+      invite_status: rep.invite_status,
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
   }
 };

@@ -1696,6 +1696,12 @@ export const ActionRemoveFromGroupNode = (props: any) => {
 export const ActionTransferToAgentNode = (props: any) => {
   const repGroups: Array<{ id: string; name: string }> = props.data.repGroups || [];
   const repUsers: Array<{ id: string; name: string; email: string; repGroupIds: string[] }> = props.data.repUsers || [];
+  const actionType: 'transfer' | 'close' | 'extend_30m' =
+    props.data.repActionType === 'close'
+      ? 'close'
+      : props.data.repActionType === 'extend_30m'
+        ? 'extend_30m'
+        : 'transfer';
   const value = props.data.repGroupId || '';
   const mode: 'any' | 'specific' = props.data.repAssignmentMode === 'specific' ? 'specific' : 'any';
   const selectedRepUserId = props.data.repUserId || '';
@@ -1717,7 +1723,7 @@ export const ActionTransferToAgentNode = (props: any) => {
   return (
     <BaseNode
       id={props.id}
-      title="העברה לנציג"
+      title="נציגים"
       icon={<UserCheck size={20} />}
       type={NodeType.ACTION_TRANSFER_TO_AGENT}
       selected={props.selected}
@@ -1728,6 +1734,39 @@ export const ActionTransferToAgentNode = (props: any) => {
       isCurrentMatch={props.data.isCurrentMatch}
       isSearchMatch={props.data.isSearchMatch}
     >
+      <InputFieldWrapper label="פעולה">
+        <div className="flex flex-col gap-2 nodrag">
+          <label className="flex items-center gap-2 cursor-pointer text-slate-700 text-sm font-medium">
+            <input
+              type="radio"
+              className="nodrag accent-orange-500"
+              checked={actionType === 'transfer'}
+              onChange={() => props.data.onChange({ repActionType: 'transfer' })}
+            />
+            העברה לנציג
+          </label>
+          <label className="flex items-center gap-2 cursor-pointer text-slate-700 text-sm font-medium">
+            <input
+              type="radio"
+              className="nodrag accent-orange-500"
+              checked={actionType === 'close'}
+              onChange={() => props.data.onChange({ repActionType: 'close' })}
+            />
+            סגירת פניה (סיום שיחה)
+          </label>
+          <label className="flex items-center gap-2 cursor-pointer text-slate-700 text-sm font-medium">
+            <input
+              type="radio"
+              className="nodrag accent-orange-500"
+              checked={actionType === 'extend_30m'}
+              onChange={() => props.data.onChange({ repActionType: 'extend_30m' })}
+            />
+            הארכת זמן פניה פתוחה (30 דקות)
+          </label>
+        </div>
+      </InputFieldWrapper>
+
+      {actionType === 'transfer' && (
       <InputFieldWrapper label="קבוצת נציגים לשיוך">
         <div className="relative">
           <select
@@ -1749,8 +1788,9 @@ export const ActionTransferToAgentNode = (props: any) => {
           </p>
         )}
       </InputFieldWrapper>
+      )}
 
-      {value && (
+      {actionType === 'transfer' && value && (
         <InputFieldWrapper label="אופן הקצאה">
           <div className="flex flex-col gap-2 nodrag">
             <label className="flex items-center gap-2 cursor-pointer text-slate-700 text-sm font-medium">
@@ -1775,7 +1815,7 @@ export const ActionTransferToAgentNode = (props: any) => {
         </InputFieldWrapper>
       )}
 
-      {value && mode === 'specific' && (
+      {actionType === 'transfer' && value && mode === 'specific' && (
         <InputFieldWrapper label="בחר נציג">
           <div className="relative">
             <select
@@ -1799,24 +1839,39 @@ export const ActionTransferToAgentNode = (props: any) => {
         </InputFieldWrapper>
       )}
 
-      <p className="mt-2 text-[12px] text-slate-500 text-right leading-relaxed">
-        הרכיב יעביר את השיחה לנציג מהקבוצה שנבחרה.<br />
-        הבוט יפסיק להגיב למשך 30 דקות (כמו בשיחה עם נציג).
-      </p>
+      {actionType === 'transfer' && (
+        <>
+          <p className="mt-2 text-[12px] text-slate-500 text-right leading-relaxed">
+            הרכיב יעביר את השיחה לנציג מהקבוצה שנבחרה.<br />
+            הבוט יפסיק להגיב למשך 30 דקות (כמו בשיחה עם נציג).
+          </p>
 
-      <label className="flex items-center gap-2 mt-2 cursor-pointer nodrag select-none">
-        <input
-          type="checkbox"
-          className="nodrag accent-green-600 w-3.5 h-3.5 cursor-pointer"
-          checked={!!props.data.wantsPhone}
-          onChange={e => props.data.onChange({ wantsPhone: e.target.checked })}
-        />
-        <span className="flex items-center gap-1 text-[12px] font-bold text-slate-700">
-          <Phone size={11} className="text-green-600" />
-לקוח מעוניין בשיחת טלפון חוזרת    
+          <label className="flex items-center gap-2 mt-2 cursor-pointer nodrag select-none">
+            <input
+              type="checkbox"
+              className="nodrag accent-green-600 w-3.5 h-3.5 cursor-pointer"
+              checked={!!props.data.wantsPhone}
+              onChange={e => props.data.onChange({ wantsPhone: e.target.checked })}
+            />
+            <span className="flex items-center gap-1 text-[12px] font-bold text-slate-700">
+              <Phone size={11} className="text-green-600" />
+              לקוח מעוניין בשיחת טלפון חוזרת
+            </span>
+          </label>
+        </>
+      )}
 
-  </span>
-      </label>
+      {actionType === 'close' && (
+        <p className="mt-2 text-[12px] text-slate-500 text-right leading-relaxed">
+          בסוג פעולה זה תתבצע סגירת פניה (סיום שיחה) מיידית.
+        </p>
+      )}
+
+      {actionType === 'extend_30m' && (
+        <p className="mt-2 text-[12px] text-slate-500 text-right leading-relaxed">
+          בסוג פעולה זה זמן ההמתנה לנציג יתאפס לעוד 30 דקות.
+        </p>
+      )}
     </BaseNode>
   );
 };
@@ -1830,6 +1885,7 @@ export const AutomaticResponsesNode = (props: any) => {
   const hasMore = options.length > MAX_VISIBLE;
   const visibleOptions = hasMore && !isExpanded ? options.slice(0, MAX_VISIBLE) : options;
   const { setEdges } = useReactFlow();
+  const edges = useEdges();
 
   // Apply edge visibility whenever isExpanded changes (handles toggle; initial load is handled by App.tsx)
   useEffect(() => {
@@ -1842,6 +1898,18 @@ export const AutomaticResponsesNode = (props: any) => {
       return { ...edge, hidden: !isExpanded };
     }));
   }, [isExpanded, props.id]);
+
+  // The system trigger ("case2_waiting_30m") is now derived purely from whether
+  // an edge is connected to the option-system-case2 handle — no separate
+  // dropdown selection to keep in sync. This avoids the old "connected edge but
+  // trigger not selected" / "trigger selected but no edge" desync bugs.
+  const hasSystemCase2Edge = edges.some(e => e.source === props.id && e.sourceHandle === 'option-system-case2');
+  useEffect(() => {
+    const next = hasSystemCase2Edge ? 'case2_waiting_30m' : undefined;
+    if (props.data.systemTriggerType !== next) {
+      props.data.onChange({ systemTriggerType: next });
+    }
+  }, [hasSystemCase2Edge]);
 
   const updateOption = (index: number, value: string) => {
     if (index === 0) return; // Prevent changing the fixed "כניסה" option
@@ -1876,6 +1944,24 @@ export const AutomaticResponsesNode = (props: any) => {
     <BaseNode id={props.id} title="תגובות אוטומטיות" icon={<Zap size={20} />} type={NodeType.AUTOMATIC_RESPONSES} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} isSearchMatch={props.data.isSearchMatch}>
       <div className="space-y-4 relative text-right">
         <label className="block text-[14px] font-bold text-slate-400 uppercase tracking-widest">מילות מפתח ופתיחים</label>
+        <div className="flex items-center gap-2 p-2 border rounded-2xl group/item relative transition-colors bg-slate-50 border-slate-200">
+          <DeletableHandle nodeId={props.id} handleId="option-system-case2" style={{ top: '50%', right: -10 }} />
+          <div className="flex-1">
+            <div className="relative w-full rounded-xl overflow-hidden border border-slate-200 bg-slate-50 opacity-70 cursor-not-allowed">
+              <div
+                className="w-full h-12 px-4 flex items-center text-right text-slate-900"
+                style={{ fontFamily: 'Heebo, sans-serif' }}
+              >
+                {hasSystemCase2Edge ? 'תגובה לאחר המתנה ללא מענה נציג' : 'ללא טריגר מערכת'}
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-1.5 pl-1 pr-1 flex-row-reverse">
+            <div className="w-10 h-10 flex items-center justify-center text-slate-300 italic text-[10px] font-bold">
+              מערכת
+            </div>
+          </div>
+        </div>
         {/* Always render hidden handles for collapsed options so ReactFlow edges stay connected */}
         {hasMore && !isExpanded && options.slice(MAX_VISIBLE).map((_: string, j: number) => (
           <Handle key={`hidden-${MAX_VISIBLE + j}`} type="source" position={Position.Right} id={`option-${MAX_VISIBLE + j}`} style={{ opacity: 0, pointerEvents: 'none', top: '50%', right: -16 }} className="w-4 h-4" />

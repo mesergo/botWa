@@ -193,6 +193,16 @@ const fetchFlowData = async (userId, flow_id, standard_process_id = null, versio
       ? nodeOptions.filter(o => o.operator !== 'default')
       : nodeOptions;
 
+    const systemTriggerOption = w.type === 'automatic_responses'
+      ? nodeOptions.find(o => o.operator === 'system_trigger')
+      : null;
+    const systemTriggerType = systemTriggerOption?.value || '';
+    const autoResponseOptions = w.type === 'automatic_responses'
+      // Keep only user-defined keyword branches in indexed option-<n> handles.
+      // system_trigger has its own dedicated handle and default is legacy noise.
+      ? nodeOptions.filter(o => o.operator !== 'system_trigger' && o.operator !== 'default')
+      : conditionalOptions;
+
     return { 
       id: w.id, 
       type: w.type, 
@@ -201,9 +211,10 @@ const fetchFlowData = async (userId, flow_id, standard_process_id = null, versio
         ...metadata,
         label: metadata.label !== undefined ? metadata.label : (w.value || (w.type === 'start' ? 'תחילת תזרים' : '')), 
         content: metadata.content !== undefined ? metadata.content : (w.value || ''), 
-        options: conditionalOptions.length > 0 ? conditionalOptions.map(o => o.value) : undefined, 
-        optionOperators: conditionalOptions.length > 0 ? conditionalOptions.map(o => o.operator || 'eq') : undefined,
-        optionImages: conditionalOptions.length > 0 ? conditionalOptions.map(o => o.image_url) : undefined 
+        systemTriggerType: systemTriggerType || undefined,
+        options: autoResponseOptions.length > 0 ? autoResponseOptions.map(o => o.value) : undefined, 
+        optionOperators: autoResponseOptions.length > 0 ? autoResponseOptions.map(o => o.operator || 'eq') : undefined,
+        optionImages: autoResponseOptions.length > 0 ? autoResponseOptions.map(o => o.image_url) : undefined 
       } 
     };
   });
@@ -237,8 +248,23 @@ const fetchFlowData = async (userId, flow_id, standard_process_id = null, versio
     } else {
       // For action_web_service and output_menu: separate 'default' options from conditional ones
       const isDefaultSeparated = w.type === 'action_web_service' || w.type === 'output_menu';
+      if (w.type === 'automatic_responses') {
+        const triggerOpt = wOptions.find(o => o.operator === 'system_trigger');
+        if (triggerOpt && triggerOpt.next) {
+          edges.push({
+            id: `e-${w.id}-option-system-case2-${triggerOpt.next}`,
+            source: w.id,
+            sourceHandle: 'option-system-case2',
+            target: triggerOpt.next,
+            type: 'button',
+            style: { stroke: '#3b82f6', strokeWidth: 2, strokeDasharray: '6,4' }
+          });
+        }
+      }
       const defaultOpts = isDefaultSeparated ? wOptions.filter(o => o.operator === 'default') : [];
-      const conditionalOpts = isDefaultSeparated ? wOptions.filter(o => o.operator !== 'default') : wOptions;
+      const conditionalOpts = w.type === 'automatic_responses'
+        ? wOptions.filter(o => o.operator !== 'system_trigger' && o.operator !== 'default')
+        : (isDefaultSeparated ? wOptions.filter(o => o.operator !== 'default') : wOptions);
 
       conditionalOpts.forEach((o, i) => { 
         if (o.next) { 
@@ -599,17 +625,34 @@ const SHRINK_RATIO = 0.75;  // במקום 0.5
             operator: node.data.optionOperators?.[i] || 'eq'
           });
         }
-        // Always save the option-default edge regardless of whether there are options
-        const menuDefaultEdge = findLastEdge(e => e.source === node.id && e.sourceHandle === 'option-default');
-        if (menuDefaultEdge) {
+      } else if (node.type === 'automatic_responses') {
+        const autoOptions = node.data.options || [];
+        const autoOperators = node.data.optionOperators || [];
+        const triggerType = node.data.systemTriggerType || '';
+
+        if (triggerType) {
+          const triggerEdge = findLastEdge(e => e.source === node.id && e.sourceHandle === 'option-system-case2');
           await Option.create({
             widget_id: node.id,
-            value: 'default',
-            next: menuDefaultEdge.target,
+            value: triggerType,
+            next: triggerEdge ? triggerEdge.target : null,
             image_url: null,
-            operator: 'default'
+            operator: 'system_trigger'
           });
         }
+
+        for (let i = 0; i < autoOptions.length; i++) {
+          const optionEdge = findLastEdge(e => e.source === node.id && e.sourceHandle === `option-${i}`);
+          await Option.create({
+            widget_id: node.id,
+            value: autoOptions[i],
+            next: optionEdge ? optionEdge.target : null,
+            image_url: node.data.optionImages?.[i] || null,
+            operator: autoOperators[i] || 'eq'
+          });
+        }
+        // automatic_responses has no option-default handle in UI; do not persist
+        // legacy default options here to keep option indices stable.
       } else if (isBranching && node.data.options) {
         for (let i = 0; i < node.data.options.length; i++) {
           const branchValue = node.data.options[i];
