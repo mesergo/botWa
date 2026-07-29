@@ -1952,7 +1952,7 @@ export const AutomaticResponsesNode = (props: any) => {
                 className="w-full h-12 px-4 flex items-center text-right text-slate-900"
                 style={{ fontFamily: 'Heebo, sans-serif' }}
               >
-                {hasSystemCase2Edge ? 'תגובה לאחר המתנה ללא מענה נציג' : 'ללא טריגר מערכת'}
+                {'תגובה לאחר המתנה ללא מענה נציג'}
               </div>
             </div>
           </div>
