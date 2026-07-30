@@ -518,7 +518,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
           break;
         case 'SendImage': 
           setIsBotTyping(false); 
-          addMessage({ sender: 'bot', type: 'image', url: action.url }); 
+          addMessage({ sender: 'bot', type: 'image', url: action.url, content: action.text || undefined }); 
           if (i < actions.length - 1) {
              await new Promise(r => setTimeout(r, 500)); 
              setIsBotTyping(true);
@@ -774,12 +774,8 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
         if (cancelled()) return;
         const mediaType = node.data.mediaType || 'image';
         const messageType = mediaType === 'video' ? 'video' : mediaType === 'pdf' ? 'document' : 'image';
-        addMessage({ sender: 'bot', type: messageType, url: node.data.url }); 
-        if (node.data.caption && node.data.caption.trim()) {
-          await new Promise(r => setTimeout(r, 200));
-          if (cancelled()) return;
-          addMessage({ sender: 'bot', type: 'text', content: node.data.caption });
-        }
+        // התמונה והכיתוב נשלחים כהודעה אחת בלבד (כמו בפועל בוואטסאפ)
+        addMessage({ sender: 'bot', type: messageType, url: node.data.url, content: node.data.caption && node.data.caption.trim() ? node.data.caption : undefined });
         setIsBotTyping(false); 
         return processNext(findNextNodeId(nodeId, instance), instance, depth + 1, stack);
       }
@@ -1216,13 +1212,26 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
                 </div>
                 <div className={`p-4 rounded-3xl shadow-sm text-sm font-bold text-right ${msg.sender === 'bot' ? 'bg-white text-black border border-slate-100 rounded-tr-none' : 'bg-blue-600 text-white rounded-tl-none'}`}>
                   {msg.type === 'text' && <div><WhatsAppText text={msg.content || ''} /></div>}
-                  {msg.type === 'image' && <img src={msg.url} className="rounded-xl w-full h-auto mt-2" alt="Bot message" />}
-                  {msg.type === 'video' && <video src={msg.url} controls className="rounded-xl w-full h-auto mt-2" />}
+                  {msg.type === 'image' && (
+                    <div>
+                      <img src={msg.url} className="rounded-xl w-full h-auto" alt="Bot message" />
+                      {msg.content && <div className="mt-2"><WhatsAppText text={msg.content} /></div>}
+                    </div>
+                  )}
+                  {msg.type === 'video' && (
+                    <div>
+                      <video src={msg.url} controls className="rounded-xl w-full h-auto" />
+                      {msg.content && <div className="mt-2"><WhatsAppText text={msg.content} /></div>}
+                    </div>
+                  )}
                   {msg.type === 'document' && (
-                    <a href={msg.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 mt-2 p-3 bg-slate-50 rounded-xl hover:bg-slate-100 transition-colors">
-                      <ExternalLink size={20} />
-                      <span>פתח מסמך PDF</span>
-                    </a>
+                    <div>
+                      <a href={msg.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 p-3 bg-slate-50 rounded-xl hover:bg-slate-100 transition-colors">
+                        <ExternalLink size={20} />
+                        <span>פתח מסמך PDF</span>
+                      </a>
+                      {msg.content && <div className="mt-2"><WhatsAppText text={msg.content} /></div>}
+                    </div>
                   )}
                   {msg.type === 'link' && (
                     <div className="space-y-2">

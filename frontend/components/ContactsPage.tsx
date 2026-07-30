@@ -223,10 +223,10 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
   const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
   const [loadingGroups, setLoadingGroups] = useState(false);
 
-  const openImportModal = async () => {
-    setAssignToGroups(false);
-    setSelectedGroupIds([]);
-    setImportModalOpen(true);
+  // Add/Edit contact → distribution-list assignment
+  const [contactGroupIds, setContactGroupIds] = useState<string[]>([]);
+
+  const loadAvailableGroups = useCallback(async () => {
     setLoadingGroups(true);
     try {
       const res = await fetch(`${API_BASE}/groups`, { headers: { Authorization: `Bearer ${token}` } });
@@ -236,10 +236,21 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
       }
     } catch { /* silent */ }
     finally { setLoadingGroups(false); }
+  }, [token]);
+
+  const openImportModal = async () => {
+    setAssignToGroups(false);
+    setSelectedGroupIds([]);
+    setImportModalOpen(true);
+    loadAvailableGroups();
   };
 
   const toggleGroupId = (id: string) => {
     setSelectedGroupIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
+
+  const toggleContactGroupId = (id: string) => {
+    setContactGroupIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
   };
 
   // ── Sample file download ──────────────────────────────────────────────────
@@ -357,8 +368,10 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
   const openAdd = () => {
     setEditingContact(null);
     setForm({ ...EMPTY_FORM });
+    setContactGroupIds([]);
     setModalError('');
     setModalOpen(true);
+    loadAvailableGroups();
   };
 
   const openEdit = (c: MergedContact) => {
@@ -383,9 +396,12 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
       email: c.email ?? '',
       custom_field_values: cvByFieldId,
     });
+    setContactGroupIds((c.contactGroups ?? []).map(g => g._id));
     setModalError('');
     setModalOpen(true);
+    loadAvailableGroups();
   };
+
 
   const closeModal = () => { setModalOpen(false); setModalError(''); };
 
@@ -394,18 +410,19 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
     setSaving(true);
     setModalError('');
     try {
+      const payload = { ...form, groupIds: contactGroupIds };
       let res: Response;
       if (editingContact?._id) {
         res = await fetch(`${API_BASE}/contacts/${editingContact._id}`, {
           method: 'PUT',
           headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify(form),
+          body: JSON.stringify(payload),
         });
       } else {
         res = await fetch(`${API_BASE}/contacts`, {
           method: 'POST',
           headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify(form),
+          body: JSON.stringify(payload),
         });
       }
       if (!res.ok) {
@@ -1229,6 +1246,35 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
                   onChange={e => setForm(f => ({ ...f, custom_field_values: { ...f.custom_field_values, [fd._id]: e.target.value } }))}
                 />
               ))}
+
+              {/* Distribution lists (groups) */}
+              <div className="bg-indigo-50 border border-indigo-100 rounded-2xl px-5 py-4 flex flex-col gap-3">
+                <div className="flex items-center gap-2">
+                  <Layers size={14} className="text-indigo-500" />
+                  <span className="text-sm font-bold text-indigo-800">רשימות תפוצה</span>
+                </div>
+                {loadingGroups ? (
+                  <div className="flex items-center justify-center py-3">
+                    <div className="animate-spin w-5 h-5 border-2 border-indigo-200 border-t-indigo-500 rounded-full" />
+                  </div>
+                ) : availableGroups.length === 0 ? (
+                  <p className="text-xs text-indigo-400 font-semibold px-1">אין רשימות תפוצה. צור קבוצה תחילה.</p>
+                ) : (
+                  <div className="flex flex-col gap-1.5 max-h-36 overflow-y-auto pr-1">
+                    {availableGroups.map(g => (
+                      <label key={g._id} className="flex items-center gap-2.5 cursor-pointer select-none px-3 py-2 rounded-xl hover:bg-indigo-100 transition-colors">
+                        <input
+                          type="checkbox"
+                          checked={contactGroupIds.includes(g._id)}
+                          onChange={() => toggleContactGroupId(g._id)}
+                          className="w-4 h-4 accent-indigo-600 cursor-pointer flex-shrink-0"
+                        />
+                        <span className="text-sm font-semibold text-indigo-800 truncate">{g.name}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
 
               {modalError && (
                 <p className="text-sm text-red-500 font-semibold bg-red-50 px-4 py-2 rounded-xl">{modalError}</p>

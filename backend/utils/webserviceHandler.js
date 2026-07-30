@@ -212,6 +212,7 @@ export const handleWebService = async (node, session, userInput = null) => {
               messages.push({
                 type: 'Image',
                 url: action.value || action.url,
+                text: action.text || undefined,
                 created: new Date().toISOString()
               });
               break;

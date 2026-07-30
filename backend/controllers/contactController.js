@@ -49,10 +49,28 @@ export const getContact = async (req, res) => {
   }
 };
 
+// Syncs a contact's distribution-list membership: adds it to the groups in
+// `groupIds` and removes it from any of the user's other (non-blocklist) groups.
+// Only runs when `groupIds` is an array (undefined/omitted means "don't touch groups").
+const syncContactGroups = async (userId, contactId, groupIds) => {
+  if (!Array.isArray(groupIds)) return;
+  const validIds = groupIds.filter(id => mongoose.Types.ObjectId.isValid(id));
+  await Promise.all([
+    Group.updateMany(
+      { _id: { $in: validIds }, user_id: userId, is_blocklist: false },
+      { $addToSet: { contact_ids: contactId } }
+    ),
+    Group.updateMany(
+      { _id: { $nin: validIds }, user_id: userId, is_blocklist: false },
+      { $pull: { contact_ids: contactId } }
+    ),
+  ]);
+};
+
 // POST /api/contacts — create a new contact (or upsert by phone)
 export const createContact = async (req, res) => {
   const userId = getEffectiveUserId(req);
-  const { phone, full_name, whatsapp_name, email, custom_field_values } = req.body;
+  const { phone, full_name, whatsapp_name, email, custom_field_values, groupIds } = req.body;
 
   if (!phone || !phone.trim()) {
     return res.status(400).json({ error: 'Phone is required' });
@@ -66,6 +84,7 @@ export const createContact = async (req, res) => {
       { $set: { full_name: full_name || '', whatsapp_name: whatsapp_name || '', email: email || '', custom_field_values: custom_field_values || {} } },
       { upsert: true, new: true, runValidators: true }
     );
+    await syncContactGroups(userId, contact._id, groupIds);
     res.json(contact);
   } catch (err) {
     if (err.code === 11000) {
@@ -78,7 +97,7 @@ export const createContact = async (req, res) => {
 // PUT /api/contacts/:id — update existing contact
 export const updateContact = async (req, res) => {
   const userId = getEffectiveUserId(req);
-  const { phone, full_name, whatsapp_name, email, custom_field_values } = req.body;
+  const { phone, full_name, whatsapp_name, email, custom_field_values, groupIds } = req.body;
 
   try {
     const update = { full_name: full_name || '', whatsapp_name: whatsapp_name || '', email: email || '' };
@@ -91,6 +110,7 @@ export const updateContact = async (req, res) => {
       { new: true, runValidators: true }
     );
     if (!contact) return res.status(404).json({ error: 'Contact not found' });
+    await syncContactGroups(userId, contact._id, groupIds);
     res.json(contact);
   } catch (err) {
     res.status(500).json({ error: err.message });

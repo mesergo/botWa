@@ -2676,12 +2676,12 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
               {/* Message input bar */}
               {!phoneSessionsLoading && (
                 <div className="flex-shrink-0 bg-white border-t border-slate-100 px-2 sm:px-3 lg:px-4 py-2.5 lg:py-3" dir="rtl">
-                  {/* {phoneSessions.length === 0 && (
-                    <div className="flex items-center gap-2 mb-2 px-1 py-2 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-700 font-semibold">
+                  {phoneSessions.length === 0 && (
+                    <div className="flex items-center gap-2 mb-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-700 font-semibold">
                       <span className="text-base">⚠️</span>
-                      לקוח חדש — ניתן לשלוח הודעות תבנית בלבד. הקש <span className="font-black">/</span> לבחירת תבנית.
+                      לקוח חדש — ניתן לשלוח הודעת תבנית WhatsApp בלבד. הקש <span className="font-black">/</span> לבחירת תבנית.
                     </div>
-                  )} */}
+                  )}
                   <div className="flex flex-wrap sm:flex-nowrap items-end gap-2 sm:gap-3 relative">
                     {/* Template dropdown */}
                     {showTemplates && selectedPhone && (
@@ -2887,7 +2887,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                             sendAgentMsg();
                           }
                         }}
-                        placeholder={attachedFile ? 'כיתוב (אופציונלי)...' : 'כתוב הודעה ללקוח... (/ לטמפלייטים)'}
+                        placeholder={attachedFile ? 'כיתוב (אופציונלי)...' : (phoneSessions.length === 0 ? 'הקש / לבחירת תבנית לשליחה ללקוח חדש...' : 'כתוב הודעה ללקוח... (/ לטמפלייטים)')}
                         rows={1}
                         className='w-full bg-transparent px-4 py-2.5 text-sm text-right font-medium outline-none text-slate-800 placeholder:text-slate-400 resize-none max-h-40 overflow-y-auto leading-normal'
                       />

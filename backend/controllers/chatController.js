@@ -439,21 +439,16 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
         const mediaType = nodeData.mediaType || 'image';
         const caption = replaceParameters(nodeData.caption || '', params);
         
-        // Send media message
+        // Send media message with the caption embedded in the same message
+        // (whatsappSender sends url+text together in a single WhatsApp API call)
         const mediaMsg = { 
           type: mediaType === 'video' ? 'Video' : mediaType === 'pdf' ? 'Document' : 'Image', 
           url, 
+          text: caption && caption.trim() ? caption : undefined,
           created: new Date().toISOString() 
         };
         messages.push(mediaMsg);
         addToHistory(session, mediaMsg, currentNodeId);
-        
-        // Send caption as separate text message if exists
-        if (caption && caption.trim()) {
-          const textMsg = { type: 'Text', text: caption, created: new Date().toISOString() };
-          messages.push(textMsg);
-          addToHistory(session, textMsg, currentNodeId);
-        }
         
         // Check if this is the last node (no outgoing edges)
         const nextNode = findNextNode(currentNodeId, edges);
