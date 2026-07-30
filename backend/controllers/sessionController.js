@@ -13,11 +13,16 @@ import { getEffectiveUserId, resolvePermissions, hasPermission } from '../middle
 import { pushMessagesToWhatsApp } from '../utils/whatsappSender.js';
 import eventBus from '../utils/eventBus.js';
 import { buildConversationClosedHistoryEntry, buildConversationClosedSetFragment } from '../utils/conversationActions.js';
+import { normalizePhone } from '../utils/phone.js';
 
 const SSE_SECRET_KEY = 'dfghjukiolp;[p0o9i8uytgbhnjmk,l.;p9876543t4rre2asd';
 const CASE1_REMINDER_MINUTES = 30;
 // const CASE1_REMINDER_MINUTES = 2;
 const CASE1_REMINDER_MS = CASE1_REMINDER_MINUTES * 60 * 1000;
+// While a previous case1 reminder notification is still active (undismissed),
+// recheck at this shorter cadence instead of the full 30 minutes so a new
+// reminder can go out promptly once the old one is dismissed/handled.
+const CASE1_RECHECK_MS = 5 * 60 * 1000;
 const CASE2_REMINDER_MINUTES = 30;
 // const CASE2_REMINDER_MINUTES = 2;
 const CASE2_REMINDER_MS = CASE2_REMINDER_MINUTES * 60 * 1000;
@@ -484,7 +489,16 @@ const processCase1ReminderCandidate = async (candidate, now) => {
   const history = Array.isArray(claimed.process_history) ? claimed.process_history : [];
   const lastSpeaker = getLastRelevantSpeaker(history);
 
+  // Dismiss any still-open case1 reminder(s) for this session — the silence
+  // stretch they warned about is no longer current (either the customer has
+  // since replied, or the rep sent a newer follow-up message superseding it).
+  const dismissStaleCase1Notifications = () => Notification.updateMany(
+    { session_id: String(claimed._id), type: 'session_case1_reminder', dismissed: false },
+    { $set: { dismissed: true } }
+  );
+
   if (!lastSpeaker || lastSpeaker.sender !== 'agent') {
+    await dismissStaleCase1Notifications();
     await collection.updateOne(
       { _id: claimed._id },
       {
@@ -513,8 +527,16 @@ const processCase1ReminderCandidate = async (candidate, now) => {
 
   const silenceMs = now - repMessageAt.getTime();
   const recipientUserId = lastSpeaker.agentUserId || String(claimed.rep_user_id || '').trim() || null;
+  const previousRepMessageAt = toDateSafe(reminderBlock.last_rep_message_at);
+  // True when the rep sent a newer message since we last recorded one — i.e. a
+  // fresh silence stretch has started, distinct from whatever stretch any
+  // still-open notification was about.
+  const repSentNewerMessage = previousRepMessageAt && repMessageAt.getTime() > previousRepMessageAt.getTime();
 
   if (silenceMs < CASE1_REMINDER_MS || !recipientUserId) {
+    if (repSentNewerMessage) {
+      await dismissStaleCase1Notifications();
+    }
     const nextDueAt = silenceMs < CASE1_REMINDER_MS
       ? new Date(repMessageAt.getTime() + CASE1_REMINDER_MS)
       : new Date(now + CASE1_REMINDER_MS);
@@ -533,6 +555,42 @@ const processCase1ReminderCandidate = async (candidate, now) => {
   }
 
   const nextDueAt = new Date(now + CASE1_REMINDER_MS);
+
+  // Avoid piling up duplicate reminders about the *same* silence stretch while
+  // the rep is away (e.g. overnight): if an active reminder already exists for
+  // this exact rep message, don't create another — just recheck again shortly
+  // so we notice once it gets dismissed/handled. But if the rep has since sent
+  // a newer message (a genuinely new stretch), any leftover active reminder is
+  // stale — dismiss it and go ahead and notify about the new stretch.
+  const existingActiveNotif = await Notification.findOne({
+    session_id: String(claimed._id),
+    type: 'session_case1_reminder',
+    dismissed: false
+  }).select('_id reminder_context_at').lean();
+
+  const isSameStretch = !!(existingActiveNotif
+    && existingActiveNotif.reminder_context_at
+    && Math.abs(new Date(existingActiveNotif.reminder_context_at).getTime() - repMessageAt.getTime()) < 1000);
+
+  if (existingActiveNotif && isSameStretch) {
+    await collection.updateOne(
+      { _id: claimed._id },
+      {
+        $set: {
+          'reminder_case1.last_rep_message_at': repMessageAt,
+          'reminder_case1.last_rep_user_id': recipientUserId,
+          'reminder_case1.next_due_at': new Date(now + CASE1_RECHECK_MS),
+          'reminder_case1.claim_until': null
+        }
+      }
+    );
+    return;
+  }
+
+  if (existingActiveNotif && !isSameStretch) {
+    await dismissStaleCase1Notifications();
+  }
+
   const notif = await Notification.create({
     user_id: recipientUserId,
     session_id: String(claimed._id),
@@ -544,7 +602,8 @@ const processCase1ReminderCandidate = async (candidate, now) => {
     actions: ['close', 'extend_30m'],
     reminder_case: 1,
     reminder_next_due_at: nextDueAt,
-    reminder_count: Number(reminderBlock.reminded_count || 0) + 1
+    reminder_count: Number(reminderBlock.reminded_count || 0) + 1,
+    reminder_context_at: repMessageAt
   });
 
   eventBus.emit('notification:new', { userId: recipientUserId, notification: notif.toObject() });
@@ -1438,7 +1497,7 @@ export const getAllSessions = async (req, res) => {
 
 export const getSessionsByPhone = async (req, res) => {
   const userId = getEffectiveUserId(req);
-  const phone = req.query.phone || '';
+  const phone = normalizePhone(req.query.phone || '');
   const botId = req.query.botId || ''; // optional: filter to a specific bot/flow
   if (!phone) return res.status(400).json({ error: 'מספר טלפון הוא שדה חובה' });
 

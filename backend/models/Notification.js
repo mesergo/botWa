@@ -43,6 +43,12 @@ const notificationSchema = new mongoose.Schema({
   reminder_case: { type: Number, default: null },
   reminder_next_due_at: { type: Date, default: null },
   reminder_count: { type: Number, default: 0 },
+
+  // For case1 reminders: timestamp of the specific rep message this reminder is
+  // about. Lets the ticker tell an already-active reminder for the *same*
+  // silence stretch (skip duplicate) apart from a stale one left over from an
+  // earlier, now-superseded rep message (dismiss it and send a fresh one).
+  reminder_context_at: { type: Date, default: null },
 }, {
   timestamps: true,
   collection: 'Notification'

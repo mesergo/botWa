@@ -186,6 +186,15 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
   // If initialPhone is provided, skip bot picker and show all contacts
   const [showBotPicker, setShowBotPicker] = useState<boolean>(!initialPhone);
 
+  // initialPhone often arrives asynchronously (e.g. App.tsx parses ?phone= from the URL in
+  // an effect that runs after this component has already mounted with initialPhone still
+  // null), so the useState initializers above can miss it. Sync whenever the prop changes.
+  useEffect(() => {
+    if (!initialPhone) return;
+    setSelectedPhone(initialPhone);
+    setShowBotPicker(false);
+  }, [initialPhone]);
+
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const [visibleMsgLimit, setVisibleMsgLimit] = useState(50);
   const [loadingMoreMsgs, setLoadingMoreMsgs] = useState(false);
@@ -210,6 +219,73 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
   useEffect(() => {
     fetchContacts();
   }, [fetchContacts]);
+
+  // Creates a new Contact record for a phone number (upsert-by-phone on the backend).
+  // Used by the manual "+ New Conversation" flow.
+  const createContactRecord = React.useCallback(async (phone: string): Promise<{ ok: boolean; message?: string }> => {
+    try {
+      const r = await fetch(`${API_BASE}/contacts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ phone })
+      });
+      if (r.ok) return { ok: true };
+      const data = await r.json().catch(() => ({}));
+      return { ok: false, message: data.message || 'שגיאה ביצירת איש קשר' };
+    } catch {
+      return { ok: false, message: 'שגיאת רשת' };
+    }
+  }, [token]);
+
+  // Ensures a Contact record exists for a phone number, WITHOUT clobbering any existing
+  // contact's fields. Used by the deep-link auto-create effect below, where a phone
+  // "missing" from the (permission-filtered) `contacts` sidebar list may actually already
+  // have a Contact document that this rep simply isn't allowed to see (view_assigned_only
+  // and not assigned to it) — /api/contacts (createContact) resets full_name/whatsapp_name/
+  // email to '' when omitted, which would silently wipe out that other rep's contact data.
+  // /api/contacts/upsert-by-phone only $sets fields that are actually provided, so calling
+  // it with just { phone } is a safe no-op against an existing contact.
+  const ensureContactExists = React.useCallback(async (phone: string): Promise<{ ok: boolean; message?: string }> => {
+    try {
+      const r = await fetch(`${API_BASE}/contacts/upsert-by-phone`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ phone })
+      });
+      if (r.ok) return { ok: true };
+      const data = await r.json().catch(() => ({}));
+      return { ok: false, message: data.message || 'שגיאה ביצירת איש קשר' };
+    } catch {
+      return { ok: false, message: 'שגיאת רשת' };
+    }
+  }, [token]);
+
+  // Deep link support: if initialPhone (from /sessions?phone=...) doesn't match any
+  // existing contact once contacts have loaded, ensure a Contact record exists for it —
+  // mirroring "+ New Conversation" for genuinely new phones, while remaining a safe no-op
+  // for phones that already have a contact hidden from this rep by permission filtering.
+  //
+  // IMPORTANT: /api/sessions/contacts (fetchContacts) is built from existing BotSession
+  // records, NOT from the Contact collection — so a phone with zero prior sessions can
+  // NEVER show up in `contacts`, even right after successfully creating its Contact doc.
+  // `autoCreateAttemptedRef` guards against retrying forever in that case (which previously
+  // caused an infinite create → refetch → "still not found" → create loop).
+  const autoCreateAttemptedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (contactsLoading || !initialPhone) return;
+    if (autoCreateAttemptedRef.current === initialPhone) return;
+    if (!/^\d{10,15}$/.test(initialPhone)) return; // guard against a malformed query param
+    const exists = contacts.some(c => c.phone === initialPhone);
+    if (exists) return;
+    autoCreateAttemptedRef.current = initialPhone;
+    ensureContactExists(initialPhone).then(result => {
+      if (result.ok) {
+        setSelectedPhone(initialPhone);
+        fetchContacts(true);
+      }
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contactsLoading, initialPhone]);
 
   // Fetch bots list for bot picker
   useEffect(() => {
@@ -797,25 +873,15 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
     }
     setNewConvLoading(true);
     setNewConvError(null);
-    try {
-      const r = await fetch(`${API_BASE}/contacts`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ phone: sanitized })
-      });
-      if (r.ok) {
-        setShowNewConvModal(false);
-        setSelectedPhone(sanitized);
-        fetchContacts();
-      } else {
-        const data = await r.json().catch(() => ({}));
-        setNewConvError(data.message || 'שגיאה ביצירת איש קשר');
-      }
-    } catch (e) {
-      setNewConvError('שגיאת רשת');
-    } finally {
-      setNewConvLoading(false);
+    const result = await createContactRecord(sanitized);
+    if (result.ok) {
+      setShowNewConvModal(false);
+      setSelectedPhone(sanitized);
+      fetchContacts();
+    } else {
+      setNewConvError(result.message || 'שגיאה ביצירת איש קשר');
     }
+    setNewConvLoading(false);
   };
 
   // ── Assign reps handlers ──────────────────────────────────────────────────

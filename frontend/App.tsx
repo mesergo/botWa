@@ -3,6 +3,7 @@ import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import { useNavigate, useLocation, Routes, Route, Navigate } from 'react-router-dom';
 import { ReactFlowProvider, addEdge, Node, Edge, applyNodeChanges, applyEdgeChanges, OnNodesChange, OnEdgesChange, OnConnect, ReactFlowInstance, MarkerType } from 'reactflow';
 import { NodeType, NodeData, User, FixedProcess, Version, BotFlow, PredefinedTemplate, RestorableVersionsData } from './types';
+import { normalizePhone } from './utils/phone';
 import { ContactFieldsProvider } from './context/ContactFieldsContext';
 import { usePermission } from './hooks/usePermission';
 import Dashboard from './components/Dashboard';
@@ -302,6 +303,20 @@ const FlowBuilder: React.FC = () => {
     if (location.pathname !== '/contacts') setContactsInitialPhone(null);
     if (location.pathname !== '/sessions') setSessionsInitialPhone(null);
   }, [location.pathname]);
+
+  // Deep link support: /sessions?phone=<number> opens straight into that customer's chat,
+  // analogous to a wa.me/<phone> link. Runs regardless of auth state so it also applies
+  // right after login (see handleAuth / handleGoogleLogin redirect below).
+  useEffect(() => {
+    if (location.pathname !== '/sessions') return;
+    const params = new URLSearchParams(location.search);
+    const rawPhone = params.get('phone');
+    if (!rawPhone) return;
+    const normalized = normalizePhone(rawPhone);
+    if (!normalized) return;
+    setSessionsInitialPhone(normalized);
+    setSessionsOwnOnly(true);
+  }, [location.pathname, location.search]);
 
   // Load bot from URL on direct navigation / refresh (e.g. /bot/:botId)
   useEffect(() => {
@@ -1350,6 +1365,8 @@ const FlowBuilder: React.FC = () => {
   const handleGoogleLogin = async (credential: string, accountId?: string) => {
     setAuthErrors({});
     setPendingAccountsForLogin([]);
+    // Preserve any deep link (e.g. /sessions?phone=...) the user landed on before login
+    const deepLinkTarget = (location.pathname !== '/' || location.search) ? location.pathname + location.search : null;
     try {
       const res = await fetch(`${API_BASE}/auth/google`, {
         method: 'POST',
@@ -1362,8 +1379,10 @@ const FlowBuilder: React.FC = () => {
         saveStoredAuth(data.token, data.user, authForm.rememberMe);
         setToken(data.token);
         setCurrentUser(data.user);
-        // Route reps directly to sessions view
-        if (isRepOnlyUser(data.user)) {
+        // Route reps directly to sessions view, unless a deep link should take priority
+        if (deepLinkTarget) {
+          navigate(deepLinkTarget);
+        } else if (isRepOnlyUser(data.user)) {
           setSessionsOwnOnly(false);
           navigate('/sessions');
         } else {
@@ -1401,6 +1420,8 @@ const FlowBuilder: React.FC = () => {
     setPendingAccountsForLogin([]);
     setPendingAccountsSource(null);
     setPendingGoogleCredential(null);
+    // Preserve any deep link (e.g. /sessions?phone=...) the user landed on before login
+    const deepLinkTarget = (location.pathname !== '/' || location.search) ? location.pathname + location.search : null;
     const endpoint = '/auth/login';
     const res = await fetch(`${API_BASE}${endpoint}`, {
       method: 'POST',
@@ -1412,8 +1433,10 @@ const FlowBuilder: React.FC = () => {
       saveStoredAuth(data.token, data.user, authForm.rememberMe);
       setToken(data.token);
       setCurrentUser(data.user);
-      // Route reps directly to sessions view
-      if (isRepOnlyUser(data.user)) {
+      // Route reps directly to sessions view, unless a deep link should take priority
+      if (deepLinkTarget) {
+        navigate(deepLinkTarget);
+      } else if (isRepOnlyUser(data.user)) {
         setSessionsOwnOnly(false);
         navigate('/sessions');
       } else {
