@@ -284,6 +284,7 @@ const FlowBuilder: React.FC = () => {
   const [isChangeTemplateModalOpen, setIsChangeTemplateModalOpen] = useState(false);
   const [sessionsOwnOnly, setSessionsOwnOnly] = useState(false);
   const [sessionsInitialPhone, setSessionsInitialPhone] = useState<string | null>(null);
+  const [sessionsInitialBotPhone, setSessionsInitialBotPhone] = useState<string | null>(null);
   const [contactsInitialPhone, setContactsInitialPhone] = useState<string | null>(null);
   const [isBotSettingsOpen, setIsBotSettingsOpen] = useState(false);
 
@@ -301,22 +302,35 @@ const FlowBuilder: React.FC = () => {
   // Clear initialPhone when navigating away so it doesn't re-open on return
   useEffect(() => {
     if (location.pathname !== '/contacts') setContactsInitialPhone(null);
-    if (location.pathname !== '/sessions') setSessionsInitialPhone(null);
+    if (location.pathname !== '/sessions') { setSessionsInitialPhone(null); setSessionsInitialBotPhone(null); }
   }, [location.pathname]);
 
-  // Deep link support: /sessions?phone=<number> opens straight into that customer's chat,
-  // analogous to a wa.me/<phone> link. Runs regardless of auth state so it also applies
-  // right after login (see handleAuth / handleGoogleLogin redirect below).
+  // Deep link support: /sessions?phone=<number>[&botPhone=<bot's WhatsApp number>] opens
+  // straight into that customer's chat, analogous to a wa.me/<phone> link.
+  // - If the account has only ONE connected bot, `phone` alone is enough (no ambiguity —
+  //   there's nothing else to mix in).
+  // - If the account has MORE THAN ONE bot, `botPhone` is also required; without it the
+  //   chat would show the combined/mixed conversation across every bot this contact has
+  //   talked to, so the deep link is intentionally ignored (does nothing) until both fields
+  //   are provided.
+  // Waits for `bots` (fetched separately via loadBots) before deciding, so it doesn't act on
+  // a still-empty bots list. Runs regardless of auth state so it also applies right after
+  // login (see handleAuth / handleGoogleLogin redirect below).
   useEffect(() => {
     if (location.pathname !== '/sessions') return;
+    if (bots.length === 0) return; // bots list not fetched yet
     const params = new URLSearchParams(location.search);
     const rawPhone = params.get('phone');
     if (!rawPhone) return;
     const normalized = normalizePhone(rawPhone);
     if (!normalized) return;
+    const rawBotPhone = params.get('botPhone');
+    const botDigits = rawBotPhone ? rawBotPhone.replace(/\D/g, '') : '';
+    if (bots.length > 1 && !botDigits) return; // multiple bots — botPhone required to disambiguate
     setSessionsInitialPhone(normalized);
+    if (botDigits) setSessionsInitialBotPhone(botDigits);
     setSessionsOwnOnly(true);
-  }, [location.pathname, location.search]);
+  }, [location.pathname, location.search, bots]);
 
   // Load bot from URL on direct navigation / refresh (e.g. /bot/:botId)
   useEffect(() => {
@@ -2604,6 +2618,7 @@ const FlowBuilder: React.FC = () => {
               onOpenAdminPanel={() => navigate('/admin')}
               ownOnly={sessionsOwnOnly}
               initialPhone={sessionsInitialPhone}
+              initialBotPhone={sessionsInitialBotPhone}
               onOpenSettings={can('settings.view') ? () => navigate('/settings') : undefined}
               onOpenSubUsers={can('users.view') ? () => navigate('/users') : undefined}
               onStopImpersonation={handleStopImpersonation}

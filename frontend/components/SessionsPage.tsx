@@ -64,6 +64,7 @@ interface SessionsPageProps {
   onGoHome?: () => void;
   ownOnly?: boolean;
   initialPhone?: string | null;
+  initialBotPhone?: string | null;
 }
 
 const API_BASE = window.location.hostname === 'localhost'
@@ -76,7 +77,7 @@ const WhatsAppIcon = ({ size = 12, className = '' }: { size?: number; className?
   </svg>
 );
 
-const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack, onLogout, onOpenContacts, onOpenGroups, onOpenSendMessages, onOpenAdminPanel,onOpenSmsIn, onOpenSettings, onOpenSubUsers, onStopImpersonation, onSwitchAccount, onUpdateAvailability, onGoHome, initialPhone }) => {
+const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack, onLogout, onOpenContacts, onOpenGroups, onOpenSendMessages, onOpenAdminPanel,onOpenSmsIn, onOpenSettings, onOpenSubUsers, onStopImpersonation, onSwitchAccount, onUpdateAvailability, onGoHome, initialPhone, initialBotPhone }) => {
   // Contacts panel state
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [contactsLoading, setContactsLoading] = useState(true);
@@ -304,6 +305,22 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
       .catch(e => console.error('Failed to load bots', e))
       .finally(() => setBotsLoading(false));
   }, [token]);
+
+  // Deep link support: /sessions?phone=...&botPhone=<bot's WhatsApp number> — once the bot
+  // list has loaded, resolve botPhone to the matching bot (matched on digits only, so the
+  // CRM link can use any formatting) and lock the view to that bot's conversation instead of
+  // the combined/mixed view across all bots for this contact.
+  useEffect(() => {
+    if (!initialBotPhone || botList.length === 0) return;
+    const targetDigits = initialBotPhone.replace(/\D/g, '');
+    if (!targetDigits) return;
+    const match = botList.find(b => (b.display_phone_number || '').replace(/\D/g, '') === targetDigits);
+    if (match) {
+      setActiveBotFilter(match);
+      setShowBotPicker(false);
+    }
+  }, [initialBotPhone, botList]);
+
   useEffect(() => {
     if (!selectedPhone || !token) {
       setPhoneSessions([]);
