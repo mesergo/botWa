@@ -591,6 +591,7 @@ const SendMessagesPage: React.FC<SendMessagesPageProps> = ({
                   fetchTemplates={fetchTemplates}
                   setShowTemplatePicker={setShowTemplatePicker}
                   contactFields={contactFields}
+                  agentName={currentUser?.name}
                   messageText={messageText}
                   setMessageText={setMessageText}
                   mediaType={mediaType}

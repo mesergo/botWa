@@ -3,6 +3,7 @@ import { WhatsAppText } from '../utils/whatsappFormat';
 import { Clock, MessageSquare, Search, Bot, User, Phone, List, Users, ExternalLink, X, Headphones, RefreshCw, Settings, UserCog, Layers, Plus, UserPlus, Check, Paperclip, ChevronRight, Bell, MoreVertical, Ban, Megaphone } from 'lucide-react';
 import ImpersonationBanner from './ImpersonationBanner';
 import { TemplateHeaderMediaField } from './TemplateHeaderMediaField';
+import QuickInsertMenu from './shared/QuickInsertMenu';
 import { usePermission } from '../hooks/usePermission';
 import PageTopBar from './PageTopBar';
 import AppNav from './AppNav';
@@ -3341,6 +3342,17 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                                     </select>
                                   </div>
                                 )}
+                                <QuickInsertMenu
+                                  title="מילוי אוטומטי"
+                                  options={[
+                                    { label: 'שם הנציג', getValue: () => currentUser?.name as string, disabled: !currentUser?.name },
+                                  ]}
+                                  onSelect={(value) => {
+                                    const newBody = [...(templateParams.body || [])];
+                                    newBody[varIdx] = value;
+                                    setTemplateParams(prev => ({ ...prev, body: newBody }));
+                                  }}
+                                />
                               </div>
                             </div>
                           );

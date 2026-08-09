@@ -3,11 +3,13 @@ import {
   Phone, Search, Users, List, Settings, UserCog, Plus,
   Edit2, Trash2, X, Check, Bot, Send, UserPlus, UserMinus, Ban, Layers,
   ChevronRight, ChevronLeft, ArrowRight, MessageSquare, FileText, History,
-  Calendar, Eye, AlertTriangle, CheckCircle2, Clock, Paperclip, Image as ImageIcon, Video, File as FileLucide, RotateCcw, Copy, Download
+  Calendar, Eye, AlertTriangle, CheckCircle2, Clock, Paperclip, Image as ImageIcon, Video, File as FileLucide, RotateCcw, Copy, Download, Upload
 } from 'lucide-react';
 import ImpersonationBanner from './ImpersonationBanner';
 import { FileUploader } from './FileUploader';
 import { TemplateHeaderMediaField } from './TemplateHeaderMediaField';
+import ImportContactsModal from './ImportContactsModal';
+import TemplateBodyParamsEditor from './TemplateBodyParamsEditor';
 import { usePermission } from '../hooks/usePermission';
 import PageTopBar from './PageTopBar';
 import AppNav from './AppNav';
@@ -81,6 +83,9 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  // Import from Excel modal (pre-selects this group)
+  const [importModalOpen, setImportModalOpen] = useState(false);
 
   // Add members modal
   const [addModalOpen, setAddModalOpen] = useState(false);
@@ -876,26 +881,6 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
               </div>
             </div>
 
-            {/* Page view tabs */}
-            <div className="flex items-center gap-1 bg-slate-100 rounded-2xl p-1 mb-4">
-              <button
-                onClick={() => setPageView('groups')}
-                className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl font-bold text-xs transition-all ${
-                  pageView === 'groups' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-                }`}
-              >
-                <Layers size={13} /> רשימות
-              </button>
-              <button
-                onClick={() => setPageView('all-broadcasts')}
-                className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl font-bold text-xs transition-all ${
-                  pageView === 'all-broadcasts' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-                }`}
-              >
-                <History size={13} /> שליחות מרוכזות
-              </button>
-            </div>
-
             {/* Create new */}
             {can('groups.create') && (
             <div className="flex items-center gap-2">
@@ -1186,8 +1171,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                   >
                     <UserPlus size={16} /> הוסף אנשי קשר
                   </button>
-                  )}
-                  {!selectedGroup.is_blocklist && can('groups.send_message') && (
+                  )}                  {!selectedGroup.is_blocklist && can('groups.send_message') && (
                     <button
                       onClick={openSendModal}
                       disabled={selectedGroup.contacts.length === 0}
@@ -1536,15 +1520,37 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
         </main>
       </div>
 
+      {/* Import from Excel modal — pre-selects the current group */}
+      {importModalOpen && selectedGroup && (
+        <ImportContactsModal
+          token={token}
+          groups={regularGroups.map(g => ({ _id: g._id, name: g.name }))}
+          onClose={() => setImportModalOpen(false)}
+          onImported={() => { fetchGroupDetail(selectedGroup._id); fetchGroups(); }}
+          initialAssignToGroups
+          initialSelectedGroupIds={[selectedGroup._id]}
+        />
+      )}
+
       {/* Add Members modal */}
       {addModalOpen && selectedGroup && (
         <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col" dir="rtl">
             <div className="flex items-center justify-between p-6 border-b border-slate-100">
               <h2 className="text-xl font-black text-slate-900">הוסף אנשי קשר ל-{selectedGroup.name}</h2>
-              <button onClick={() => setAddModalOpen(false)} className="p-2 text-slate-300 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-colors">
-                <X size={20} />
-              </button>
+              <div className="flex items-center gap-2">
+                {can('contacts.import_excel') && (
+                <button
+                  onClick={() => setImportModalOpen(true)}
+                  className="flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-sm transition-colors"
+                >
+                  <Upload size={15} /> יבוא מאקסל
+                </button>
+                )}
+                <button onClick={() => setAddModalOpen(false)} className="p-2 text-slate-300 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-colors">
+                  <X size={20} />
+                </button>
+              </div>
             </div>
 
             <div className="p-6 flex-1 overflow-y-auto">
@@ -1764,63 +1770,12 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                     })()}
 
                     {/* Body params */}
-                    {Array.isArray(templateParams.body) && templateParams.body.length > 0 && (
-                      <div className="mt-3 space-y-3">
-                        <label className="text-xs font-bold text-slate-500 block">פרמטרים:</label>
-                        {templateParams.body.map((val: string, i: number) => {
-                          const isFieldMode = val.startsWith('__field:');
-                          const fieldRef = isFieldMode ? val.slice(8) : '';
-                          const stdFields = [
-                            { ref: 'full_name', label: 'שם מלא' },
-                            { ref: 'phone', label: 'טלפון' },
-                            { ref: 'whatsapp_name', label: 'שם וואטסאפ' },
-                            { ref: 'email', label: 'מייל' },
-                          ];
-                          return (
-                            <div key={i}>
-                              <div className="flex items-center gap-2 mb-1">
-                                <span className="text-xs font-bold text-slate-500">{`{{${i + 1}}}`}</span>
-                                <div className="flex rounded-lg overflow-hidden border border-slate-200 text-xs font-bold">
-                                  <button
-                                    type="button"
-                                    onClick={() => setTemplateParams((p: any) => { const body = [...(p.body||[])]; body[i]=''; return {...p,body}; })}
-                                    className={`px-2 py-1 transition-colors ${!isFieldMode ? 'bg-purple-600 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}`}
-                                  >טקסט</button>
-                                  <button
-                                    type="button"
-                                    onClick={() => setTemplateParams((p: any) => { const body = [...(p.body||[])]; body[i]='__field:full_name'; return {...p,body}; })}
-                                    className={`px-2 py-1 transition-colors ${isFieldMode ? 'bg-purple-600 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}`}
-                                  >שדה מאיש קשר</button>
-                                </div>
-                              </div>
-                              {isFieldMode ? (
-                                <select
-                                  value={fieldRef}
-                                  onChange={e => setTemplateParams((p: any) => { const body = [...(p.body||[])]; body[i]=`__field:${e.target.value}`; return {...p,body}; })}
-                                  className="w-full px-3 py-2 bg-white border border-purple-200 rounded-lg text-sm outline-none focus:border-purple-500"
-                                >
-                                  <optgroup label="שדות בסיסיים">
-                                    {stdFields.map(f => <option key={f.ref} value={f.ref}>{f.label}</option>)}
-                                  </optgroup>
-                                  {contactFields.length > 0 && (
-                                    <optgroup label="שדות מותאמים אישית">
-                                      {contactFields.map(f => <option key={f._id} value={`custom:${f._id}`}>{f.label}</option>)}
-                                    </optgroup>
-                                  )}
-                                </select>
-                              ) : (
-                                <input
-                                  value={val}
-                                  onChange={e => setTemplateParams((p: any) => { const body = [...(p.body||[])]; body[i]=e.target.value; return {...p,body}; })}
-                                  placeholder={`{{${i + 1}}}`}
-                                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:border-purple-500"
-                                />
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
+                    <TemplateBodyParamsEditor
+                      templateParams={templateParams}
+                      setTemplateParams={setTemplateParams}
+                      contactFields={contactFields}
+                      agentName={currentUser?.name}
+                    />
                   </div>
                 ) : (
                   <button
