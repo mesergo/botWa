@@ -1069,13 +1069,45 @@ export const getContacts = async (req, res) => {
   _date: { $ifNull: ['$created_at', '$createdAt'] }
 }
       },
+      {
+        // `_date` (session created_at) only reflects when the *session document* was
+        // created — it does NOT change when new messages (agent/bot/user) are pushed
+        // onto process_history of an EXISTING session, so a reply sent from an old
+        // session never bumped the contact to the top of the list. Instead, derive
+        // the true "last activity" timestamp from the newest `created` value across
+        // every process_history entry (falls back to `_date` when history is empty
+        // or has no parseable dates), covering incoming AND outgoing messages alike.
+        $addFields: {
+          _lastMsgDate: {
+            $max: {
+              $filter: {
+                input: {
+                  $concatArrays: [
+                    [{ $convert: { input: '$_date', to: 'date', onError: null, onNull: null } }],
+                    {
+                      $map: {
+                        input: { $ifNull: ['$process_history', []] },
+                        as: 'h',
+                        in: { $convert: { input: '$$h.created', to: 'date', onError: null, onNull: null } }
+                      }
+                    }
+                  ]
+                },
+                as: 'd',
+                cond: { $ne: ['$$d', null] }
+              }
+            }
+          }
+        }
+      },
       // Sort newest-first so $first inside $group returns the latest session's status
-      { $sort: { _date: -1 } },
+      { $sort: { _lastMsgDate: -1 } },
       {
         $group: {
           _id: '$contactKey',
           sessionCount: { $sum: 1 },
           lastSeen: { $max: '$_date' },
+          lastMessageAt: { $max: '$_lastMsgDate' },
           widgetIds: { $addToSet: '$widget_id' },
           flowIds: { $addToSet: '$flow_id' },
           repGroupIds: { $addToSet: '$rep_group_id' },
@@ -1087,7 +1119,7 @@ export const getContacts = async (req, res) => {
           latestWantsPhone: { $first: '$wants_phone' }
         }
       }, 
-      { $sort: { lastSeen: -1 } }
+      { $sort: { lastMessageAt: -1 } }
     ];
 
     const contacts = await collection.aggregate(pipeline).toArray();
@@ -1107,6 +1139,7 @@ export const getContacts = async (req, res) => {
         phone: c._id,
         sessionCount: c.sessionCount,
         lastSeen: c.lastSeen,
+        lastMessageAt: c.lastMessageAt || c.lastSeen,
         bots: [...usedBotIds].map(id => ({ id, name: botNameMap[id] })),
         botPhones: (c.customerPhones || []).filter(p => p && p !== 'Simulated' && p !== 'simulated'),
         repGroupIds: (c.repGroupIds || []).filter(Boolean).map(String),

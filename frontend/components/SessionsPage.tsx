@@ -38,6 +38,7 @@ interface Contact {
   phone: string;
   sessionCount: number;
   lastSeen: string | null;
+  lastMessageAt?: string | null;
   bots: { id: string; name: string }[];
   botPhones?: string[];
   assigned_to?: string[];
@@ -221,6 +222,22 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
   useEffect(() => {
     fetchContacts();
   }, [fetchContacts]);
+
+  // Optimistically reflects an outgoing (agent/template) message in the contacts
+  // sidebar the instant it's sent — bumps lastMessageAt/lastSeen to now and moves
+  // the contact to the top of the list, so the rep sees the conversation jump to
+  // first place (and its displayed timestamp update) without waiting for the next
+  // SSE/polling refresh from the backend (which now sorts by last activity in
+  // either direction, not just inbound customer messages — see getContacts).
+  const bumpContactToTop = React.useCallback((phone: string, timestamp: string) => {
+    setContacts(prev => {
+      const idx = prev.findIndex(c => c.phone === phone);
+      if (idx === -1) return prev;
+      const updated: Contact = { ...prev[idx], lastMessageAt: timestamp, lastSeen: timestamp };
+      const rest = prev.filter((_, i) => i !== idx);
+      return [updated, ...rest];
+    });
+  }, []);
 
   // Creates a new Contact record for a phone number (upsert-by-phone on the backend).
   // Used by the manual "+ New Conversation" flow.
@@ -1041,6 +1058,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
               setContacts(prev => prev.map(c =>
                 c.phone === selectedPhone ? { ...c, status: replyStatus } : c
               ));
+              if (selectedPhone) bumpContactToTop(selectedPhone, created);
               if (!msgData.waSent) {
                 setAgentWaFailed(true);
                 setAgentWaError(msgData.waError || null);
@@ -1303,6 +1321,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
         setContacts(prev => prev.map(c =>
           c.phone === selectedPhone ? { ...c, status: replyStatus } : c
         ));
+        if (selectedPhone) bumpContactToTop(selectedPhone, created);
         if (!data.waSent) {
           setAgentWaFailed(true);
           setAgentWaError(data.waError || null);
@@ -2508,7 +2527,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                         </div>
                         <div className="flex flex-col items-end gap-1 flex-shrink-0">
                           <span className="text-[10px] text-slate-400 font-semibold">
-                            {formatContactTime(contact.lastSeen)}
+                            {formatContactTime(contact.lastMessageAt || contact.lastSeen)}
                           </span>
                           {!sim && onOpenContacts && (
                             <button
