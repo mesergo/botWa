@@ -39,6 +39,7 @@ function roleDefaultCheck(role: string | undefined, key: string): boolean {
     'contacts.view','contacts.add','contacts.edit','contacts.delete','contacts.import_excel',
     'groups.view','groups.create','groups.add_contact','groups.send_message','groups.remove_contact',
     // 'sms_in.view' intentionally excluded: shown only per-user via the admin checkbox (User.sms_in_enabled)
+    // 'facebook_connect.view' intentionally excluded: shown only per-user via the admin checkbox (User.facebook_connect_enabled)
     'settings.view','settings.edit_profile',
     'users.view','users.add','users.edit','users.delete',
     'rep_groups.view','rep_groups.add','rep_groups.delete',
@@ -50,7 +51,7 @@ function roleDefaultCheck(role: string | undefined, key: string): boolean {
     'groups.view','groups.send_message',
     'settings.view','settings.edit_profile',
     'send_messages.view','send_messages.send'
-  ];
+  ];  
   const repKeys = [
     'sessions.view','sessions.view_assigned_only','sessions.templates_as_rep',
     'contacts.view',

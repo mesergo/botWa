@@ -39,6 +39,15 @@ function resolvePin(provided, existing) {
   if (provided && /^\d{5,6}$/.test(provided)) return provided;
   if (existing && /^\d{5,6}$/.test(existing)) return existing;
   return FIXED_PIN;
+}  
+
+/** Extract a short human-readable error message from a Meta register API result. */
+function extractMetaErrorMessage(result) {
+  const body = result?.body;
+  const msg = body?.error?.message || body?.error?.error_user_msg || body?.error_description || body?.error;
+  if (msg) return typeof msg === 'string' ? msg : JSON.stringify(msg);
+  if (result?.status) return `Meta register failed (HTTP ${result.status})`;
+  return 'שגיאה לא ידועה בהפעלת המספר';
 }
   
 async function callMetaRegister({ phoneNumberId, accessToken, pin, tag }) {
@@ -149,7 +158,11 @@ export const activateNumber = async (req, res) => {
       registered: !!result.success || (existingEntry?.registered || false),
       pin,
       assigned_bot_id: existingEntry?.assigned_bot_id || null,
-      connected_at: existingEntry?.connected_at || new Date()
+      connected_at: existingEntry?.connected_at || new Date(),
+      // Every connect attempt overwrites the previous error: cleared on success,
+      // set to the new failure reason on failure.
+      last_error: result.success ? '' : extractMetaErrorMessage(result),
+      last_error_at: result.success ? null : new Date()
     };
     if (existingEntry) {
       Object.assign(existingEntry, payload);
@@ -624,6 +637,11 @@ export const createPhpAccount = async (req, res) => {
       console.log(`${tag} ← HTTP ${phpStatus} in ${Date.now() - t0}ms ok=${phpOk}`);
     } catch (e) {
       console.log(`${tag} ← threw after ${Date.now() - t0}ms: ${e.message}`);
+      // Persist the failure so it's visible in the admin panel's connected-numbers views.
+      entry.last_error = `שגיאת רשת: ${e.message}`;
+      entry.last_error_at = new Date();
+      user.markModified('connected_numbers');
+      await user.save().catch(() => {});
       // Return 200 with success:false — avoid nginx HTML error pages
       return res.status(200).json({ success: false, error: 'php_request_failed', detail: e.message, logs: [`❌ שגיאת רשת: ${e.message}`] });
     }
@@ -654,11 +672,19 @@ export const createPhpAccount = async (req, res) => {
       } else if (phpBody.id) {
         logs.push(`🆔 ID: ${JSON.stringify(phpBody.id)}`);
       }
+      // Successful connect attempt — clear any previously recorded error.
+      entry.last_error = '';
+      entry.last_error_at = null;
     } else {
       logs.push(`❌ הפעולה נכשלה (HTTP ${phpStatus})`);
       const errDesc = phpBody?.error_description || phpBody?.error || phpBody?.message || '';
       if (errDesc) logs.push(`פרטים: ${errDesc}`);
+      // Every connect attempt overwrites the previous error with the new one.
+      entry.last_error = errDesc ? (typeof errDesc === 'string' ? errDesc : JSON.stringify(errDesc)) : `הפעולה נכשלה (HTTP ${phpStatus})`;
+      entry.last_error_at = new Date();
     }
+    user.markModified('connected_numbers');
+    await user.save();
 
     return res.status(200).json({
       success: phpOk,
@@ -800,7 +826,11 @@ export const fetchAndActivate = async (req, res) => {
         registered: !!regResult.success || (existingEntry?.registered || false),
         pin,
         assigned_bot_id: existingEntry?.assigned_bot_id || (bot_id || null),
-        connected_at: existingEntry?.connected_at || new Date()
+        connected_at: existingEntry?.connected_at || new Date(),
+        // Every connect attempt overwrites the previous error: cleared on success,
+        // set to the new failure reason on failure.
+        last_error: regResult.success ? '' : extractMetaErrorMessage(regResult),
+        last_error_at: regResult.success ? null : new Date()
       };
 
       if (existingEntry) {

@@ -38,7 +38,6 @@ import {
   ChevronRight
 } from 'lucide-react';
 
-const MESSAGES_FETCH_LIMIT = 500;
 const MESSAGES_PAGE_SIZE = 50;
 
 const API_BASE = window.location.hostname === 'localhost'
@@ -147,6 +146,7 @@ export default function SmsInApp({
   const [filterDateEnd, setFilterDateEnd] = useState('');
   const [routingDestSearch, setRoutingDestSearch] = useState('');
   const [messagesPage, setMessagesPage] = useState(1);
+  const [isExportingAll, setIsExportingAll] = useState(false);
 
   // Modals & Panels State
   const [editingDestSetting, setEditingDestSetting] = useState<DestSetting | null>(null);
@@ -157,7 +157,7 @@ export default function SmsInApp({
 
   // Database integration state for MongoDB
   const [dbStatus, setDbStatus] = useState<{
-    connected: boolean;
+    connected: boolean; 
     configured: boolean;
     message?: string;
     reason?: string;
@@ -168,7 +168,6 @@ export default function SmsInApp({
   const [messagesSource, setMessagesSource] = useState<'mongodb' | 'local' | null>(null);
   const [isLoadingMessages, setIsLoadingMessages] = useState<boolean>(false);
   const [searchTotal, setSearchTotal] = useState<number | null>(null);
-  const lastServerSearchRef = useRef('');
 
   /** Auth headers for SMS API calls. */
   const buildApiHeaders = (extra?: HeadersInit): HeadersInit => {
@@ -194,38 +193,6 @@ export default function SmsInApp({
     } catch (e) {
       console.error('Error fetching DB status', e);
       return { connected: false, configured: false };
-    }
-  };
-
-  // Fetch real messages from MongoDB (scoped to assigned lines unless management mode)
-  const fetchRealMessages = async (silent = false) => {
-    setIsLoadingMessages(true);
-    try {
-      const res = await fetch(`${messagesEndpoint}?limit=${MESSAGES_FETCH_LIMIT}`, {
-        headers: buildApiHeaders(),
-      });
-      const data = await res.json();
-      if (data.source === 'mongodb' && Array.isArray(data.messages)) {
-        setMessages(data.messages);
-        setSearchTotal(null);
-        setMessagesSource('mongodb');
-        if (!silent) {
-          showToastMsg(`הנתונים נטענו בהצלחה מ-MongoDB (${data.messages.length} SMS)`, 'success');
-        }
-      } else {
-        setMessagesSource('local');
-        if (!silent) {
-          showToastMsg('אין חיבור לטבלת ה-SMS — בדוק את הגדרות השרת', 'error');
-        }
-      }
-    } catch (e) {
-      console.error('Error fetching messages from MongoDB:', e);
-      setMessagesSource('local');
-      if (!silent) {
-        showToastMsg('מצב מקומי — נתונים מהדפדפן (בפרודקשן ייטענו מהשרת)', 'info');
-      }
-    } finally {
-      setIsLoadingMessages(false);
     }
   };
 
@@ -270,13 +237,11 @@ export default function SmsInApp({
     }
   };
 
-  // Load when auth / management mode is ready (not only on first mount)
+  // Load when auth / management mode is ready (not only on first mount).
+  // Message loading itself is handled by the paginated fetch effect below;
+  // this just verifies DB connectivity and loads dest/line settings.
   useEffect(() => {
-    fetchDbStatus().then((status) => {
-      if (status && status.connected) {
-        fetchRealMessages(true);
-      }
-    });
+    fetchDbStatus();
     if (embedded && token) {
       fetchDestSettings();
     }
@@ -288,27 +253,17 @@ export default function SmsInApp({
     }
   }, [embedded, token, isAdmin]);
 
-  // Search MongoDB itself so results are not limited to the 500 recent messages.
+  // Load the current page from MongoDB whenever filters or the page number change.
+  // Debounced so typing in the search box doesn't fire a request per keystroke.
+  // Always server-paginated (page + limit), so scrolling through pages keeps going
+  // across the entire collection instead of stopping at a fixed "recent 500" cap.
   useEffect(() => {
-    const query = searchText.trim();
-    const destQuery = filterDest !== 'all' ? filterDest.trim() : '';
-    const hasServerQuery = query.length > 0 || destQuery.length > 0;
-    const searchKey = `${query}||${destQuery}`;
-
-    if (!hasServerQuery) {
-      if (lastServerSearchRef.current) {
-        lastServerSearchRef.current = '';
-        fetchRealMessages(true);
-      }
-      setSearchTotal(null);
-      return;
-    }
-
-    lastServerSearchRef.current = searchKey;
     const controller = new AbortController();
     const timer = window.setTimeout(async () => {
       setIsLoadingMessages(true);
       try {
+        const query = searchText.trim();
+        const destQuery = filterDest !== 'all' ? filterDest.trim() : '';
         const params = new URLSearchParams({
           page: String(messagesPage),
           limit: String(MESSAGES_PAGE_SIZE),
@@ -328,8 +283,8 @@ export default function SmsInApp({
         }
       } catch (e) {
         if ((e as Error).name !== 'AbortError') {
-          console.error('Error searching SMS messages:', e);
-          showToastMsg('החיפוש בכל טבלת ה-SMS נכשל', 'error');
+          console.error('Error loading SMS messages:', e);
+          showToastMsg('טעינת הודעות ה-SMS נכשלה', 'error');
         }
       } finally {
         if (!controller.signal.aborted) setIsLoadingMessages(false);
@@ -499,9 +454,9 @@ export default function SmsInApp({
     }
   };
 
-  const isServerSearch =
-    (searchText.trim().length > 0 || (filterDest !== 'all' && filterDest.trim().length > 0)) &&
-    searchTotal !== null;
+  // Messages are now always loaded page-by-page from the server (never a flat
+  // "recent 500" snapshot), so the server's total/pagination is always authoritative.
+  const isServerSearch = searchTotal !== null;
 
   // Filter messages logic
   const filteredMessages = messages.filter(msg => {
@@ -577,8 +532,65 @@ export default function SmsInApp({
     }
   }, [messagesPage, totalPages]);
 
+  // Fetches the FULL matching dataset from the server (bypassing the 50-row page
+  // load) for export purposes only. Reuses the current server-side filters
+  // (searchText -> q, filterDest -> dest). Does NOT touch the paginated `messages` state.
+  const fetchAllForExport = async (): Promise<{ messages: Message[]; total: number } | null> => {
+    const query = searchText.trim();
+    const destQuery = filterDest !== 'all' ? filterDest.trim() : '';
+    try {
+      const params = new URLSearchParams({ exportAll: 'true' });
+      if (query) params.set('q', query);
+      if (destQuery) params.set('dest', destQuery);
+      const res = await fetch(`${messagesEndpoint}?${params.toString()}`, {
+        headers: buildApiHeaders(),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      if (data.source === 'mongodb' && Array.isArray(data.messages)) {
+        return { messages: data.messages, total: Number(data.total) || data.messages.length };
+      }
+      return null;
+    } catch (e) {
+      console.error('Error fetching all messages for export:', e);
+      return null;
+    }
+  };
+
+  // Re-applies the client-only filters (associated client + date range) that are
+  // never sent to the server, on top of a server-fetched export list.
+  const applyExportOnlyFilters = (msgs: Message[]) => msgs.filter(msg => {
+    // Defense in depth: server already scopes exportAll requests to allowedDests
+    // for authenticated non-admin accounts.
+    if (!seeAllMessages && userId && embedded) {
+      if (!destSettingsFromMongo) return false;
+      if (!myAssignedDests || !myAssignedDests.has(msg.dest)) return false;
+    }
+
+    let matchClient = true;
+    if (isAdmin && filterClient !== 'all') {
+      const lineSetting = destSettings.find(ds => ds.dest === msg.dest);
+      matchClient = !!lineSetting && lineSetting.assignedClients.includes(filterClient);
+    }
+
+    let matchDateRange = true;
+    const msgDateObj = parseMessageDate(msg.date);
+    if (filterDateStart) {
+      const startDate = new Date(filterDateStart);
+      startDate.setHours(0, 0, 0, 0);
+      if (msgDateObj < startDate) matchDateRange = false;
+    }
+    if (filterDateEnd) {
+      const endDate = new Date(filterDateEnd);
+      endDate.setHours(23, 59, 59, 999);
+      if (msgDateObj > endDate) matchDateRange = false;
+    }
+
+    return matchClient && matchDateRange;
+  });
+
   // Export Filtered Messages to CSV
-  const handleExportCSV = (customList?: Message[]) => {
+  const handleExportCSV = (customList?: Message[], options?: { suppressSuccessToast?: boolean }) => {
     const listToExport = customList || filteredMessages;
     if (listToExport.length === 0) {
       showToastMsg('אין הודעות לייצוא בהתאם למסננים שנבחרו', 'error');
@@ -620,14 +632,57 @@ export default function SmsInApp({
     link.click();
     document.body.removeChild(link);
 
-    showToastMsg(`ייצוא של ${listToExport.length} הודעות בוצע בהצלחה!`, 'success');
+    if (!options?.suppressSuccessToast) {
+      showToastMsg(`ייצוא של ${listToExport.length} הודעות בוצע בהצלחה!`, 'success');
+    }
+  };
+
+  // Export ALL messages matching the current filters (not just the loaded/paginated
+  // ones) — fetches the full matching set from the server first.
+  // Export is only allowed once a dest (route/line) filter is selected, to avoid
+  // accidentally exporting the entire, unscoped dataset.
+  const hasDestFilter = filterDest !== 'all' && filterDest.trim().length > 0;
+
+  const handleExportAllClick = async () => {
+    if (isExportingAll) return;
+    if (!hasDestFilter) {
+      showToastMsg('יש לבחור נתב / קו נמען (dest) לפני ייצוא', 'error');
+      return;
+    }
+    setIsExportingAll(true);
+    try {
+      const result = await fetchAllForExport();
+      if (!result) {
+        showToastMsg('שגיאה בטעינת ההודעות לייצוא', 'error');
+        return;
+      }
+      const finalList = applyExportOnlyFilters(result.messages);
+      if (finalList.length === 0) {
+        showToastMsg('אין הודעות לייצוא בהתאם למסננים שנבחרו', 'error');
+        return;
+      }
+      const isCapped = result.total > result.messages.length;
+      handleExportCSV(finalList, { suppressSuccessToast: isCapped });
+      if (isCapped) {
+        showToastMsg(
+          `יוצאו ${result.messages.length.toLocaleString()} מתוך ${result.total.toLocaleString()} הודעות התואמות למסננים — הקובץ אינו כולל את כל הרשומות`,
+          'error'
+        );
+      }
+    } finally {
+      setIsExportingAll(false);
+    }
   };
 
   // Export by Date Picker Dialog Helper
   const [expDateStr, setExpDateStr] = useState('');
-  const handleExportByParticularDate = () => {
+  const handleExportByParticularDate = async () => {
     if (!expDateStr) {
       showToastMsg('נא לבחור תאריך תקין', 'error');
+      return;
+    }
+    if (!hasDestFilter) {
+      showToastMsg('יש לבחור נתב / קו נמען (dest) לפני ייצוא', 'error');
       return;
     }
 
@@ -637,18 +692,37 @@ export default function SmsInApp({
     const endOfDay = new Date(selectedDate);
     endOfDay.setHours(23,59,59,999);
 
-    const matchDateList = messages.filter(m => {
-      const dObj = parseMessageDate(m.date);
-      return dObj >= startOfDay && dObj <= endOfDay;
-    });
+    if (isExportingAll) return;
+    setIsExportingAll(true);
+    try {
+      const result = await fetchAllForExport();
+      if (!result) {
+        showToastMsg('שגיאה בטעינת ההודעות לייצוא', 'error');
+        return;
+      }
 
-    if (matchDateList.length === 0) {
-      showToastMsg(`לא נמצאו הודעות המתאימות לתאריך ${expDateStr}`, 'error');
-      return;
+      const matchDateList = result.messages.filter(m => {
+        const dObj = parseMessageDate(m.date);
+        return dObj >= startOfDay && dObj <= endOfDay;
+      });
+
+      if (matchDateList.length === 0) {
+        showToastMsg(`לא נמצאו הודעות המתאימות לתאריך ${expDateStr}`, 'error');
+        return;
+      }
+
+      const isCapped = result.total > result.messages.length;
+      handleExportCSV(matchDateList, { suppressSuccessToast: isCapped });
+      if (isCapped) {
+        showToastMsg(
+          `יוצאו ${result.messages.length.toLocaleString()} מתוך ${result.total.toLocaleString()} הודעות התואמות למסננים — ייתכן שהתאריך שנבחר אינו כולל את כל הרשומות`,
+          'error'
+        );
+      }
+      setShowExportDateModal(false);
+    } finally {
+      setIsExportingAll(false);
     }
-
-    handleExportCSV(matchDateList);
-    setShowExportDateModal(false);
   };
 
   const triggerWebhookToUrl = async (
@@ -1272,22 +1346,31 @@ export default function SmsInApp({
 
                       {/* Action options in filter bank */}
                       <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-100">
-                        <div className="flex flex-wrap gap-2">
-                          <button
-                            onClick={() => handleExportCSV()}
-                            className="bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-2xl px-4 py-2.5 text-sm flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-                          >
-                            <Download size={14} />
-                            <span>יצא הכל ל-CSV ({filteredMessageCount})</span>
-                          </button>
-                          
-                          <button
-                            onClick={() => setShowExportDateModal(true)}
-                            className="bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold rounded-2xl px-4 py-2.5 text-sm flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-                          >
-                            <Calendar size={14} className="text-slate-500" />
-                            <span>יצא לפי תאריך ספציפי</span>
-                          </button>
+                        <div className="flex flex-col gap-1.5">
+                          <div className="flex flex-wrap gap-2">
+                            <button
+                              onClick={() => handleExportAllClick()}
+                              disabled={isExportingAll || !hasDestFilter}
+                              title={!hasDestFilter ? 'יש לבחור נתב / קו נמען (dest) לפני ייצוא' : undefined}
+                              className="bg-slate-900 hover:bg-slate-800 disabled:opacity-60 disabled:cursor-not-allowed text-white font-bold rounded-2xl px-4 py-2.5 text-sm flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                            >
+                              <Download size={14} />
+                              <span>{isExportingAll ? 'מייצא...' : `יצא הכל ל-CSV (${messageResultCount})`}</span>
+                            </button>
+                            
+                            <button
+                              onClick={() => setShowExportDateModal(true)}
+                              disabled={!hasDestFilter}
+                              title={!hasDestFilter ? 'יש לבחור נתב / קו נמען (dest) לפני ייצוא' : undefined}
+                              className="bg-slate-100 hover:bg-slate-200 disabled:opacity-60 disabled:cursor-not-allowed text-slate-800 font-bold rounded-2xl px-4 py-2.5 text-sm flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                            >
+                              <Calendar size={14} className="text-slate-500" />
+                              <span>יצא לפי תאריך ספציפי</span>
+                            </button>
+                          </div>
+                          {!hasDestFilter && (
+                            <p className="text-xs font-semibold text-amber-600">יש לבחור נתב / קו נמען (dest) כדי לאפשר ייצוא</p>
+                          )}
                         </div>
 
                         {(searchText || filterDest !== 'all' || filterClient !== 'all' || filterDateStart || filterDateEnd) && (
@@ -1683,10 +1766,11 @@ export default function SmsInApp({
               </button>
               <button
                 onClick={handleExportByParticularDate}
-                className="bg-sky-600 hover:bg-sky-500 text-white px-5 py-2.5 rounded-2xl flex items-center gap-1.5"
+                disabled={isExportingAll}
+                className="bg-sky-600 hover:bg-sky-500 disabled:opacity-60 disabled:cursor-not-allowed text-white px-5 py-2.5 rounded-2xl flex items-center gap-1.5"
               >
                 <Download size={14} />
-                ייצא והורד
+                {isExportingAll ? 'מייצא...' : 'ייצא והורד'}
               </button>
             </div>
           </div>

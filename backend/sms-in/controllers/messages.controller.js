@@ -11,21 +11,20 @@ import { getAssignedDestsForUser } from './destSettings.controller.js';
  * though the line is assigned. Always query Mongo by allowed dests.
  */
 export async function getMessages(req, res, next) {
-  try {
+  try { 
     const search = String(req.query.q || '').trim();
     const destQuery = String(req.query.dest || '').trim();
-    const isSearch = search.length > 0 || destQuery.length > 0;
+    const exportAll = String(req.query.exportAll || '').trim() === 'true';
     const requestedLimit = Number(req.query.limit);
-    const limit = isSearch
-      ? Math.min(Math.max(Number.isFinite(requestedLimit) ? Math.floor(requestedLimit) : 50, 1), 100)
-      : Math.min(Math.max(Number.isFinite(requestedLimit) ? Math.floor(requestedLimit) : 500, 1), 500);
+    const limit = exportAll
+      ? Math.min(Number.isFinite(requestedLimit) && requestedLimit > 0 ? Math.floor(requestedLimit) : 50000, 50000)
+      : Math.min(Math.max(Number.isFinite(requestedLimit) ? Math.floor(requestedLimit) : 50, 1), 100);
     const requestedPage = Number(req.query.page);
-    const page = Number.isFinite(requestedPage) && requestedPage > 0
+    const page = exportAll
+      ? 1
+      : Number.isFinite(requestedPage) && requestedPage > 0
       ? Math.floor(requestedPage)
       : 1;
-
-    let messages;
-    let total;
 
     // Authenticated callers are always scoped to assigned lines.
     let allowedDests;
@@ -40,39 +39,29 @@ export async function getMessages(req, res, next) {
           total: 0,
           page,
           limit,
-          mode: isSearch ? 'search' : 'recent',
           scoped: true,
         });
       }
     }
 
-    if (isSearch || allowedDests) {
-      // Search path, OR default inbox for a scoped user — both must hit Mongo with
-      // dest ∈ allowedDests so older messages on the customer's lines still appear.
-      const result = await smsService.searchMessages({
-        search,
-        destQuery,
-        allowedDests,
-        page,
-        limit,
-      });
-      messages = result.messages;
-      total = result.total;
-    } else {
-      // Unauthenticated / legacy callers — global recent only.
-      messages = await smsService.getRecentMessages(limit);
-      total = messages.length;
-    }
+    // Always page through Mongo with skip/limit (never a fixed "recent N" cap) so
+    // browsing keeps going past any page and `total` always reflects the true count.
+    const result = await smsService.searchMessages({
+      search,
+      destQuery,
+      allowedDests,
+      page,
+      limit,
+    });
 
     res.json({
       source: 'mongodb',
       dbName: getSmsDbName(),
       collection: getSmsCollectionName(),
-      messages,
-      total,
+      messages: result.messages,
+      total: result.total,
       page,
       limit,
-      mode: isSearch ? 'search' : 'recent',
       scoped: !!req.user,
     });
   } catch (err) {
@@ -95,43 +84,36 @@ export async function getAdminMessages(req, res, next) {
   try {
     const search = String(req.query.q || '').trim();
     const destQuery = String(req.query.dest || '').trim();
-    const isSearch = search.length > 0 || destQuery.length > 0;
+    const exportAll = String(req.query.exportAll || '').trim() === 'true';
     const requestedLimit = Number(req.query.limit);
-    const limit = isSearch
-      ? Math.min(Math.max(Number.isFinite(requestedLimit) ? Math.floor(requestedLimit) : 50, 1), 100)
-      : Math.min(Math.max(Number.isFinite(requestedLimit) ? Math.floor(requestedLimit) : 500, 1), 500);
+    const limit = exportAll
+      ? Math.min(Number.isFinite(requestedLimit) && requestedLimit > 0 ? Math.floor(requestedLimit) : 50000, 50000)
+      : Math.min(Math.max(Number.isFinite(requestedLimit) ? Math.floor(requestedLimit) : 50, 1), 100);
     const requestedPage = Number(req.query.page);
-    const page = Number.isFinite(requestedPage) && requestedPage > 0
+    const page = exportAll
+      ? 1
+      : Number.isFinite(requestedPage) && requestedPage > 0
       ? Math.floor(requestedPage)
       : 1;
 
-    let messages;
-    let total;
-
-    if (isSearch) {
-      const result = await smsService.searchMessages({
-        search,
-        destQuery,
-        // no allowedDests → entire collection
-        page,
-        limit,
-      });
-      messages = result.messages;
-      total = result.total;
-    } else {
-      messages = await smsService.getRecentMessages(limit);
-      total = messages.length;
-    }
+    // Always page through Mongo with skip/limit (no fixed "recent N" cap) so browsing
+    // keeps going past any page and `total` always reflects the true count.
+    const result = await smsService.searchMessages({
+      search,
+      destQuery,
+      // no allowedDests → entire collection
+      page,
+      limit,
+    });
 
     res.json({
       source: 'mongodb',
       dbName: getSmsDbName(),
       collection: getSmsCollectionName(),
-      messages,
-      total,
+      messages: result.messages,
+      total: result.total,
       page,
       limit,
-      mode: isSearch ? 'search' : 'recent',
       scoped: false,
     });
   } catch (err) {
@@ -141,6 +123,45 @@ export async function getAdminMessages(req, res, next) {
         messages: [],
         localDev: process.env.NODE_ENV !== 'production',
       });
+    }
+    next(err);
+  }
+}
+
+/**
+ * Regular / user SMS tab — dest numbers that actually have at least one message,
+ * scoped to the logged-in account's assigned lines. Powers the dest-filter
+ * dropdown so suggestions never point to a guaranteed-empty search.
+ */
+export async function getDests(req, res, next) {
+  try {
+    let allowedDests;
+    if (req.user) {
+      allowedDests = await getAssignedDestsForUser(req.userId);
+      if (allowedDests.length === 0) {
+        return res.json({ dests: [] });
+      }
+    }
+    const dests = await smsService.getDistinctDests(allowedDests);
+    res.json({ dests });
+  } catch (err) {
+    if (err.message === 'Database not configured') {
+      return res.json({ dests: [] });
+    }
+    next(err);
+  }
+}
+
+/**
+ * /admin panel only — every dest number in the system that actually has messages.
+ */
+export async function getAdminDests(req, res, next) {
+  try {
+    const dests = await smsService.getDistinctDests();
+    res.json({ dests });
+  } catch (err) {
+    if (err.message === 'Database not configured') {
+      return res.json({ dests: [] });
     }
     next(err);
   }

@@ -36,8 +36,12 @@ const userSchema = new mongoose.Schema({
       provider: { type: String, default: 'facebook' },
       // Dialog360-specific fields
       token360: { type: String, default: '' },
-      link: { type: String, default: '' }
-    }],
+      link: { type: String, default: '' },
+      // Most recent connection error (Meta register / PHP account creation failure).
+      // Overwritten on every connect attempt; cleared to '' on a successful connect.
+      last_error: { type: String, default: '' },
+      last_error_at: { type: Date, default: null }
+    }],  
     default: []
   },
   custom_limits: {
@@ -66,6 +70,8 @@ const userSchema = new mongoose.Schema({
   user_type_id: { type: mongoose.Schema.Types.ObjectId, ref: 'UserType', default: null },
   // Per-client toggle (set by admin): show the "SMS נכנס" tab. Admins always see it.
   sms_in_enabled: { type: Boolean, default: false },
+  // Per-client toggle (set by admin): allow the "חבר לפייסבוק" button in bot settings. Admins always see it.
+  facebook_connect_enabled: { type: Boolean, default: false },
   // Invite-only onboarding fields for sub-users (reps/rep_managers).
   invite_token_hash: { type: String, default: null },
   invite_token_expires_at: { type: Date, default: null },

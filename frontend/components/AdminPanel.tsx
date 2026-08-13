@@ -12,6 +12,7 @@ import {
 import UserTypesManager from './UserTypesManager';
 import { FileUploader } from './FileUploader';
 import SmsInApp from './sms-in/SmsInApp';
+import CustomerSessionsPanel from './CustomerSessionsPanel';
 
 interface User {
   id: string;
@@ -28,6 +29,7 @@ interface User {
   allowed_bot_ids?: string[];
   user_type_id?: { _id: string; name: string; system_role: string } | null;
   sms_in_enabled?: boolean;
+  facebook_connect_enabled?: boolean;
   createdAt: string;
   updatedAt: string;
   stats?: {
@@ -90,8 +92,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
   const navigate = useNavigate();
   const { tab } = useParams<{ tab?: string }>();
 
-  type AdminTab = 'dashboard' | 'users' | 'user-types' | 'templates' | 'settings' | 'sessions' | 'dialog360' | 'sms-in' | 'removal-log';
-  const VALID_TABS: AdminTab[] = ['dashboard', 'users', 'user-types', 'templates', 'settings', 'sessions', 'dialog360', 'sms-in', 'removal-log'];
+  type AdminTab = 'dashboard' | 'users' | 'user-types' | 'templates' | 'settings' | 'sessions' | 'dialog360' | 'sms-in' | 'connected-numbers';
+  const VALID_TABS: AdminTab[] = ['dashboard', 'users', 'user-types', 'templates', 'settings', 'sessions', 'dialog360', 'sms-in', 'connected-numbers'];
   const activeTab: AdminTab = (VALID_TABS.includes(tab as AdminTab) ? tab : 'dashboard') as AdminTab;
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const setActiveTab = (t: AdminTab) => {
@@ -101,6 +103,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
   const [users, setUsers] = useState<User[]>([]);
   const [stats, setStats] = useState<SystemStats | null>(null);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
+  const [userDetailTab, setUserDetailTab] = useState<'profile' | 'removal-log' | 'cust-templates' | 'cust-connections' | 'cust-sessions'>('profile');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
@@ -124,6 +127,22 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
   const [removalLogPage, setRemovalLogPage] = useState(1);
   const [removalLogTotal, setRemovalLogTotal] = useState(0);
   const REMOVAL_LOG_PAGE_SIZE = 20;
+
+  // Per-customer Dialog360 message-templates tab (admin viewing/managing on the customer's behalf)
+  const [custDialog360Templates, setCustDialog360Templates] = useState<any[]>([]);
+  const [custDialog360Loading, setCustDialog360Loading] = useState(false);
+  const [custDialog360Error, setCustDialog360Error] = useState<string | null>(null);
+  const [custDialog360Settings, setCustDialog360Settings] = useState<Record<string, 'hidden' | 'manager' | 'agent'>>({});
+  const [custDialog360DefaultMedia, setCustDialog360DefaultMedia] = useState<Record<string, { url: string; type: 'image' | 'video' | 'document' }>>({});
+
+  // Per-customer connected-numbers tab (read-only admin view)
+  const [custConnectedNumbers, setCustConnectedNumbers] = useState<any[]>([]);
+  const [custConnectedNumbersLoading, setCustConnectedNumbersLoading] = useState(false);
+
+  // GLOBAL connected-numbers tab: every connected WhatsApp number across all customers
+  const [allConnectedNumbers, setAllConnectedNumbers] = useState<any[]>([]);
+  const [allConnectedNumbersLoading, setAllConnectedNumbersLoading] = useState(false);
+  const [allConnectedNumbersSearch, setAllConnectedNumbersSearch] = useState('');
   
   // Forms state
   const [newTemplateData, setNewTemplateData] = useState({ name: '', description: '', botId: '' });
@@ -189,7 +208,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
       setRepManagerBots(bots);
     } catch { setRepManagerBots([]); } finally { setManagerBotsLoading(false); }
   };
-  
+
   // Dialog360 Templates
   const [dialog360Templates, setDialog360Templates] = useState<any[]>([]);
   const [dialog360TemplateDefaultMedia, setDialog360TemplateDefaultMedia] = useState<Record<string, { url: string; type: 'image' | 'video' | 'document' }>>({});
@@ -223,10 +242,42 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
     if (activeTab === 'users') fetchAllUsers();
     if (activeTab === 'templates') fetchTemplates();
     if (activeTab === 'settings') { fetchSystemConfig(); fetchRemovalConfig(); }
-    if (activeTab === 'removal-log') fetchRemovalConfigLog(1);
     if (activeTab === 'sessions') fetchAllSessions(1, sessionsSearch);
     if (activeTab === 'dialog360') fetchDialog360Templates();
     if (activeTab === 'users' || activeTab === 'user-types') fetchUserTypesForModal();
+  }, [activeTab]);
+
+  // Load this specific customer's removal-activity log whenever their
+  // "לוג פעילות הסרה" tab is opened (or a different customer is selected while it's open).
+  useEffect(() => {
+    if (activeTab === 'users' && userDetailTab === 'removal-log' && selectedUser?.id) {
+      fetchRemovalConfigLog(1, selectedUser.id);
+    }
+  }, [activeTab, userDetailTab, selectedUser?.id]);
+
+  // Load this specific customer's Dialog360 message templates whenever their
+  // "הודעות תבנית" tab is opened (or a different customer is selected while it's open).
+  useEffect(() => {
+    if (activeTab === 'users' && userDetailTab === 'cust-templates' && selectedUser?.id) {
+      fetchCustomerDialog360Templates(selectedUser.id);
+      fetchCustomerDialog360Settings(selectedUser.id);
+    }
+  }, [activeTab, userDetailTab, selectedUser?.id]);
+
+  // Load this specific customer's connected numbers whenever their
+  // "חיבורים" tab is opened (or a different customer is selected while it's open).
+  useEffect(() => {
+    if (activeTab === 'users' && userDetailTab === 'cust-connections' && selectedUser?.id) {
+      fetchCustomerConnectedNumbers(selectedUser.id);
+    }
+  }, [activeTab, userDetailTab, selectedUser?.id]);
+
+  // Load EVERY connected number across all customers when the global
+  // "מספרים מחוברים" tab is opened.
+  useEffect(() => {
+    if (activeTab === 'connected-numbers') {
+      fetchAllConnectedNumbers();
+    }
   }, [activeTab]);
 
   useEffect(() => {
@@ -404,6 +455,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
       if (!response.ok) throw new Error('Failed to fetch details');
       const data = await response.json();
       setSelectedUser(data.user);
+      setUserDetailTab('profile');
       setEditForm({});
       setIsEditing(false);
       setShowPassword(false);
@@ -858,10 +910,13 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
     }
   };
 
-  const fetchRemovalConfigLog = async (page: number) => {
+  const fetchRemovalConfigLog = async (page: number, userId?: string) => {
     setRemovalLogLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/admin/settings/removal/log?page=${page}`, {
+      const url = userId
+        ? `${API_BASE}/admin/settings/removal/log?page=${page}&userId=${userId}`
+        : `${API_BASE}/admin/settings/removal/log?page=${page}`;
+      const res = await fetch(url, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (!res.ok) throw new Error('Failed to load removal log');
@@ -876,6 +931,138 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
     }
   };
 
+  // Fetch a specific customer's Dialog360 message templates (admin viewing on their behalf)
+  const fetchCustomerDialog360Templates = async (userId: string) => {
+    setCustDialog360Loading(true);
+    setCustDialog360Error(null);
+    try {
+      const response = await fetch(`${API_BASE}/admin/users/${userId}/dialog360-templates`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await response.json();
+      if (!response.ok || data.success === false) {
+        setCustDialog360Templates([]);
+        setCustDialog360Error(data.error || 'שגיאה בטעינת הודעות התבנית');
+        return;
+      }
+      const raw = data.templates;
+      const list = Array.isArray(raw) ? raw : Array.isArray(raw?.data) ? raw.data : Array.isArray(raw?.templates) ? raw.templates : [];
+      setCustDialog360Templates(list);
+    } catch (err) {
+      setCustDialog360Templates([]);
+      setCustDialog360Error('שגיאת רשת בטעינת הודעות התבנית');
+    } finally {
+      setCustDialog360Loading(false);
+    }
+  };
+
+  // Fetch a specific customer's saved Dialog360 template visibility/default-media settings
+  const fetchCustomerDialog360Settings = async (userId: string) => {
+    try {
+      const response = await fetch(`${API_BASE}/admin/users/${userId}/dialog360-template-settings`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!response.ok) return;
+      const data = await response.json();
+      const settingsMap: Record<string, 'hidden' | 'manager' | 'agent'> = {};
+      const mediaMap: Record<string, { url: string; type: 'image' | 'video' | 'document' }> = {};
+      (Array.isArray(data.settings) ? data.settings : []).forEach((s: any) => {
+        settingsMap[s.templateName] = s.visibility || (s.showInChat === false ? 'hidden' : 'manager');
+        if (s.defaultHeaderMediaUrl) {
+          mediaMap[s.templateName] = { url: s.defaultHeaderMediaUrl, type: s.defaultHeaderMediaType };
+        }
+      });
+      setCustDialog360Settings(settingsMap);
+      setCustDialog360DefaultMedia(mediaMap);
+    } catch (err) {
+      console.error('[admin cust dialog360 settings]', err);
+    }
+  };
+
+  // Cycle a specific customer's template visibility: hidden -> manager -> agent -> hidden
+  const cycleCustomerDialog360Visibility = async (userId: string, template: any) => {
+    const name = template.name || template.elementName || template.template_name;
+    if (!name) return;
+    const current = custDialog360Settings[name] ?? 'manager';
+    const next = current === 'hidden' ? 'manager' : current === 'manager' ? 'agent' : 'hidden';
+    try {
+      const response = await fetch(`${API_BASE}/admin/users/${userId}/dialog360-template-settings/toggle`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({
+          templateName: name,
+          templateId: template.id,
+          language: template.language,
+          category: template.category,
+          status: template.status,
+          visibility: next
+        })
+      });
+      if (response.ok) {
+        setCustDialog360Settings(prev => ({ ...prev, [name]: next }));
+      }
+    } catch (err) {
+      console.error('[admin cust dialog360 toggle]', err);
+    }
+  };
+
+  // Set/clear the default header media for a specific customer's template
+  const updateCustomerTemplateDefaultMedia = async (userId: string, template: any, url: string | null, mediaType: 'image' | 'video' | 'document' | null) => {
+    const name = template.name || template.elementName || template.template_name;
+    if (!name) return;
+    try {
+      const response = await fetch(`${API_BASE}/admin/users/${userId}/dialog360-template-settings/default-media`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ templateName: name, templateId: template.id, url, mediaType })
+      });
+      if (response.ok) {
+        setCustDialog360DefaultMedia(prev => {
+          const next = { ...prev };
+          if (url && mediaType) next[name] = { url, type: mediaType };
+          else delete next[name];
+          return next;
+        });
+      }
+    } catch (err) {
+      console.error('[admin cust dialog360 default-media]', err);
+    }
+  };
+
+  // Fetch a specific customer's connected WhatsApp numbers (read-only)
+  const fetchCustomerConnectedNumbers = async (userId: string) => {
+    setCustConnectedNumbersLoading(true);
+    try {
+      const response = await fetch(`${API_BASE}/admin/users/${userId}/connected-numbers`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await response.json();
+      setCustConnectedNumbers(response.ok && Array.isArray(data.connected_numbers) ? data.connected_numbers : []);
+    } catch (err) {
+      setCustConnectedNumbers([]);
+      console.error('[admin cust connected-numbers]', err);
+    } finally {
+      setCustConnectedNumbersLoading(false);
+    }
+  };
+
+  // Fetch EVERY connected WhatsApp number across all customers (global admin view)
+  const fetchAllConnectedNumbers = async () => {
+    setAllConnectedNumbersLoading(true);
+    try {
+      const response = await fetch(`${API_BASE}/admin/connected-numbers`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await response.json();
+      setAllConnectedNumbers(response.ok && Array.isArray(data.connected_numbers) ? data.connected_numbers : []);
+    } catch (err) {
+      setAllConnectedNumbers([]);
+      console.error('[admin all connected-numbers]', err);
+    } finally {
+      setAllConnectedNumbersLoading(false);
+    }
+  };
+  
   const persistRemovalConfig = async () => {
     if (!removalConfig) return;
     setRemovalSaving(true);
@@ -1147,7 +1334,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
 
   // Render Component
   return (
-    <div className="relative flex items-start min-h-screen bg-[#F8FAFC] text-slate-900 font-sans selection:bg-indigo-100 selection:text-indigo-900 overflow-x-hidden" dir="rtl" style={{ fontFamily: "'Heebo', sans-serif" }}>
+    <div className="relative flex items-stretch h-screen bg-[#F8FAFC] text-slate-900 font-sans selection:bg-indigo-100 selection:text-indigo-900 overflow-hidden" dir="rtl" style={{ fontFamily: "'Heebo', sans-serif" }}>
       <style>{`
         @keyframes fadeIn {
           from { opacity: 0; }
@@ -1206,7 +1393,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
       )}
       
       {/* Sidebar Navigation */}
-      <aside className={`fixed md:relative inset-y-0 right-0 w-72 max-w-[85vw] bg-white flex flex-col z-40 border-l border-slate-100 shadow-[4px_0_24px_rgba(0,0,0,0.12)] md:shadow-[4px_0_24px_rgba(0,0,0,0.02)] transform transition-transform duration-300 ${isMobileSidebarOpen ? 'translate-x-0' : 'translate-x-full md:translate-x-0'}`}>
+      <aside className={`fixed md:relative inset-y-0 right-0 w-72 max-w-[85vw] h-screen bg-white flex flex-col z-40 border-l border-slate-100 shadow-[4px_0_24px_rgba(0,0,0,0.12)] md:shadow-[4px_0_24px_rgba(0,0,0,0.02)] transform transition-transform duration-300 flex-shrink-0 ${isMobileSidebarOpen ? 'translate-x-0' : 'translate-x-full md:translate-x-0'}`}>
         <div className="p-8 pb-6">
           <div className="flex items-center gap-3 mb-10">
            <div 
@@ -1222,12 +1409,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
               { id: 'dashboard', label: 'סקירה כללית', icon: LayoutDashboard },
               { id: 'users', label: 'ניהול לקוחות', icon: Users },
               { id: 'user-types', label: 'סוגי משתמשים', icon: Shield },
-              { id: 'sessions', label: 'סשנים', icon: List },
-              { id: 'dialog360', label: 'הודעות תבנית', icon: MessageSquare },
+              { id: 'connected-numbers', label: 'מספרים מחוברים', icon: Phone },
               { id: 'sms-in', label: 'הודעות SMS', icon: Inbox },
               { id: 'templates', label: 'מאגר תבניות בוט', icon: FileText },
               { id: 'settings', label: 'הגדרות מערכת', icon: Settings },
-              { id: 'removal-log', label: 'לוג פעילות הסרה', icon: Activity },
             ].map(item => (
               <button
                 key={item.id}
@@ -1258,7 +1443,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
       </aside>
 
       {/* Main Content Area */}
-      <main className="flex-1 w-full flex flex-col min-w-0 overflow-visible bg-[#F8FAFC]">
+      <main className="flex-1 w-full flex flex-col min-w-0 h-screen overflow-y-auto bg-[#F8FAFC]">
         {/* Decorative Background Elements */}
         <div className="absolute top-0 left-0 w-full h-96 bg-gradient-to-b from-indigo-50/50 to-transparent pointer-events-none z-0"></div>
         
@@ -1281,10 +1466,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
               {activeTab === 'user-types' && 'סוגי משתמשים'}
               {activeTab === 'sessions' && 'כל הסשנים'}
               {activeTab === 'dialog360' && 'הודעות תבנית Dialog360'}
+              {activeTab === 'connected-numbers' && 'מספרים מחוברים'}
               {activeTab === 'sms-in' && 'הודעות SMS'}
               {activeTab === 'templates' && 'ניהול תבניות'}
               {activeTab === 'settings' && 'הגדרות מערכת'}
-              {activeTab === 'removal-log' && 'לוג פעילות הסרה'}
             </h2>
             <p className="hidden sm:block text-sm font-medium text-slate-400 mt-1">
               {activeTab === 'dashboard' && 'סקירה מקיפה על נתוני וביצועי המערכת'}
@@ -1292,10 +1477,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
               {activeTab === 'user-types' && 'הגדרת הרשאות לכל סוג משתמש במערכת'}
               {activeTab === 'sessions' && 'צפייה בכל הסשנים של כל המשתמשים במערכת'}
               {activeTab === 'dialog360' && 'צפייה בהודעות תבנית מ-Dialog360'}
+              {activeTab === 'connected-numbers' && 'צפייה בכל המספרים המחוברים במערכת, לאיזה משתמש הם שייכים והסטטוס שלהם'}
               {activeTab === 'sms-in' && 'הודעות נכנסות, שיוך קווים, לקוחות וווב-הוקס'}
               {activeTab === 'templates' && 'ניהול ותחזוקת מאגר התבניות הגלובלי'}
               {activeTab === 'settings' && 'הגדרת מגבלות, מחירים ופרמטרים למערכת'}
-              {activeTab === 'removal-log' && 'היסטוריית שינויים בהגדרות ההסרה האוטומטית'}
             </p>
             </div>
           </div>
@@ -1328,6 +1513,133 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                 viewAll
                 token={token}
               />
+            </div>
+          )}
+
+          {/* CONNECTED NUMBERS TAB — global view of every connected WhatsApp number across all customers */}
+          {activeTab === 'connected-numbers' && (
+            <div className="space-y-4 animate-fade-in-up" dir="rtl">
+              {/* Search bar */}
+              <div className="relative max-w-md mb-2">
+                <Search size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-300" />
+                <input
+                  type="text"
+                  value={allConnectedNumbersSearch}
+                  onChange={e => setAllConnectedNumbersSearch(e.target.value)}
+                  placeholder="חיפוש לפי מספר, שם משתמש או אימייל..."
+                  className="w-full pr-10 pl-4 py-3 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700 placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all shadow-sm"
+                  dir="rtl"
+                />
+              </div>
+
+              {allConnectedNumbersLoading ? (
+                <div className="flex items-center justify-center py-24 text-slate-400 font-bold">
+                  <div className="animate-spin rounded-full h-8 w-8 border-2 border-blue-500 border-t-transparent ml-3" />
+                  טוען מספרים מחוברים...
+                </div>
+              ) : (() => {
+                const q = allConnectedNumbersSearch.trim().toLowerCase();
+                const filtered = allConnectedNumbers.filter((n: any) => {
+                  if (!q) return true;
+                  return (
+                    (n.display_phone_number || n.phone_number_id || '').toLowerCase().includes(q) ||
+                    (n.user_name || '').toLowerCase().includes(q) ||
+                    (n.user_email || '').toLowerCase().includes(q)
+                  );
+                });
+                if (filtered.length === 0) {
+                  return (
+                    <div className="flex flex-col items-center justify-center py-24 text-slate-300 gap-4">
+                      <Phone size={64} strokeWidth={1} />
+                      <p className="text-xl font-bold">לא נמצאו מספרים מחוברים</p>
+                    </div>
+                  );
+                }
+                return (
+                  <>
+                    <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1">
+                      {filtered.length} מספרים מחוברים
+                    </p>
+                    <div className="space-y-4">
+                      {filtered.map((n: any, idx: number) => (
+                        <div key={`${n.user_id}-${n.phone_number_id || idx}`} className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm">
+                          <div className="flex items-start justify-between gap-6 flex-wrap">
+                            <div className="flex-1 min-w-[220px]">
+                              <div className="flex items-center gap-3 flex-wrap mb-3">
+                                {n.provider === 'dialog360' ? (
+                                  <span className="px-2 py-0.5 rounded-lg text-[10px] font-black bg-emerald-600 text-white">360</span>
+                                ) : (
+                                  <span className="px-2 py-0.5 rounded-lg text-[10px] font-black bg-[#1877F2] text-white">FB</span>
+                                )}
+                                <span className="text-base font-black text-slate-800" dir="ltr">
+                                  {n.display_phone_number || n.phone_number_id}
+                                </span>
+                                {n.whatsapp_status && (
+                                  <span className={`px-2 py-0.5 rounded-lg text-[10px] font-bold ${
+                                    n.whatsapp_status === 'CONNECTED' ? 'bg-emerald-500 text-white'
+                                    : n.whatsapp_status === 'PENDING' ? 'bg-amber-500 text-white'
+                                    : 'bg-slate-400 text-white'
+                                  }`}>{n.whatsapp_status}</span>
+                                )}
+                                {n.registered ? (
+                                  <span className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-blue-500 text-white flex items-center gap-1">
+                                    <CheckCircle size={10} /> פעיל
+                                  </span>
+                                ) : (
+                                  <span className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-amber-100 text-amber-700 border border-amber-200 flex items-center gap-1">
+                                    <AlertTriangle size={10} /> מחובר — בתהליך הפעלה
+                                  </span>
+                                )}
+                                {n.assigned_bot_name && (
+                                  <span className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
+                                    <ExternalLink size={10} /> משויך לבוט: {n.assigned_bot_name}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-1.5 text-sm font-bold text-indigo-600 mb-1.5">
+                                <UserIcon size={13} className="flex-shrink-0" />
+                                <span>{n.user_name || 'לא ידוע'}</span>
+                                {n.user_email && <span className="text-xs font-semibold text-slate-400">({n.user_email})</span>}
+                              </div>
+                              <div className="text-xs text-slate-500 font-mono" dir="ltr">
+                                {n.provider === 'dialog360' ? (
+                                  <>
+                                    <div>link: {n.link || n.phone_number_id}</div>
+                                    <div>token360: {n.has_token360 ? '✓ שמור' : '—'}</div>
+                                  </>
+                                ) : (
+                                  <>
+                                    <div>phone_number_id: {n.phone_number_id}</div>
+                                    {n.waba_id && <div>waba_id: {n.waba_id}</div>}
+                                    {n.verified_name && <div>name: {n.verified_name}</div>}
+                                  </>
+                                )}
+                              </div>
+                              {/* Show the last connection error only when the number is NOT
+                                  currently active/registered — an active number's past errors
+                                  are irrelevant since it since recovered. */}
+                              {!n.registered && n.last_error && (
+                                <div className="mt-2 bg-red-50 border border-red-200 rounded-xl px-3 py-2 flex items-start gap-2" dir="rtl">
+                                  <AlertCircle size={13} className="text-red-500 mt-0.5 flex-shrink-0" />
+                                  <div className="min-w-0">
+                                    <p className="text-[11px] font-black text-red-700">שגיאת חיבור אחרונה:</p>
+                                    <p className="text-[11px] font-semibold text-red-600 break-words">{n.last_error}</p>
+                                    {n.last_error_at && (
+                                      <p className="text-[10px] font-semibold text-red-400 mt-0.5">
+                                        {new Date(n.last_error_at).toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                );
+              })()}
             </div>
           )}
 
@@ -2114,7 +2426,32 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                         </div>
                     </div>
 
-                    {/* Content - Spacious Grid Layout */}
+                    {/* Detail Sub-Tabs: Personal Profile / Removal Activity Log / Message Templates / Connections / Sessions */}
+                    <div className="bg-white border-b border-slate-100 px-4 sm:px-8 flex items-center gap-2 shrink-0 overflow-x-auto">
+                      {[
+                        { id: 'profile' as const, label: 'פרופיל אישי', icon: UserIcon },
+                        { id: 'removal-log' as const, label: 'לוג פעילות הסרה', icon: Activity },
+                        { id: 'cust-templates' as const, label: 'הודעות תבנית', icon: MessageSquare },
+                        { id: 'cust-connections' as const, label: 'חיבורים', icon: Phone },
+                        { id: 'cust-sessions' as const, label: 'סשנים', icon: List },
+                      ].map(t => (
+                        <button
+                          key={t.id}
+                          onClick={() => setUserDetailTab(t.id)}
+                          className={`flex items-center gap-2 px-4 py-3 text-sm font-bold border-b-2 transition-colors whitespace-nowrap ${
+                            userDetailTab === t.id
+                              ? 'border-sky-500 text-sky-600'
+                              : 'border-transparent text-slate-400 hover:text-slate-600'
+                          }`}
+                        >
+                          <t.icon size={16} />
+                          {t.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    {userDetailTab === 'profile' && (
+                    /* Content - Spacious Grid Layout */
                               <div className="flex-1 overflow-y-auto p-4 sm:p-8 content-start h-full"> 
                       <div className="grid grid-cols-12 gap-6 auto-rows-min h-full">
                         
@@ -2309,6 +2646,25 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                                             </div>
                                         )}
                                     </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-400 mb-2 flex items-center gap-1"><Globe size={12} /> חיבור לפייסבוק</label>
+                                        {isEditing ? (
+                                            <label className="w-full flex items-center gap-3 p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm cursor-pointer select-none">
+                                                <input
+                                                    type="checkbox"
+                                                    className="w-4 h-4 accent-sky-600 cursor-pointer"
+                                                    checked={editForm.facebook_connect_enabled === true}
+                                                    onChange={e => setEditForm(prev => ({ ...prev, facebook_connect_enabled: e.target.checked }))}
+                                                />
+                                                <span className="font-bold text-slate-700">הרשאה לכפתור חבר לפייסבוק בהגדרות בוט</span>
+                                            </label>
+                                        ) : (
+                                            <div className={`w-full px-4 py-3 rounded-xl border font-bold text-sm flex justify-between items-center ${selectedUser.facebook_connect_enabled ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-slate-50 text-slate-400 border-slate-100'}`}>
+                                                {selectedUser.facebook_connect_enabled ? 'מורשה' : 'ללא הרשאה (ברירת מחדל)'}
+                                                {selectedUser.facebook_connect_enabled ? <CheckCircle size={14} /> : <EyeOff size={14} />}
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -2437,6 +2793,349 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                         )}
                       </div>
                     </div>
+                    )}
+
+                    {userDetailTab === 'removal-log' && (
+                      <div className="flex-1 overflow-y-auto p-4 sm:p-8 content-start h-full" dir="rtl">
+                        <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-6">
+                          {removalLogLoading ? (
+                            <div className="text-center py-10 text-slate-400 text-sm">טוען…</div>
+                          ) : removalLog.length === 0 ? (
+                            <div className="text-center py-10 text-slate-400 text-sm">אין פעולות רשומות עדיין ללקוח זה</div>
+                          ) : (
+                            <>
+                              <div className="overflow-x-auto">
+                                <table className="w-full text-sm">
+                                  <thead>
+                                    <tr className="border-b border-slate-100">
+                                      <th className="text-right py-2 px-3 font-bold text-slate-500 text-xs">סוג פעולה</th>
+                                      <th className="text-right py-2 px-3 font-bold text-slate-500 text-xs">מילת מפתח</th>
+                                      <th className="text-right py-2 px-3 font-bold text-slate-500 text-xs">תאריך ושעה</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {removalLog.map(entry => {
+                                      const actionMap: Record<string, { label: string; color: string }> = {
+                                        REMOVAL_KEYWORD_HE_ADDED:   { label: 'נוספה מילה עברית',          color: 'text-blue-600 bg-blue-50' },
+                                        REMOVAL_KEYWORD_HE_REMOVED: { label: 'הוסרה מילה עברית',          color: 'text-rose-600 bg-rose-50' },
+                                        REMOVAL_KEYWORD_EN_ADDED:   { label: 'Added English keyword',      color: 'text-emerald-600 bg-emerald-50' },
+                                        REMOVAL_KEYWORD_EN_REMOVED: { label: 'Removed English keyword',    color: 'text-rose-600 bg-rose-50' },
+                                        REMOVAL_ENABLED:            { label: 'הסרה אוטומטית הופעלה',      color: 'text-emerald-600 bg-emerald-50' },
+                                        REMOVAL_DISABLED:           { label: 'הסרה אוטומטית הושבתה',      color: 'text-rose-600 bg-rose-50' },
+                                      };
+                                      const meta = actionMap[entry.action] ?? { label: entry.action, color: 'text-slate-600 bg-slate-50' };
+                                      const d = new Date(entry.createdAt);
+                                      const dateStr = `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+                                      return (
+                                        <tr key={entry._id} className="border-b border-slate-50 hover:bg-slate-50/50">
+                                          <td className="py-2 px-3">
+                                            <span className={`inline-block px-2 py-0.5 rounded-lg text-xs font-bold ${meta.color}`}>{meta.label}</span>
+                                          </td>
+                                          <td className="py-2 px-3 text-slate-700 font-mono text-xs">{entry.details?.keyword || '—'}</td>
+                                          <td className="py-2 px-3 text-slate-400 text-xs whitespace-nowrap">{dateStr}</td>
+                                        </tr>
+                                      );
+                                    })}
+                                  </tbody>
+                                </table>
+                              </div>
+                              {/* Pagination */}
+                              {removalLogTotal > REMOVAL_LOG_PAGE_SIZE && (
+                                <div className="flex items-center justify-between mt-4 pt-4 border-t border-slate-100">
+                                  <button
+                                    onClick={() => fetchRemovalConfigLog(removalLogPage - 1, selectedUser.id)}
+                                    disabled={removalLogPage <= 1 || removalLogLoading}
+                                    className="px-4 py-2 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                                  >הקודם</button>
+                                  <span className="text-sm text-slate-500 font-medium">
+                                    עמוד {removalLogPage} מתוך {Math.ceil(removalLogTotal / REMOVAL_LOG_PAGE_SIZE)}
+                                  </span>
+                                  <button
+                                    onClick={() => fetchRemovalConfigLog(removalLogPage + 1, selectedUser.id)}
+                                    disabled={removalLogPage >= Math.ceil(removalLogTotal / REMOVAL_LOG_PAGE_SIZE) || removalLogLoading}
+                                    className="px-4 py-2 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                                  >הבא</button>
+                                </div>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {userDetailTab === 'cust-templates' && (
+                      <div className="flex-1 overflow-y-auto p-4 sm:p-8 content-start h-full" dir="rtl">
+                        {custDialog360Loading ? (
+                          <div className="flex items-center justify-center py-20">
+                            <div className="text-slate-400 text-center">
+                              <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-sky-600 mx-auto mb-4"></div>
+                              <div className="text-sm">טוען הודעות תבנית...</div>
+                            </div>
+                          </div>
+                        ) : custDialog360Error ? (
+                          <div className="bg-rose-50 border border-rose-200 rounded-2xl p-8 text-center text-rose-700 text-sm font-bold">
+                            {custDialog360Error}
+                          </div>
+                        ) : custDialog360Templates.length === 0 ? (
+                          <div className="bg-slate-50 border-2 border-dashed border-slate-200 rounded-2xl p-12 text-center">
+                            <MessageSquare size={40} className="text-slate-300 mx-auto mb-4" />
+                            <h3 className="text-lg font-bold text-slate-600 mb-2">לא נמצאו הודעות תבנית</h3>
+                            <p className="text-sm text-slate-400 max-w-md mx-auto">
+                              אנא ודא שהוגדר Bot ID עבור לקוח זה בפרופיל האישי.
+                            </p>
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                            {custDialog360Templates.map((template: any, idx: number) => {
+                              const name = template.name || template.elementName || template.template_name || `Template ${idx + 1}`;
+                              const language = template.language || '';
+                              const status = template.status || '';
+                              const category = template.category || '';
+                              const components = template.components || [];
+                              const headerComponent = components.find((c: any) => c.type === 'HEADER');
+                              const bodyComponent = components.find((c: any) => c.type === 'BODY');
+                              const buttonsComponent = components.find((c: any) => c.type === 'BUTTONS');
+                              const bodyText = bodyComponent?.text || '';
+                              const hasImage = headerComponent?.format === 'IMAGE';
+                              const hasButtons = !!buttonsComponent;
+                              const buttonCount = buttonsComponent?.buttons?.length || 0;
+                              const headerMediaType: 'image' | 'video' | 'document' | null =
+                                headerComponent && ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(headerComponent.format)
+                                  ? (headerComponent.format.toLowerCase() as 'image' | 'video' | 'document')
+                                  : null;
+                              const defaultMedia = custDialog360DefaultMedia[name];
+
+                              return (
+                                <div
+                                  key={template.id || idx}
+                                  className="bg-white border border-slate-200 rounded-2xl overflow-hidden hover:shadow-xl transition-all hover:border-sky-300 group"
+                                >
+                                  <div className={`p-6 ${hasImage ? 'bg-gradient-to-br from-sky-50 to-blue-50' : 'bg-slate-50'} border-b border-slate-200`}>
+                                    <div className="flex items-start justify-between mb-3">
+                                      <div className="flex-1">
+                                        <div className="flex items-center justify-between mb-2">
+                                          <h3 className="text-lg font-bold text-slate-800 group-hover:text-sky-700 transition-colors">
+                                            {name}
+                                          </h3>
+                                          {(() => {
+                                            const currentVis = custDialog360Settings[name] ?? 'manager';
+                                            const cfg = {
+                                              hidden:  { icon: <EyeOff size={16} />,    title: 'מוסתר לכולם — לחץ כדי לשנות',          cls: 'bg-rose-500 text-white border-rose-500 hover:bg-rose-600' },
+                                              manager: { icon: <UserCheck size={16} />, title: 'מוצג למנהל משמרת — לחץ כדי לשנות',     cls: 'bg-amber-500 text-white border-amber-500 hover:bg-amber-600' },
+                                              agent:   { icon: <Headphones size={16} />, title: 'מוצג גם לנציגים — לחץ כדי לשנות',       cls: 'bg-emerald-500 text-white border-emerald-500 hover:bg-emerald-600' },
+                                            }[currentVis];
+                                            return (
+                                              <button
+                                                onClick={() => cycleCustomerDialog360Visibility(selectedUser.id, template)}
+                                                className={`p-2 rounded-lg transition-colors border ${cfg.cls}`}
+                                                title={cfg.title}
+                                              >
+                                                {cfg.icon}
+                                              </button>
+                                            );
+                                          })()}
+                                        </div>
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                          {language && (
+                                            <span className="bg-white text-slate-600 px-2.5 py-1 rounded-lg text-xs font-bold border border-slate-200 flex items-center gap-1">
+                                              <Globe size={12} />
+                                              {language.toUpperCase()}
+                                            </span>
+                                          )}
+                                          {status && (
+                                            <span className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1 ${
+                                              status === 'APPROVED' ? 'bg-emerald-500 text-white' :
+                                              status === 'PENDING' ? 'bg-amber-500 text-white' :
+                                              'bg-slate-400 text-white'
+                                            }`}>
+                                              {status === 'APPROVED' ? <CheckCircle size={12} /> : <Clock size={12} />}
+                                              {status}
+                                            </span>
+                                          )}
+                                          {category && (
+                                            <span className="bg-sky-500 text-white px-2.5 py-1 rounded-lg text-xs font-bold">
+                                              {category}
+                                            </span>
+                                          )}
+                                        </div>
+                                      </div>
+                                      {hasImage && (
+                                        <div className="ml-3 p-2 bg-white rounded-lg shadow-sm border border-slate-200">
+                                          <ImageIcon size={20} className="text-sky-600" />
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  <div className="p-6">
+                                    {bodyText && (
+                                      <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 mb-4">
+                                        <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap line-clamp-4">
+                                          {bodyText.substring(0, 200)}{bodyText.length > 200 ? '...' : ''}
+                                        </p>
+                                      </div>
+                                    )}
+
+                                    {headerMediaType && (
+                                      <div className="mb-4">
+                                        <label className="text-xs font-bold text-slate-500 mb-2 flex items-center gap-1">
+                                          <ImageIcon size={13} />
+                                          תמונת ברירת מחדל לתבנית
+                                        </label>
+                                        {defaultMedia?.url ? (
+                                          <div className="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-xl p-3">
+                                            <div className="w-14 h-14 rounded-lg overflow-hidden border border-slate-200 bg-white flex-shrink-0 flex items-center justify-center">
+                                              {headerMediaType === 'image' ? (
+                                                <img src={defaultMedia.url} alt="ברירת מחדל" className="w-full h-full object-cover" />
+                                              ) : headerMediaType === 'video' ? (
+                                                <video src={defaultMedia.url} className="w-full h-full object-cover" />
+                                              ) : (
+                                                <FileText size={20} className="text-slate-400" />
+                                              )}
+                                            </div>
+                                            <span className="flex-1 text-xs text-slate-500">הוגדרה תמונת ברירת מחדל</span>
+                                            <button
+                                              type="button"
+                                              onClick={() => updateCustomerTemplateDefaultMedia(selectedUser.id, template, null, null)}
+                                              className="p-2 rounded-lg text-rose-600 hover:bg-rose-50 transition-colors border border-rose-200"
+                                              title="הסר תמונת ברירת מחדל"
+                                            >
+                                              <X size={14} />
+                                            </button>
+                                          </div>
+                                        ) : (
+                                          <FileUploader
+                                            value=""
+                                            onChange={(url) => updateCustomerTemplateDefaultMedia(selectedUser.id, template, url, headerMediaType)}
+                                            accept={headerMediaType === 'image' ? 'image/*' : headerMediaType === 'video' ? 'video/*' : '*/*'}
+                                            label={headerMediaType === 'image' ? 'תמונה' : headerMediaType === 'video' ? 'וידאו' : 'מסמך'}
+                                            mediaType={headerMediaType}
+                                            token={token || ''}
+                                          />
+                                        )}
+                                      </div>
+                                    )}
+
+                                    <div className="flex items-center justify-between text-xs mb-4">
+                                      <div className="flex items-center gap-3 text-slate-500">
+                                        <span className="flex items-center gap-1">
+                                          <Layers size={14} />
+                                          {components.length} רכיבים
+                                        </span>
+                                        {hasButtons && (
+                                          <span className="flex items-center gap-1 text-sky-600 font-bold">
+                                            <MessageSquare size={14} />
+                                            {buttonCount} כפתורים
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+
+                                    <div className="flex items-center justify-between pt-4 border-t border-slate-100">
+                                      {template.id && (
+                                        <span className="font-mono text-xs bg-slate-100 text-slate-600 px-2.5 py-1 rounded-lg border border-slate-200">
+                                          ID: {template.id.substring(0, 10)}...
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {userDetailTab === 'cust-connections' && (
+                      <div className="flex-1 overflow-y-auto p-4 sm:p-8 content-start h-full" dir="rtl">
+                        <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-6">
+                          {custConnectedNumbersLoading ? (
+                            <div className="text-center py-10 text-slate-400 text-sm">טוען…</div>
+                          ) : custConnectedNumbers.length === 0 ? (
+                            <div className="text-center py-10 text-slate-400 text-sm">אין מספרים מחוברים ללקוח זה</div>
+                          ) : (
+                            <div className="space-y-4">
+                              {custConnectedNumbers.map((n: any) => (
+                                <div key={n.phone_number_id} className="border border-slate-100 rounded-2xl p-5 bg-slate-50/50">
+                                  <div className="flex items-start justify-between gap-6 flex-wrap">
+                                    <div className="flex-1 min-w-[220px]">
+                                      <div className="flex items-center gap-3 flex-wrap mb-3">
+                                        {n.provider === 'dialog360' ? (
+                                          <span className="px-2 py-0.5 rounded-lg text-[10px] font-black bg-emerald-600 text-white">360</span>
+                                        ) : (
+                                          <span className="px-2 py-0.5 rounded-lg text-[10px] font-black bg-[#1877F2] text-white">FB</span>
+                                        )}
+                                        <span className="text-base font-black text-slate-800" dir="ltr">
+                                          {n.display_phone_number || n.phone_number_id}
+                                        </span>
+                                        {n.whatsapp_status && (
+                                          <span className={`px-2 py-0.5 rounded-lg text-[10px] font-bold ${
+                                            n.whatsapp_status === 'CONNECTED' ? 'bg-emerald-500 text-white'
+                                            : n.whatsapp_status === 'PENDING' ? 'bg-amber-500 text-white'
+                                            : 'bg-slate-400 text-white'
+                                          }`}>{n.whatsapp_status}</span>
+                                        )}
+                                        {n.registered ? (
+                                          <span className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-blue-500 text-white flex items-center gap-1">
+                                            <CheckCircle size={10} /> פעיל
+                                          </span>
+                                        ) : (
+                                          <span className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-amber-100 text-amber-700 border border-amber-200 flex items-center gap-1">
+                                            <AlertTriangle size={10} /> מחובר — בתהליך הפעלה
+                                          </span>
+                                        )}
+                                        {n.assigned_bot_name && (
+                                          <span className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
+                                            <ExternalLink size={10} /> משויך לבוט: {n.assigned_bot_name}
+                                          </span>
+                                        )}
+                                      </div>
+                                      <div className="text-xs text-slate-500 font-mono" dir="ltr">
+                                        {n.provider === 'dialog360' ? (
+                                          <>
+                                            <div>link: {n.link || n.phone_number_id}</div>
+                                            <div>token360: {n.has_token360 ? '✓ שמור' : '—'}</div>
+                                          </>
+                                        ) : (
+                                          <>
+                                            <div>phone_number_id: {n.phone_number_id}</div>
+                                            {n.waba_id && <div>waba_id: {n.waba_id}</div>}
+                                            {n.verified_name && <div>name: {n.verified_name}</div>}
+                                          </>
+                                        )}
+                                      </div>
+                                      {/* Show the last connection error only when the number is NOT
+                                          currently active/registered. */}
+                                      {!n.registered && n.last_error && (
+                                        <div className="mt-2 bg-red-50 border border-red-200 rounded-xl px-3 py-2 flex items-start gap-2" dir="rtl">
+                                          <AlertCircle size={13} className="text-red-500 mt-0.5 flex-shrink-0" />
+                                          <div className="min-w-0">
+                                            <p className="text-[11px] font-black text-red-700">שגיאת חיבור אחרונה:</p>
+                                            <p className="text-[11px] font-semibold text-red-600 break-words">{n.last_error}</p>
+                                            {n.last_error_at && (
+                                              <p className="text-[10px] font-semibold text-red-400 mt-0.5">
+                                                {new Date(n.last_error_at).toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                              </p>
+                                            )}
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {userDetailTab === 'cust-sessions' && (
+                      <div className="flex-1 overflow-hidden h-full">
+                        <CustomerSessionsPanel token={token} apiBase={API_BASE} userId={selectedUser.id} />
+                      </div>
+                    )}
 
                   </div>
                 ) : (
@@ -3168,77 +3867,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                  </div>
                )}
 
-            </div>
-          )}
-
-          {/* ── Removal Activity Log tab ── */}
-          {activeTab === 'removal-log' && (
-            <div className="space-y-6" dir="rtl">
-              <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-6">
-                {removalLogLoading ? (
-                  <div className="text-center py-10 text-slate-400 text-sm">טוען…</div>
-                ) : removalLog.length === 0 ? (
-                  <div className="text-center py-10 text-slate-400 text-sm">אין פעולות רשומות עדיין</div>
-                ) : (
-                  <>
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="border-b border-slate-100">
-                            <th className="text-right py-2 px-3 font-bold text-slate-500 text-xs">סוג פעולה</th>
-                            <th className="text-right py-2 px-3 font-bold text-slate-500 text-xs">מילת מפתח</th>
-                            <th className="text-right py-2 px-3 font-bold text-slate-500 text-xs">משתמש</th>
-                            <th className="text-right py-2 px-3 font-bold text-slate-500 text-xs">תאריך ושעה</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {removalLog.map(entry => {
-                            const actionMap: Record<string, { label: string; color: string }> = {
-                              REMOVAL_KEYWORD_HE_ADDED:   { label: 'נוספה מילה עברית',          color: 'text-blue-600 bg-blue-50' },
-                              REMOVAL_KEYWORD_HE_REMOVED: { label: 'הוסרה מילה עברית',          color: 'text-rose-600 bg-rose-50' },
-                              REMOVAL_KEYWORD_EN_ADDED:   { label: 'Added English keyword',      color: 'text-emerald-600 bg-emerald-50' },
-                              REMOVAL_KEYWORD_EN_REMOVED: { label: 'Removed English keyword',    color: 'text-rose-600 bg-rose-50' },
-                              REMOVAL_ENABLED:            { label: 'הסרה אוטומטית הופעלה',      color: 'text-emerald-600 bg-emerald-50' },
-                              REMOVAL_DISABLED:           { label: 'הסרה אוטומטית הושבתה',      color: 'text-rose-600 bg-rose-50' },
-                            };
-                            const meta = actionMap[entry.action] ?? { label: entry.action, color: 'text-slate-600 bg-slate-50' };
-                            const d = new Date(entry.createdAt);
-                            const dateStr = `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
-                            return (
-                              <tr key={entry._id} className="border-b border-slate-50 hover:bg-slate-50/50">
-                                <td className="py-2 px-3">
-                                  <span className={`inline-block px-2 py-0.5 rounded-lg text-xs font-bold ${meta.color}`}>{meta.label}</span>
-                                </td>
-                                <td className="py-2 px-3 text-slate-700 font-mono text-xs">{entry.details?.keyword || '—'}</td>
-                                <td className="py-2 px-3 text-slate-500 text-xs">{entry.actor_email || '—'}</td>
-                                <td className="py-2 px-3 text-slate-400 text-xs whitespace-nowrap">{dateStr}</td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                    {/* Pagination */}
-                    {removalLogTotal > REMOVAL_LOG_PAGE_SIZE && (
-                      <div className="flex items-center justify-between mt-4 pt-4 border-t border-slate-100">
-                        <button
-                          onClick={() => fetchRemovalConfigLog(removalLogPage - 1)}
-                          disabled={removalLogPage <= 1 || removalLogLoading}
-                          className="px-4 py-2 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
-                        >הקודם</button>
-                        <span className="text-sm text-slate-500 font-medium">
-                          עמוד {removalLogPage} מתוך {Math.ceil(removalLogTotal / REMOVAL_LOG_PAGE_SIZE)}
-                        </span>
-                        <button
-                          onClick={() => fetchRemovalConfigLog(removalLogPage + 1)}
-                          disabled={removalLogPage >= Math.ceil(removalLogTotal / REMOVAL_LOG_PAGE_SIZE) || removalLogLoading}
-                          className="px-4 py-2 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
-                        >הבא</button>
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
             </div>
           )}
 

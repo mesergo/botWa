@@ -1,7 +1,7 @@
 ﻿import React, { useState, useEffect, useRef } from 'react';
 import { WhatsAppText } from '../utils/whatsappFormat';
-import { Clock, MessageSquare, Search, Bot, User, Phone, List, Users, ExternalLink, X, Headphones, RefreshCw, Settings, UserCog, Layers, Plus, UserPlus, Check, Paperclip, ChevronRight, Bell, MoreVertical, Ban, Megaphone } from 'lucide-react';
-import ImpersonationBanner from './ImpersonationBanner';
+import { Clock, MessageSquare, Search, Bot, User, Phone, List, Users, ExternalLink, X, Headphones, RefreshCw, Settings, UserCog, Layers, Plus, UserPlus, Check, Paperclip, ChevronRight, Bell, MoreVertical, Ban, Megaphone, LogOut, Repeat } from 'lucide-react';
+import ImpersonationBanner, { SiblingAccount } from './ImpersonationBanner';
 import { TemplateHeaderMediaField } from './TemplateHeaderMediaField';
 import QuickInsertMenu from './shared/QuickInsertMenu';
 import { usePermission } from '../hooks/usePermission';
@@ -9,7 +9,7 @@ import PageTopBar from './PageTopBar';
 import AppNav from './AppNav';
 import { useContactFields } from '../context/ContactFieldsContext';
  
-interface Session {
+interface Session {  
   id: string;
   phone: string;
   sender?: string;
@@ -1558,6 +1558,20 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
   const availabilityWrapperRef = useRef<HTMLDivElement>(null);
   const currentAvailability = AVAILABILITY_OPTIONS.find(o => o.value === (currentUser?.availability_status || 'available')) || AVAILABILITY_OPTIONS[0];
   const showAvailability = (currentUser?.role === 'rep' || currentUser?.role === 'rep_manager') && !!onUpdateAvailability;
+  // Compact "chat-only" agent layout (avatar + status moved into the contacts panel,
+  // top navbar hidden) — only for users whose permissions grant access to the
+  // conversations tab alone, with no other navigable tab.
+  const isChatOnlyMode = showAvailability
+    && !can('bots.view_tab')
+    && !can('contacts.view')
+    && !can('groups.view')
+    && !can('settings.view')
+    && !can('users.view')
+    && !can('send_messages.view')
+    && !can('sms_in.view');
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const profileMenuWrapperRef = useRef<HTMLDivElement>(null);
+  const [siblingAccounts, setSiblingAccounts] = useState<SiblingAccount[]>([]);
 
   useEffect(() => {
     if (!availabilityOpen) return;
@@ -1567,6 +1581,15 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, [availabilityOpen]);
+
+  useEffect(() => {
+    if (!profileMenuOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (profileMenuWrapperRef.current && !profileMenuWrapperRef.current.contains(e.target as Node)) setProfileMenuOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [profileMenuOpen]);
 
   useEffect(() => {
     if (!showActionsMenu) return;
@@ -1730,6 +1753,25 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
     }
     return true;
   });
+
+  // Auto-select the most recently active contact so the conversation view opens
+  // directly on the last chat instead of showing the "pick a contact" placeholder.
+  // Only applies to the normal (wide) layout — in compact/responsive layout the
+  // contacts list and the conversation share one column, so auto-selecting would
+  // skip straight past the contacts list the user needs to pick from first.
+  // Fires once each time the bot picker is dismissed (initial load, or after choosing
+  // a bot) — guarded by autoSelectDoneRef so it doesn't fight the mobile "✕ back to
+  // list" button, which intentionally sets selectedPhone back to null.
+  const autoSelectDoneRef = useRef(false);
+  useEffect(() => {
+    if (showBotPicker) autoSelectDoneRef.current = false;
+  }, [showBotPicker]);
+  useEffect(() => {
+    if (isCompactLayout || showBotPicker || contactsLoading || initialPhone || selectedPhone) return;
+    if (autoSelectDoneRef.current) return;
+    autoSelectDoneRef.current = true;
+    if (filteredContacts.length > 0) setSelectedPhone(filteredContacts[0].phone);
+  }, [isCompactLayout, showBotPicker, contactsLoading, initialPhone, selectedPhone, filteredContacts]);
 
   // Return only the last visibleMsgLimit messages across all sessions
   const getVisibleSessions = (): Session[] => {
@@ -2072,63 +2114,72 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
   return (
     <div className="h-[100dvh] w-full bg-[#f8fafc] flex flex-col font-medium text-right overflow-hidden" dir="rtl">
       {/* Impersonation Banner */}
-      <ImpersonationBanner currentUser={currentUser} onStopImpersonation={onStopImpersonation} token={token} onSwitchAccount={onSwitchAccount} />
-      {/* Navbar */}
-      <PageTopBar
+      <ImpersonationBanner
         currentUser={currentUser}
-        onBack={onBack ?? onGoHome ?? (() => {})}
-        onLogout={onLogout}
-        onOpenAdminPanel={onOpenAdminPanel}
-        showMobileNavToggle
-        mobileNavOpen={mobileNavOpen}
-        onMobileNavToggle={() => setMobileNavOpen((prev) => !prev)}
-        rightSlot={showAvailability ? (
-          <div ref={availabilityWrapperRef} className="relative" dir="rtl">
-            <button
-              type="button"
-              onClick={() => setAvailabilityOpen(v => !v)}
-              disabled={availabilitySaving}
-              title="שינוי סטטוס זמינות"
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-black border border-slate-200 ${currentAvailability.bg} ${currentAvailability.text} hover:shadow-sm transition-all disabled:opacity-60`}
-            >
-              <span className="relative flex h-2.5 w-2.5">
-                {currentAvailability.value === 'available' && (
-                  <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-60 ${currentAvailability.dot}`}></span>
-                )}
-                <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${currentAvailability.dot}`}></span>
-              </span>
-              <span>{currentAvailability.label}</span>
-            </button>
-            {availabilityOpen && (
-              <div className="absolute mt-2 left-0 w-44 bg-white rounded-2xl shadow-xl border border-slate-100 py-2 z-50">
-                {AVAILABILITY_OPTIONS.map(opt => {
-                  const isActive = opt.value === (currentUser?.availability_status || 'available');
-                  return (
-                    <button
-                      key={opt.value}
-                      onClick={() => handleAvailabilitySelect(opt.value)}
-                      className={`w-full flex items-center gap-2 px-4 py-2 text-sm font-bold text-right hover:bg-slate-50 transition-colors ${isActive ? 'bg-slate-50' : ''}`}
-                    >
-                      <span className={`inline-block h-2.5 w-2.5 rounded-full ${opt.dot}`}></span>
-                      <span className="flex-1 text-slate-700">{opt.label}</span>
-                      {isActive && <Check size={14} className="text-blue-600" />}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        ) : undefined}
+        onStopImpersonation={onStopImpersonation}
+        token={token}
+        onSwitchAccount={onSwitchAccount}
+        hideAccountSwitcher={isChatOnlyMode}
+        onAccountsChange={setSiblingAccounts}
       />
+      {/* Navbar — hidden only in chat-only agent mode; profile menu + logout + status move into the contacts panel below */}
+      {!isChatOnlyMode && (
+        <PageTopBar
+          currentUser={currentUser}
+          onBack={onBack ?? onGoHome ?? (() => {})}
+          onLogout={onLogout}
+          onOpenAdminPanel={onOpenAdminPanel}
+          showMobileNavToggle
+          mobileNavOpen={mobileNavOpen}
+          onMobileNavToggle={() => setMobileNavOpen((prev) => !prev)}
+          rightSlot={showAvailability ? (
+            <div ref={availabilityWrapperRef} className="relative" dir="rtl">
+              <button
+                type="button"
+                onClick={() => setAvailabilityOpen(v => !v)}
+                disabled={availabilitySaving}
+                title="שינוי סטטוס זמינות"
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-black border border-slate-200 ${currentAvailability.bg} ${currentAvailability.text} hover:shadow-sm transition-all disabled:opacity-60`}
+              >
+                <span className="relative flex h-2.5 w-2.5">
+                  {currentAvailability.value === 'available' && (
+                    <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-60 ${currentAvailability.dot}`}></span>
+                  )}
+                  <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${currentAvailability.dot}`}></span>
+                </span>
+                <span>{currentAvailability.label}</span>
+              </button>
+              {availabilityOpen && (
+                <div className="absolute mt-2 left-0 w-44 bg-white rounded-2xl shadow-xl border border-slate-100 py-2 z-50">
+                  {AVAILABILITY_OPTIONS.map(opt => {
+                    const isActive = opt.value === (currentUser?.availability_status || 'available');
+                    return (
+                      <button
+                        key={opt.value}
+                        onClick={() => handleAvailabilitySelect(opt.value)}
+                        className={`w-full flex items-center gap-2 px-4 py-2 text-sm font-bold text-right hover:bg-slate-50 transition-colors ${isActive ? 'bg-slate-50' : ''}`}
+                      >
+                        <span className={`inline-block h-2.5 w-2.5 rounded-full ${opt.dot}`}></span>
+                        <span className="flex-1 text-slate-700">{opt.label}</span>
+                        {isActive && <Check size={14} className="text-blue-600" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          ) : undefined}
+        />
+      )}
 
       {/* ── Bot Picker ─────────────────────────────────────────────────────── */}
       {showBotPicker ? (
         <div className="flex-1 flex overflow-hidden">
-          {(onGoHome || onBack) && (
+          {(onGoHome || onBack || !isChatOnlyMode) && (
             <AppNav
               mode="sidebar"
               activePage="sessions"
-              hideMobileTrigger
+              hideMobileTrigger={!isChatOnlyMode}
               mobileBreakpoint={900}
               mobileMenuOpen={mobileNavOpen}
               onMobileMenuOpenChange={setMobileNavOpen}
@@ -2199,11 +2250,11 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
         </div>
       ) : (
       <div className={`flex-1 flex overflow-hidden ${isCompactLayout ? 'flex-col' : 'flex-row'}`}>
-        {(onGoHome || onBack) && (
+        {(onGoHome || onBack || !isChatOnlyMode) && (
           <AppNav
             mode="sidebar"
             activePage="sessions"
-            hideMobileTrigger
+            hideMobileTrigger={!isChatOnlyMode}
             mobileBreakpoint={900}
             mobileMenuOpen={mobileNavOpen}
             onMobileMenuOpenChange={setMobileNavOpen}
@@ -2233,13 +2284,96 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 <span className="truncate">{activeBotFilter.display_phone_number || activeBotFilter.name}</span>
               </button>
             )}
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 bg-sky-50 text-sky-600 rounded-xl flex items-center justify-center cursor-pointer" onClick={() => botList.length > 1 && setShowBotPicker(true)} title={botList.length > 1 ? 'חזור לבחירת בוט' : undefined}>
+            <div className="flex items-center justify-between gap-3 mb-3">
+              <div className="flex items-center gap-3 min-w-0">
+                {/* Profile avatar + availability status — moved here from top bar for chat-only agent mode */}
+                {isChatOnlyMode && (
+                  <>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <div ref={profileMenuWrapperRef} className="relative flex-shrink-0">
+                        <button
+                          type="button"
+                          title={currentUser?.name || currentUser?.email || ''}
+                          onClick={() => setProfileMenuOpen(v => !v)}
+                          className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-sm shadow-md select-none flex-shrink-0 cursor-pointer hover:opacity-90 transition-opacity"
+                        >
+                          {firstName}
+                        </button>
+                        {profileMenuOpen && (
+                          <div dir="rtl" className="absolute top-full mt-2 right-0 w-48 bg-white rounded-2xl shadow-xl border border-slate-100 py-2 z-50">
+                            <p className="px-4 py-1.5 text-sm font-bold text-slate-700 truncate">{currentUser?.name || currentUser?.email}</p>
+                            {isChatOnlyMode && siblingAccounts.length > 0 && onSwitchAccount && (
+                              <>
+                                <div className="my-1 border-t border-slate-100" />
+                                {siblingAccounts.map(acc => (
+                                  <button
+                                    key={acc.id}
+                                    type="button"
+                                    onClick={() => { setProfileMenuOpen(false); onSwitchAccount(acc.id); }}
+                                    className="w-full flex items-center gap-2 px-4 py-2 text-sm font-bold text-slate-600 hover:bg-slate-50 transition-colors text-right"
+                                  >
+                                    <Repeat size={16} className="flex-shrink-0" />
+                                    <span className="truncate">{acc.name}</span>
+                                  </button>
+                                ))}
+                              </>
+                            )}
+                            <div className="my-1 border-t border-slate-100" />
+                            <button
+                              type="button"
+                              onClick={() => { setProfileMenuOpen(false); onLogout(); }}
+                              className="w-full flex items-center gap-2 px-4 py-2 text-sm font-bold text-red-500 hover:bg-red-50 transition-colors text-right"
+                            >
+                              <LogOut size={16} />
+                              <span>יציאה</span>
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                      <div ref={availabilityWrapperRef} className="relative flex-shrink-0 w-[92px]" dir="rtl">
+                        <button
+                          type="button"
+                          onClick={() => setAvailabilityOpen(v => !v)}
+                          disabled={availabilitySaving}
+                          title="שינוי סטטוס זמינות"
+                          className={`w-full flex items-center justify-center gap-2 px-3 py-1.5 rounded-full text-xs font-black border border-slate-200 ${currentAvailability.bg} ${currentAvailability.text} hover:shadow-sm transition-all disabled:opacity-60`}
+                        >
+                          <span className="relative flex h-2.5 w-2.5 flex-shrink-0">
+                            {currentAvailability.value === 'available' && (
+                              <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-60 ${currentAvailability.dot}`}></span>
+                            )}
+                            <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${currentAvailability.dot}`}></span>
+                          </span>
+                          <span className="truncate">{currentAvailability.label}</span>
+                        </button>
+                        {availabilityOpen && (
+                          <div className="absolute mt-2 right-0 w-44 bg-white rounded-2xl shadow-xl border border-slate-100 py-2 z-50">
+                            {AVAILABILITY_OPTIONS.map(opt => {
+                              const isActive = opt.value === (currentUser?.availability_status || 'available');
+                              return (
+                                <button
+                                  key={opt.value}
+                                  onClick={() => handleAvailabilitySelect(opt.value)}
+                                  className={`w-full flex items-center gap-2 px-4 py-2 text-sm font-bold text-right hover:bg-slate-50 transition-colors ${isActive ? 'bg-slate-50' : ''}`}
+                                >
+                                  <span className={`inline-block h-2.5 w-2.5 rounded-full ${opt.dot}`}></span>
+                                  <span className="flex-1 text-slate-700">{opt.label}</span>
+                                  {isActive && <Check size={14} className="text-blue-600" />}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="w-px self-stretch bg-slate-200 flex-shrink-0 mx-1" />
+                  </>
+                )}
+                <div className="w-9 h-9 bg-sky-50 text-sky-600 rounded-xl flex items-center justify-center cursor-pointer flex-shrink-0" onClick={() => botList.length > 1 && setShowBotPicker(true)} title={botList.length > 1 ? 'חזור לבחירת בוט' : undefined}>
                   <Users size={18} />
                 </div>
-                <div>
-                  <h2 className="text-base font-black text-slate-900">
+                <div className="min-w-0">
+                  <h2 className="text-base font-black text-slate-900 truncate">
                     {activeBotFilter ? (activeBotFilter.display_phone_number || activeBotFilter.name) : 'שיחות'}
                   </h2>
                   <p className="text-xs text-slate-400 font-semibold">{filteredContacts.length} קשרים</p>
@@ -2329,34 +2463,34 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                     <button
                       key={contact.phone}
                       onClick={() => setSelectedPhone(contact.phone)}
-                      className={`w-full px-4 py-3.5 flex items-center gap-3 text-right transition-colors border-b border-slate-50 relative
+                      className={`w-full px-3 py-2 flex items-center gap-2.5 text-right transition-colors border-b border-slate-50 relative
                         ${isSelected ? 'bg-sky-50' : 'hover:bg-slate-50'}`}
                     >
                       {isSelected && (
                         <span className="absolute right-0 top-0 bottom-0 w-1 bg-sky-500 rounded-l-full" />
                       )}
-                      <div className={`w-10 h-10 rounded-2xl flex-shrink-0 flex items-center justify-center text-sm font-black
+                      <div className={`w-8 h-8 rounded-xl flex-shrink-0 flex items-center justify-center text-xs font-black
                         ${isSelected ? 'bg-sky-500 text-white' : sim ? 'bg-blue-50 text-blue-400' : 'bg-slate-100 text-slate-500'}`}>
-                        {sim ? <MessageSquare size={16} /> : (contact.whatsapp_name || contact.full_name || contact.phone).charAt(0).toUpperCase()}
+                        {sim ? <MessageSquare size={14} /> : (contact.whatsapp_name || contact.full_name || contact.phone).charAt(0).toUpperCase()}
                       </div>
                       <div className="flex-1 min-w-0 flex items-center justify-between gap-2">
                         <div className="min-w-0">
-                          <p className={`text-sm font-black truncate flex items-center gap-1 ${isSelected ? 'text-sky-700' : 'text-slate-800'}`}>
+                          <p className={`text-xs font-black truncate flex items-center gap-1 ${isSelected ? 'text-sky-700' : 'text-slate-800'}`}>
                             {sim ? 'סימולטור' : contact.phone}
                             {!sim && !contact.full_name && contact.whatsapp_name && (
-                              <span className={`text-sm font-semibold flex items-center gap-0.5 mr-1 ${isSelected ? 'text-sky-600' : 'text-slate-500'}`}>
-                                · <WhatsAppIcon size={11} className="text-slate-400" /> {contact.whatsapp_name}
+                              <span className={`text-xs font-semibold flex items-center gap-0.5 mr-1 ${isSelected ? 'text-sky-600' : 'text-slate-500'}`}>
+                                · <WhatsAppIcon size={10} className="text-slate-400" /> {contact.whatsapp_name}
                               </span>
                             )}
                             {!sim && contact.full_name && (
-                              <span className={`text-sm font-semibold flex items-center gap-0.5 mr-1 ${isSelected ? 'text-sky-600' : 'text-slate-500'}`}>
+                              <span className={`text-xs font-semibold flex items-center gap-0.5 mr-1 ${isSelected ? 'text-sky-600' : 'text-slate-500'}`}>
                                 · {contact.full_name}
                               </span>
                             )}
                           </p>
                           {!sim && contact.full_name && contact.whatsapp_name && (
-                            <p className="text-[10px] font-medium truncate text-slate-400 flex items-center gap-0.5">
-                              <WhatsAppIcon size={10} className="text-slate-400 flex-shrink-0" /> {contact.whatsapp_name}
+                            <p className="text-[9px] font-medium truncate text-slate-400 flex items-center gap-0.5">
+                              <WhatsAppIcon size={9} className="text-slate-400 flex-shrink-0" /> {contact.whatsapp_name}
                             </p>
                           )}
                           <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
@@ -2373,7 +2507,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                           </div>
                         </div>
                         <div className="flex flex-col items-end gap-1 flex-shrink-0">
-                          <span className="text-[11px] text-slate-400 font-semibold">
+                          <span className="text-[10px] text-slate-400 font-semibold">
                             {formatContactTime(contact.lastSeen)}
                           </span>
                           {!sim && onOpenContacts && (
@@ -2382,7 +2516,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                               title="פתח פרטי איש קשר"
                               className="p-1 text-slate-300 hover:text-sky-500 hover:bg-sky-50 rounded-lg transition-colors"
                             >
-                              <User size={13} />
+                              <User size={12} />
                             </button>
                           )}
                         </div>
@@ -3216,7 +3350,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 {selectedTemplate.name || 'טמפלייט'}
               </p>
             </div>
-
+ 
             {/* Body - Two columns: Form on right, Preview on left */}
             <div className="flex-1 overflow-hidden flex flex-col lg:flex-row">
               {/* Right Side - Form */}
@@ -3306,7 +3440,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                                   value={templateParams.body?.[varIdx] || ''}
                                   onChange={(e) => {
                                     const newBody = [...(templateParams.body || [])];
-                                    newBody[varIdx] = e.target.value;
+                                     newBody[varIdx] = e.target.value;
                                     setTemplateParams(prev => ({ ...prev, body: newBody }));
                                   }}
                                   placeholder={`הזן ערך ל-${match}`}

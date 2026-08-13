@@ -5,22 +5,26 @@ const API_BASE = window.location.hostname === 'localhost'
   ? 'http://localhost:3001/api'
   : `${window.location.origin}/api`;
 
-interface SiblingAccount {
+export interface SiblingAccount {
   id: string;
   name: string;
   account_type: string;
   role: string;
   created_at: string;
 }
-
+ 
 interface ImpersonationBannerProps {
   currentUser?: { name?: string; email?: string; isImpersonating?: boolean } | null;
   onStopImpersonation?: () => void;
   token?: string | null;
   onSwitchAccount?: (accountId: string) => void;
+  /** When true, suppress the "switch account" banner (e.g. it's rendered elsewhere, like a profile menu). Impersonation banner is unaffected. */
+  hideAccountSwitcher?: boolean;
+  /** Called whenever the list of sibling accounts (same email) is fetched/updated. */
+  onAccountsChange?: (accounts: SiblingAccount[]) => void;
 }
 
-const ImpersonationBanner: React.FC<ImpersonationBannerProps> = ({ currentUser, onStopImpersonation, token, onSwitchAccount }) => {
+const ImpersonationBanner: React.FC<ImpersonationBannerProps> = ({ currentUser, onStopImpersonation, token, onSwitchAccount, hideAccountSwitcher, onAccountsChange }) => {
   const [siblingAccounts, setSiblingAccounts] = useState<SiblingAccount[]>([]);
   const [showSwitcher, setShowSwitcher] = useState(false);
 
@@ -29,13 +33,14 @@ const ImpersonationBanner: React.FC<ImpersonationBannerProps> = ({ currentUser, 
   useEffect(() => {
     if (!token || !currentUser || isImpersonating || !onSwitchAccount) {
       setSiblingAccounts([]);
+      onAccountsChange?.([]);
       return;
     }
     let cancelled = false;
     fetch(`${API_BASE}/auth/my-accounts`, { headers: { Authorization: `Bearer ${token}` } })
       .then(res => (res.ok ? res.json() : { accounts: [] }))
-      .then(data => { if (!cancelled) setSiblingAccounts(data.accounts || []); })
-      .catch(() => { if (!cancelled) setSiblingAccounts([]); });
+      .then(data => { if (!cancelled) { setSiblingAccounts(data.accounts || []); onAccountsChange?.(data.accounts || []); } })
+      .catch(() => { if (!cancelled) { setSiblingAccounts([]); onAccountsChange?.([]); } });
     return () => { cancelled = true; };
   }, [token, currentUser, isImpersonating, onSwitchAccount]);
 
@@ -58,7 +63,7 @@ const ImpersonationBanner: React.FC<ImpersonationBannerProps> = ({ currentUser, 
     );
   }
 
-  if (!onSwitchAccount || siblingAccounts.length === 0) return null;
+  if (!onSwitchAccount || siblingAccounts.length === 0 || hideAccountSwitcher) return null;
 
   return (
     <div className="bg-gradient-to-r from-teal-500 to-blue-500 text-white px-6 py-3 flex items-center justify-between z-30 flex-shrink-0" dir="rtl">

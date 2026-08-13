@@ -1372,14 +1372,17 @@ export const getUserSessions = async (req, res) => {
     console.error('getUserSessions error:', err);
     res.status(500).json({ error: err.message });
   }
-};
-
+}; 
+ 
 export const getAllSessions = async (req, res) => {
-  // Admin-only: returns paginated sessions with optional search
+  // Admin-only: returns paginated sessions with optional search.
+  // Optional `userId` query param scopes the results to sessions owned by
+  // that single user's bots (used by the admin panel's per-customer "סשנים" tab).
   try {
-    const PAGE_SIZE = 6;
+    const PAGE_SIZE = Math.min(50, Math.max(1, parseInt(req.query.pageSize) || 6));
     const page = Math.max(1, parseInt(req.query.page) || 1);
     const search = (req.query.search || '').trim();
+    const userIdFilter = (req.query.userId || '').trim();
 
     const collection = mongoose.connection.collection('BotSession');
 
@@ -1404,7 +1407,23 @@ export const getAllSessions = async (req, res) => {
     allUsers.forEach(u => { userNameMap[u._id.toString()] = u.name || u.email; });
 
     // Build DB-level match conditions that cover phone, bot name, and user name
-    let matchStage = null;
+    const matchAnd = [];
+
+    if (userIdFilter) {
+      const ownedBotIds = allBots
+        .filter(b => b.user_id?.toString() === userIdFilter)
+        .map(b => b._id.toString());
+      const ownedWidgetIds = allWidgets
+        .filter(w => ownedBotIds.includes(w.flow_id?.toString()))
+        .map(w => w.id);
+      matchAnd.push({
+        $or: [
+          { flow_id: { $in: ownedBotIds } },
+          { widget_id: { $in: ownedWidgetIds } }
+        ]
+      });
+    }
+
     if (search) {
       const searchLower = search.toLowerCase();
 
@@ -1441,8 +1460,10 @@ export const getAllSessions = async (req, res) => {
         orConditions.push({ flow_id: { $in: allMatchingBotIds } });
       }
 
-      matchStage = { $or: orConditions };
+      matchAnd.push({ $or: orConditions });
     }
+
+    const matchStage = matchAnd.length === 0 ? null : matchAnd.length === 1 ? matchAnd[0] : { $and: matchAnd };
 
     const pipeline = [
       {
@@ -1602,6 +1623,107 @@ export const getSessionsByPhone = async (req, res) => {
     res.json(result);
   } catch (err) {
     console.error('getSessionsByPhone error:', err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// Same access rules as getSessionsByPhone, but returns only the single most recent
+// message with the contact (optionally scoped to a specific bot via botId).
+export const getLastMessageByPhone = async (req, res) => {
+  const userId = getEffectiveUserId(req);
+  const phone = normalizePhone(req.query.phone || '');
+  const botId = req.query.botId || '';
+  if (!phone) return res.status(400).json({ error: 'מספר טלפון הוא שדה חובה' });
+
+  try {
+    const userDoc = await User.findById(req.userId).select('rep_group_ids role user_type_id').lean();
+    const perms = await resolvePermissions(userDoc || { role: req.user?.role });
+    const viewOnlyAssigned = hasPermission(perms, 'sessions.view_assigned_only') && !hasPermission(perms, 'sessions.view_all');
+
+    let allowedByAssignment = true;
+    let repGroupSet = null;
+    if (viewOnlyAssigned) {
+      const repId = req.userId;
+      repGroupSet = new Set(((userDoc?.rep_group_ids) || []).map(id => id.toString()));
+      const contactDoc = await Contact.findOne({ user_id: userId, phone }).select('assigned_to').lean();
+      const assignedToRep = (contactDoc?.assigned_to || []).map(x => x.toString()).includes(repId);
+      allowedByAssignment = assignedToRep;
+    }
+
+    const [userBots, userWidgets] = await Promise.all([
+      BotFlow.find({ user_id: userId }).lean(),
+      Widget.find({ $or: [{ user_id: userId }, { user_id: userId.toString() }] }).select('id flow_id').lean()
+    ]);
+
+    const botNameMap = {};
+    userBots.forEach(b => { botNameMap[b._id.toString()] = b.name; });
+    const botIds = userBots.map(b => b._id.toString());
+
+    const botWidgets = await Widget.find({ flow_id: { $in: botIds } }).select('id flow_id').lean();
+    const allWidgets = [...userWidgets, ...botWidgets];
+    const widgetIds = [...new Set(allWidgets.map(w => w.id).filter(Boolean))];
+    const widgetFlowMap = {};
+    allWidgets.forEach(w => { if (w.id) widgetFlowMap[w.id] = w.flow_id; });
+
+    const botWidgetIds = botId
+      ? allWidgets.filter(w => w.flow_id?.toString() === botId).map(w => w.id).filter(Boolean)
+      : null;
+
+    const collection = mongoose.connection.collection('BotSession');
+
+    const matchConditions = [
+      { $or: [{ customer_phone: phone }, { sender: phone }] },
+      {
+        $or: [
+          { user_id: userId },
+          { user_id: userId.toString() },
+          { widget_id: { $in: widgetIds } }
+        ]
+      }
+    ];
+
+    if (botId && botWidgetIds !== null) {
+      const botOrConditions = [{ flow_id: botId }];
+      if (botWidgetIds.length > 0) botOrConditions.push({ widget_id: { $in: botWidgetIds } });
+      matchConditions.push({ $or: botOrConditions });
+    }
+
+    const sessions = await collection.aggregate([
+      { $match: { $and: matchConditions } },
+      { $addFields: { _sortDate: { $ifNull: ['$created_at', '$createdAt', { $toDate: '$_id' }] } } },
+      { $sort: { _sortDate: 1 } }
+    ]).toArray();
+
+    if (viewOnlyAssigned && !allowedByAssignment) {
+      const repId = req.userId;
+      allowedByAssignment = sessions.some(s =>
+        String(s.rep_user_id || '') === repId ||
+        (s.rep_group_id && repGroupSet.has(String(s.rep_group_id)))
+      );
+    }
+    if (viewOnlyAssigned && !allowedByAssignment) {
+      return res.json(null);
+    }
+
+    if (sessions.length === 0) return res.json(null);
+
+    const lastSession = sessions[sessions.length - 1];
+    const history = lastSession.process_history || [];
+    const lastMessage = history.length > 0 ? history[history.length - 1] : null;
+    const flowId = widgetFlowMap[lastSession.widget_id] || lastSession.flow_id;
+    const botName = flowId ? botNameMap[flowId] : null;
+
+    res.json({
+      session_id: lastSession._id.toString(),
+      phone: lastSession.customer_phone || lastSession.sender || phone,
+      widget_id: lastSession.widget_id,
+      bot_name: botName || 'לא ידוע',
+      is_agent: lastSession.is_agent || false,
+      status: lastSession.status || 'bot',
+      message: lastMessage
+    });
+  } catch (err) {
+    console.error('getLastMessageByPhone error:', err);
     res.status(500).json({ error: err.message });
   }
 };

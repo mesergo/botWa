@@ -108,3 +108,57 @@ export async function getAssignedDestsForUser(userId) {
   const docs = await SmsDestSetting.find({ assignedClientId: userId }).select('dest').lean();
   return docs.map((d) => d.dest);
 }
+
+/**
+ * POST /api/sms-in/admin/dest-settings/bulk-assign
+ * Admin only — bulk upsert a list of dest numbers to a single client.
+ * Always overwrites any existing assignment (last write wins).
+ */
+export async function bulkAssignDestSettings(req, res) {
+  try {
+    const { dests, assignedClientId, assignedClientName = '' } = req.body || {};
+
+    if (!assignedClientId) {
+      return res.status(400).json({ error: 'assignedClientId is required' });
+    }
+
+    if (!Array.isArray(dests)) {
+      return res.status(400).json({ error: 'dests must be an array' });
+    }
+
+    const cleanedDests = [...new Set(dests.map((d) => String(d || '').trim()).filter(Boolean))];
+
+    if (cleanedDests.length === 0) {
+      return res.status(400).json({ error: 'dests must contain at least one valid number' });
+    }
+
+    const ops = cleanedDests.map((dest) => ({
+      updateOne: {
+        filter: { dest },
+        update: {
+          $set: {
+            dest,
+            assignedClientId,
+            assignedClientName: assignedClientName || '',
+            isActive: true,
+            notes: 'נוסף משיוך מספרים מרוכז',
+          },
+        },
+        upsert: true,
+      },
+    }));
+
+    const result = await SmsDestSetting.bulkWrite(ops);
+
+    res.json({
+      success: true,
+      matchedCount: result.matchedCount,
+      modifiedCount: result.modifiedCount,
+      upsertedCount: result.upsertedCount,
+      total: cleanedDests.length,
+    });
+  } catch (err) {
+    console.error('[sms-in] bulkAssignDestSettings error:', err);
+    res.status(500).json({ error: err.message || 'Failed to bulk assign dest settings' });
+  }
+}
