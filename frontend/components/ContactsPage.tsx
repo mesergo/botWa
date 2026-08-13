@@ -410,6 +410,7 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
       <ImpersonationBanner currentUser={currentUser} onStopImpersonation={onStopImpersonation} token={token} onSwitchAccount={onSwitchAccount} />
 
       <PageTopBar
+        token={token}
         currentUser={currentUser}
         onBack={onBack}
         onLogout={onLogout}

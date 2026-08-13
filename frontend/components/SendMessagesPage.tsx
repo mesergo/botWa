@@ -481,6 +481,7 @@ const SendMessagesPage: React.FC<SendMessagesPageProps> = ({
       <ImpersonationBanner currentUser={currentUser} onStopImpersonation={onStopImpersonation} token={token} onSwitchAccount={onSwitchAccount} />
 
       <PageTopBar
+        token={token}
         currentUser={currentUser}
         onBack={onBack}
         onLogout={onLogout}

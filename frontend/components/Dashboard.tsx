@@ -8,6 +8,8 @@ import { FileUploader } from './FileUploader';
 import { usePermission } from '../hooks/usePermission';
 import AppNav from './AppNav';
 import { MobileNavToggle } from './PageTopBar';
+import ProfileMenuContent from './ProfileMenuContent';
+import AnchoredDropdown from './AnchoredDropdown';
 import SmsInApp from './sms-in/SmsInApp';
 
 const API_BASE = window.location.hostname === 'localhost'
@@ -187,6 +189,8 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
   });
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [isMobileTopBar, setIsMobileTopBar] = useState<boolean>(() => window.innerWidth <= 900);
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const profileWrapperRef = useRef<HTMLDivElement>(null);
 
   // Sync activeTab when navigating between routes that share this component instance
   useEffect(() => {
@@ -978,11 +982,11 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
               פאנל ניהול
             </button>
           )}
-          <div className="relative">
+          <div className="relative" ref={profileWrapperRef}>
             <div
               title={currentUser?.name || currentUser?.email || ''}
               className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-sm shadow-md select-none cursor-pointer hover:scale-105 transition-transform"
-              onClick={() => { setSettingsSection('profile'); setActiveTab('settings'); }}
+              onClick={() => setProfileMenuOpen(v => !v)}
             >
               {(currentUser?.name?.charAt(0) || currentUser?.email?.charAt(0) || '?').toUpperCase()}
             </div>
@@ -996,6 +1000,13 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                 />
               );
             })()}
+            <AnchoredDropdown anchorRef={profileWrapperRef} open={profileMenuOpen} onClose={() => setProfileMenuOpen(false)} align="right">
+              <ProfileMenuContent
+                token={token ?? null}
+                currentUser={currentUser}
+                onLogout={() => { setProfileMenuOpen(false); onLogout(); }}
+              />
+            </AnchoredDropdown>
           </div>
           {isMobileTopBar && (
             <MobileNavToggle open={mobileNavOpen} onToggle={() => setMobileNavOpen((prev) => !prev)} />

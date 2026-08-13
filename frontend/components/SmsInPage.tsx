@@ -51,6 +51,7 @@ const SmsInPage: React.FC<SmsInPageProps> = ({
       <ImpersonationBanner currentUser={currentUser} onStopImpersonation={onStopImpersonation} token={_token} onSwitchAccount={onSwitchAccount} />
 
       <PageTopBar
+        token={_token}
         currentUser={currentUser}
         onBack={onBack}
         onLogout={onLogout}

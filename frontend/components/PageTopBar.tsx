@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { LogOut, Shield, Menu, X } from 'lucide-react';
+import ProfileMenuContent from './ProfileMenuContent';
+import AnchoredDropdown from './AnchoredDropdown';
 
 interface CurrentUserLike {
   name?: string;
@@ -9,6 +11,7 @@ interface CurrentUserLike {
 } 
 
 interface PageTopBarProps {
+  token?: string | null;
   currentUser?: CurrentUserLike | null;
   onBack: () => void;
   onLogout: () => void;
@@ -49,6 +52,7 @@ export const MobileNavToggle: React.FC<MobileNavToggleProps> = ({ open, onToggle
 );
 
 const PageTopBar: React.FC<PageTopBarProps> = ({
+  token,
   currentUser,
   onBack,
   onLogout,
@@ -65,15 +69,6 @@ const PageTopBar: React.FC<PageTopBarProps> = ({
   const [isMobile, setIsMobile] = useState<boolean>(() => window.innerWidth <= 900);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const profileWrapperRef = React.useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!profileMenuOpen) return;
-    const handler = (e: MouseEvent) => {
-      if (profileWrapperRef.current && !profileWrapperRef.current.contains(e.target as Node)) setProfileMenuOpen(false);
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [profileMenuOpen]);
 
   useEffect(() => {
     const mediaQuery = window.matchMedia('(max-width: 900px)');
@@ -118,20 +113,13 @@ const PageTopBar: React.FC<PageTopBarProps> = ({
             >
               {firstName}
             </button>
-            {profileMenuOpen && (
-              <div dir="rtl" className="absolute top-full mt-2 left-0 w-48 bg-white rounded-2xl shadow-xl border border-slate-100 py-2 z-50">
-                <p className="px-4 py-1.5 text-sm font-bold text-slate-700 truncate">{currentUser?.name ?? currentUser?.email ?? ''}</p>
-                <div className="my-1 border-t border-slate-100" />
-                <button
-                  type="button"
-                  onClick={() => { setProfileMenuOpen(false); onLogout(); }}
-                  className="w-full flex items-center gap-2 px-4 py-2 text-sm font-bold text-red-500 hover:bg-red-50 transition-colors text-right"
-                >
-                  <LogOut size={16} />
-                  <span>יציאה</span>
-                </button>
-              </div>
-            )}
+            <AnchoredDropdown anchorRef={profileWrapperRef} open={profileMenuOpen} onClose={() => setProfileMenuOpen(false)} align="right">
+              <ProfileMenuContent
+                token={token ?? null}
+                currentUser={currentUser}
+                onLogout={() => { setProfileMenuOpen(false); onLogout(); }}
+              />
+            </AnchoredDropdown>
           </div>
         )}
         {showMobileNavToggle && isMobile && (

@@ -1,11 +1,13 @@
 ﻿import React, { useState, useEffect, useRef } from 'react';
 import { WhatsAppText } from '../utils/whatsappFormat';
-import { Clock, MessageSquare, Search, Bot, User, Phone, List, Users, ExternalLink, X, Headphones, RefreshCw, Settings, UserCog, Layers, Plus, UserPlus, Check, Paperclip, ChevronRight, Bell, MoreVertical, Ban, Megaphone, LogOut, Repeat } from 'lucide-react';
+import { Clock, MessageSquare, Search, Bot, User, Phone, List, Users, ExternalLink, X, Headphones, RefreshCw, Settings, UserCog, Layers, Plus, UserPlus, Check, Paperclip, ChevronRight, Bell, MoreVertical, Ban, Megaphone, Repeat } from 'lucide-react';
 import ImpersonationBanner, { SiblingAccount } from './ImpersonationBanner';
 import { TemplateHeaderMediaField } from './TemplateHeaderMediaField';
 import QuickInsertMenu from './shared/QuickInsertMenu';
 import { usePermission } from '../hooks/usePermission';
 import PageTopBar from './PageTopBar';
+import ProfileMenuContent from './ProfileMenuContent';
+import AnchoredDropdown from './AnchoredDropdown';
 import AppNav from './AppNav';
 import { useContactFields } from '../context/ContactFieldsContext';
  
@@ -1602,15 +1604,6 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
   }, [availabilityOpen]);
 
   useEffect(() => {
-    if (!profileMenuOpen) return;
-    const handler = (e: MouseEvent) => {
-      if (profileMenuWrapperRef.current && !profileMenuWrapperRef.current.contains(e.target as Node)) setProfileMenuOpen(false);
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [profileMenuOpen]);
-
-  useEffect(() => {
     if (!showActionsMenu) return;
     const handler = (e: MouseEvent) => {
       if (actionsMenuRef.current && !actionsMenuRef.current.contains(e.target as Node)) setShowActionsMenu(false);
@@ -2144,6 +2137,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
       {/* Navbar — hidden only in chat-only agent mode; profile menu + logout + status move into the contacts panel below */}
       {!isChatOnlyMode && (
         <PageTopBar
+          token={token}
           currentUser={currentUser}
           onBack={onBack ?? onGoHome ?? (() => {})}
           onLogout={onLogout}
@@ -2319,34 +2313,30 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                           {firstName}
                         </button>
                         {profileMenuOpen && (
-                          <div dir="rtl" className="absolute top-full mt-2 right-0 w-48 bg-white rounded-2xl shadow-xl border border-slate-100 py-2 z-50">
-                            <p className="px-4 py-1.5 text-sm font-bold text-slate-700 truncate">{currentUser?.name || currentUser?.email}</p>
-                            {isChatOnlyMode && siblingAccounts.length > 0 && onSwitchAccount && (
-                              <>
-                                <div className="my-1 border-t border-slate-100" />
-                                {siblingAccounts.map(acc => (
-                                  <button
-                                    key={acc.id}
-                                    type="button"
-                                    onClick={() => { setProfileMenuOpen(false); onSwitchAccount(acc.id); }}
-                                    className="w-full flex items-center gap-2 px-4 py-2 text-sm font-bold text-slate-600 hover:bg-slate-50 transition-colors text-right"
-                                  >
-                                    <Repeat size={16} className="flex-shrink-0" />
-                                    <span className="truncate">{acc.name}</span>
-                                  </button>
-                                ))}
-                              </>
-                            )}
-                            <div className="my-1 border-t border-slate-100" />
-                            <button
-                              type="button"
-                              onClick={() => { setProfileMenuOpen(false); onLogout(); }}
-                              className="w-full flex items-center gap-2 px-4 py-2 text-sm font-bold text-red-500 hover:bg-red-50 transition-colors text-right"
+                          <AnchoredDropdown anchorRef={profileMenuWrapperRef} open={profileMenuOpen} onClose={() => setProfileMenuOpen(false)} align="right">
+                            <ProfileMenuContent
+                              token={token}
+                              currentUser={currentUser}
+                              onLogout={() => { setProfileMenuOpen(false); onLogout(); }}
                             >
-                              <LogOut size={16} />
-                              <span>יציאה</span>
-                            </button>
-                          </div>
+                              {isChatOnlyMode && siblingAccounts.length > 0 && onSwitchAccount && (
+                                <>
+                                  <div className="my-1 border-t border-slate-100" />
+                                  {siblingAccounts.map(acc => (
+                                    <button
+                                      key={acc.id}
+                                      type="button"
+                                      onClick={() => { setProfileMenuOpen(false); onSwitchAccount(acc.id); }}
+                                      className="w-full flex items-center gap-2 px-4 py-2 text-sm font-bold text-slate-600 hover:bg-slate-50 transition-colors text-right"
+                                    >
+                                      <Repeat size={16} className="flex-shrink-0" />
+                                      <span className="truncate">{acc.name}</span>
+                                    </button>
+                                  ))}
+                                </>
+                              )}
+                            </ProfileMenuContent>
+                          </AnchoredDropdown>
                         )}
                       </div>
                       <div ref={availabilityWrapperRef} className="relative flex-shrink-0 w-[92px]" dir="rtl">

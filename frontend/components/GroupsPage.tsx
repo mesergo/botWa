@@ -838,6 +838,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
       {/* Navbar */}
       {!embedded && (
         <PageTopBar
+          token={token}
           currentUser={currentUser}
           onBack={onBack}
           onLogout={onLogout}
