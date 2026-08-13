@@ -14,9 +14,16 @@ import {
   getRemovalConfig,
   updateRemovalConfig,
   getRemovalConfigLog,
-  createUser
+  createUser,
+  getUserDialog360Templates,
+  getUserDialog360TemplateSettings,
+  updateUserDialog360TemplateVisibility,
+  updateUserDialog360TemplateDefaultMedia,
+  getUserConnectedNumbers,
+  getAllConnectedNumbers,
+  getUserBots
 } from '../controllers/adminController.js';
-import {
+import { 
   listUserTypes,
   createUserType,
   updateUserType,
@@ -27,7 +34,7 @@ const router = express.Router();
 
 // All admin routes require authentication and admin role
 router.use(authenticateToken);
-
+ 
 // System Settings (Global Limits)
 router.get('/settings/limits', requireAdmin, getSystemSettings);
 router.put('/settings/limits', requireAdmin, updateSystemSettings);
@@ -56,6 +63,21 @@ router.post('/users', requireAdmin, createUser);
 router.get('/users/:userId', requireAdmin, getUserDetails);
 router.patch('/users/:userId', requireAdmin, updateUser);
 router.delete('/users/:userId', requireAdmin, deleteUser);
+
+// Per-customer Dialog360 message templates (admin view/manage on the customer's behalf)
+router.get('/users/:userId/dialog360-templates', requireAdmin, getUserDialog360Templates);
+router.get('/users/:userId/dialog360-template-settings', requireAdmin, getUserDialog360TemplateSettings);
+router.post('/users/:userId/dialog360-template-settings/toggle', requireAdmin, updateUserDialog360TemplateVisibility);
+router.post('/users/:userId/dialog360-template-settings/default-media', requireAdmin, updateUserDialog360TemplateDefaultMedia);
+
+// Per-customer connected WhatsApp numbers (read-only admin view)
+router.get('/users/:userId/connected-numbers', requireAdmin, getUserConnectedNumbers);
+
+// Per-customer bot list (lightweight id/name, used for the Sessions tab's advanced bot search)
+router.get('/users/:userId/bots', requireAdmin, getUserBots);
+
+// All connected WhatsApp numbers across every customer (global admin view)
+router.get('/connected-numbers', requireAdmin, getAllConnectedNumbers);
 
 // Role management
 router.patch('/users/:userId/role', requireAdmin, updateUserRole);

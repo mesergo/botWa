@@ -23,18 +23,33 @@ import { applyConversationClosedToDoc } from '../utils/conversationActions.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Helper: Split incoming text into { url, caption }.
+// Other systems (e.g. getReplyImage) send media as "<url>\n<caption>" in a single
+// text field. Only the first line is a candidate URL; the rest (if any) is the caption.
+const splitMediaUrlAndCaption = (text) => {
+  const raw = String(text || '');
+  const newlineIdx = raw.indexOf('\n');
+  if (newlineIdx === -1) return { url: raw.trim(), caption: '' };
+  return {
+    url: raw.substring(0, newlineIdx).trim(),
+    caption: raw.substring(newlineIdx + 1).trim(),
+  };
+};
+
 // Helper: Detect media type from a URL by its file extension.
 // Returns 'Image', 'Video', 'Document', or null (for plain text).
+// Accepts either a plain URL or "<url>\n<caption>" — only the URL part is inspected.
 const detectMediaType = (text) => {
   if (!text || typeof text !== 'string') return null;
+  const { url } = splitMediaUrlAndCaption(text);
   // Only consider URLs (must start with http/https)
-  if (!/^https?:\/\//i.test(text.trim())) return null;
-  const ext = text.split('?')[0].split('.').pop()?.toLowerCase() || '';
+  if (!/^https?:\/\//i.test(url)) return null;
+  const ext = url.split('?')[0].split('.').pop()?.toLowerCase() || '';
   if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) return 'Image';
   if (['mp4', 'mov', 'avi', 'mkv', 'webm'].includes(ext)) return 'Video';
   if (['pdf', 'doc', 'docx', 'xls', 'xlsx', 'txt', 'csv', 'zip'].includes(ext)) return 'Document';
   if (['oga', 'ogg', 'mp3', 'wav', 'm4a', 'aac', 'opus'].includes(ext)) return 'Audio';
-  console.log(`[detectMediaType] 🔍 URL has unknown extension: .${ext} — treating as text | url=${text.substring(0, 80)}`);
+  console.log(`[detectMediaType] 🔍 URL has unknown extension: .${ext} — treating as text | url=${url.substring(0, 80)}`);
   return null;
 };
 
@@ -1395,9 +1410,10 @@ export const respondToMessage = async (req, res) => {
         console.log(`[BOT-MEDIA]    session id  : ${agentCheckSession._id}`);
         console.log(`[BOT-MEDIA]    text/url    : ${String(text).substring(0, 120)}`);
         console.log(`[BOT-MEDIA]    detected as : ${mediaType || 'plain text (UserInput)'}`);
+        const { url: mediaUrl, caption: mediaCaption } = splitMediaUrlAndCaption(text);
         agentCheckSession.process_history.push(
           mediaType
-            ? { type: mediaType, url: String(text), sender: 'user', name: 'משתמש', node_id: 'user', created: new Date().toISOString() }
+            ? { type: mediaType, url: mediaUrl, text: mediaCaption || undefined, sender: 'user', name: 'משתמש', node_id: 'user', created: new Date().toISOString() }
             : { type: 'UserInput', text: String(text), sender: 'user', name: 'משתמש', node_id: 'user', created: new Date().toISOString() }
         );
         console.log(`[BOT-MEDIA] ✅ Saved to process_history as ${mediaType || 'UserInput'}`);
@@ -1644,7 +1660,8 @@ export const respondToMessage = async (req, res) => {
         console.log(`[BOT-MEDIA]    session status: ${session.status || 'bot'}`);
         console.log(`[BOT-MEDIA]    url         : ${text.substring(0, 120)}`);
         console.log(`[BOT-MEDIA]    detected as : ${mediaType}`);
-        addToHistory(session, { type: mediaType, url: text }, 'user');
+        const { url: mediaUrl, caption: mediaCaption } = splitMediaUrlAndCaption(text);
+        addToHistory(session, { type: mediaType, url: mediaUrl, text: mediaCaption || undefined }, 'user');
         session.markModified('process_history');
         await session.save();
         eventBus.emit('session:update', { userId: String(user._id), phone: sender });

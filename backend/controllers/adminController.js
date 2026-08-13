@@ -5,13 +5,14 @@ import AuditLog from '../models/AuditLog.js';
 import SystemSetting from '../models/SystemSetting.js';
 import { DEFAULT_REMOVAL_CONFIG, getGlobalRemovalConfig } from '../utils/removalConfig.js';
 import UserType from '../models/UserType.js';
-
+import Dialog360TemplateSetting from '../models/Dialog360TemplateSetting.js';
+ 
 // Default configuration if DB is empty (used for fallback)
 const DEFAULT_ACCOUNTS_CONFIG = {
   Trial: { maxBots: 1, maxVersions: 0, versionPrice: 0, botPrice: 0, canPublish: false, trialDays: 30, maxConnectedNumbers: 1 },
   Basic: { maxBots: 3, maxVersions: 5, versionPrice: 5, botPrice: 30, canPublish: true, maxConnectedNumbers: 1 },
   Premium: { maxBots: 6, maxVersions: 10, versionPrice: 5, botPrice: 30, canPublish: true, maxConnectedNumbers: 3 }
-};
+}; 
 
 export const getSystemSettings = async (req, res) => {
   try {
@@ -101,23 +102,238 @@ export const updateRemovalConfig = async (req, res) => {
   }
 };
 
-// GET /api/admin/settings/removal/log?page=1
+// GET /api/admin/settings/removal/log?page=1&userId=<userId>
+// When `userId` is provided, only returns log entries whose actor was that user
+// (i.e. that specific customer's own removal-keyword activity).
 export const getRemovalConfigLog = async (req, res) => {
   try {
     const page = Math.max(1, parseInt(req.query.page) || 1);
     const limit = 20;
     const skip = (page - 1) * limit;
+    const filter = { target_type: 'RemovalConfig' };
+    if (req.query.userId) filter.actor_id = req.query.userId;
     const [entries, total] = await Promise.all([
-      AuditLog.find({ target_type: 'RemovalConfig' })
+      AuditLog.find(filter)
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
         .lean(),
-      AuditLog.countDocuments({ target_type: 'RemovalConfig' })
+      AuditLog.countDocuments(filter)
     ]);
     res.json({ entries, total, page, pages: Math.ceil(total / limit) });
   } catch (error) {
     res.status(500).json({ message: 'Error fetching removal config log', error: error.message });
+  }
+};
+
+// GET /api/admin/users/:userId/dialog360-templates
+// Fetch a specific customer's Dialog360 WhatsApp templates (admin viewing on their behalf).
+export const getUserDialog360Templates = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    let botId = user.dialog360_bot_id;
+
+    // Fallback: if the user has no dialog360_bot_id, use the first bot's endpoint field
+    if (!botId) {
+      const firstBot = await BotFlow.findOne({
+        user_id: userId.toString(),
+        endpoint: { $exists: true, $ne: '' }
+      }).sort({ created_at: 1 });
+      if (firstBot && firstBot.endpoint) {
+        const raw = firstBot.endpoint;
+        botId = raw.includes('/') ? raw.split('/').pop() : raw;
+      }
+    }
+
+    if (!botId) {
+      return res.status(400).json({
+        error: 'Dialog360 Bot ID not configured for this customer.',
+        success: false
+      });
+    }
+
+    const endpoint = `https://app.chatgo.live/api/dialog360/${botId}/message_templates`;
+    const crypto = await import('crypto');
+    const dToken = crypto.createHash('sha1').update(botId + 'moomoo').digest('hex');
+
+    const response = await fetch(endpoint, { headers: { token: dToken } });
+    if (!response.ok) {
+      const errorText = await response.text();
+      return res.status(response.status).json({
+        error: `Dialog360 API returned status ${response.status}: ${errorText}`,
+        success: false
+      });
+    }
+    const data = await response.json();
+    res.json({ templates: data, success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message, success: false });
+  }
+};
+
+// Normalize a stored Dialog360 template setting: ensure `visibility` is set
+// even on legacy records that only had the boolean `showInChat` field.
+const normalizeDialog360Setting = (s) => {
+  const obj = typeof s.toObject === 'function' ? s.toObject() : { ...s };
+  if (!obj.visibility) obj.visibility = obj.showInChat === false ? 'hidden' : 'manager';
+  if (obj.showInChat === undefined || obj.showInChat === null) obj.showInChat = obj.visibility !== 'hidden';
+  return obj;
+};
+
+// GET /api/admin/users/:userId/dialog360-template-settings
+// Fetch a specific customer's saved Dialog360 template visibility/default-media settings.
+export const getUserDialog360TemplateSettings = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const settings = await Dialog360TemplateSetting.find({ userId });
+    res.json({ success: true, settings: settings.map(normalizeDialog360Setting) });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// POST /api/admin/users/:userId/dialog360-template-settings/toggle
+// Cycle/set a specific customer's Dialog360 template visibility (hidden/manager/agent).
+export const updateUserDialog360TemplateVisibility = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { templateName, templateId, language, category, status, visibility } = req.body;
+    if (!templateName) return res.status(400).json({ error: 'templateName is required' });
+
+    const effectiveVisibility = ['hidden', 'manager', 'agent'].includes(visibility) ? visibility : 'manager';
+    const update = {
+      visibility: effectiveVisibility,
+      showInChat: effectiveVisibility !== 'hidden',
+      templateId,
+      language,
+      category,
+      status,
+      userId
+    };
+    const setting = await Dialog360TemplateSetting.findOneAndUpdate(
+      { templateName, userId },
+      { $set: update },
+      { upsert: true, new: true }
+    );
+    res.json({ success: true, setting: normalizeDialog360Setting(setting) });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// POST /api/admin/users/:userId/dialog360-template-settings/default-media
+// Set (or clear) the default header media for a specific customer's template.
+export const updateUserDialog360TemplateDefaultMedia = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { templateName, templateId, url, mediaType } = req.body;
+    if (!templateName) return res.status(400).json({ error: 'templateName is required' });
+    if (url && !['image', 'video', 'document'].includes(mediaType)) {
+      return res.status(400).json({ error: 'mediaType must be one of: image, video, document' });
+    }
+    const update = {
+      templateId,
+      defaultHeaderMediaUrl: url || null,
+      defaultHeaderMediaType: url ? mediaType : null,
+      userId
+    };
+    const setting = await Dialog360TemplateSetting.findOneAndUpdate(
+      { templateName, userId },
+      { $set: update },
+      { upsert: true, new: true }
+    );
+    res.json({ success: true, setting: normalizeDialog360Setting(setting) });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// GET /api/admin/users/:userId/bots
+// Lightweight list of a specific customer's bots ({ id, name }), used to power
+// the "advanced search" bot picker on the admin panel's per-customer Sessions tab.
+export const getUserBots = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const bots = await BotFlow.find({ user_id: userId.toString() }).select('name').sort({ name: 1 }).lean();
+    res.json({ success: true, bots: bots.map(b => ({ id: b._id.toString(), name: b.name })) });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// GET /api/admin/users/:userId/connected-numbers
+// Read-only list of a specific customer's connected WhatsApp numbers and their status.
+export const getUserConnectedNumbers = async (req, res) => {  try {
+    const { userId } = req.params;
+    const user = await User.findById(userId).select('connected_numbers');
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const botIds = (user.connected_numbers || []).map(n => n.assigned_bot_id).filter(Boolean);
+    const bots = botIds.length ? await BotFlow.find({ _id: { $in: botIds } }).select('name') : [];
+    const botNameById = new Map(bots.map(b => [b._id.toString(), b.name]));
+
+    const connected_numbers = (user.connected_numbers || []).map(n => {
+      const o = typeof n.toObject === 'function' ? n.toObject() : n;
+      const { access_token, pin, token360, ...rest } = o;
+      return {
+        ...rest,
+        provider: o.provider || 'facebook',
+        has_access_token: !!access_token,
+        has_token360: !!token360,
+        link: o.link || '',
+        assigned_bot_name: o.assigned_bot_id ? (botNameById.get(o.assigned_bot_id.toString()) || null) : null
+      };
+    });
+
+    res.json({ success: true, connected_numbers });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// GET /api/admin/connected-numbers
+// Global read-only view of EVERY connected WhatsApp number in the system across
+// all customers, along with which user owns it and its status (used by the
+// admin panel's "מספרים מחוברים" tab).
+export const getAllConnectedNumbers = async (req, res) => {
+  try {
+    const users = await User.find({ 'connected_numbers.0': { $exists: true } })
+      .select('name email connected_numbers')
+      .lean();
+
+    const allBotIds = [];
+    users.forEach(u => (u.connected_numbers || []).forEach(n => {
+      if (n.assigned_bot_id) allBotIds.push(n.assigned_bot_id);
+    }));
+    const bots = allBotIds.length
+      ? await BotFlow.find({ _id: { $in: allBotIds } }).select('name').lean()
+      : [];
+    const botNameById = new Map(bots.map(b => [b._id.toString(), b.name]));
+
+    const connected_numbers = [];
+    users.forEach(u => {
+      (u.connected_numbers || []).forEach(n => {
+        const { access_token, pin, token360, ...rest } = n;
+        connected_numbers.push({
+          ...rest,
+          user_id: u._id.toString(),
+          user_name: u.name || '',
+          user_email: u.email || '',
+          provider: n.provider || 'facebook',
+          has_access_token: !!access_token,
+          has_token360: !!token360,
+          link: n.link || '',
+          assigned_bot_name: n.assigned_bot_id ? (botNameById.get(n.assigned_bot_id.toString()) || null) : null
+        });
+      });
+    });
+
+    res.json({ success: true, connected_numbers });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
 };
 
@@ -249,6 +465,7 @@ export const getAllUsers = async (req, res) => {
         allowed_bot_ids: (user.allowed_bot_ids || []).map(id => id.toString()),
         user_type_id: user.user_type_id || null,
         sms_in_enabled: user.sms_in_enabled === true,
+        facebook_connect_enabled: user.facebook_connect_enabled === true,
         createdAt: user.createdAt,
         updatedAt: user.updatedAt,
         custom_limits: user.custom_limits,
@@ -296,6 +513,7 @@ export const getUserDetails = async (req, res) => {
         manager_id: user.manager_id || null,
         allowed_bot_ids: (user.allowed_bot_ids || []).map(id => id.toString()),
         sms_in_enabled: user.sms_in_enabled === true,
+        facebook_connect_enabled: user.facebook_connect_enabled === true,
         custom_limits: user.custom_limits,
         limits_in_effect: limits,
         createdAt: user.createdAt,
@@ -316,7 +534,7 @@ export const getUserDetails = async (req, res) => {
 export const updateUser = async (req, res) => {
   try {
     const { userId } = req.params;
-    const { name, email, phone, password, status, account_type, custom_limits, dialog360_bot_id, user_type_id, manager_id, allowed_bot_ids, sms_in_enabled } = req.body;
+    const { name, email, phone, password, status, account_type, custom_limits, dialog360_bot_id, user_type_id, manager_id, allowed_bot_ids, sms_in_enabled, facebook_connect_enabled } = req.body;
     
     console.log('[Admin] Updating user:', userId, 'with data:', { ...req.body, password: password ? '***' : undefined });
     
@@ -336,6 +554,7 @@ export const updateUser = async (req, res) => {
     if (manager_id !== undefined) user.manager_id = manager_id || null;
     if (Array.isArray(allowed_bot_ids)) user.allowed_bot_ids = allowed_bot_ids;
     if (sms_in_enabled !== undefined) user.sms_in_enabled = sms_in_enabled === true;
+    if (facebook_connect_enabled !== undefined) user.facebook_connect_enabled = facebook_connect_enabled === true;
     
     // Update user type / permissions
     if (user_type_id !== undefined) {
@@ -390,6 +609,7 @@ export const updateUser = async (req, res) => {
         manager_id: user.manager_id || null,
         allowed_bot_ids: (user.allowed_bot_ids || []).map(id => id.toString()),
         sms_in_enabled: user.sms_in_enabled === true,
+        facebook_connect_enabled: user.facebook_connect_enabled === true,
         custom_limits: user.custom_limits,
         limits_in_effect: limits,
         createdAt: user.createdAt,

@@ -190,8 +190,9 @@ export interface UserTypePermissions {
   users:    { view: boolean; add: boolean; edit: boolean; delete: boolean };
   rep_groups: { view: boolean; add: boolean; delete: boolean };
   sms_in:   { view: boolean };
+  facebook_connect: { view: boolean };
   send_messages: { view: boolean; send: boolean };
-}
+}  
 
 export interface UserType {
   _id: string;

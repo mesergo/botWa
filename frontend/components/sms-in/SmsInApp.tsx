@@ -35,10 +35,10 @@ import {
   Link2,
   X,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  ChevronDown
 } from 'lucide-react';
 
-const MESSAGES_FETCH_LIMIT = 500;
 const MESSAGES_PAGE_SIZE = 50;
 
 const API_BASE = window.location.hostname === 'localhost'
@@ -147,9 +147,25 @@ export default function SmsInApp({
   const [filterDateEnd, setFilterDateEnd] = useState('');
   const [routingDestSearch, setRoutingDestSearch] = useState('');
   const [messagesPage, setMessagesPage] = useState(1);
+  const [isExportingAll, setIsExportingAll] = useState(false);
+
+  // Dest (routing number) filter — custom searchable dropdown, open/close state
+  const [isDestDropdownOpen, setIsDestDropdownOpen] = useState(false);
+  const destDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Associated-client filter — custom searchable dropdown, open/close state
+  const [isClientDropdownOpen, setIsClientDropdownOpen] = useState(false);
+  const [clientFilterSearch, setClientFilterSearch] = useState('');
+  const clientDropdownRef = useRef<HTMLDivElement>(null);
 
   // Modals & Panels State
   const [editingDestSetting, setEditingDestSetting] = useState<DestSetting | null>(null);
+
+  // Bulk-assign dest lines to a client (routing tab)
+  const [isBulkAssignModalOpen, setIsBulkAssignModalOpen] = useState(false);
+  const [bulkDestsText, setBulkDestsText] = useState('');
+  const [bulkClientId, setBulkClientId] = useState('');
+  const [isBulkAssigning, setIsBulkAssigning] = useState(false);
   const [showExportDateModal, setShowExportDateModal] = useState(false);
 
   // Notifications
@@ -157,7 +173,7 @@ export default function SmsInApp({
 
   // Database integration state for MongoDB
   const [dbStatus, setDbStatus] = useState<{
-    connected: boolean;
+    connected: boolean; 
     configured: boolean;
     message?: string;
     reason?: string;
@@ -168,7 +184,11 @@ export default function SmsInApp({
   const [messagesSource, setMessagesSource] = useState<'mongodb' | 'local' | null>(null);
   const [isLoadingMessages, setIsLoadingMessages] = useState<boolean>(false);
   const [searchTotal, setSearchTotal] = useState<number | null>(null);
-  const lastServerSearchRef = useRef('');
+
+  // Authoritative dest numbers that actually have at least one message (queried
+  // across the whole collection, never limited to a loaded page). Used to power
+  // the dest-filter dropdown so suggestions never point to a guaranteed-empty search.
+  const [destsWithMessages, setDestsWithMessages] = useState<string[]>([]);
 
   /** Auth headers for SMS API calls. */
   const buildApiHeaders = (extra?: HeadersInit): HeadersInit => {
@@ -194,38 +214,6 @@ export default function SmsInApp({
     } catch (e) {
       console.error('Error fetching DB status', e);
       return { connected: false, configured: false };
-    }
-  };
-
-  // Fetch real messages from MongoDB (scoped to assigned lines unless management mode)
-  const fetchRealMessages = async (silent = false) => {
-    setIsLoadingMessages(true);
-    try {
-      const res = await fetch(`${messagesEndpoint}?limit=${MESSAGES_FETCH_LIMIT}`, {
-        headers: buildApiHeaders(),
-      });
-      const data = await res.json();
-      if (data.source === 'mongodb' && Array.isArray(data.messages)) {
-        setMessages(data.messages);
-        setSearchTotal(null);
-        setMessagesSource('mongodb');
-        if (!silent) {
-          showToastMsg(`הנתונים נטענו בהצלחה מ-MongoDB (${data.messages.length} SMS)`, 'success');
-        }
-      } else {
-        setMessagesSource('local');
-        if (!silent) {
-          showToastMsg('אין חיבור לטבלת ה-SMS — בדוק את הגדרות השרת', 'error');
-        }
-      }
-    } catch (e) {
-      console.error('Error fetching messages from MongoDB:', e);
-      setMessagesSource('local');
-      if (!silent) {
-        showToastMsg('מצב מקומי — נתונים מהדפדפן (בפרודקשן ייטענו מהשרת)', 'info');
-      }
-    } finally {
-      setIsLoadingMessages(false);
     }
   };
 
@@ -270,17 +258,33 @@ export default function SmsInApp({
     }
   };
 
-  // Load when auth / management mode is ready (not only on first mount)
-  useEffect(() => {
-    fetchDbStatus().then((status) => {
-      if (status && status.connected) {
-        fetchRealMessages(true);
+  // Load the authoritative list of dest numbers that actually have messages
+  // (queried across the whole collection, not just the loaded page).
+  const fetchDestsWithMessages = async () => {
+    try {
+      const res = await fetch(`${messagesEndpoint}/dests`, {
+        headers: buildApiHeaders(),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      if (Array.isArray(data.dests)) {
+        setDestsWithMessages(data.dests);
       }
-    });
+    } catch (e) {
+      console.error('Error fetching dest numbers with messages:', e);
+    }
+  };
+
+  // Load when auth / management mode is ready (not only on first mount).
+  // Message loading itself is handled by the paginated fetch effect below;
+  // this just verifies DB connectivity and loads dest/line settings.
+  useEffect(() => {
+    fetchDbStatus();
+    fetchDestsWithMessages();
     if (embedded && token) {
       fetchDestSettings();
     }
-  }, [embedded, token, isAdmin, seeAllMessages]);
+  }, [embedded, token, isAdmin, seeAllMessages, messagesEndpoint]);
 
   useEffect(() => {
     if (embedded && token && isAdmin) {
@@ -288,27 +292,17 @@ export default function SmsInApp({
     }
   }, [embedded, token, isAdmin]);
 
-  // Search MongoDB itself so results are not limited to the 500 recent messages.
+  // Load the current page from MongoDB whenever filters or the page number change.
+  // Debounced so typing in the search box doesn't fire a request per keystroke.
+  // Always server-paginated (page + limit), so scrolling through pages keeps going
+  // across the entire collection instead of stopping at a fixed "recent 500" cap.
   useEffect(() => {
-    const query = searchText.trim();
-    const destQuery = filterDest !== 'all' ? filterDest.trim() : '';
-    const hasServerQuery = query.length > 0 || destQuery.length > 0;
-    const searchKey = `${query}||${destQuery}`;
-
-    if (!hasServerQuery) {
-      if (lastServerSearchRef.current) {
-        lastServerSearchRef.current = '';
-        fetchRealMessages(true);
-      }
-      setSearchTotal(null);
-      return;
-    }
-
-    lastServerSearchRef.current = searchKey;
     const controller = new AbortController();
     const timer = window.setTimeout(async () => {
       setIsLoadingMessages(true);
       try {
+        const query = searchText.trim();
+        const destQuery = filterDest !== 'all' ? filterDest.trim() : '';
         const params = new URLSearchParams({
           page: String(messagesPage),
           limit: String(MESSAGES_PAGE_SIZE),
@@ -328,8 +322,8 @@ export default function SmsInApp({
         }
       } catch (e) {
         if ((e as Error).name !== 'AbortError') {
-          console.error('Error searching SMS messages:', e);
-          showToastMsg('החיפוש בכל טבלת ה-SMS נכשל', 'error');
+          console.error('Error loading SMS messages:', e);
+          showToastMsg('טעינת הודעות ה-SMS נכשלה', 'error');
         }
       } finally {
         if (!controller.signal.aborted) setIsLoadingMessages(false);
@@ -370,6 +364,41 @@ export default function SmsInApp({
     });
     return Array.from(unique).sort();
   }, [messages, destSettings]);
+
+  // Dest filter dropdown suggestions — only numbers with confirmed messages
+  // (authoritative, whole-collection query). Assigned-only numbers with no
+  // messages yet are intentionally excluded so a selection never silently
+  // returns zero results.
+  const destSuggestionsWithMessages = useMemo(() => {
+    const query = (filterDest === 'all' ? '' : filterDest).trim().toLowerCase();
+    return destsWithMessages.filter(d => !query || d.toLowerCase().includes(query));
+  }, [destsWithMessages, filterDest]);
+
+  // Suggestions for the associated-client filter dropdown — filtered live by whatever is typed
+  const clientFilterSuggestions = useMemo(() => {
+    const query = clientFilterSearch.trim().toLowerCase();
+    if (!query) return clients;
+    return clients.filter(c => c.name.toLowerCase().includes(query));
+  }, [clients, clientFilterSearch]);
+
+  const selectedClientFilterName = useMemo(() => {
+    if (filterClient === 'all') return '';
+    return clients.find(c => c.id === filterClient)?.name || '';
+  }, [clients, filterClient]);
+
+  // Close the dest/client dropdowns when clicking anywhere outside them
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (destDropdownRef.current && !destDropdownRef.current.contains(e.target as Node)) {
+        setIsDestDropdownOpen(false);
+      }
+      if (clientDropdownRef.current && !clientDropdownRef.current.contains(e.target as Node)) {
+        setIsClientDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   useEffect(() => {
     // Admin UI: ensure every seen dest has a settings row. Don't overwrite Mongo assignments.
@@ -499,9 +528,9 @@ export default function SmsInApp({
     }
   };
 
-  const isServerSearch =
-    (searchText.trim().length > 0 || (filterDest !== 'all' && filterDest.trim().length > 0)) &&
-    searchTotal !== null;
+  // Messages are now always loaded page-by-page from the server (never a flat
+  // "recent 500" snapshot), so the server's total/pagination is always authoritative.
+  const isServerSearch = searchTotal !== null;
 
   // Filter messages logic
   const filteredMessages = messages.filter(msg => {
@@ -577,8 +606,65 @@ export default function SmsInApp({
     }
   }, [messagesPage, totalPages]);
 
+  // Fetches the FULL matching dataset from the server (bypassing the 50-row page
+  // load) for export purposes only. Reuses the current server-side filters
+  // (searchText -> q, filterDest -> dest). Does NOT touch the paginated `messages` state.
+  const fetchAllForExport = async (): Promise<{ messages: Message[]; total: number } | null> => {
+    const query = searchText.trim();
+    const destQuery = filterDest !== 'all' ? filterDest.trim() : '';
+    try {
+      const params = new URLSearchParams({ exportAll: 'true' });
+      if (query) params.set('q', query);
+      if (destQuery) params.set('dest', destQuery);
+      const res = await fetch(`${messagesEndpoint}?${params.toString()}`, {
+        headers: buildApiHeaders(),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      if (data.source === 'mongodb' && Array.isArray(data.messages)) {
+        return { messages: data.messages, total: Number(data.total) || data.messages.length };
+      }
+      return null;
+    } catch (e) {
+      console.error('Error fetching all messages for export:', e);
+      return null;
+    }
+  };
+
+  // Re-applies the client-only filters (associated client + date range) that are
+  // never sent to the server, on top of a server-fetched export list.
+  const applyExportOnlyFilters = (msgs: Message[]) => msgs.filter(msg => {
+    // Defense in depth: server already scopes exportAll requests to allowedDests
+    // for authenticated non-admin accounts.
+    if (!seeAllMessages && userId && embedded) {
+      if (!destSettingsFromMongo) return false;
+      if (!myAssignedDests || !myAssignedDests.has(msg.dest)) return false;
+    }
+
+    let matchClient = true;
+    if (isAdmin && filterClient !== 'all') {
+      const lineSetting = destSettings.find(ds => ds.dest === msg.dest);
+      matchClient = !!lineSetting && lineSetting.assignedClients.includes(filterClient);
+    }
+
+    let matchDateRange = true;
+    const msgDateObj = parseMessageDate(msg.date);
+    if (filterDateStart) {
+      const startDate = new Date(filterDateStart);
+      startDate.setHours(0, 0, 0, 0);
+      if (msgDateObj < startDate) matchDateRange = false;
+    }
+    if (filterDateEnd) {
+      const endDate = new Date(filterDateEnd);
+      endDate.setHours(23, 59, 59, 999);
+      if (msgDateObj > endDate) matchDateRange = false;
+    }
+
+    return matchClient && matchDateRange;
+  });
+
   // Export Filtered Messages to CSV
-  const handleExportCSV = (customList?: Message[]) => {
+  const handleExportCSV = (customList?: Message[], options?: { suppressSuccessToast?: boolean }) => {
     const listToExport = customList || filteredMessages;
     if (listToExport.length === 0) {
       showToastMsg('אין הודעות לייצוא בהתאם למסננים שנבחרו', 'error');
@@ -620,14 +706,57 @@ export default function SmsInApp({
     link.click();
     document.body.removeChild(link);
 
-    showToastMsg(`ייצוא של ${listToExport.length} הודעות בוצע בהצלחה!`, 'success');
+    if (!options?.suppressSuccessToast) {
+      showToastMsg(`ייצוא של ${listToExport.length} הודעות בוצע בהצלחה!`, 'success');
+    }
+  };
+
+  // Export ALL messages matching the current filters (not just the loaded/paginated
+  // ones) — fetches the full matching set from the server first.
+  // Export is only allowed once a dest (route/line) filter is selected, to avoid
+  // accidentally exporting the entire, unscoped dataset.
+  const hasDestFilter = filterDest !== 'all' && filterDest.trim().length > 0;
+
+  const handleExportAllClick = async () => {
+    if (isExportingAll) return;
+    if (!hasDestFilter) {
+      showToastMsg('יש לבחור נתב / קו נמען (dest) לפני ייצוא', 'error');
+      return;
+    }
+    setIsExportingAll(true);
+    try {
+      const result = await fetchAllForExport();
+      if (!result) {
+        showToastMsg('שגיאה בטעינת ההודעות לייצוא', 'error');
+        return;
+      }
+      const finalList = applyExportOnlyFilters(result.messages);
+      if (finalList.length === 0) {
+        showToastMsg('אין הודעות לייצוא בהתאם למסננים שנבחרו', 'error');
+        return;
+      }
+      const isCapped = result.total > result.messages.length;
+      handleExportCSV(finalList, { suppressSuccessToast: isCapped });
+      if (isCapped) {
+        showToastMsg(
+          `יוצאו ${result.messages.length.toLocaleString()} מתוך ${result.total.toLocaleString()} הודעות התואמות למסננים — הקובץ אינו כולל את כל הרשומות`,
+          'error'
+        );
+      }
+    } finally {
+      setIsExportingAll(false);
+    }
   };
 
   // Export by Date Picker Dialog Helper
   const [expDateStr, setExpDateStr] = useState('');
-  const handleExportByParticularDate = () => {
+  const handleExportByParticularDate = async () => {
     if (!expDateStr) {
       showToastMsg('נא לבחור תאריך תקין', 'error');
+      return;
+    }
+    if (!hasDestFilter) {
+      showToastMsg('יש לבחור נתב / קו נמען (dest) לפני ייצוא', 'error');
       return;
     }
 
@@ -637,18 +766,37 @@ export default function SmsInApp({
     const endOfDay = new Date(selectedDate);
     endOfDay.setHours(23,59,59,999);
 
-    const matchDateList = messages.filter(m => {
-      const dObj = parseMessageDate(m.date);
-      return dObj >= startOfDay && dObj <= endOfDay;
-    });
+    if (isExportingAll) return;
+    setIsExportingAll(true);
+    try {
+      const result = await fetchAllForExport();
+      if (!result) {
+        showToastMsg('שגיאה בטעינת ההודעות לייצוא', 'error');
+        return;
+      }
 
-    if (matchDateList.length === 0) {
-      showToastMsg(`לא נמצאו הודעות המתאימות לתאריך ${expDateStr}`, 'error');
-      return;
+      const matchDateList = result.messages.filter(m => {
+        const dObj = parseMessageDate(m.date);
+        return dObj >= startOfDay && dObj <= endOfDay;
+      });
+
+      if (matchDateList.length === 0) {
+        showToastMsg(`לא נמצאו הודעות המתאימות לתאריך ${expDateStr}`, 'error');
+        return;
+      }
+
+      const isCapped = result.total > result.messages.length;
+      handleExportCSV(matchDateList, { suppressSuccessToast: isCapped });
+      if (isCapped) {
+        showToastMsg(
+          `יוצאו ${result.messages.length.toLocaleString()} מתוך ${result.total.toLocaleString()} הודעות התואמות למסננים — ייתכן שהתאריך שנבחר אינו כולל את כל הרשומות`,
+          'error'
+        );
+      }
+      setShowExportDateModal(false);
+    } finally {
+      setIsExportingAll(false);
     }
-
-    handleExportCSV(matchDateList);
-    setShowExportDateModal(false);
   };
 
   const triggerWebhookToUrl = async (
@@ -861,6 +1009,42 @@ export default function SmsInApp({
       );
     } else {
       showToastMsg(`הגדרות קו ${toSave.dest} עודכנו בהצלחה!`, 'success');
+    }
+  };
+
+  // Bulk-assign a pasted list of dest numbers to a single client
+  const handleBulkAssignDests = async () => {
+    const dests = [...new Set(
+      bulkDestsText.split(/[\s,]+/).map(s => s.trim()).filter(Boolean)
+    )];
+
+    if (dests.length === 0 || !bulkClientId) return;
+
+    setIsBulkAssigning(true);
+    try {
+      const res = await fetch(`${API_BASE}/admin/dest-settings/bulk-assign`, {
+        method: 'POST',
+        headers: buildApiHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          dests,
+          assignedClientId: bulkClientId,
+          assignedClientName: resolveClientLabel(bulkClientId),
+        }),
+      });
+
+      if (!res.ok) throw new Error('Bulk assign request failed');
+      const data = await res.json();
+
+      await fetchDestSettings();
+      showToastMsg(`שויכו ${data.total} מספרים ל-${resolveClientLabel(bulkClientId)}`, 'success');
+      setBulkDestsText('');
+      setBulkClientId('');
+      setIsBulkAssignModalOpen(false);
+    } catch (e) {
+      console.error('Failed to bulk assign dest settings:', e);
+      showToastMsg('שיוך המספרים נכשל', 'error');
+    } finally {
+      setIsBulkAssigning(false);
     }
   };
 
@@ -1114,7 +1298,7 @@ export default function SmsInApp({
             
             {/* TOP HEADER — matches bot pages (SendMessages / Contacts) */}
             <header className="bg-transparent px-6 py-4 z-10">
-              {/* <div className="flex flex-col lg:flex-row-reverse lg:items-center lg:justify-between gap-4">
+              <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
                 <div className="flex items-center gap-3">
                   <div className="w-9 h-9 rounded-xl bg-sky-50 text-sky-600 flex items-center justify-center">
                     <MessageSquare size={18} />
@@ -1123,17 +1307,18 @@ export default function SmsInApp({
                     <h1 className="text-xl font-black text-slate-900">{tabTitle}</h1>
                     <p className="text-slate-400 text-xs font-semibold mt-0.5">{tabSubtitle}</p>
                   </div>
-                </div> */}
+                </div>
 
                 {embedded && tabButtons && (
-                  <div className="flex justify-center p-1.5">
+                  <div className="flex justify-center lg:justify-start p-1.5">
                     <div className="flex flex-wrap items-center gap-2">
                       {tabButtons}
                     </div>
                   </div>
                 )}
-              {/* </div> */}
+              </div>
             </header>
+
 
             {/* MAIN INTERNAL ROUTE VIEWS */}
             <div className="p-6 lg:p-8 flex-1 overflow-y-auto max-w-7xl w-full mx-auto">
@@ -1189,9 +1374,9 @@ export default function SmsInApp({
                         <h3 className="font-black text-slate-900 text-sm">מסננים וחיפוש</h3>
                       </div>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
                         {/* Search keyword input */}
-                        <div className="lg:col-span-2 relative">
+                        <div className="lg:col-span-2 relative min-w-0">
                           <label className="block text-xs font-bold text-slate-500 mb-1.5">חפש לפי מספר שולח / תוכן הודעה / מזהה</label>
                           <div className="relative">
                             <input 
@@ -1205,8 +1390,8 @@ export default function SmsInApp({
                           </div>
                         </div>
 
-                        {/* Filter by dest — searchable input + suggestions */}
-                        <div>
+                        {/* Filter by dest — searchable custom dropdown */}
+                        <div className="relative min-w-0" ref={destDropdownRef}>
                           <label className="block text-xs font-bold text-slate-500 mb-1.5">נתב / קו נמען (dest)</label>
                           <div className="relative">
                             <input
@@ -1215,79 +1400,203 @@ export default function SmsInApp({
                               onChange={(e) => {
                                 const value = e.target.value;
                                 setFilterDest(value.trim() ? value : 'all');
+                                setIsDestDropdownOpen(true);
                               }}
-                              list="dest-numbers-list"
+                              onFocus={() => setIsDestDropdownOpen(true)}
+                              onKeyDown={(e) => { if (e.key === 'Escape') setIsDestDropdownOpen(false); }}
+                              autoComplete="off"
                               placeholder="חפש מספר נמען..."
                               dir="ltr"
-                              className="w-full text-sm pr-9 pl-3 py-2.5 border border-slate-200 rounded-2xl bg-slate-50 focus:bg-white focus:outline-none focus:ring-4 focus:ring-sky-600/10 focus:border-sky-600 transition-all font-medium text-left"
+                              className="w-full text-sm pr-9 pl-8 py-2.5 border border-slate-200 rounded-2xl bg-slate-50 focus:bg-white focus:outline-none focus:ring-4 focus:ring-sky-600/10 focus:border-sky-600 transition-all font-medium text-left"
                             />
                             <Search size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                            <datalist id="dest-numbers-list">
-                              {messageDestNumbers.map(dest => (
-                                <option key={dest} value={dest} />
-                              ))}
-                            </datalist>
+                            {filterDest !== 'all' ? (
+                              <button
+                                type="button"
+                                onClick={() => { setFilterDest('all'); setIsDestDropdownOpen(false); }}
+                                className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                                aria-label="נקה בחירת נתב"
+                              >
+                                <X size={14} />
+                              </button>
+                            ) : (
+                              <ChevronDown
+                                size={14}
+                                onClick={() => setIsDestDropdownOpen(prev => !prev)}
+                                className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
+                              />
+                            )}
                           </div>
+
+                          <AnimatePresence>
+                            {isDestDropdownOpen && (
+                              <motion.div
+                                initial={{ opacity: 0, y: -6 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, y: -6 }}
+                                transition={{ duration: 0.12 }}
+                                className="absolute z-30 top-full mt-1.5 w-full bg-white border border-slate-200 rounded-2xl shadow-xl overflow-hidden"
+                              >
+                                <div className="max-h-64 overflow-y-auto py-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => { setFilterDest('all'); setIsDestDropdownOpen(false); }}
+                                    className={`w-full text-right px-3.5 py-2 text-sm font-bold transition-colors cursor-pointer ${
+                                      filterDest === 'all' ? 'bg-sky-50 text-sky-700' : 'text-slate-500 hover:bg-slate-50'
+                                    }`}
+                                  >
+                                    כל המספרים
+                                  </button>
+                                  {destSuggestionsWithMessages.map(dest => (
+                                    <button
+                                      key={dest}
+                                      type="button"
+                                      onClick={() => { setFilterDest(dest); setIsDestDropdownOpen(false); }}
+                                      dir="ltr"
+                                      className={`w-full text-left px-3.5 py-2 text-sm font-semibold transition-colors cursor-pointer ${
+                                        filterDest === dest ? 'bg-sky-50 text-sky-700' : 'text-slate-700 hover:bg-slate-50'
+                                      }`}
+                                    >
+                                      {dest}
+                                    </button>
+                                  ))}
+
+                                  {destSuggestionsWithMessages.length === 0 && (
+                                    <div className="px-3.5 py-2 text-xs font-semibold text-slate-400">לא נמצאו מספרים תואמים</div>
+                                  )}
+                                </div>
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
                         </div>
 
-                        {/* Filter by clients associated — admin only */}
+                        {/* Filter by clients associated — admin only — searchable custom dropdown */}
                         {isAdmin && (
-                          <div>
+                          <div className="relative min-w-0" ref={clientDropdownRef}>
                             <label className="block text-xs font-bold text-slate-500 mb-1.5">לקוח משויך לקו</label>
-                            <select 
-                              value={filterClient}
-                              onChange={(e) => setFilterClient(e.target.value)}
-                              className="w-full text-sm border border-slate-200 rounded-2xl px-3 py-2.5 bg-white focus:outline-none focus:ring-4 focus:ring-sky-600/10 focus:border-sky-600 font-medium"
-                            >
-                              <option value="all">כל הלקוחות</option>
-                              {clients.map(c => (
-                                <option key={c.id} value={c.id}>{c.name}</option>
-                              ))}
-                            </select>
+                            <div className="relative">
+                              <input
+                                type="text"
+                                value={isClientDropdownOpen ? clientFilterSearch : selectedClientFilterName}
+                                onChange={(e) => {
+                                  setClientFilterSearch(e.target.value);
+                                  setFilterClient('all');
+                                }}
+                                onFocus={() => { setClientFilterSearch(''); setIsClientDropdownOpen(true); }}
+                                onKeyDown={(e) => { if (e.key === 'Escape') setIsClientDropdownOpen(false); }}
+                                autoComplete="off"
+                                placeholder="כל הלקוחות"
+                                className="w-full text-sm pr-9 pl-8 py-2.5 border border-slate-200 rounded-2xl bg-slate-50 focus:bg-white focus:outline-none focus:ring-4 focus:ring-sky-600/10 focus:border-sky-600 transition-all font-medium"
+                              />
+                              <Users size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                              {filterClient !== 'all' ? (
+                                <button
+                                  type="button"
+                                  onClick={() => { setFilterClient('all'); setClientFilterSearch(''); setIsClientDropdownOpen(false); }}
+                                  className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                                  aria-label="נקה בחירת לקוח"
+                                >
+                                  <X size={14} />
+                                </button>
+                              ) : (
+                                <ChevronDown
+                                  size={14}
+                                  onClick={() => setIsClientDropdownOpen(prev => !prev)}
+                                  className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
+                                />
+                              )}
+                            </div>
+
+                            <AnimatePresence>
+                              {isClientDropdownOpen && (
+                                <motion.div
+                                  initial={{ opacity: 0, y: -6 }}
+                                  animate={{ opacity: 1, y: 0 }}
+                                  exit={{ opacity: 0, y: -6 }}
+                                  transition={{ duration: 0.12 }}
+                                  className="absolute z-30 top-full mt-1.5 w-full bg-white border border-slate-200 rounded-2xl shadow-xl overflow-hidden"
+                                >
+                                  <div className="max-h-56 overflow-y-auto py-1.5">
+                                    <button
+                                      type="button"
+                                      onClick={() => { setFilterClient('all'); setClientFilterSearch(''); setIsClientDropdownOpen(false); }}
+                                      className={`w-full text-right px-3.5 py-2 text-sm font-bold transition-colors cursor-pointer ${
+                                        filterClient === 'all' ? 'bg-sky-50 text-sky-700' : 'text-slate-500 hover:bg-slate-50'
+                                      }`}
+                                    >
+                                      כל הלקוחות
+                                    </button>
+                                    {clientFilterSuggestions.length > 0 ? (
+                                      clientFilterSuggestions.map(c => (
+                                        <button
+                                          key={c.id}
+                                          type="button"
+                                          onClick={() => { setFilterClient(c.id); setClientFilterSearch(''); setIsClientDropdownOpen(false); }}
+                                          className={`w-full text-right px-3.5 py-2 text-sm font-semibold transition-colors cursor-pointer ${
+                                            filterClient === c.id ? 'bg-sky-50 text-sky-700' : 'text-slate-700 hover:bg-slate-50'
+                                          }`}
+                                        >
+                                          {c.name}
+                                        </button>
+                                      ))
+                                    ) : (
+                                      <div className="px-3.5 py-2 text-xs font-semibold text-slate-400">לא נמצאו לקוחות תואמים</div>
+                                    )}
+                                  </div>
+                                </motion.div>
+                              )}
+                            </AnimatePresence>
                           </div>
                         )}
 
-                        {/* Range/Date Filter elements wrapper */}
-                        <div className="flex gap-2 items-end sm:col-span-2 lg:col-span-1">
-                          <div className="flex-1">
-                            <label className="block text-xs font-bold text-slate-500 mb-1.5">מתאריך</label>
-                            <input 
-                              type="date"
-                              value={filterDateStart}
-                              onChange={(e) => setFilterDateStart(e.target.value)}
-                              className="w-full text-sm border border-slate-200 rounded-2xl px-3 py-2.5 bg-white text-left font-medium focus:outline-none focus:ring-4 focus:ring-sky-600/10 focus:border-sky-600"
-                            />
-                          </div>
-                          <div className="flex-1">
-                            <label className="block text-xs font-bold text-slate-500 mb-1.5">עד תאריך</label>
-                            <input 
-                              type="date"
-                              value={filterDateEnd}
-                              onChange={(e) => setFilterDateEnd(e.target.value)}
-                              className="w-full text-sm border border-slate-200 rounded-2xl px-3 py-2.5 bg-white text-left font-medium focus:outline-none focus:ring-4 focus:ring-sky-600/10 focus:border-sky-600"
-                            />
-                          </div>
+                        {/* Range/Date Filter — own grid cell each so native date inputs can shrink without overflowing */}
+                        <div className="min-w-0">
+                          <label className="block text-xs font-bold text-slate-500 mb-1.5">מתאריך</label>
+                          <input 
+                            type="date"
+                            value={filterDateStart}
+                            onChange={(e) => setFilterDateStart(e.target.value)}
+                            className="w-full min-w-0 text-sm border border-slate-200 rounded-2xl px-3 py-2.5 bg-white text-left font-medium focus:outline-none focus:ring-4 focus:ring-sky-600/10 focus:border-sky-600"
+                          />
+                        </div>
+                        <div className="min-w-0">
+                          <label className="block text-xs font-bold text-slate-500 mb-1.5">עד תאריך</label>
+                          <input 
+                            type="date"
+                            value={filterDateEnd}
+                            onChange={(e) => setFilterDateEnd(e.target.value)}
+                            className="w-full min-w-0 text-sm border border-slate-200 rounded-2xl px-3 py-2.5 bg-white text-left font-medium focus:outline-none focus:ring-4 focus:ring-sky-600/10 focus:border-sky-600"
+                          />
                         </div>
                       </div>
 
                       {/* Action options in filter bank */}
                       <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-100">
-                        <div className="flex flex-wrap gap-2">
-                          <button
-                            onClick={() => handleExportCSV()}
-                            className="bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-2xl px-4 py-2.5 text-sm flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-                          >
-                            <Download size={14} />
-                            <span>יצא הכל ל-CSV ({filteredMessageCount})</span>
-                          </button>
-                          
-                          <button
-                            onClick={() => setShowExportDateModal(true)}
-                            className="bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold rounded-2xl px-4 py-2.5 text-sm flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-                          >
-                            <Calendar size={14} className="text-slate-500" />
-                            <span>יצא לפי תאריך ספציפי</span>
-                          </button>
+                        <div className="flex flex-col gap-1.5">
+                          <div className="flex flex-wrap gap-2">
+                            <button
+                              onClick={() => handleExportAllClick()}
+                              disabled={isExportingAll || !hasDestFilter}
+                              title={!hasDestFilter ? 'יש לבחור נתב / קו נמען (dest) לפני ייצוא' : undefined}
+                              className="bg-slate-900 hover:bg-slate-800 disabled:opacity-60 disabled:cursor-not-allowed text-white font-bold rounded-2xl px-4 py-2.5 text-sm flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                            >
+                              <Download size={14} />
+                              <span>{isExportingAll ? 'מייצא...' : `יצא הכל ל-CSV (${messageResultCount})`}</span>
+                            </button>
+                            
+                            <button
+                              onClick={() => setShowExportDateModal(true)}
+                              disabled={!hasDestFilter}
+                              title={!hasDestFilter ? 'יש לבחור נתב / קו נמען (dest) לפני ייצוא' : undefined}
+                              className="bg-slate-100 hover:bg-slate-200 disabled:opacity-60 disabled:cursor-not-allowed text-slate-800 font-bold rounded-2xl px-4 py-2.5 text-sm flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                            >
+                              <Calendar size={14} className="text-slate-500" />
+                              <span>יצא לפי תאריך ספציפי</span>
+                            </button>
+                          </div>
+                          {!hasDestFilter && (
+                            <p className="text-xs font-semibold text-amber-600">יש לבחור נתב / קו נמען (dest) כדי לאפשר ייצוא</p>
+                          )}
                         </div>
 
                         {(searchText || filterDest !== 'all' || filterClient !== 'all' || filterDateStart || filterDateEnd) && (
@@ -1296,6 +1605,7 @@ export default function SmsInApp({
                               setSearchText('');
                               setFilterDest('all');
                               setFilterClient('all');
+                              setClientFilterSearch('');
                               setFilterDateStart('');
                               setFilterDateEnd('');
                               showToastMsg('המסננים נוקו בהצלחה', 'info');
@@ -1433,8 +1743,16 @@ export default function SmsInApp({
                 {/* 2. ROUTING & LINE SETTINGS TAB (admin only) */}
                 {isAdmin && activeTab === 'routing' && (
                   <div className="space-y-4">
-                    <div className="bg-sky-50 rounded-2xl border border-sky-100 p-4 text-sm text-sky-900 font-semibold">
-                      קווים מוצגים אוטומטית מתוך מספרי הנמען (dest) שנכנסו להודעות ממסד הנתונים. לחץ על שורה לעריכת שיוך לקוח, Google Sheets ו-Webhook.
+                    <div className="bg-sky-50 rounded-2xl border border-sky-100 p-4 text-sm text-sky-900 font-semibold flex items-center justify-between gap-3 flex-wrap">
+                      <span>קווים מוצגים אוטומטית מתוך מספרי הנמען (dest) שנכנסו להודעות ממסד הנתונים. לחץ על שורה לעריכת שיוך לקוח, Google Sheets ו-Webhook.</span>
+                      <button
+                        type="button"
+                        onClick={() => setIsBulkAssignModalOpen(true)}
+                        className="bg-sky-600 hover:bg-sky-700 text-white font-bold text-sm py-2 px-4 rounded-2xl transition-colors cursor-pointer inline-flex items-center gap-2 whitespace-nowrap"
+                      >
+                        <Link2 size={14} />
+                        שיוך מספרים מרוכז
+                      </button>
                     </div>
 
                     <div className="bg-white shadow-sm rounded-2xl border border-slate-100 p-4">
@@ -1649,6 +1967,71 @@ export default function SmsInApp({
         />
       )}
 
+      {/* ==================== 1b. MODAL: BULK ASSIGN DEST LINES TO CLIENT ==================== */}
+      {isAdmin && isBulkAssignModalOpen && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-lg w-full p-6 border border-slate-100 space-y-4" style={{ fontFamily: "'Heebo', sans-serif" }}>
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h4 className="font-black text-slate-900 text-base">שיוך מספרים מרוכז</h4>
+              <button
+                type="button"
+                onClick={() => setIsBulkAssignModalOpen(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-500 mb-1.5">מספרי קו נמען</label>
+                <textarea
+                  value={bulkDestsText}
+                  onChange={(e) => setBulkDestsText(e.target.value)}
+                  placeholder="הדבק מספרים, שורה/פסיק/רווח לכל מספר"
+                  rows={6}
+                  autoFocus
+                  className="w-full text-sm px-3 py-2.5 border border-slate-200 rounded-2xl bg-slate-50 focus:bg-white focus:outline-none focus:ring-4 focus:ring-sky-600/10 focus:border-sky-600 transition-all font-medium resize-y"
+                  dir="ltr"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-500 mb-1.5">שיוך ללקוח</label>
+                <select
+                  value={bulkClientId}
+                  onChange={(e) => setBulkClientId(e.target.value)}
+                  className="w-full text-sm px-3 py-2.5 border border-slate-200 rounded-2xl bg-slate-50 focus:bg-white focus:outline-none focus:ring-4 focus:ring-sky-600/10 focus:border-sky-600 transition-all font-medium"
+                >
+                  <option value="">בחר לקוח...</option>
+                  {clients.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setIsBulkAssignModalOpen(false)}
+                className="text-slate-600 hover:bg-slate-100 font-bold text-sm py-2.5 px-4 rounded-2xl transition-colors cursor-pointer"
+              >
+                ביטול
+              </button>
+              <button
+                type="button"
+                disabled={isBulkAssigning || !bulkDestsText.trim() || !bulkClientId}
+                onClick={handleBulkAssignDests}
+                className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-sm py-2.5 px-5 rounded-2xl transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
+              >
+                {isBulkAssigning ? 'משייך...' : 'שייך'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ==================== 2. MODAL: EXPORT BY DATE PICKER ==================== */}
       {showExportDateModal && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
@@ -1683,10 +2066,11 @@ export default function SmsInApp({
               </button>
               <button
                 onClick={handleExportByParticularDate}
-                className="bg-sky-600 hover:bg-sky-500 text-white px-5 py-2.5 rounded-2xl flex items-center gap-1.5"
+                disabled={isExportingAll}
+                className="bg-sky-600 hover:bg-sky-500 disabled:opacity-60 disabled:cursor-not-allowed text-white px-5 py-2.5 rounded-2xl flex items-center gap-1.5"
               >
                 <Download size={14} />
-                ייצא והורד
+                {isExportingAll ? 'מייצא...' : 'ייצא והורד'}
               </button>
             </div>
           </div>

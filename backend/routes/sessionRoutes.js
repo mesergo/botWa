@@ -1,6 +1,6 @@
 
 import express from 'express';
-import { startSession, updateSessionParameters, addHistoryMessage, getContacts, searchMessageContent, getSessionsByPhone, getUserSessions, getAllSessions, toggleSessionActive, deactivateSession, setAgentMode, clearAgentMode, closeConversation, markResolved, sendAgentMessage, sendAdminMessageToSession, sendExternalMessage, getSessionMessages, sendTemplateToPhone, transferConversation, getTransferTargets, streamEvents, getUserStats } from '../controllers/sessionController.js';
+import { startSession, updateSessionParameters, addHistoryMessage, getContacts, searchMessageContent, getSessionsByPhone, getLastMessageByPhone, getUserSessions, getAllSessions, toggleSessionActive, deactivateSession, setAgentMode, clearAgentMode, closeConversation, markResolved, sendAgentMessage, sendAdminMessageToSession, sendExternalMessage, getSessionMessages, sendTemplateToPhone, transferConversation, getTransferTargets, streamEvents, getUserStats } from '../controllers/sessionController.js';
 import { authenticateToken, optionalAuthToken, requireAdmin } from '../middleware/auth.js';
 
 const router = express.Router();
@@ -19,6 +19,9 @@ router.get('/search-messages', authenticateToken, searchMessageContent);
 
 // Authenticated route to get all sessions for a specific phone number (oldest→newest)
 router.get('/by-phone', authenticateToken, getSessionsByPhone);
+
+// Authenticated route to get only the last message with a contact via a specific destination/bot phone number
+router.get('/last-message', authenticateToken, getLastMessageByPhone);
 
 // Authenticated route to get sessions for the current user
 router.get('/my-sessions', authenticateToken, getUserSessions);

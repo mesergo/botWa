@@ -2644,7 +2644,7 @@ const FlowBuilder: React.FC = () => {
                 onOpenSmsIn={can('sms_in.view') ? () => navigate('/sms-in') : undefined}
                 onStopImpersonation={handleStopImpersonation}
                 onSwitchAccount={handleSwitchAccount}
-                onConnectFacebook={(can('bots.publish') || currentUser?.isImpersonating) ? handleConnectFacebook : undefined}
+                onConnectFacebook={(can('facebook_connect.view') || currentUser?.isImpersonating) ? handleConnectFacebook : undefined}
                 onUpdateBotPublicId={handleUpdateBotPublicId}
                 onUpdateBotEndpoint={currentUser?.isImpersonating ? handleUpdateBotEndpoint : undefined}
                 onUpdateBotRestartKeyword={handleUpdateBotRestartKeyword}
@@ -2685,7 +2685,7 @@ const FlowBuilder: React.FC = () => {
               onOpenSmsIn={can('sms_in.view') ? () => navigate('/sms-in') : undefined}
               onStopImpersonation={handleStopImpersonation}
               onSwitchAccount={handleSwitchAccount}
-              onConnectFacebook={(can('bots.publish') || currentUser?.isImpersonating) ? handleConnectFacebook : undefined}
+              onConnectFacebook={(can('facebook_connect.view') || currentUser?.isImpersonating) ? handleConnectFacebook : undefined}
               onUpdateBotPublicId={handleUpdateBotPublicId}
               onUpdateBotEndpoint={currentUser?.isImpersonating ? handleUpdateBotEndpoint : undefined}
               onUpdateBotRestartKeyword={handleUpdateBotRestartKeyword}
@@ -2712,7 +2712,7 @@ const FlowBuilder: React.FC = () => {
               onOpenSmsIn={can('sms_in.view') ? () => navigate('/sms-in') : undefined}
               onStopImpersonation={handleStopImpersonation}
               onSwitchAccount={handleSwitchAccount}
-              onConnectFacebook={(can('bots.publish') || currentUser?.isImpersonating) ? handleConnectFacebook : undefined}
+              onConnectFacebook={(can('facebook_connect.view') || currentUser?.isImpersonating) ? handleConnectFacebook : undefined}
               onUpdateBotPublicId={handleUpdateBotPublicId}
               onUpdateBotEndpoint={currentUser?.isImpersonating ? handleUpdateBotEndpoint : undefined}
               onUpdateBotRestartKeyword={handleUpdateBotRestartKeyword}
@@ -2851,7 +2851,7 @@ const FlowBuilder: React.FC = () => {
             await handleUpdateBotRestartKeyword(id, keyword);
             setSelectedBot(prev => prev ? { ...prev, restart_keyword: keyword } : null);
           }}
-          onConnectFacebook={(can('bots.publish') || currentUser?.isImpersonating) ? handleConnectFacebook : undefined}
+          onConnectFacebook={(can('facebook_connect.view') || currentUser?.isImpersonating) ? handleConnectFacebook : undefined}
         />
       )}
 
@@ -2929,7 +2929,7 @@ const FlowBuilder: React.FC = () => {
             </div>
           </div>
         </div>
-      )}
+      )}  
 
       {isDeleteModalOpen && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[120] p-6 text-right">

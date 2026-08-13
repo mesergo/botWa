@@ -14,6 +14,26 @@ export async function findRecent(limit = 500) {
     .toArray();
 }
 
+// True count of matching documents in the whole collection (not capped by any
+// "recent N" load limit). Used so the UI can show the real total even when no
+// search/dest filter is active.
+export async function countAll(allowedDests) {
+  const collection = await getSmsCollection();
+  if (!collection) return 0;
+
+  if (Array.isArray(allowedDests)) {
+    if (allowedDests.length === 0) return 0;
+    return collection.countDocuments({
+      $or: [
+        { dest: { $in: allowedDests } },
+        { Destination: { $in: allowedDests } },
+      ],
+    });
+  }
+
+  return collection.countDocuments({});
+}
+
 function escapeRegex(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -81,6 +101,33 @@ export async function searchMessages({ search, allowedDests, destQuery, skip = 0
   ]);
 
   return { docs, total };
+}
+
+// Authoritative list of dest numbers that actually have at least one message in
+// the collection (never limited to a loaded page). Used to power the dest-filter
+// suggestions so users aren't offered numbers that will return zero results.
+export async function getDistinctDests(allowedDests) {
+  const collection = await getSmsCollection();
+  if (!collection) return [];
+
+  const baseFilter = Array.isArray(allowedDests)
+    ? (allowedDests.length === 0
+      ? { _id: { $exists: false } }
+      : { $or: [{ dest: { $in: allowedDests } }, { Destination: { $in: allowedDests } }] })
+    : {};
+
+  const [destValues, destinationValues] = await Promise.all([
+    collection.distinct('dest', baseFilter),
+    collection.distinct('Destination', baseFilter),
+  ]);
+
+  const unique = new Set();
+  [...destValues, ...destinationValues].forEach((value) => {
+    const trimmed = String(value || '').trim();
+    if (trimmed) unique.add(trimmed);
+  });
+
+  return Array.from(unique).sort();
 }
 
 export async function insertOne(smsData) {

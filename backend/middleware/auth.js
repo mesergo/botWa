@@ -158,7 +158,10 @@ export const resolvePermissions = async (user) => {
   // Per-user gate for the "SMS נכנס" tab: admins always see it,
   // other users only when the admin enabled it on their account (User.sms_in_enabled).
   const smsInView = user?.role === 'admin' ? true : user?.sms_in_enabled === true;
-  return { ...base, sms_in: { view: smsInView } };
+  // Per-user gate for the "חבר לפייסבוק" button in bot settings: admins always see it,
+  // other users only when the admin enabled it on their account (User.facebook_connect_enabled).
+  const facebookConnectView = user?.role === 'admin' ? true : user?.facebook_connect_enabled === true;
+  return { ...base, sms_in: { view: smsInView }, facebook_connect: { view: facebookConnectView } };
 };
 
 async function resolveBasePermissions(user) {
@@ -198,6 +201,7 @@ function getDefaultPermissionsForRole(role) {
     users:    { view: true, add: true, edit: true, delete: true },
     rep_groups: { view: true, add: true, delete: true },
     sms_in:   { view: true },
+    facebook_connect: { view: true },
     send_messages: { view: true, send: true }
   };
   const none = {
@@ -209,6 +213,7 @@ function getDefaultPermissionsForRole(role) {
     users:    { view: false, add: false, edit: false, delete: false },
     rep_groups: { view: false, add: false, delete: false },
     sms_in:   { view: false },
+    facebook_connect: { view: false },
     send_messages: { view: false, send: false }
   };
   if (role === 'admin') return all;
@@ -235,5 +240,5 @@ function getDefaultPermissionsForRole(role) {
     rep_groups: { ...none.rep_groups },
     sms_in:   { ...none.sms_in },
     send_messages: { ...none.send_messages }
-  };
-}
+  }; 
+} 
