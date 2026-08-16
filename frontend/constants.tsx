@@ -12,7 +12,7 @@ import {
   Clock, 
   PlayCircle,
   Users,
-  UserMinus,
+  UserMinus, 
   UserCheck,
   Zap
 } from 'lucide-react';

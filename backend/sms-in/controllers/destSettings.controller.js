@@ -17,23 +17,39 @@ function toClientShape(doc) {
 
 /**
  * GET /api/sms-in/dest-settings
- * Admin: all lines. Customer: only lines assigned to them.
+ * Always scoped to the logged-in user (admin accounts included).
  */
 export async function getDestSettings(req, res) {
   try {
-    const role = req.user?.role;
-    const isAdmin = role === 'admin' && !req.user?.isImpersonating;
     const userId = req.userId;
-
-    const query = isAdmin ? {} : { assignedClientId: userId };
-    const docs = await SmsDestSetting.find(query).sort({ dest: 1 }).lean();
+    const docs = await SmsDestSetting.find({ assignedClientId: userId }).sort({ dest: 1 }).lean();
 
     res.json({
       settings: docs.map(toClientShape),
       source: 'mongodb',
+      scoped: true,
     });
   } catch (err) {
     console.error('[sms-in] getDestSettings error:', err);
+    res.status(500).json({ error: err.message || 'Failed to load dest settings' });
+  }
+}
+
+/**
+ * GET /api/sms-in/admin/dest-settings
+ * /admin panel only — ALWAYS every line. Protected by requireAdmin.
+ */
+export async function getAdminDestSettings(req, res) {
+  try {
+    const docs = await SmsDestSetting.find({}).sort({ dest: 1 }).lean();
+
+    res.json({
+      settings: docs.map(toClientShape),
+      source: 'mongodb',
+      scoped: false,
+    });
+  } catch (err) {
+    console.error('[sms-in] getAdminDestSettings error:', err);
     res.status(500).json({ error: err.message || 'Failed to load dest settings' });
   }
 }
@@ -91,4 +107,58 @@ export async function getAssignedDestsForUser(userId) {
   if (!userId) return [];
   const docs = await SmsDestSetting.find({ assignedClientId: userId }).select('dest').lean();
   return docs.map((d) => d.dest);
+}
+
+/**
+ * POST /api/sms-in/admin/dest-settings/bulk-assign
+ * Admin only — bulk upsert a list of dest numbers to a single client.
+ * Always overwrites any existing assignment (last write wins).
+ */
+export async function bulkAssignDestSettings(req, res) {
+  try {
+    const { dests, assignedClientId, assignedClientName = '' } = req.body || {};
+
+    if (!assignedClientId) {
+      return res.status(400).json({ error: 'assignedClientId is required' });
+    }
+
+    if (!Array.isArray(dests)) {
+      return res.status(400).json({ error: 'dests must be an array' });
+    }
+
+    const cleanedDests = [...new Set(dests.map((d) => String(d || '').trim()).filter(Boolean))];
+
+    if (cleanedDests.length === 0) {
+      return res.status(400).json({ error: 'dests must contain at least one valid number' });
+    }
+
+    const ops = cleanedDests.map((dest) => ({
+      updateOne: {
+        filter: { dest },
+        update: {
+          $set: {
+            dest,
+            assignedClientId,
+            assignedClientName: assignedClientName || '',
+            isActive: true,
+            notes: 'נוסף משיוך מספרים מרוכז',
+          },
+        },
+        upsert: true,
+      },
+    }));
+
+    const result = await SmsDestSetting.bulkWrite(ops);
+
+    res.json({
+      success: true,
+      matchedCount: result.matchedCount,
+      modifiedCount: result.modifiedCount,
+      upsertedCount: result.upsertedCount,
+      total: cleanedDests.length,
+    });
+  } catch (err) {
+    console.error('[sms-in] bulkAssignDestSettings error:', err);
+    res.status(500).json({ error: err.message || 'Failed to bulk assign dest settings' });
+  }
 }

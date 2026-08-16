@@ -170,7 +170,7 @@ export const createSubUser = async (req, res) => {
         const manager = await User.findById(managerId).select('name').lean();
         const managerName = (manager?.name || '').replace(/[<>'"]/g, '');
         const repNameSafe = rep.name.replace(/[<>'"]/g, '');
-        const systemUrl = process.env.SYSTEM_URL || 'https://botwa.message.co.il/';
+        const systemUrl = process.env.SYSTEM_URL || 'https://app.message.co.il/';
         const inviteLink = `${systemUrl}?name=${encodeURIComponent(managerName)}`;
 
         const emailUsername = process.env.MESERGO_EMAIL_USERNAME || 'admin@chatgo.live';

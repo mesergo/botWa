@@ -5,7 +5,7 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 async function connectDB() {
-  try {
+  try { 
     const connectionString = process.env.MONGODB_URI || 'mongodb://localhost:27017/flowbot';
     // const connectionString = process.env.MONGODB_URI || 'mongodb://localhost:27017/bots';
 
@@ -17,7 +17,7 @@ async function connectDB() {
     // Only log connection string in development (with password masked)
     if (!isProduction) {
       console.log('📍 Connection String:', connectionString.replace(/:([^:@]{4})[^:@]*@/, ':$1***@'));
-    }
+    } 
     
     // Configure mongoose to handle connection better
     mongoose.set('strictQuery', false);
@@ -26,11 +26,13 @@ async function connectDB() {
     const connectionOptions = {
       serverSelectionTimeoutMS: isProduction ? 30000 : 20000,
       socketTimeoutMS: 45000,
+      connectTimeoutMS: 20000,
       bufferCommands: false,
       maxPoolSize: isProduction ? 50 : 10,
       minPoolSize: isProduction ? 5 : 1,
       retryWrites: true,
-      w: 'majority'
+      w: 'majority',
+      family: 4 // force IPv4 - avoids slow/failed IPv6 lookups on some hosts
     };
     
     await mongoose.connect(connectionString, connectionOptions);
@@ -65,10 +67,12 @@ async function connectDB() {
       console.error('   Current MONGODB_URI:', process.env.MONGODB_URI || 'Not set');
       console.error('');
     } else {
-      console.error(''); 
-      console.error('💡 General Connection Issue');
-      console.error('   Full error details:');
-      console.error(error);
+      console.error('');
+      console.error('💡 General Connection Issue (likely network/firewall blocking the MongoDB host)');
+      console.error('   - Verify the DB server allows inbound connections on port 27017 from this server\'s IP');
+      console.error('   - Verify mongod.conf "net.bindIp" on the DB server includes this server\'s IP (or 0.0.0.0)');
+      console.error('   - Test manually from this server:  nc -zv ' + (connectionString.match(/@([^:/]+)/)?.[1] || '<host>') + ' 27017');
+      console.error('   Error name:', error.name);
       console.error('');
     }
     throw error;
