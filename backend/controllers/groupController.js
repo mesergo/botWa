@@ -766,7 +766,7 @@ async function processBroadcast(broadcastId, userId, group, contacts, opts) {
       await GroupBroadcast.findByIdAndUpdate(broadcastId, { status: 'failed', completed_at: new Date() });
       return;
     }
-    const SHEET_URL = `https://wa.message.co.il/api/sheet/15xZeZ7kgS3aNx47Yy3d5flDYtV9Dxw-sij9Wcnio4mQ/test/${sheetEndpointId}/send`;
+    const SHEET_URL = `https://wa.message.co.il/api/sheet/${sheetEndpointId}/send-to-list`;
     const SHEET_TOKEN = crypto.createHash('sha1').update(sheetEndpointId + 'moomoo').digest('hex');
     console.log(`${TAG} 🔌 Resolved endpoint: ${sheetEndpointId}`);
 
