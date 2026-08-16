@@ -21,6 +21,8 @@ import { pushMessagesToWhatsApp } from '../utils/whatsappSender.js';
 import eventBus from '../utils/eventBus.js';
 import { applyConversationClosedToDoc } from '../utils/conversationActions.js';
 
+import { notifyWaitingCustomerMessage } from '../config/pushNotificationsRuntime.js';
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -1425,6 +1427,18 @@ export const respondToMessage = async (req, res) => {
         agentCheckSession.markModified('reminder_case2');
         await agentCheckSession.save();
         eventBus.emit('session:update', { userId: String(user._id), phone: sender });
+        // Chrome push — customer message while conversation awaits human (same tenant only)
+        notifyWaitingCustomerMessage({
+          eventId: `msg_${agentCheckSession._id}_${agentCheckSession.process_history.length}_${Date.now()}`,
+          tenantId: String(user._id),
+          botLineId: botFlowId,
+          conversationId: String(agentCheckSession._id),
+          messageId: `hist_${agentCheckSession.process_history.length}`,
+          senderDisplayName: name || sender || 'לקוח',
+          createdAt: new Date().toISOString(),
+          previewText: String(text || '').slice(0, 80),
+          clickAction: `/sessions?phone=${encodeURIComponent(sender)}`,
+        });
         console.log(`[BOT] 🙋 AGENT MODE active for sessionId=${agentCheckSession._id} phone=${phone} — bot suppressed, message recorded`);
         console.log(`${'═'.repeat(80)}\n`);
         return res.json({ StatusId: 1, StatusDescription: 'Agent mode active', sender, messages: [], agentMode: true });
@@ -2212,6 +2226,21 @@ export const respondToMessage = async (req, res) => {
     await session.save();
     eventBus.emit('session:update', { userId: String(user._id), phone: sender });
     console.log(`[eventBus] emitted session:update userId=${String(user._id)} phone=${sender}`);
+
+    // After transfer-to-agent in the same request: notify tenant subscribers for this bot line
+    if (session.is_agent && session.status === 'waiting') {
+      notifyWaitingCustomerMessage({
+        eventId: `msg_${session._id}_${(session.process_history || []).length}_${Date.now()}`,
+        tenantId: String(user._id),
+        botLineId: botFlowId,
+        conversationId: String(session._id),
+        messageId: `hist_${(session.process_history || []).length}`,
+        senderDisplayName: name || sender || 'לקוח',
+        createdAt: new Date().toISOString(),
+        previewText: String(text || '').slice(0, 80),
+        clickAction: `/sessions?phone=${encodeURIComponent(sender)}`,
+      });
+    }
 
     // Build control object if needed
     // Reload the waiting node from the updated session.current_node_id (may have changed inside walkChain)

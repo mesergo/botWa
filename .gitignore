@@ -5,8 +5,14 @@ package-lock.json
 # Environment variables
 .env
 .env.local
+backend/.env
+backend/.env.local
 .env.development
 .env.production
+
+# Firebase Admin credential files
+*service-account*.json
+*firebase-adminsdk*.json
 
 # Build outputs
 dist/

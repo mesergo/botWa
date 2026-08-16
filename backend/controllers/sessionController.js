@@ -1052,13 +1052,13 @@ export const getContacts = async (req, res) => {
       },
       {
         // $addFields: {
-// <<<<<<< HEAD
+// 
 //           phone: { $ifNull: ['$customer_phone', { $ifNull: ['$sender', 'לא ידוע'] }] },
 //           _date: { $ifNull: ['$created_at', '$createdAt'] }
-// =======
+// 
 //           // Group by sender (the person who sent the message), not by phone (bot's number)
 //           contactKey: { $ifNull: ['$sender', { $ifNull: ['$customer_phone', 'לא ידוע'] }] }
-// >>>>>>> 262e9fa241deec57219c8eb135b28d23f0979710
+//
         // }
         $addFields: {
   // מקבץ לפי השולח (האדם שיצר קשר), לא לפי מספר הבוט
