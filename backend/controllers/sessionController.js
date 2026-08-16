@@ -8,7 +8,7 @@ import Option from '../models/Option.js';
 import User from '../models/User.js';
 import Contact from '../models/Contact.js';
 import Notification from '../models/Notification.js';
-import { matchTimeRange } from '../utils/timeRouting.js';
+import { reconstructTimeRoutingBranches, isTimeRoutingBranchOption, findMatchedBranchIndex } from '../utils/timeRouting.js';
 import fetch from 'node-fetch'; 
 import { getEffectiveUserId, resolvePermissions, hasPermission } from '../middleware/auth.js';
 import { pushMessagesToWhatsApp } from '../utils/whatsappSender.js';
@@ -166,18 +166,22 @@ const buildCase2TriggerFlowGraph = async (session) => {
       runtimeNode.data.options = wOptions.filter(o => o.operator !== 'default').map(o => o.value);
     }
 
+    if (w.type === 'action_time_routing') {
+      Object.assign(runtimeNode.data, reconstructTimeRoutingBranches(wOptions));
+    }
+
     if (w.next) {
       edges.push({ source: w.id, target: w.next });
     }
 
     if (w.type === 'action_time_routing') {
-      let rangeIndex = 0;
-      wOptions.forEach((o) => {
-        if (o.next) {
-          const sourceHandle = o.operator === 'default' ? 'option-default' : `option-${rangeIndex}`;
-          edges.push({ source: w.id, sourceHandle, target: o.next });
-        }
-        if (o.operator === 'time_range' || o.operator === 'date_range' || o.operator === 'weekday_range') rangeIndex += 1;
+      const branchOpts = wOptions.filter(isTimeRoutingBranchOption);
+      const defaultOpts = wOptions.filter(o => o.operator === 'default');
+      branchOpts.forEach((o, i) => {
+        if (o.next) edges.push({ source: w.id, sourceHandle: `option-${i}`, target: o.next });
+      });
+      defaultOpts.forEach((o) => {
+        if (o.next) edges.push({ source: w.id, sourceHandle: 'option-default', target: o.next });
       });
     } else if (w.type === 'action_web_service') {
       const defaultOpts = wOptions.filter(o => o.operator === 'default');
@@ -284,52 +288,9 @@ const buildCase2TriggerMessages = async (session, startNodeId) => {
         return { messages, stopNodeId: node.id, waitingTextInput: false, supported: true };
       }
       case 'action_time_routing': {
-        const routingMode = nodeData.routingMode || 'time';
         const now = new Date();
         const israelTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Jerusalem' }));
-        let matchedIndex = -1;
-
-        if (routingMode === 'date') {
-          const israelDateStr = [
-            israelTime.getFullYear(),
-            String(israelTime.getMonth() + 1).padStart(2, '0'),
-            String(israelTime.getDate()).padStart(2, '0')
-          ].join('-');
-          const dateRanges = Array.isArray(nodeData.dateRanges) ? nodeData.dateRanges : [];
-          for (let i = 0; i < dateRanges.length; i += 1) {
-            const range = dateRanges[i];
-            if (range?.fromDate && range?.toDate && israelDateStr >= range.fromDate && israelDateStr <= range.toDate) {
-              matchedIndex = i;
-              break;
-            }
-          }
-        } else if (routingMode === 'weekday') {
-          const israelDay = israelTime.getDay();
-          const weekdayRanges = Array.isArray(nodeData.weekdayRanges) ? nodeData.weekdayRanges : [];
-          for (let i = 0; i < weekdayRanges.length; i += 1) {
-            const range = weekdayRanges[i] || {};
-            const fromDay = Number.isInteger(range.fromDay) ? range.fromDay : 0;
-            const toDay = Number.isInteger(range.toDay) ? range.toDay : 6;
-            const inRange = fromDay <= toDay
-              ? (israelDay >= fromDay && israelDay <= toDay)
-              : (israelDay >= fromDay || israelDay <= toDay);
-            if (inRange) {
-              matchedIndex = i;
-              break;
-            }
-          }
-        } else {
-          const israelHour = israelTime.getHours();
-          const israelMinute = israelTime.getMinutes();
-          const timeRanges = Array.isArray(nodeData.timeRanges) ? nodeData.timeRanges : [];
-          for (let i = 0; i < timeRanges.length; i += 1) {
-            const range = timeRanges[i] || {};
-            if (matchTimeRange(israelHour, israelMinute, range)) {
-              matchedIndex = i;
-              break;
-            }
-          }
-        }
+        const matchedIndex = findMatchedBranchIndex(nodeData.timeRoutingBranches || [], israelTime);
 
         currentNodeId = matchedIndex >= 0
           ? findNextEdgeTarget(edges, currentNodeId, `option-${matchedIndex}`)

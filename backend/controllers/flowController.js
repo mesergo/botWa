@@ -5,7 +5,7 @@ import Option from '../models/Option.js';
 import AuditLog from '../models/AuditLog.js';
 import { mongoose } from '../config/db.js';
 import { getEffectiveUserId } from '../middleware/auth.js';
-import { parseTimeRangeValue, formatTimeRangeValue } from '../utils/timeRouting.js';
+import { reconstructTimeRoutingBranches, serializeBranchConditions, isTimeRoutingBranchOption } from '../utils/timeRouting.js';
 
 // Records a rejected/forced sync attempt so we always have a paper trail when
 // a bot was almost wiped (or was wiped via an explicit override).
@@ -152,36 +152,13 @@ const fetchFlowData = async (userId, flow_id, standard_process_id = null, versio
     
     // Special handling for TIME_ROUTING
     if (w.type === 'action_time_routing') {
-      const routingMode = metadata.routingMode || 'time';
-      let ranges = {};
-
-      if (routingMode === 'date') {
-        ranges.dateRanges = nodeOptions
-          .filter(o => o.operator === 'date_range')
-          .map(o => {
-            const [fromDate, toDate] = o.value.split('|');
-            return { fromDate, toDate };
-          });
-      } else if (routingMode === 'weekday') {
-        ranges.weekdayRanges = nodeOptions
-          .filter(o => o.operator === 'weekday_range')
-          .map(o => {
-            const [fromDay, toDay] = o.value.split('-').map(Number);
-            return { fromDay, toDay };
-          });
-      } else {
-        ranges.timeRanges = nodeOptions
-          .filter(o => o.operator === 'time_range')
-          .map(o => parseTimeRangeValue(o.value));
-      }
-      
       return { 
         id: w.id, 
         type: w.type, 
         position: { x: w.pos_x, y: w.pos_y }, 
         data: { 
           ...metadata,
-          ...ranges
+          ...reconstructTimeRoutingBranches(nodeOptions)
         } 
       };
     }
@@ -226,10 +203,11 @@ const fetchFlowData = async (userId, flow_id, standard_process_id = null, versio
     
     // Special handling for TIME_ROUTING
     if (w.type === 'action_time_routing') {
-      let timeRangeIndex = 0;
-      wOptions.forEach((o) => { 
+      const branchOpts = wOptions.filter(isTimeRoutingBranchOption);
+      const defaultOpts = wOptions.filter(o => o.operator === 'default');
+      branchOpts.forEach((o, i) => {
         if (o.next) {
-          const sourceHandle = o.operator === 'default' ? 'option-default' : `option-${timeRangeIndex}`;
+          const sourceHandle = `option-${i}`;
           edges.push({ 
             id: `e-${w.id}-${sourceHandle}-${o.next}`, 
             source: w.id, 
@@ -238,9 +216,18 @@ const fetchFlowData = async (userId, flow_id, standard_process_id = null, versio
             type: 'button', 
             style: { stroke: '#3b82f6', strokeWidth: 2, strokeDasharray: '6,4' } 
           });
-          if (o.operator === 'time_range' || o.operator === 'date_range' || o.operator === 'weekday_range') timeRangeIndex++;
-        } else if (o.operator === 'time_range' || o.operator === 'date_range' || o.operator === 'weekday_range') {
-          timeRangeIndex++;
+        }
+      });
+      defaultOpts.forEach((o) => {
+        if (o.next) {
+          edges.push({ 
+            id: `e-${w.id}-option-default-${o.next}`, 
+            source: w.id, 
+            sourceHandle: 'option-default', 
+            target: o.next, 
+            type: 'button', 
+            style: { stroke: '#3b82f6', strokeWidth: 2, strokeDasharray: '6,4' } 
+          });
         }
       });
     } else {
@@ -559,42 +546,19 @@ const SHRINK_RATIO = 0.75;  // במקום 0.5
       const localTime = new Date(savedWidget.createdAt).toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem' });
       console.log(`⏰ Widget נשמר - UTC: ${savedWidget.createdAt.toISOString()}, מקומי: ${localTime}, value: "${savedWidget.value}"`);
       
-      // Handle TIME_ROUTING differently - it has timeRanges + default option
+      // Handle TIME_ROUTING differently - it has timeRoutingBranches + default option
       if (node.type === 'action_time_routing') {
-        const routingMode = node.data.routingMode || 'time';
-        let ranges = [];
-        let operator = 'time_range';
+        const branches = node.data.timeRoutingBranches || [];
 
-        if (routingMode === 'date') {
-          ranges = node.data.dateRanges || [];
-          operator = 'date_range';
-        } else if (routingMode === 'weekday') {
-          ranges = node.data.weekdayRanges || [];
-          operator = 'weekday_range';
-        } else {
-          ranges = node.data.timeRanges || [];
-          operator = 'time_range';
-        }
-
-        // Save each range as an option
-        for (let i = 0; i < ranges.length; i++) {
-          const range = ranges[i];
+        // Save each branch as a single compound_range option
+        for (let i = 0; i < branches.length; i++) {
           const optionEdge = findLastEdge(e => e.source === node.id && e.sourceHandle === `option-${i}`);
-          let value = '';
-          if (operator === 'date_range') {
-            value = `${range.fromDate || ''}|${range.toDate || ''}`;
-          } else if (operator === 'weekday_range') {
-            value = `${Number.isInteger(range.fromDay) ? range.fromDay : 0}-${Number.isInteger(range.toDay) ? range.toDay : 6}`;
-          } else {
-            value = formatTimeRangeValue(range);
-          }
-
           await Option.create({
             widget_id: node.id,
-            value,
+            value: serializeBranchConditions(branches[i]?.conditions),
             next: optionEdge ? optionEdge.target : null,
             image_url: null,
-            operator
+            operator: 'compound_range'
           });
         }
         

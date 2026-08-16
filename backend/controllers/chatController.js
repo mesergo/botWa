@@ -13,7 +13,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import crypto from 'crypto';
-import { parseTimeRangeValue, matchTimeRange } from '../utils/timeRouting.js';
+import { reconstructTimeRoutingBranches, isTimeRoutingBranchOption, findMatchedBranchIndex } from '../utils/timeRouting.js';
 import { handleWebService, findMatchingOption } from '../utils/webserviceHandler.js';
 import { normalizePhone } from '../utils/phone.js';
 import { getEffectiveRemovalConfig, matchRemovalKeywordWithLang, DEFAULT_REMOVAL_CONFIG } from '../utils/removalConfig.js';
@@ -210,34 +210,13 @@ const getFlowData = async (flowId, processId = null) => {
     let metadata = w.image_file || {};
     const nodeOptions = options.filter(o => o.widget_id === w.id);
 
-    // Reconstruct timeRanges / dateRanges for action_time_routing
+    // Reconstruct timeRoutingBranches for action_time_routing
     if (w.type === 'action_time_routing') {
-      const routingMode = metadata.routingMode || 'time';
-      let ranges = {};
-      if (routingMode === 'date') {
-        ranges.dateRanges = nodeOptions
-          .filter(o => o.operator === 'date_range')
-          .map(o => {
-            const [fromDate, toDate] = o.value.split('|');
-            return { fromDate, toDate };
-          });
-      } else if (routingMode === 'weekday') {
-        ranges.weekdayRanges = nodeOptions
-          .filter(o => o.operator === 'weekday_range')
-          .map(o => {
-            const [fromDay, toDay] = o.value.split('-').map(Number);
-            return { fromDay, toDay };
-          });
-      } else {
-        ranges.timeRanges = nodeOptions
-          .filter(o => o.operator === 'time_range')
-          .map(o => parseTimeRangeValue(o.value));
-      }
       return {
         id: w.id,
         type: w.type,
         position: { x: w.pos_x, y: w.pos_y },
-        data: { ...metadata, ...ranges }
+        data: { ...metadata, ...reconstructTimeRoutingBranches(nodeOptions) }
       };
     }
     
@@ -290,13 +269,17 @@ const getFlowData = async (flowId, processId = null) => {
 
     // Special handling for time routing: use correct sourceHandle names
     if (w.type === 'action_time_routing') {
-      let rangeIndex = 0;
-      wOptions.forEach((o) => {
+      const branchOpts = wOptions.filter(isTimeRoutingBranchOption);
+      const defaultOpts = wOptions.filter(o => o.operator === 'default');
+      branchOpts.forEach((o, i) => {
         if (o.next) {
-          const sourceHandle = o.operator === 'default' ? 'option-default' : `option-${rangeIndex}`;
-          edges.push({ id: `e-${w.id}-${sourceHandle}-${o.next}`, source: w.id, sourceHandle, target: o.next });
+          edges.push({ id: `e-${w.id}-option-${i}-${o.next}`, source: w.id, sourceHandle: `option-${i}`, target: o.next });
         }
-        if (o.operator === 'time_range' || o.operator === 'date_range' || o.operator === 'weekday_range') rangeIndex++;
+      });
+      defaultOpts.forEach((o) => {
+        if (o.next) {
+          edges.push({ id: `e-${w.id}-option-default-${o.next}`, source: w.id, sourceHandle: 'option-default', target: o.next });
+        }
       });
     } else if (w.type === 'action_web_service') {
       // For action_web_service: build conditional option edges with sequential indices
@@ -893,57 +876,7 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
         // Get current date/time in Israel timezone (handles DST automatically)
         const now = new Date();
         const israelTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Jerusalem' }));
-        const routingMode = nodeData.routingMode || 'time';
-
-        let matchedIndex = -1;
-
-        if (routingMode === 'date') {
-          const israelDateStr = [
-            israelTime.getFullYear(),
-            String(israelTime.getMonth() + 1).padStart(2, '0'),
-            String(israelTime.getDate()).padStart(2, '0'),
-          ].join('-');
-
-          const dateRanges = nodeData.dateRanges || [];
-          for (let i = 0; i < dateRanges.length; i++) {
-            const range = dateRanges[i];
-            if (range.fromDate && range.toDate && israelDateStr >= range.fromDate && israelDateStr <= range.toDate) {
-              matchedIndex = i;
-              break;
-            }
-          }
-        } else if (routingMode === 'weekday') {
-          const israelDay = israelTime.getDay(); // 0=Sunday ... 6=Saturday
-          const weekdayRanges = nodeData.weekdayRanges || [];
-          for (let i = 0; i < weekdayRanges.length; i++) {
-            const range = weekdayRanges[i];
-            const fromDay = Number.isInteger(range.fromDay) ? range.fromDay : 0;
-            const toDay = Number.isInteger(range.toDay) ? range.toDay : 6;
-
-            let inRange = false;
-            if (fromDay <= toDay) {
-              inRange = israelDay >= fromDay && israelDay <= toDay;
-            } else {
-              inRange = israelDay >= fromDay || israelDay <= toDay;
-            }
-
-            if (inRange) {
-              matchedIndex = i;
-              break;
-            }
-          }
-        } else {
-          const israelHour = israelTime.getHours();
-          const israelMinute = israelTime.getMinutes();
-          const timeRanges = nodeData.timeRanges || [];
-          for (let i = 0; i < timeRanges.length; i++) {
-            const range = timeRanges[i];
-            if (matchTimeRange(israelHour, israelMinute, range)) {
-              matchedIndex = i;
-              break;
-            }
-          }
-        }
+        const matchedIndex = findMatchedBranchIndex(nodeData.timeRoutingBranches || [], israelTime);
 
         // Route to matched option or default
         if (matchedIndex >= 0) {

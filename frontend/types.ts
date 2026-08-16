@@ -31,6 +31,11 @@ export enum NodeType {
   AUTOMATIC_RESPONSES = 'automatic_responses'
 }
 
+export type TimeRoutingCondition =
+  | { kind: 'time'; fromHour: number; fromMinute?: number; toHour: number; toMinute?: number }
+  | { kind: 'date'; fromDate: string; toDate: string }
+  | { kind: 'weekday'; fromDay: number; toDay: number };
+
 export interface NodeData {
   label: string;
   variableName?: string;
@@ -46,10 +51,7 @@ export interface NodeData {
   optionOperators?: string[];
   optionImages?: string[];
   dateTimeMode?: 'date' | 'time' | 'datetime';
-  routingMode?: 'time' | 'date' | 'weekday';
-  timeRanges?: Array<{ fromHour: number; fromMinute?: number; toHour: number; toMinute?: number; }>;
-  dateRanges?: Array<{ fromDate: string; toDate: string; }>;
-  weekdayRanges?: Array<{ fromDay: number; toDay: number; }>;
+  timeRoutingBranches?: Array<{ conditions: TimeRoutingCondition[] }>;
   groupId?: string;
   removeFromGroupMode?: 'specific' | 'all';
   removeGroupId?: string;

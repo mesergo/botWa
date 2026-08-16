@@ -1117,12 +1117,10 @@ const FlowBuilder: React.FC = () => {
           break;
         case NodeType.ACTION_WAIT: height += 80; break;
         case NodeType.ACTION_TIME_ROUTING: {
-          const trCount = (node.data.timeRanges || []).length;
-          const drCount = (node.data.dateRanges || []).length;
-          const wrCount = (node.data.weekdayRanges || []).length;
-          const rangeCount = Math.max(trCount, drCount, wrCount);
-          height += 250; // mode toggle + label + default option + add button + space-y-4 gaps (~232px content)
-          height += rangeCount * 90; // per range row: p-3 + inputs (~70px) + space-y-4 gap (16px) ≈ 86px
+          const branches = node.data.timeRoutingBranches || [];
+          const conditionCount = branches.reduce((s: number, b: any) => s + (b.conditions?.length || 1), 0);
+          height += 250; // label + default option + add button + space-y-4 gaps
+          height += branches.length * 40 + conditionCount * 70; // per-branch card + per-condition row
           break;
         }
         case NodeType.FIXED_PROCESS: height += 70; break;
