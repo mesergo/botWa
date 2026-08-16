@@ -5,6 +5,7 @@ import BotFlow from '../models/BotFlow.js';
 import Version from '../models/Version.js';
 import User from '../models/User.js';
 import { ObjectId } from 'mongodb';
+import { parseTimeRangeValue, formatTimeRangeValue } from '../utils/timeRouting.js';
 
 /**
  * Highly detailed templates data to seed the DB
@@ -264,7 +265,7 @@ export const initializeFromTemplate = async (req, res) => {
           } else if (operator === 'weekday_range') {
             value = `${Number.isInteger(range.fromDay) ? range.fromDay : 0}-${Number.isInteger(range.toDay) ? range.toDay : 6}`;
           } else {
-            value = `${range.fromHour}-${range.toHour}`;
+            value = formatTimeRangeValue(range);
           }
 
           await Option.create({
@@ -530,10 +531,7 @@ export const createTemplateFromBot = async (req, res) => {
           } else {
             ranges.timeRanges = nodeOptions
               .filter(o => o.operator === 'time_range')
-              .map(o => {
-                const [fromHour, toHour] = o.value.split('-').map(Number);
-                return { fromHour, toHour };
-              });
+              .map(o => parseTimeRangeValue(o.value));
           }
           return {
             id: w.id,
@@ -700,4 +698,4 @@ export const cloneBotFlow = async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
-};
+}; 

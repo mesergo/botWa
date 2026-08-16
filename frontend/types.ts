@@ -47,7 +47,7 @@ export interface NodeData {
   optionImages?: string[];
   dateTimeMode?: 'date' | 'time' | 'datetime';
   routingMode?: 'time' | 'date' | 'weekday';
-  timeRanges?: Array<{ fromHour: number; toHour: number; }>;
+  timeRanges?: Array<{ fromHour: number; fromMinute?: number; toHour: number; toMinute?: number; }>;
   dateRanges?: Array<{ fromDate: string; toDate: string; }>;
   weekdayRanges?: Array<{ fromDay: number; toDay: number; }>;
   groupId?: string;
@@ -62,7 +62,7 @@ export interface NodeData {
   /** For action_transfer_to_agent: 'any' rep from the group, or a 'specific' rep */
   repAssignmentMode?: 'any' | 'specific';
   /** For action_transfer_to_agent: the specific rep user id (when mode='specific') */
-  repUserId?: string;
+  repUserId?: string; 
   /** Unified add/remove group component: which action to perform */
   groupActionMode?: 'add' | 'remove';
   /** For automatic_responses: optional system trigger condition */

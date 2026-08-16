@@ -13,6 +13,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import crypto from 'crypto';
+import { parseTimeRangeValue, matchTimeRange } from '../utils/timeRouting.js';
 import { handleWebService, findMatchingOption } from '../utils/webserviceHandler.js';
 import { normalizePhone } from '../utils/phone.js';
 import { getEffectiveRemovalConfig, matchRemovalKeywordWithLang, DEFAULT_REMOVAL_CONFIG } from '../utils/removalConfig.js';
@@ -230,10 +231,7 @@ const getFlowData = async (flowId, processId = null) => {
       } else {
         ranges.timeRanges = nodeOptions
           .filter(o => o.operator === 'time_range')
-          .map(o => {
-            const [fromHour, toHour] = o.value.split('-').map(Number);
-            return { fromHour, toHour };
-          });
+          .map(o => parseTimeRangeValue(o.value));
       }
       return {
         id: w.id,
@@ -936,20 +934,11 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
           }
         } else {
           const israelHour = israelTime.getHours();
+          const israelMinute = israelTime.getMinutes();
           const timeRanges = nodeData.timeRanges || [];
           for (let i = 0; i < timeRanges.length; i++) {
             const range = timeRanges[i];
-            const fromHour = parseInt(range.fromHour) || 0;
-            const toHour = parseInt(range.toHour) || 23;
-
-            let inRange = false;
-            if (fromHour <= toHour) {
-              inRange = israelHour >= fromHour && israelHour < toHour;
-            } else {
-              inRange = israelHour >= fromHour || israelHour < toHour;
-            }
-
-            if (inRange) {
+            if (matchTimeRange(israelHour, israelMinute, range)) {
               matchedIndex = i;
               break;
             }
@@ -1009,7 +998,7 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
             console.log(`[WALK]    ✅ Matched option-${matchedIdx} → nextNode=${nextIdAfterWs}`);
             currentNodeId = nextIdAfterWs;
             session.waiting_webservice = false;
-            break;
+            break; 
           }
           console.log(`[WALK]    ⚠️ No option matched returnValue=${wsResult.returnValue} → falling through to default exit`);
         }

@@ -15,8 +15,16 @@ import {
 } from '../utils/removalConfig.js';
 import AuditLog from '../models/AuditLog.js';
 import { buildRemovalConfigDiff } from './adminController.js';
-
+ 
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+
+// Accepted audiences for Google id_token verification. The web client (GOOGLE_CLIENT_ID)
+// issues tokens for the browser sign-in flow; native apps (e.g. Android) issue tokens
+// with a different audience (their own OAuth client id), so we must accept both.
+const GOOGLE_AUDIENCES = [
+  process.env.GOOGLE_CLIENT_ID,
+  process.env.GOOGLE_CLIENT_ID_ANDROID,
+].filter(Boolean);
 
 const hashInviteToken = (token) => crypto.createHash('sha256').update(token).digest('hex');
 const asBoolean = (value) => value === true || value === 'true' || value === 1 || value === '1';
@@ -185,7 +193,7 @@ export const registerFromInviteGoogle = async (req, res) => {
 
     const ticket = await googleClient.verifyIdToken({
       idToken: credential,
-      audience: process.env.GOOGLE_CLIENT_ID,
+      audience: GOOGLE_AUDIENCES,
     });
     const payload = ticket.getPayload();
     const googleEmail = (payload?.email || '').toLowerCase().trim();
@@ -429,7 +437,7 @@ export const googleAuth = async (req, res) => {
   try {
     const ticket = await googleClient.verifyIdToken({
       idToken: credential,
-      audience: process.env.GOOGLE_CLIENT_ID,
+      audience: GOOGLE_AUDIENCES,
     });
     const payload = ticket.getPayload();
     const { email, name, sub: googleId } = payload;

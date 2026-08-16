@@ -8,7 +8,8 @@ import Option from '../models/Option.js';
 import User from '../models/User.js';
 import Contact from '../models/Contact.js';
 import Notification from '../models/Notification.js';
-import fetch from 'node-fetch';
+import { matchTimeRange } from '../utils/timeRouting.js';
+import fetch from 'node-fetch'; 
 import { getEffectiveUserId, resolvePermissions, hasPermission } from '../middleware/auth.js';
 import { pushMessagesToWhatsApp } from '../utils/whatsappSender.js';
 import eventBus from '../utils/eventBus.js';
@@ -319,15 +320,11 @@ const buildCase2TriggerMessages = async (session, startNodeId) => {
           }
         } else {
           const israelHour = israelTime.getHours();
+          const israelMinute = israelTime.getMinutes();
           const timeRanges = Array.isArray(nodeData.timeRanges) ? nodeData.timeRanges : [];
           for (let i = 0; i < timeRanges.length; i += 1) {
             const range = timeRanges[i] || {};
-            const fromHour = parseInt(range.fromHour, 10) || 0;
-            const toHour = parseInt(range.toHour, 10) || 23;
-            const inRange = fromHour <= toHour
-              ? (israelHour >= fromHour && israelHour < toHour)
-              : (israelHour >= fromHour || israelHour < toHour);
-            if (inRange) {
+            if (matchTimeRange(israelHour, israelMinute, range)) {
               matchedIndex = i;
               break;
             }

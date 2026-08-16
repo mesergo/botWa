@@ -1275,7 +1275,7 @@ export const ActionTimeRoutingNode = (props: any) => {
   const weekdayRanges = props.data.weekdayRanges || [];
   const isDateMode = routingMode === 'date';
   const isWeekdayMode = routingMode === 'weekday';
-
+ 
   const WEEKDAYS = [
     { value: 0, label: 'ראשון' },
     { value: 1, label: 'שני' },
@@ -1291,14 +1291,27 @@ export const ActionTimeRoutingNode = (props: any) => {
   };
 
   // Time mode helpers
-  const updateTimeRange = (index: number, field: 'fromHour' | 'toHour', value: any) => {
+  const formatHM = (hour: number, minute: number) => {
+    const h = Number.isFinite(hour) ? hour : 0;
+    const m = Number.isFinite(minute) ? minute : 0;
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  };
+
+  const updateTimeRange = (index: number, side: 'from' | 'to', hhmm: string) => {
+    const [hourStr, minuteStr] = (hhmm || '0:0').split(':');
+    const hour = parseInt(hourStr, 10) || 0;
+    const minute = parseInt(minuteStr, 10) || 0;
     const newRanges = [...timeRanges];
-    newRanges[index] = { ...newRanges[index], [field]: value };
+    newRanges[index] = {
+      ...newRanges[index],
+      [`${side}Hour`]: hour,
+      [`${side}Minute`]: minute,
+    };
     props.data.onChange({ timeRanges: newRanges });
   };
 
   const addTimeRange = () => {
-    props.data.onChange({ timeRanges: [...timeRanges, { fromHour: 9, toHour: 17 }] });
+    props.data.onChange({ timeRanges: [...timeRanges, { fromHour: 9, fromMinute: 0, toHour: 17, toMinute: 0 }] });
   };
 
   const removeTimeRange = (index: number) => {
@@ -1384,25 +1397,21 @@ export const ActionTimeRoutingNode = (props: any) => {
             <DeletableHandle nodeId={props.id} handleId={`option-${i}`} style={{ top: '50%', right: -10 }} />
 
             <div className="flex-1">
-              <div className="flex gap-2 items-center justify-center py-1">
+              <div className="flex gap-2 items-center justify-center py-1" dir="rtl">
+                <span className="text-sm font-bold text-slate-500">משעה</span>
                 <input
-                  type="number"
-                  min="0"
-                  max="23"
-                  value={range.toHour}
-                  onChange={(e) => updateTimeRange(i, 'toHour', parseInt(e.target.value) || 0)}
-                  className="w-16 px-2 py-2 border border-slate-200 rounded-lg text-center nodrag font-bold"
+                  type="time"
+                  value={formatHM(range.fromHour, range.fromMinute)}
+                  onChange={(e) => updateTimeRange(i, 'from', e.target.value)}
+                  className="w-24 px-2 py-2 border border-slate-200 rounded-lg text-center nodrag font-bold"
                 />
                 <span className="text-sm font-bold text-slate-500">עד</span>
                 <input
-                  type="number"
-                  min="0"
-                  max="23"
-                  value={range.fromHour}
-                  onChange={(e) => updateTimeRange(i, 'fromHour', parseInt(e.target.value) || 0)}
-                  className="w-16 px-2 py-2 border border-slate-200 rounded-lg text-center nodrag font-bold"
+                  type="time"
+                  value={formatHM(range.toHour, range.toMinute)}
+                  onChange={(e) => updateTimeRange(i, 'to', e.target.value)}
+                  className="w-24 px-2 py-2 border border-slate-200 rounded-lg text-center nodrag font-bold"
                 />
-                <span className="text-sm font-bold text-slate-500">משעה</span>
               </div>
             </div>
 

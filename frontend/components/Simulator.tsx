@@ -850,17 +850,24 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
           }
         } else {
           const israelHour = israelTime.getHours();
+          const israelMinute = israelTime.getMinutes();
           const timeRanges = node.data.timeRanges || [];
           for (let i = 0; i < timeRanges.length; i++) {
             const range = timeRanges[i];
             const fromHour = parseInt(range.fromHour) || 0;
+            const fromMinute = parseInt(range.fromMinute) || 0;
             const toHour = parseInt(range.toHour) || 23;
+            const toMinute = parseInt(range.toMinute) || 0;
+
+            const currentMinutes = israelHour * 60 + israelMinute;
+            const fromMinutes = fromHour * 60 + fromMinute;
+            const toMinutes = toHour * 60 + toMinute;
 
             let inRange = false;
-            if (fromHour <= toHour) {
-              inRange = israelHour >= fromHour && israelHour < toHour;
+            if (fromMinutes <= toMinutes) {
+              inRange = currentMinutes >= fromMinutes && currentMinutes < toMinutes;
             } else {
-              inRange = israelHour >= fromHour || israelHour < toHour;
+              inRange = currentMinutes >= fromMinutes || currentMinutes < toMinutes;
             }
 
             if (inRange) {
@@ -875,7 +882,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
       }
       default: return processNext(findNextNodeId(nodeId, instance), instance, depth + 1, stack);
     }
-  };
+  }; 
 
   const handleSend = async () => {
     if (!userInput.trim()) return;

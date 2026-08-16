@@ -5,6 +5,7 @@ import Option from '../models/Option.js';
 import AuditLog from '../models/AuditLog.js';
 import { mongoose } from '../config/db.js';
 import { getEffectiveUserId } from '../middleware/auth.js';
+import { parseTimeRangeValue, formatTimeRangeValue } from '../utils/timeRouting.js';
 
 // Records a rejected/forced sync attempt so we always have a paper trail when
 // a bot was almost wiped (or was wiped via an explicit override).
@@ -171,10 +172,7 @@ const fetchFlowData = async (userId, flow_id, standard_process_id = null, versio
       } else {
         ranges.timeRanges = nodeOptions
           .filter(o => o.operator === 'time_range')
-          .map(o => {
-            const [fromHour, toHour] = o.value.split('-').map(Number);
-            return { fromHour, toHour };
-          });
+          .map(o => parseTimeRangeValue(o.value));
       }
       
       return { 
@@ -588,7 +586,7 @@ const SHRINK_RATIO = 0.75;  // במקום 0.5
           } else if (operator === 'weekday_range') {
             value = `${Number.isInteger(range.fromDay) ? range.fromDay : 0}-${Number.isInteger(range.toDay) ? range.toDay : 6}`;
           } else {
-            value = `${range.fromHour}-${range.toHour}`;
+            value = formatTimeRangeValue(range);
           }
 
           await Option.create({
@@ -730,7 +728,7 @@ export const getPublicFlow = async (req, res) => {
     const owner = await userCollection.findOne({ public_id: userId });
     if (!owner) {
       return res.status(404).json({ error: 'Flow owner not found' });
-    }
+    } 
     const internalUserId = owner._id.toString();
 
     // Fix: If flow_id is missing or 'null', try to find the most recent bot of this user
