@@ -7,6 +7,7 @@ import { usePermission } from '../hooks/usePermission';
 import PageTopBar from './PageTopBar';
 import AppNav from './AppNav';
 import { useContactFields } from '../context/ContactFieldsContext';
+import RepPushNotifications from './RepPushNotifications';
  
 interface Session {
   id: string;
@@ -1807,7 +1808,12 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
         showMobileNavToggle
         mobileNavOpen={mobileNavOpen}
         onMobileNavToggle={() => setMobileNavOpen((prev) => !prev)}
-        rightSlot={showAvailability ? (
+        rightSlot={(
+          <div className="flex items-center gap-3">
+            {token ? (
+              <RepPushNotifications token={token} />
+            ) : null}
+            {showAvailability ? (
           <div ref={availabilityWrapperRef} className="relative" dir="rtl">
             <button
               type="button"
@@ -1843,7 +1849,9 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
               </div>
             )}
           </div>
-        ) : undefined}
+            ) : null}
+          </div>
+        )}
       />
 
       {/* ── Bot Picker ─────────────────────────────────────────────────────── */}

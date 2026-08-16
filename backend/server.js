@@ -30,12 +30,14 @@ import smsInRoutes from './routes/smsInRoutes.js';
 import { connectSmsDb } from './sms-in/smsDb.js';
 import { seedTemplates } from './controllers/templateController.js';
 import { seedUserTypes } from './scripts/seed-user-types.js';
+import { authenticateToken } from './middleware/auth.js';
+import { setPushNotificationService } from './config/pushNotificationsRuntime.js';
  
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Load environment variables
-dotenv.config();
+// Load backend/.env before dynamically importing Firebase integration.
+dotenv.config({ path: path.join(__dirname, '.env') });
 
 const app = express();
 app.set('trust proxy', 1); // Trust nginx/Cloudflare proxy — ensures req.protocol returns 'https'
@@ -95,6 +97,22 @@ async function startServer() {
     app.use('/api', uploadRoutes);  // Upload route
     app.use('/api/360', api360Routes);  // External template-send endpoint (mirrors WA API URL)
     app.use('/api/notifications', notificationRoutes);
+
+    // Push notifications (FCM / FID) — isolated module under /notifications
+    try {
+      const { bootstrapPushNotifications } = await import('../notifications/backend/index.js');
+      const push = await bootstrapPushNotifications({ authenticate: authenticateToken });
+      setPushNotificationService(push.notificationService);
+      app.use('/api/push-notifications', push.router);
+      console.log('[Push Notifications] Routes mounted at /api/push-notifications');
+      console.log(
+        push.firebaseReady
+          ? '✅ Push notifications routes mounted (/api/push-notifications)'
+          : '⚠️  Push notifications routes mounted — Firebase Admin environment variables are missing'
+      );
+    } catch (pushErr) {
+      console.error('⚠️  Push notifications bootstrap failed (server continues):', pushErr?.message || pushErr);
+    }
 
     // ── Global error handler ─────────────────────────────────────────────────
     // Catches body-parser JSON parse failures (and any other errors) and
