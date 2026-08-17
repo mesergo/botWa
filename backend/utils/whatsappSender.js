@@ -5,31 +5,49 @@
  */
 import crypto from 'crypto';
 import fetch from 'node-fetch';
+import BotFlow from '../models/BotFlow.js';
 
 const _sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 /**
  * Build WhatsApp API credentials from a bot or user object (or fall back to env vars).
- * Priority: bot.endpoint > user.dialog360_bot_id > env vars.
+ * Priority: bot.endpoint > user.dialog360_bot_id > user's first bot with an endpoint > WHATSAPP_ENDPOINT env var.
  * @param {Object|null} user - User document with optional dialog360_bot_id
  * @param {Object|null} bot  - BotFlow document with optional endpoint field
- * @returns {{ endpoint: string, waToken: string }}
+ * @returns {Promise<{ endpoint: string|null, waToken: string|null }>}
  */
-export const buildWACredentials = (user = null, bot = null) => {
-  let endpoint, waToken;
+export const buildWACredentials = async (user = null, bot = null) => {
+  let rawEndpoint = null;
   if (bot && bot.endpoint) {
-    const rawEndpoint = bot.endpoint;
-    // If stored as bare ID (no slash), prefix with dialog360/
-    endpoint = rawEndpoint.includes('/') ? rawEndpoint : `dialog360/${rawEndpoint}`;
-    const botIdPart = endpoint.split('/').pop();
-    waToken = crypto.createHash('sha1').update(botIdPart + 'moomoo').digest('hex');
+    rawEndpoint = bot.endpoint;
   } else if (user && user.dialog360_bot_id) {
-    endpoint = `dialog360/${user.dialog360_bot_id}`;
-    waToken = crypto.createHash('sha1').update(user.dialog360_bot_id + 'moomoo').digest('hex');
-  } else {
-    endpoint = null;
-    waToken = null;
+    rawEndpoint = user.dialog360_bot_id;
+  } else if (user && user._id) {
+    // Fallback: the bot/user have no endpoint configured directly — use the
+    // first bot belonging to this user that DOES have an endpoint (mirrors
+    // the fallback used in authController/adminController for templates).
+    try {
+      const firstBot = await BotFlow.findOne({
+        user_id: user._id.toString(),
+        endpoint: { $exists: true, $ne: '' }
+      }).sort({ created_at: 1 }).select('endpoint').lean();
+      if (firstBot && firstBot.endpoint) rawEndpoint = firstBot.endpoint;
+    } catch (err) {
+      console.error('[whatsappSender] buildWACredentials fallback lookup failed:', err.message);
+    }
   }
+
+  // Last resort: env var used for a default/shared account.
+  if (!rawEndpoint && process.env.WHATSAPP_ENDPOINT) {
+    rawEndpoint = process.env.WHATSAPP_ENDPOINT;
+  }
+
+  if (!rawEndpoint) return { endpoint: null, waToken: null };
+
+  // If stored as bare ID (no slash), prefix with dialog360/
+  const endpoint = rawEndpoint.includes('/') ? rawEndpoint : `dialog360/${rawEndpoint}`;
+  const botIdPart = endpoint.split('/').pop();
+  const waToken = crypto.createHash('sha1').update(botIdPart + 'moomoo').digest('hex');
   return { endpoint, waToken };
 };
 
@@ -83,7 +101,7 @@ const splitText = (text, maxLen = WA_MAX_TEXT) => {
 export const pushMessagesToWhatsApp = async (phone, messages, user = null, bot = null) => {
   if (!messages || !messages.length) return { anySuccess: false, wamidPerMsg: [] };
 
-  const { endpoint, waToken } = buildWACredentials(user, bot);
+  const { endpoint, waToken } = await buildWACredentials(user, bot);
   if (!endpoint) return { anySuccess: false, wamidPerMsg: [] };
 
   const normalizedPhone = normalizePhone(phone);
