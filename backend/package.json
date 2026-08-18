@@ -10,7 +10,7 @@
     "production": "NODE_ENV=production node server.js",
     "add-token": "node add-token.js",
     "test-api": "node test-chat-api.js"
-  },
+  }, 
   "keywords": [],
   "author": "",
   "license": "ISC",
