@@ -1,4 +1,5 @@
 
+import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import { mongoose } from '../config/db.js';
 import BotFlow from '../models/BotFlow.js';
@@ -10,7 +11,7 @@ import Notification from '../models/Notification.js';
 import { matchTimeRange } from '../utils/timeRouting.js';
 import fetch from 'node-fetch'; 
 import { getEffectiveUserId, resolvePermissions, hasPermission } from '../middleware/auth.js';
-import { pushMessagesToWhatsApp, buildWACredentials } from '../utils/whatsappSender.js';
+import { pushMessagesToWhatsApp } from '../utils/whatsappSender.js';
 import eventBus from '../utils/eventBus.js';
 import { buildConversationClosedHistoryEntry, buildConversationClosedSetFragment } from '../utils/conversationActions.js';
 import { normalizePhone } from '../utils/phone.js';
@@ -2246,7 +2247,19 @@ export const transferConversation = async (req, res) => {
         const owner = await User.findById(ownerId);
         // Prefer the bot's own endpoint (from the session's flow_id)
         const transferBot = session.flow_id ? await BotFlow.findById(session.flow_id).select('endpoint').lean() : null;
-        const { endpoint: waEndpoint, waToken } = await buildWACredentials(owner, transferBot);
+        let waEndpoint, waToken;
+        if (transferBot && transferBot.endpoint) {
+          const rawEndpoint = transferBot.endpoint;
+          waEndpoint = rawEndpoint.includes('/') ? rawEndpoint : `dialog360/${rawEndpoint}`;
+          const botIdPart = waEndpoint.split('/').pop();
+          waToken = crypto.createHash('sha1').update(botIdPart + 'moomoo').digest('hex');
+        } else if (owner?.dialog360_bot_id) {
+          waEndpoint = `dialog360/${owner.dialog360_bot_id}`;
+          waToken = crypto.createHash('sha1').update(owner.dialog360_bot_id + 'moomoo').digest('hex');
+        } else {
+          waEndpoint = null;
+          waToken = null;
+        }
         const rawPhone = session.sender || session.customer_phone || '';
         let normalizedPhone = rawPhone.replace(/[^0-9]/g, '');
         normalizedPhone = normalizedPhone.replace(/^972972/, '972');
@@ -2254,9 +2267,7 @@ export const transferConversation = async (req, res) => {
           normalizedPhone = normalizedPhone.replace(/^0+/, '');
           normalizedPhone = '972' + normalizedPhone;
         }
-        if (!waEndpoint) {
-          console.error(`[transferConversation] ❌ No WhatsApp endpoint configured for owner=${ownerId} — cannot send unavailableMessage`);
-        } else if (normalizedPhone && normalizedPhone !== '972') {
+        if (normalizedPhone && normalizedPhone !== '972') {
           await fetch(`https://wa.message.co.il/api/${waEndpoint}/send`, {
             method: 'POST',
             headers: {
@@ -2430,13 +2441,19 @@ export const sendAgentMessage = async (req, res) => {
     // Load the bot associated with this session for per-bot endpoint
     const bot = session.flow_id ? await BotFlow.findById(session.flow_id).select('endpoint').lean() : null;
 
-    // Build WhatsApp API endpoint and token (falls back to the user's other
-    // configured bots, then to the WHATSAPP_ENDPOINT env var, if this bot/user
-    // don't have one directly configured).
-    const { endpoint, waToken } = await buildWACredentials(user, bot);
-    if (!endpoint) {
-      console.error(`[sendAgentMessage] ❌ No WhatsApp endpoint configured for session ${id} (bot=${bot?._id || 'none'}, user=${user?._id})`);
-      return res.status(400).json({ error: 'לא הוגדר חיבור WhatsApp לבוט זה. יש להגדיר Bot ID / endpoint בהגדרות המשתמש או הבוט.' });
+    // Build WhatsApp API endpoint and token
+    let endpoint, waToken;
+    if (bot && bot.endpoint) {
+      const rawEndpoint = bot.endpoint;
+      endpoint = rawEndpoint.includes('/') ? rawEndpoint : `dialog360/${rawEndpoint}`;
+      const botIdPart = endpoint.split('/').pop();
+      waToken = crypto.createHash('sha1').update(botIdPart + 'moomoo').digest('hex');
+    } else if (user && user.dialog360_bot_id) {
+      endpoint = `dialog360/${user.dialog360_bot_id}`;
+      waToken = crypto.createHash('sha1').update(user.dialog360_bot_id + 'moomoo').digest('hex');
+    } else {
+      endpoint = null;
+      waToken = null;
     }
 
     // Normalize phone: strip non-digits, ensure 972 country code
@@ -2758,10 +2775,18 @@ export const sendTemplateToPhone = async (req, res) => {
     const lastBot = lastSession?.flow_id ? await BotFlow.findById(lastSession.flow_id).select('endpoint').lean() : null;
     console.log(`[sendTemplateToPhone] 🔍 last session=${lastSession?._id || '(none)'} | lastBot.endpoint=${lastBot?.endpoint || '(none)'}`);
 
-    const { endpoint, waToken } = await buildWACredentials(user, lastBot);
-    if (!endpoint) {
-      console.error(`[sendTemplateToPhone] ❌ No WhatsApp endpoint configured for user=${user._id}`);
-      return res.status(400).json({ error: 'לא הוגדר חיבור WhatsApp. יש להגדיר Bot ID / endpoint בהגדרות המשתמש או הבוט.' });
+    let endpoint, waToken;
+    if (lastBot && lastBot.endpoint) {
+      const rawEndpoint = lastBot.endpoint;
+      endpoint = rawEndpoint.includes('/') ? rawEndpoint : `dialog360/${rawEndpoint}`;
+      const botIdPart = endpoint.split('/').pop();
+      waToken = crypto.createHash('sha1').update(botIdPart + 'moomoo').digest('hex');
+    } else if (user.dialog360_bot_id) {
+      endpoint = `dialog360/${user.dialog360_bot_id}`;
+      waToken = crypto.createHash('sha1').update(user.dialog360_bot_id + 'moomoo').digest('hex');
+    } else {
+      endpoint = null;
+      waToken = null;
     }
 
     console.log(`[sendTemplateToPhone] 📤 phone=${phone} → normalized=${normalizedPhone} | template=${templateData.name} | lang=${templateData.language || 'he'} | endpoint=${endpoint}`);
@@ -2951,10 +2976,18 @@ export const sendAdminMessageToSession = async (req, res) => {
     const adminMsgBot = session.flow_id ? await BotFlow.findById(session.flow_id).select('endpoint').lean() : null;
 
     // Build WhatsApp API endpoint and token — bot.endpoint takes priority
-    const { endpoint, waToken } = await buildWACredentials(user, adminMsgBot);
-    if (!endpoint) {
-      console.error(`[sendAdminMessageToSession] ❌ No WhatsApp endpoint configured for session ${sessionId} (bot=${adminMsgBot?._id || 'none'}, user=${user._id})`);
-      return res.status(400).json({ error: 'לא הוגדר חיבור WhatsApp לבוט זה. יש להגדיר Bot ID / endpoint בהגדרות המשתמש או הבוט.' });
+    let endpoint, waToken;
+    if (adminMsgBot && adminMsgBot.endpoint) {
+      const rawEndpoint = adminMsgBot.endpoint;
+      endpoint = rawEndpoint.includes('/') ? rawEndpoint : `dialog360/${rawEndpoint}`;
+      const botIdPart = endpoint.split('/').pop();
+      waToken = crypto.createHash('sha1').update(botIdPart + 'moomoo').digest('hex');
+    } else if (user.dialog360_bot_id) {
+      endpoint = `dialog360/${user.dialog360_bot_id}`;
+      waToken = crypto.createHash('sha1').update(user.dialog360_bot_id + 'moomoo').digest('hex');
+    } else {
+      endpoint = null;
+      waToken = null;
     }
 
     // Normalize phone: ensure 972 country code
