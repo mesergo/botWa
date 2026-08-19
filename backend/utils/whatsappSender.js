@@ -63,6 +63,16 @@ const WA_MAX_TEXT = 4000;
 // WhatsApp interactive message (text + buttons) body limit
 const WA_MAX_INTERACTIVE_BODY = 1024;
 
+// Post-send delay per media type (ms) — gives the provider time to actually
+// deliver the media to the recipient's device before we send the next message,
+// so subsequent text/messages don't arrive out of order ahead of slower media.
+// Videos/documents tend to take longer to process+deliver than images.
+const MEDIA_SEND_DELAY = {
+  image: 3000,
+  video: 3000,
+  document: 3000,
+};
+
 /**
  * Split a long text into chunks of at most maxLen chars, splitting on newlines when possible.
  */
@@ -244,7 +254,7 @@ export const pushMessagesToWhatsApp = async (phone, messages, user = null, bot =
         console.log(`[WA-PUSH] 🖼  Sending IMAGE | url=${msg.url?.substring(0, 80)} | caption=${msg.text?.substring(0, 40) || '(none)'}`);
         const { success: imgOk, wamid: imgWamid } = await sendOne({ image: msg.url, text: msg.text || '' });
         if (imgOk) { anySuccess = true; if (imgWamid) wamidPerMsg[i] = imgWamid; }
-        await _sleep(600);
+        await _sleep(MEDIA_SEND_DELAY.image);
         break;
       }
 
@@ -253,7 +263,7 @@ export const pushMessagesToWhatsApp = async (phone, messages, user = null, bot =
         console.log(`[WA-PUSH] 🎬 Sending VIDEO | url=${msg.url?.substring(0, 80)} | caption=${msg.text?.substring(0, 40) || '(none)'}`);
         const { success: vidOk, wamid: vidWamid } = await sendOne({ video: msg.url, text: msg.text || '' });
         if (vidOk) { anySuccess = true; if (vidWamid) wamidPerMsg[i] = vidWamid; }
-        await _sleep(600);
+        await _sleep(MEDIA_SEND_DELAY.video);
         break;
       }
 
@@ -262,7 +272,7 @@ export const pushMessagesToWhatsApp = async (phone, messages, user = null, bot =
         console.log(`[WA-PUSH] 📄 Sending DOCUMENT | url=${msg.url?.substring(0, 80)} | filename=${msg.filename || 'file'}`);
         const { success: docOk, wamid: docWamid } = await sendOne({ file: msg.url, filename: msg.filename || 'file', text: msg.text || '' });
         if (docOk) { anySuccess = true; if (docWamid) wamidPerMsg[i] = docWamid; }
-        await _sleep(600);
+        await _sleep(MEDIA_SEND_DELAY.document);
         break;
       }
 
