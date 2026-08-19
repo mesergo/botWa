@@ -9,6 +9,7 @@ import BotSession from '../models/BotSession.js';
 import GroupBroadcast from '../models/GroupBroadcast.js';
 import GroupRemovalLog from '../models/GroupRemovalLog.js';
 import { getEffectiveUserId } from '../middleware/auth.js';
+import { buildWACredentials } from '../utils/whatsappSender.js';
  
 // ── Broadcast Queue (per-user) ────────────────────────────────────────────────
 // Ensures broadcasts for the same user run one at a time, never in parallel.
@@ -682,6 +683,21 @@ function extractTextTokens(text) {
   return Array.from(tokens);
 }
 
+// Replace one `$token$` placeholder with its resolved value. When the value is empty
+// (e.g. contact has no email/custom field filled in), the placeholder is removed
+// entirely — together with one adjacent space — instead of leaving a hole behind, so
+// "שלום $name$" with no name becomes "שלום" (not "שלום " with a trailing space, and
+// not the literal "שלום $name$").
+function replaceTokenWithValue(text, token, val) {
+  const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const placeholder = new RegExp(`\\$${escaped}\\$`, 'g');
+  if (val) return text.replace(placeholder, val);
+  return text
+    .replace(new RegExp(`[ \\t]\\$${escaped}\\$`, 'g'), '')   // "word $token$" → "word"
+    .replace(new RegExp(`\\$${escaped}\\$[ \\t]`, 'g'), '')   // "$token$ word" → "word"
+    .replace(placeholder, '');                                 // no adjacent space at all
+}
+
 function renderPersonalizedText(msgText, contact) {
   const text = msgText || '';
   const tokens = extractTextTokens(text);
@@ -689,9 +705,10 @@ function renderPersonalizedText(msgText, contact) {
   let out = text;
   for (const token of tokens) {
     const val = resolveContactField(contact, textTokenToFieldRef(token)) || '';
-    out = out.split(`$${token}$`).join(val);
+    out = replaceTokenWithValue(out, token, val);
   }
-  return out;
+  // Collapse any double spaces left behind by a removed placeholder, and trim ends.
+  return out.replace(/[ \t]{2,}/g, ' ').trim();
 }
 
 // Render a WhatsApp template's BODY text with its actual sent params substituted in,
@@ -795,6 +812,7 @@ async function processBroadcast(broadcastId, userId, group, contacts, opts) {
     // Resolve endpoint ID dynamically from the user's first connected bot (without dialog360/ prefix)
     let sheetEndpointId = null;
     let flowId = null;
+    let resolvedBot = null;
     {
       const query = bot_id
         ? { _id: bot_id, user_id: userId, endpoint: { $nin: ['', null] } }
@@ -804,6 +822,7 @@ async function processBroadcast(broadcastId, userId, group, contacts, opts) {
         const ep = bot.endpoint.includes('/') ? bot.endpoint.split('/').pop() : bot.endpoint;
         sheetEndpointId = ep;
         flowId = bot._id.toString();
+        resolvedBot = bot;
       }
     }
     if (!sheetEndpointId) {
@@ -849,12 +868,74 @@ async function processBroadcast(broadcastId, userId, group, contacts, opts) {
     }
 
     // A plain-text (non-template) message personalized with one or more `#`-inserted
-    // fields is sent via the request BODY as { text, phones: [{phone, name, email, ...}] }
-    // instead of the usual URL `text=` query param + flat phones[] array, so the external
-    // API can replace each `$token$` with that field's value for each recipient. Multiple
-    // DIFFERENT tokens (e.g. `$name$` + `$email$`) can coexist in the same message.
+    // fields contains `$token$` placeholders (e.g. `$name$`, `$email$`). CONFIRMED BY
+    // REAL-WORLD TEST (2026-08-19): the external wa.message.co.il "sheet/send-to-list"
+    // batch endpoint does NOT substitute these — the customer received the literal
+    // un-replaced `$wa_name$`/`$phone$` text even though our own session-history view
+    // (rendered locally via renderPersonalizedText) showed it resolved correctly. So we
+    // do NOT rely on that endpoint's per-recipient merge for arbitrary tokens at all —
+    // instead we resolve the text OURSELVES per contact and send each recipient an
+    // individual message via the regular single-recipient /send endpoint.
     const textTokens = !isTemplate ? extractTextTokens(msgText) : [];
     const usePersonalizedPhones = textTokens.length > 0;
+
+    if (usePersonalizedPhones) {
+      const { endpoint: singleEndpoint, waToken: singleToken } = buildWACredentials(null, resolvedBot);
+      if (!singleEndpoint) {
+        console.error(`${TAG} ❌ Could not resolve single-send endpoint for personalized broadcast — aborting`);
+        await GroupBroadcast.findByIdAndUpdate(broadcastId, { status: 'failed', completed_at: new Date() });
+        return;
+      }
+      const singleSendUrl = `https://wa.message.co.il/api/${singleEndpoint}/send`;
+      console.log(`${TAG} 🎯 Personalized send (tokens: ${textTokens.join(', ')}) — sending ${phonesArr.length} individual messages via ${singleSendUrl}`);
+
+      let sentCount = 0;
+      let failedCount = 0;
+      const errors = [];
+      for (const p of phonesArr) {
+        const resolvedText = renderPersonalizedText(msgText, p.contact);
+        const payload = { phone: p.phone, text: resolvedText, fromMe: 1 };
+        if (media?.url && media?.type) {
+          const mediaKey = media.type === 'video' ? 'video' : media.type === 'document' ? 'file' : 'image';
+          payload[mediaKey] = media.url;
+        }
+        try {
+          const waRes = await fetch(singleSendUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json; charset=utf-8', 'Accept': 'application/json', token: singleToken },
+            body: JSON.stringify(payload),
+          });
+          if (waRes.ok) {
+            sentCount++;
+            recipients.push({ phone: p.phone, name: p.name, status: 'sent' });
+          } else {
+            const errText = await waRes.text().catch(() => '');
+            failedCount++;
+            recipients.push({ phone: p.phone, name: p.name, status: 'failed', error: `HTTP ${waRes.status}` });
+            errors.push({ phone: p.phone, error: `HTTP ${waRes.status}: ${errText.substring(0, 200)}` });
+            console.error(`${TAG} ❌ Personalized send failed for ${p.phone}: HTTP ${waRes.status} — ${errText.substring(0, 200)}`);
+          }
+        } catch (sendErr) {
+          failedCount++;
+          recipients.push({ phone: p.phone, name: p.name, status: 'failed', error: sendErr.message });
+          errors.push({ phone: p.phone, error: sendErr.message });
+          console.error(`${TAG} ❌ Personalized send exception for ${p.phone}:`, sendErr.message);
+        }
+        await GroupBroadcast.findByIdAndUpdate(broadcastId, {
+          processed: sentCount + failedCount + skipped, sent: sentCount, failed: failedCount, skipped, recipients, errors,
+        }).catch(() => {});
+        await new Promise(r => setTimeout(r, 350)); // gentle pacing between individual sends
+      }
+
+      await GroupBroadcast.findByIdAndUpdate(broadcastId, { status: 'completed', completed_at: new Date() });
+      console.log(`${TAG} ✅ Personalized send complete — sent=${sentCount} failed=${failedCount} skipped=${skipped}`);
+
+      if (flowId) {
+        saveBroadcastToSessions(userId, flowId, broadcastId, group.name, { isTemplate, templateData, msgText, media }, phonesArr)
+          .catch(err => console.error(`${TAG} Failed to save broadcast to session histories:`, err));
+      }
+      return;
+    }
 
     // ── Build URL query params (everything except phones goes in URL) ────
     const queryParts = [];
@@ -880,9 +961,6 @@ async function processBroadcast(broadcastId, userId, group, contacts, opts) {
           queryParts.push(`params[${i}]=${encodeURIComponent(val)}`);
         });
       }
-    } else if (usePersonalizedPhones) {
-      // טקסט עם פרמטר/ים אישיים לכל נמען ($token$) — הטקסט נשלח ב-body יחד עם
-      // phones[{phone, ...tokens}] (לא ב-query), כדי שה-API יחליף כל טוקן בערך השדה שנבחר לכל מספר.
     } else if (media?.url && media?.type) {
       // מדיה חופשית — שלח את ה-URL כטקסט
       queryParts.push(`text=${encodeURIComponent(msgText || media.url)}`);
@@ -893,21 +971,16 @@ async function processBroadcast(broadcastId, userId, group, contacts, opts) {
 
     const fullUrl = `${SHEET_URL}?${queryParts.join('&')}`;
 
-    // Body: only phones as flat array of strings — or, when personalizing a plain-text
-    // message, { text, phones: [{phone, ...tokens}] } so each recipient's tokens resolve
-    // to their own selected contact field values.
-    const body = usePersonalizedPhones
-      ? {
-          text: msgText || (media?.url || ''),
-          phones: phonesArr.map(p => {
-            const entry = { phone: p.phone };
-            for (const token of textTokens) {
-              entry[token] = resolveContactField(p.contact, textTokenToFieldRef(token)) || '';
-            }
-            return entry;
-          }),
-        }
-      : { phones: phonesArr.map(p => p.phone) };
+    // Body: phones as { phone, name } objects (personalized plain-text messages never
+    // reach this point — they're handled earlier via the per-recipient loop above).
+    // CONFIRMED from the actual send-to-list server source: it maps each phones[] entry
+    // to `[phone, name]` via `typeof p === 'object' ? [p.phone, p.name] : [p, '']` and
+    // ONLY ever substitutes `$name$` (or positionally `$A$`/`$B$`) — no other key is read.
+    // Sending flat phone strings here (as before) meant `name` was always '' server-side,
+    // silently breaking template `$name$` params (__field:full_name/whatsapp_name). Always
+    // sending `{ phone, name }` fixes that, and is a harmless no-op for messages that don't
+    // reference `$name$`.
+    const body = { phones: phonesArr.map(p => ({ phone: p.phone, name: p.name })) };
 
     console.log(`${TAG} 📤 POST ${fullUrl}`);
     console.log(`${TAG}   → phones: ${phonesArr.length} | template: ${isTemplate ? (templateData?.name || 'N/A') : 'N/A'} | text: ${!isTemplate ? String(msgText || '').substring(0, 50) : 'N/A'} | reportId: ${broadcastId}`);
