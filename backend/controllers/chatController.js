@@ -514,8 +514,16 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
       }
 
       case 'action_wait': {
+        // NOTE: We do NOT block here with a synchronous sleep. All messages
+        // produced by walkChain are only actually sent (to WhatsApp) once the
+        // whole chain finishes, so a synchronous await here just delayed the
+        // entire batch and then sent every message at once — the delay was
+        // never perceived between messages. Instead we emit a 'Wait' marker
+        // into the messages array; pushMessagesToWhatsApp() honors it by
+        // pausing for the requested duration between the messages sent
+        // before and after it.
         const waitTime = parseInt(nodeData.waitTime) || 1;
-        await new Promise(resolve => setTimeout(resolve, waitTime * 1000));
+        messages.push({ type: 'Wait', ms: waitTime * 1000, created: new Date().toISOString() });
         currentNodeId = findNextNode(currentNodeId, edges);
         break;
       }
@@ -1765,7 +1773,7 @@ export const respondToMessage = async (req, res) => {
             await session.save();
             const { anySuccess: waPushedInterrupt1, wamidPerMsg: wamids1 } = await pushMessagesToWhatsApp(sender, messages, user, tokenBot);
             try { await applyWamids(session, messages, wamids1); } catch (e) { console.error('[BOT] applyWamids failed (non-critical):', e.message); }
-            return res.json({ StatusId: 1, StatusDescription: 'Success', sender, messages: waPushedInterrupt1 ? [] : messages, control: null, ...(waPushedInterrupt1 && { wa_pushed: true }) });
+            return res.json({ StatusId: 1, StatusDescription: 'Success', sender, messages: waPushedInterrupt1 ? [] : messages.filter(m => m.type !== 'Wait'), control: null, ...(waPushedInterrupt1 && { wa_pushed: true }) });
           }
         }
       }
@@ -1804,7 +1812,7 @@ export const respondToMessage = async (req, res) => {
               await session.save();
               const { anySuccess: waPushedInterrupt2, wamidPerMsg: wamids2 } = await pushMessagesToWhatsApp(sender, messages, user, tokenBot);
               try { await applyWamids(session, messages, wamids2); } catch (e) { console.error('[BOT] applyWamids failed (non-critical):', e.message); }
-              return res.json({ StatusId: 1, StatusDescription: 'Success', sender, messages: waPushedInterrupt2 ? [] : messages, control: null, ...(waPushedInterrupt2 && { wa_pushed: true }) });
+              return res.json({ StatusId: 1, StatusDescription: 'Success', sender, messages: waPushedInterrupt2 ? [] : messages.filter(m => m.type !== 'Wait'), control: null, ...(waPushedInterrupt2 && { wa_pushed: true }) });
             }
           }
         }
@@ -2209,7 +2217,7 @@ export const respondToMessage = async (req, res) => {
       StatusId: 1,
       StatusDescription: 'Success',
       sender,
-      messages: waPushed ? [] : messages,
+      messages: waPushed ? [] : messages.filter(m => m.type !== 'Wait'),
       control,
       ...(waPushed && { wa_pushed: true }),
     });

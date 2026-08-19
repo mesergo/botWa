@@ -272,6 +272,17 @@ export const pushMessagesToWhatsApp = async (phone, messages, user = null, bot =
         textBufIndices.push(i);
         break;
 
+      case 'Wait': {
+        // Delay/"השהיה" node: flush whatever was already buffered so it is
+        // actually sent to WhatsApp BEFORE pausing, then pause for the
+        // configured duration before continuing to send the rest.
+        await flushTextBuffer();
+        const waitMs = Number(msg.ms) || 1000;
+        console.log(`[WA-PUSH] ⏳ Wait node — pausing ${waitMs}ms before next message`);
+        await _sleep(waitMs);
+        break;
+      }
+
       case 'SendItem': {
         // שטוף textBuffer לפני SendItem
         await flushTextBuffer();
