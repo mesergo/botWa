@@ -649,6 +649,51 @@ function resolveContactField(contact, fieldRef) {
   return '';
 }
 
+// Substitute one or more `$token$` personalization placeholders in a plain-text
+// (non-template) broadcast message with each recipient's own field value. Multiple
+// DIFFERENT tokens can appear in the same message (e.g. `$name$` and `$email$`) — each
+// is resolved independently. Mirrors the __field: convention used for templates, but
+// for free-text messages (see frontend/components/shared/PersonalizedTextarea.tsx for
+// the exact token keys the UI inserts).
+const STD_TEXT_TOKENS = {
+  name: 'full_name',
+  wa_name: 'whatsapp_name',
+  phone: 'phone',
+  email: 'email',
+};
+
+// Map a literal `$token$` key (as inserted into message text) to the contact field ref
+// resolveContactField() understands.
+function textTokenToFieldRef(token) {
+  if (STD_TEXT_TOKENS[token]) return STD_TEXT_TOKENS[token];
+  if (token.startsWith('field_')) return `custom:${token.slice(6)}`;
+  return null;
+}
+
+// Find every recognized `$token$` placeholder referenced in a plain-text broadcast
+// message (deduplicated). Unknown `$..$` sequences are left untouched.
+function extractTextTokens(text) {
+  const matches = String(text || '').match(/\$([a-zA-Z0-9_]+)\$/g) || [];
+  const tokens = new Set();
+  for (const m of matches) {
+    const token = m.slice(1, -1);
+    if (textTokenToFieldRef(token)) tokens.add(token);
+  }
+  return Array.from(tokens);
+}
+
+function renderPersonalizedText(msgText, contact) {
+  const text = msgText || '';
+  const tokens = extractTextTokens(text);
+  if (tokens.length === 0) return text;
+  let out = text;
+  for (const token of tokens) {
+    const val = resolveContactField(contact, textTokenToFieldRef(token)) || '';
+    out = out.split(`$${token}$`).join(val);
+  }
+  return out;
+}
+
 // Render a WhatsApp template's BODY text with its actual sent params substituted in,
 // so the session history shows real content instead of just the template's internal name.
 // `contact` (when provided) is used to resolve __field: personalization tokens per-recipient.
@@ -700,9 +745,9 @@ function buildBroadcastHistoryEntry(groupName, broadcastId, flowId, { isTemplate
   }
   if (media?.url && media?.type) {
     const typeMap = { image: 'Image', video: 'Video', document: 'Document' };
-    return { ...base, type: typeMap[media.type] || 'Text', url: media.url, filename: media.filename || '', text: msgText || '' };
+    return { ...base, type: typeMap[media.type] || 'Text', url: media.url, filename: media.filename || '', text: renderPersonalizedText(msgText, contact) };
   }
-  return { ...base, type: 'Text', text: msgText || '' };
+  return { ...base, type: 'Text', text: renderPersonalizedText(msgText, contact) };
 }
 
 // After a successful broadcast send, reflect the message into each recipient's conversation:
@@ -803,6 +848,14 @@ async function processBroadcast(broadcastId, userId, group, contacts, opts) {
       return;
     }
 
+    // A plain-text (non-template) message personalized with one or more `#`-inserted
+    // fields is sent via the request BODY as { text, phones: [{phone, name, email, ...}] }
+    // instead of the usual URL `text=` query param + flat phones[] array, so the external
+    // API can replace each `$token$` with that field's value for each recipient. Multiple
+    // DIFFERENT tokens (e.g. `$name$` + `$email$`) can coexist in the same message.
+    const textTokens = !isTemplate ? extractTextTokens(msgText) : [];
+    const usePersonalizedPhones = textTokens.length > 0;
+
     // ── Build URL query params (everything except phones goes in URL) ────
     const queryParts = [];
     queryParts.push(`token=${encodeURIComponent(SHEET_TOKEN)}`);
@@ -827,6 +880,9 @@ async function processBroadcast(broadcastId, userId, group, contacts, opts) {
           queryParts.push(`params[${i}]=${encodeURIComponent(val)}`);
         });
       }
+    } else if (usePersonalizedPhones) {
+      // טקסט עם פרמטר/ים אישיים לכל נמען ($token$) — הטקסט נשלח ב-body יחד עם
+      // phones[{phone, ...tokens}] (לא ב-query), כדי שה-API יחליף כל טוקן בערך השדה שנבחר לכל מספר.
     } else if (media?.url && media?.type) {
       // מדיה חופשית — שלח את ה-URL כטקסט
       queryParts.push(`text=${encodeURIComponent(msgText || media.url)}`);
@@ -837,8 +893,21 @@ async function processBroadcast(broadcastId, userId, group, contacts, opts) {
 
     const fullUrl = `${SHEET_URL}?${queryParts.join('&')}`;
 
-    // Body: only phones as flat array of strings
-    const body = { phones: phonesArr.map(p => p.phone) };
+    // Body: only phones as flat array of strings — or, when personalizing a plain-text
+    // message, { text, phones: [{phone, ...tokens}] } so each recipient's tokens resolve
+    // to their own selected contact field values.
+    const body = usePersonalizedPhones
+      ? {
+          text: msgText || (media?.url || ''),
+          phones: phonesArr.map(p => {
+            const entry = { phone: p.phone };
+            for (const token of textTokens) {
+              entry[token] = resolveContactField(p.contact, textTokenToFieldRef(token)) || '';
+            }
+            return entry;
+          }),
+        }
+      : { phones: phonesArr.map(p => p.phone) };
 
     console.log(`${TAG} 📤 POST ${fullUrl}`);
     console.log(`${TAG}   → phones: ${phonesArr.length} | template: ${isTemplate ? (templateData?.name || 'N/A') : 'N/A'} | text: ${!isTemplate ? String(msgText || '').substring(0, 50) : 'N/A'} | reportId: ${broadcastId}`);
