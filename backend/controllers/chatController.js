@@ -1945,16 +1945,20 @@ export const respondToMessage = async (req, res) => {
       session.parameters = params;
       session.markModified('parameters');
 
-      // Save to contact custom_field_values if flagged
+      // Save to contact if flagged — either a fixed Contact field (full_name/email)
+      // or a custom_field_values entry (field _id, or varName for legacy flows)
       if (currentNode.data.saveToContact) {
-        // contactFieldKey (field _id) takes precedence; fall back to varName for legacy flows
         const contactKey = currentNode.data.contactFieldKey || varName;
         // session.sender is the customer's phone; session.customer_phone is the bot's phone
         const contactPhone = session.sender || session.customer_phone;
         if (contactKey && contactPhone) {
+          const FIXED_CONTACT_FIELDS = ['full_name', 'email'];
+          const updateDoc = FIXED_CONTACT_FIELDS.includes(contactKey)
+            ? { $set: { [contactKey]: text } }
+            : { $set: { [`custom_field_values.${contactKey}`]: text } };
           Contact.findOneAndUpdate(
             { user_id: session.user_id, phone: contactPhone },
-            { $set: { [`custom_field_values.${contactKey}`]: text } },
+            updateDoc,
             { upsert: true, new: true }
           ).catch(err => console.error('[BOT] Failed to save contact field:', err));
         }

@@ -87,7 +87,7 @@ export interface NodeData {
   onNavigateToNode?: (nodeId: string) => void;
   /** Whether to save the captured value to the contact's custom_field_values */
   saveToContact?: boolean;
-  /** The ContactFieldDef._id to store the value into; required when saveToContact is true */
+  /** Where to store the value when saveToContact is true: 'full_name' | 'email' (fixed Contact fields) or a ContactFieldDef._id (custom field) */
   contactFieldKey?: string;
   /** For action_web_service: HTTP method (default: POST) */
   apiMethod?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';

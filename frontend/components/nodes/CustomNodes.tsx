@@ -710,9 +710,13 @@ export const StartNode = (props: any) => {
   );
 };
 
+const FIXED_CONTACT_FIELDS = [
+  { id: 'full_name', label: 'שם מלא' },
+  { id: 'email', label: 'מייל' },
+];
+
 export const InputTextNode = (props: any) => {
   const { fields: contactFields } = useContactFields();
-  const hasFields = contactFields.length > 0;
 
   return (
     <BaseNode id={props.id} title="קלט: טקסט" icon={<Type size={20} />} type={NodeType.INPUT_TEXT} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} isSearchMatch={props.data.isSearchMatch}>
@@ -741,8 +745,6 @@ export const InputTextNode = (props: any) => {
             type="checkbox"
             className="w-4 h-4 cursor-pointer accent-blue-500 disabled:opacity-40"
             checked={!!props.data.saveToContact}
-            disabled={!hasFields}
-            title={!hasFields ? 'יש להגדיר שדות מוגדרים אישית בדף אנשי קשר תחילה' : undefined}
             onChange={(e) => {
               if (!e.target.checked) {
                 props.data.onChange({ saveToContact: false, contactFieldKey: undefined });
@@ -752,12 +754,7 @@ export const InputTextNode = (props: any) => {
             }}
           />
         </div>
-        {!hasFields && (
-          <p className="text-[11px] text-slate-400 text-right mt-1">
-            הגדר שדות בדף <strong>אנשי קשר</strong> → ניהול שדות
-          </p>
-        )}
-        {props.data.saveToContact && hasFields && (
+        {props.data.saveToContact && (
           <div className="mt-2 flex flex-col gap-1">
             <label className="text-[12px] font-bold text-right" style={{ color: !props.data.contactFieldKey ? '#ef4444' : '#94a3b8' }}>
               {!props.data.contactFieldKey ? '⚠ חובה לבחור שדה לשמירה' : 'בחר שדה לשמירה *'}
@@ -774,10 +771,22 @@ export const InputTextNode = (props: any) => {
               dir="rtl"
             >
               <option value="" disabled>בחר שדה...</option>
-              {contactFields.map((f: any) => (
-                <option key={f._id} value={f._id}>{f.label}</option>
+              {FIXED_CONTACT_FIELDS.map((f) => (
+                <option key={f.id} value={f.id}>{f.label}</option>
               ))}
+              {contactFields.length > 0 && (
+                <optgroup label="שדות מותאמים אישית">
+                  {contactFields.map((f: any) => (
+                    <option key={f._id} value={f._id}>{f.label}</option>
+                  ))}
+                </optgroup>
+              )}
             </select>
+            {/* {contactFields.length === 0 && ( */}
+              <p className="text-[11px] text-slate-500 text-right mt-1">
+                ניתן להגדיר שדות נוספים בדף <strong>אנשי קשר</strong> → ניהול שדות
+              </p>
+            {/* )} */}
           </div>
         )}
       </div>
