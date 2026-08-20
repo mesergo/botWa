@@ -2173,41 +2173,41 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 <RepPushNotifications token={token} />
               ) : null}
               {showAvailability ? (
-            <div ref={availabilityWrapperRef} className="relative" dir="rtl">
-              <button
-                type="button"
-                onClick={() => setAvailabilityOpen(v => !v)}
-                disabled={availabilitySaving}
-                title="שינוי סטטוס זמינות"
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-black border border-slate-200 ${currentAvailability.bg} ${currentAvailability.text} hover:shadow-sm transition-all disabled:opacity-60`}
-              >
-                <span className="relative flex h-2.5 w-2.5">
-                  {currentAvailability.value === 'available' && (
-                    <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-60 ${currentAvailability.dot}`}></span>
+                <div ref={availabilityWrapperRef} className="relative" dir="rtl">
+                  <button
+                    type="button"
+                    onClick={() => setAvailabilityOpen(v => !v)}
+                    disabled={availabilitySaving}
+                    title="שינוי סטטוס זמינות"
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-black border border-slate-200 ${currentAvailability.bg} ${currentAvailability.text} hover:shadow-sm transition-all disabled:opacity-60`}
+                  >
+                    <span className="relative flex h-2.5 w-2.5">
+                      {currentAvailability.value === 'available' && (
+                        <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-60 ${currentAvailability.dot}`}></span>
+                      )}
+                      <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${currentAvailability.dot}`}></span>
+                    </span>
+                    <span>{currentAvailability.label}</span>
+                  </button>
+                  {availabilityOpen && (
+                    <div className="absolute mt-2 right-0 w-44 bg-white rounded-2xl shadow-xl border border-slate-100 py-2 z-50">
+                      {AVAILABILITY_OPTIONS.map(opt => {
+                        const isActive = opt.value === (currentUser?.availability_status || 'available');
+                        return (
+                          <button
+                            key={opt.value}
+                            onClick={() => handleAvailabilitySelect(opt.value)}
+                            className={`w-full flex items-center gap-2 px-4 py-2 text-sm font-bold text-right hover:bg-slate-50 transition-colors ${isActive ? 'bg-slate-50' : ''}`}
+                          >
+                            <span className={`inline-block h-2.5 w-2.5 rounded-full ${opt.dot}`}></span>
+                            <span className="flex-1 text-slate-700">{opt.label}</span>
+                            {isActive && <Check size={14} className="text-blue-600" />}
+                          </button>
+                        );
+                      })}
+                    </div>
                   )}
-                  <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${currentAvailability.dot}`}></span>
-                </span>
-                <span>{currentAvailability.label}</span>
-              </button>
-              {availabilityOpen && (
-                <div className="absolute mt-2 left-0 w-44 bg-white rounded-2xl shadow-xl border border-slate-100 py-2 z-50">
-                  {AVAILABILITY_OPTIONS.map(opt => {
-                    const isActive = opt.value === (currentUser?.availability_status || 'available');
-                    return (
-                      <button
-                        key={opt.value}
-                        onClick={() => handleAvailabilitySelect(opt.value)}
-                        className={`w-full flex items-center gap-2 px-4 py-2 text-sm font-bold text-right hover:bg-slate-50 transition-colors ${isActive ? 'bg-slate-50' : ''}`}
-                      >
-                        <span className={`inline-block h-2.5 w-2.5 rounded-full ${opt.dot}`}></span>
-                        <span className="flex-1 text-slate-700">{opt.label}</span>
-                        {isActive && <Check size={14} className="text-blue-600" />}
-                      </button>
-                    );
-                  })}
                 </div>
-              )}
-            </div>
               ) : null}
             </div>
           )}

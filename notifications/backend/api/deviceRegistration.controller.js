@@ -33,8 +33,9 @@ export function resolveSessionIdentity(req) {
  * @param {{ tenantId: string, userId: string }} identity
  */
 async function listAllowedBotLines(identity) {
-  const BotFlow = (await import('../../../../backend/models/BotFlow.js')).default;
-  const User = (await import('../../../../backend/models/User.js')).default;
+  // From notifications/backend/api → project root is ../../../ (not ../../../../)
+  const BotFlow = (await import('../../../backend/models/BotFlow.js')).default;
+  const User = (await import('../../../backend/models/User.js')).default;
 
   const bots = await BotFlow.find({ user_id: identity.tenantId })
     .select('_id name display_phone_number phone_number_id')
