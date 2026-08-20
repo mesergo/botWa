@@ -2246,6 +2246,63 @@ export const respondToMessage = async (req, res) => {
   }
 };
 
+// Helper: pull a flat array of template body-parameter values out of an external
+// caller's request, regardless of the exact shape they used to send them. External
+// systems integrating with /api/360/:wa_id/send don't all follow the same convention
+// (params[] as an array, an object of numeric keys, a JSON-encoded string, a
+// comma-separated string, or flat param1/param2/... keys), so we try several
+// reasonable shapes in order and return the first one that yields values. This keeps
+// {{1}}, {{2}}... from ever being left unresolved in the saved/displayed message just
+// because the caller used a slightly different (but still reasonable) format.
+const extractTemplateParams = (source) => {
+  const toArrayFromValue = (val) => {
+    if (val === null || val === undefined) return [];
+    if (Array.isArray(val)) return val.map(String);
+    if (typeof val === 'object') {
+      const keys = Object.keys(val);
+      const allNumeric = keys.length > 0 && keys.every(k => /^\d+$/.test(k));
+      const ordered = allNumeric ? keys.sort((a, b) => Number(a) - Number(b)) : keys;
+      return ordered.map(k => String(val[k]));
+    }
+    if (typeof val === 'string') {
+      const trimmed = val.trim();
+      if (!trimmed) return [];
+      if ((trimmed.startsWith('[') && trimmed.endsWith(']')) || (trimmed.startsWith('{') && trimmed.endsWith('}'))) {
+        try {
+          const parsed = JSON.parse(trimmed);
+          const arr = toArrayFromValue(parsed);
+          if (arr.length > 0) return arr;
+        } catch { /* fall through to delimiter split */ }
+      }
+      if (trimmed.includes(',') || trimmed.includes('|')) {
+        return trimmed.split(/[,|]/).map(s => s.trim());
+      }
+      return [trimmed];
+    }
+    return [String(val)];
+  };
+
+  // 1) Try common container keys, in priority order.
+  for (const key of ['params', 'parameters', 'body', 'variables', 'values']) {
+    const arr = toArrayFromValue(source[key]);
+    if (arr.length > 0) return arr;
+  }
+
+  // 2) Fall back to flat top-level keys like param1/param2 or parameter_1/parameter_2.
+  const flatMatches = Object.keys(source || {})
+    .map(k => {
+      const m = k.match(/^param(?:eter)?s?_?(\d+)$/i);
+      return m ? { index: Number(m[1]), key: k } : null;
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.index - b.index);
+  if (flatMatches.length > 0) {
+    return flatMatches.map(({ key }) => String(source[key]));
+  }
+
+  return [];
+};
+
 /**
  * GET/POST /api/360/:wa_id/send
  *
@@ -2306,17 +2363,7 @@ export const sendTemplateExternal = async (req, res) => {
 
     // ── Step 3: Flatten params[] and extract header media ────────────────────
     console.log(`[360-TEMPLATE] 🔢 STEP 3 — Parsing params and header`);
-    const rawParams = source.params || {};
-    let paramsArray;
-    if (Array.isArray(rawParams)) {
-      paramsArray = rawParams.map(String);
-    } else if (rawParams && typeof rawParams === 'object') {
-      paramsArray = Object.keys(rawParams)
-        .sort((a, b) => Number(a) - Number(b))
-        .map(k => String(rawParams[k]));
-    } else {
-      paramsArray = [];
-    }
+    const paramsArray = extractTemplateParams(source);
     console.log(`[360-TEMPLATE]    params (${paramsArray.length}): ${JSON.stringify(paramsArray)}`);
 
     // Walk any nested structure to find media URL + type inside header[...]
@@ -2350,6 +2397,7 @@ export const sendTemplateExternal = async (req, res) => {
     let displayText = paramsArray.length > 0
       ? `[${template}]: ${paramsArray.join(' | ')}`
       : `[${template}]`;
+    let templateButtons = null;
 
     try {
       const apiToken = crypto.createHash('sha1').update(wa_id + 'moomoo').digest('hex');
@@ -2392,6 +2440,17 @@ export const sendTemplateExternal = async (req, res) => {
               }
             }
           }
+          // Extract buttons from BUTTONS component and save for display
+          const buttonsComp = components.find(c => c.type === 'BUTTONS');
+          if (buttonsComp && Array.isArray(buttonsComp.buttons) && buttonsComp.buttons.length > 0) {
+            templateButtons = buttonsComp.buttons.map(b => ({
+              type: b.type || 'QUICK_REPLY',
+              text: b.text || '',
+              ...(b.url ? { url: b.url } : {}),
+              ...(b.phone_number ? { phone_number: b.phone_number } : {})
+            }));
+            console.log(`[360-TEMPLATE]    🔘 Extracted ${templateButtons.length} button(s)`);
+          }
         } else {
           console.log(`[360-TEMPLATE]    ⚠️ Template "${template}" not found in list — using fallback display text`);
         }
@@ -2400,6 +2459,14 @@ export const sendTemplateExternal = async (req, res) => {
       }
     } catch (tplErr) {
       console.warn(`[360-TEMPLATE]    ⚠️ Template fetch error: ${tplErr.message} — using fallback display text`);
+    }
+
+    // Safety net: never leave a raw unresolved {{n}} placeholder in the text we save/display —
+    // this is what would happen if the caller's params didn't cover every placeholder in the
+    // template (e.g. wrong count/shape). Strip any leftovers rather than showing "{{1}}" etc.
+    if (/\{\{\d+\}\}/.test(displayText)) {
+      console.warn(`[360-TEMPLATE]    ⚠️ Unresolved {{n}} placeholder(s) remained after substitution — stripping. text="${displayText.substring(0, 120)}"`);
+      displayText = displayText.replace(/\{\{\d+\}\}/g, '').replace(/[ \t]{2,}/g, ' ').trim();
     }
 
     // ── Step 5: Forward to wa.message.co.il ─────────────────────────────────
@@ -2470,6 +2537,7 @@ export const sendTemplateExternal = async (req, res) => {
       node_id: 'outgoing_template',
       template_name: String(template),
       template_params: paramsArray,
+      ...(templateButtons ? { template_buttons: templateButtons } : {}),
       wa_sent: waSent,
       created: now.toISOString(),
       wamid: null,

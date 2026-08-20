@@ -771,6 +771,16 @@ function buildBroadcastHistoryEntry(groupName, broadcastId, flowId, { isTemplate
   if (isTemplate && templateData) {
     const bodyText = renderTemplateBodyText(templateData, contact);
     const templateMeta = { template_name: templateData.name || '' };
+    // Extract buttons from the template's BUTTONS component so they render in the chat bubble.
+    const buttonsComp = (templateData.components || []).find(c => c.type === 'BUTTONS');
+    if (buttonsComp && Array.isArray(buttonsComp.buttons) && buttonsComp.buttons.length > 0) {
+      templateMeta.template_buttons = buttonsComp.buttons.map(b => ({
+        type: b.type || 'QUICK_REPLY',
+        text: b.text || '',
+        ...(b.url ? { url: b.url } : {}),
+        ...(b.phone_number ? { phone_number: b.phone_number } : {})
+      }));
+    }
     const headerUrl = templateData.params?.header?.url;
     const headerType = templateData.params?.header?.type; // 'image' | 'video' | 'document'
     if (headerUrl && headerType) {

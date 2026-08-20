@@ -2003,6 +2003,27 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                     </a>
                   )}
                   {text && <WhatsAppText text={text} className="leading-snug" />}
+                  {Array.isArray(item.template_buttons) && item.template_buttons.length > 0 && (
+                    <div className="flex flex-col gap-1 mt-2 pt-2 border-t border-amber-200">
+                      {item.template_buttons.map((btn: any, bi: number) =>
+                        btn.type === 'URL' && btn.url ? (
+                          <a key={bi} href={btn.url} target="_blank" rel="noopener noreferrer"
+                            className="flex items-center justify-center gap-1.5 px-3 py-1.5 text-center text-xs font-bold rounded-xl border border-sky-300 bg-sky-50 text-sky-600 hover:bg-sky-100 transition-colors">
+                            <ExternalLink size={11} />{btn.text}
+                          </a>
+                        ) : btn.type === 'PHONE_NUMBER' && btn.phone_number ? (
+                          <a key={bi} href={`tel:${btn.phone_number}`}
+                            className="flex items-center justify-center gap-1.5 px-3 py-1.5 text-center text-xs font-bold rounded-xl border border-emerald-300 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition-colors">
+                            <Phone size={11} />{btn.text}
+                          </a>
+                        ) : (
+                          <div key={bi} className="px-3 py-1.5 text-center text-xs font-bold rounded-xl border border-amber-300 bg-white text-amber-600 cursor-default select-none">
+                            {btn.text}
+                          </div>
+                        )
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

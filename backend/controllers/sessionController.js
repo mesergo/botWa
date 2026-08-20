@@ -2851,6 +2851,19 @@ export const sendTemplateToPhone = async (req, res) => {
       historyEntry.url = h[mediaType]?.link || '';
     }
 
+    // Extract buttons from BUTTONS component and save for display
+    if (templateData.components && Array.isArray(templateData.components)) {
+      const buttonsComp = templateData.components.find(c => c.type === 'BUTTONS');
+      if (buttonsComp && Array.isArray(buttonsComp.buttons) && buttonsComp.buttons.length > 0) {
+        historyEntry.template_buttons = buttonsComp.buttons.map(b => ({
+          type: b.type || 'QUICK_REPLY',
+          text: b.text || '',
+          ...(b.url ? { url: b.url } : {}),
+          ...(b.phone_number ? { phone_number: b.phone_number } : {})
+        }));
+      }
+    }
+
     // Drain any group-broadcast messages queued on this contact while no session existed yet
     // (this agent-initiated conversation isn't tied to one specific bot flow, so drain all of them).
     let initialHistory = [historyEntry];
@@ -3116,6 +3129,18 @@ export const sendAdminMessageToSession = async (req, res) => {
       } else {
         historyEntry.type = 'Text';
         historyEntry.text = displayText || msgText;
+      }
+      // Extract buttons from BUTTONS component and save for display
+      if (templateData.components && Array.isArray(templateData.components)) {
+        const buttonsComp = templateData.components.find(c => c.type === 'BUTTONS');
+        if (buttonsComp && Array.isArray(buttonsComp.buttons) && buttonsComp.buttons.length > 0) {
+          historyEntry.template_buttons = buttonsComp.buttons.map(b => ({
+            type: b.type || 'QUICK_REPLY',
+            text: b.text || '',
+            ...(b.url ? { url: b.url } : {}),
+            ...(b.phone_number ? { phone_number: b.phone_number } : {})
+          }));
+        }
       }
     } else {
       // Regular text message
