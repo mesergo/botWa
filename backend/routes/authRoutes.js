@@ -1,5 +1,5 @@
 import express from 'express';
-import { register, login, getApiToken, checkEmail, listAccountsForEmail, googleAuth, getTemplates, updateDialog360Credentials, getProfile, updateProfile, updateAvailability, logout, getUserRemovalConfig, updateUserRemovalConfig, getMyAccounts, switchAccount, verifyInviteToken, registerFromInvite, registerFromInviteGoogle } from '../controllers/authController.js';
+import { register, login, getApiToken, checkEmail, listAccountsForEmail, googleAuth, getTemplates, updateDialog360Credentials, getProfile, updateProfile, updateAvailability, logout, getUserRemovalConfig, updateUserRemovalConfig, getMyAccounts, switchAccount, verifyInviteToken, registerFromInvite, registerFromInviteGoogle, startPhoneAuth, verifyPhoneAuth } from '../controllers/authController.js';
 import { authenticate } from '../middleware/auth.js';
 
 const router = express.Router();
@@ -9,6 +9,8 @@ router.get('/invite/verify', verifyInviteToken);
 router.post('/invite/register', registerFromInvite);
 router.post('/invite/google', registerFromInviteGoogle);
 router.post('/login', login);
+router.post('/phone/start', startPhoneAuth); // Phone-number login step 1: send OTP via WhatsApp
+router.post('/phone/verify', verifyPhoneAuth); // Phone-number login step 2: verify OTP, issue JWT
 router.post('/google', googleAuth);
 router.get('/check-email', checkEmail); // Check if email already exists
 router.get('/accounts-for-email', listAccountsForEmail); // Lightweight accounts list for pre-login picker

@@ -418,13 +418,19 @@ export default function SmsInApp({
           webhookUrl: '',
           isActive: false,
           notes: 'נוסף אוטומטית מהודעות נכנסות',
+          createdAt: new Date().toISOString(),
         })),
       ];
     });
   }, [messageDestNumbers, isAdmin]);
 
+  // Newest-added line first — falls back to array position when createdAt is missing
   const sortedDestSettings = useMemo(() => {
-    return [...destSettings].sort((a, b) => a.dest.localeCompare(b.dest));
+    return [...destSettings].sort((a, b) => {
+      const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return bTime - aTime;
+    });
   }, [destSettings]);
 
   const visibleDestSettings = useMemo(() => {
@@ -974,7 +980,8 @@ export default function SmsInApp({
       if (prev.some(s => s.dest === toSave.dest)) {
         return prev.map(s => s.dest === toSave.dest ? toSave : s);
       }
-      return [...prev, toSave];
+      // New line row created from the modal — stamp createdAt so it sorts to the top
+      return [...prev, { ...toSave, createdAt: toSave.createdAt || new Date().toISOString() }];
     });
     setEditingDestSetting(null);
 

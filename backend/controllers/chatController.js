@@ -22,6 +22,7 @@ import eventBus from '../utils/eventBus.js';
 import { applyConversationClosedToDoc } from '../utils/conversationActions.js';
 
 import { notifyWaitingCustomerMessage } from '../config/pushNotificationsRuntime.js';
+import { sendExpoPushToUser } from '../utils/expoPush.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -1380,6 +1381,12 @@ export const respondToMessage = async (req, res) => {
           previewText: String(text || '').slice(0, 80),
           clickAction: `/sessions?phone=${encodeURIComponent(sender)}`,
         });
+        // Expo push (mobile) — same trigger, fire-and-forget, never blocks the bot pipeline
+        void sendExpoPushToUser(agentCheckSession.rep_user_id || String(user._id), {
+          title: name || sender || 'לקוח',
+          body: 'הודעה חדשה מלקוח',
+          data: { sessionId: String(agentCheckSession._id) },
+        }).catch((err) => console.error('[EXPO-PUSH] chatController isolated error:', err?.message || err));
         console.log(`[BOT] 🙋 AGENT MODE active for sessionId=${agentCheckSession._id} phone=${phone} — bot suppressed, message recorded`);
         console.log(`${'═'.repeat(80)}\n`);
         return res.json({ StatusId: 1, StatusDescription: 'Agent mode active', sender, messages: [], agentMode: true });
@@ -2185,6 +2192,12 @@ export const respondToMessage = async (req, res) => {
         previewText: String(text || '').slice(0, 80),
         clickAction: `/sessions?phone=${encodeURIComponent(sender)}`,
       });
+      // Expo push (mobile) — same trigger, fire-and-forget, never blocks the bot pipeline
+      void sendExpoPushToUser(session.rep_user_id || String(user._id), {
+        title: name || sender || 'לקוח',
+        body: 'הודעה חדשה מלקוח',
+        data: { sessionId: String(session._id) },
+      }).catch((err) => console.error('[EXPO-PUSH] chatController isolated error:', err?.message || err));
     }
 
     // Build control object if needed
