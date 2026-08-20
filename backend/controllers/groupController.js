@@ -18,14 +18,38 @@ const broadcastQueues = new Map(); // userId -> { running: boolean, queue: Array
 // ── Scheduled broadcast ticker ────────────────────────────────────────────────
 // Every 60s, find broadcasts whose scheduled_at has arrived and fire them via the
 // normal per-user queue — exactly like an immediate send.
+//
+// Expiry: a scheduled broadcast is only allowed to fire within SCHEDULE_EXPIRY_MS of its
+// scheduled_at. If the server was down (e.g. restarted a week later) and misses the window,
+// the ticker marks it 'failed' instead of sending it late.
+const SCHEDULE_EXPIRY_MS = 60 * 60 * 1000; // 1 hour
+
 setInterval(async () => {
   try {
     const due = await GroupBroadcast.find({
       status: 'scheduled',
       scheduled_at: { $lte: new Date() },
-    }).select('_id user_id group_id group_name audience_type audience_contact_ids is_template template_data message media');
+    }).select('_id user_id group_id group_name audience_type audience_contact_ids is_template template_data message media scheduled_at');
 
     for (const rec of due) {
+      const msPastDue = Date.now() - new Date(rec.scheduled_at).getTime();
+      if (msPastDue > SCHEDULE_EXPIRY_MS) {
+        // Too late to send (e.g. server was down past the scheduled time) — expire it instead
+        // of sending an outdated message unexpectedly.
+        const expired = await GroupBroadcast.findOneAndUpdate(
+          { _id: rec._id, status: 'scheduled' },
+          {
+            $set: { status: 'failed', completed_at: new Date() },
+            $push: { errors: { phone: '', status: 'expired', error: 'ההודעה המתוזמנת לא נשלחה — עברה יותר משעה מהמועד המתוזמן (כנראה בשל הפסקת שירות)' } },
+          },
+          { new: true }
+        );
+        if (expired) {
+          console.warn(`[scheduledTicker] ⌛ Broadcast ${rec._id} expired (${Math.round(msPastDue / 60000)}m past scheduled_at) — marked failed, not sent`);
+        }
+        continue;
+      }
+
       // Atomically claim this broadcast — prevents double-firing if two ticks overlap
       const claimed = await GroupBroadcast.findOneAndUpdate(
         { _id: rec._id, status: 'scheduled' },
