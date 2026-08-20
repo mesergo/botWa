@@ -27,12 +27,14 @@ import whatsappWebhookRoutes from './routes/whatsappWebhookRoutes.js';
 import whatsappRegistrationRoutes from './routes/whatsappRegistrationRoutes.js';
 import api360Routes from './routes/api360Routes.js';
 import notificationRoutes from './routes/notificationRoutes.js';
+import deviceRoutes from './routes/deviceRoutes.js';
 import smsInRoutes from './routes/smsInRoutes.js';
 import { connectSmsDb } from './sms-in/smsDb.js';
 import { seedTemplates } from './controllers/templateController.js';
 import { seedUserTypes } from './scripts/seed-user-types.js';
 import { authenticateToken } from './middleware/auth.js';
 import { setPushNotificationService } from './config/pushNotificationsRuntime.js';
+import { registerExpoPushNotifier } from './utils/expoPushNotifier.js';
  
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -99,6 +101,10 @@ async function startServer() {
     app.use('/api', uploadRoutes);  // Upload route
     app.use('/api/360', api360Routes);  // External template-send endpoint (mirrors WA API URL)
     app.use('/api/notifications', notificationRoutes);
+    app.use('/api/devices', deviceRoutes);  // Expo push device token registration
+
+    // Expo push (mobile) — bridges eventBus 'notification:new' to exp.host push
+    registerExpoPushNotifier();
 
     // Push notifications (FCM / FID) — isolated module under /notifications
     try {
