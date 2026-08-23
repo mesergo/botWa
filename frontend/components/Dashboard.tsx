@@ -242,6 +242,9 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
   const [waTemplatesLoading, setWaTemplatesLoading] = useState(false);
   const [templateSettings, setTemplateSettings] = useState<Record<string, boolean>>({});
   const [templateDefaultMedia, setTemplateDefaultMedia] = useState<Record<string, { url: string; type: 'image' | 'video' | 'document' }>>({});
+  // Per-template setting: what happens to the conversation right after this
+  // specific template is sent (no_change / agent / bot).
+  const [templatePostSendMode, setTemplatePostSendMode] = useState<Record<string, 'no_change' | 'agent' | 'bot'>>({});
   const [previewTemplate, setPreviewTemplate] = useState<any | null>(null);
 
   // Internal (self-authored) templates state (Settings tab)
@@ -352,16 +355,19 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
       if (data.success && Array.isArray(data.settings)) {
         const settingsMap: Record<string, boolean> = {};
         const defaultMediaMap: Record<string, { url: string; type: 'image' | 'video' | 'document' }> = {};
+        const postSendModeMap: Record<string, 'no_change' | 'agent' | 'bot'> = {};
         data.settings.forEach((s: any) => {
           if (s.templateName) {
             settingsMap[s.templateName] = s.showInChat ?? true;
             if (s.defaultHeaderMediaUrl && s.defaultHeaderMediaType) {
               defaultMediaMap[s.templateName] = { url: s.defaultHeaderMediaUrl, type: s.defaultHeaderMediaType };
             }
+            postSendModeMap[s.templateName] = s.postSendMode || 'no_change';
           }
         });
         setTemplateSettings(settingsMap);
         setTemplateDefaultMedia(defaultMediaMap);
+        setTemplatePostSendMode(postSendModeMap);
       }
     } catch (err) {
       console.error('Failed to fetch template settings:', err);
@@ -406,6 +412,40 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
       }
     } catch (err) {
       console.error('Error updating template default media:', err);
+    }
+  };
+
+  // Set the post-send mode (no_change / agent / bot) for a template — what
+  // happens to the conversation right after this specific template is sent.
+  const updateTemplatePostSendMode = async (template: any, mode: 'no_change' | 'agent' | 'bot') => {
+    if (!token) return;
+    const templateName = template.name || template.elementName || template.template_name || '';
+    const previousValue = templatePostSendMode[templateName] ?? 'no_change';
+
+    // Optimistic update
+    setTemplatePostSendMode(prev => ({ ...prev, [templateName]: mode }));
+
+    try {
+      const res = await fetch(`${API_BASE}/dialog360-templates/post-send-mode`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          templateName,
+          templateId: template.id,
+          postSendMode: mode,
+        }),
+      });
+
+      if (!res.ok) {
+        setTemplatePostSendMode(prev => ({ ...prev, [templateName]: previousValue }));
+        console.error('Failed to update template post-send mode');
+      }
+    } catch (err) {
+      setTemplatePostSendMode(prev => ({ ...prev, [templateName]: previousValue }));
+      console.error('Error updating template post-send mode:', err);
     }
   };
 
@@ -1779,6 +1819,32 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                                   >
                                     {(templateSettings[name] ?? true) ? <Eye size={14} /> : <EyeOff size={14} />}
                                   </button>
+                                </div>
+                                <div
+                                  className="flex items-center gap-0.5 bg-white border border-slate-200 rounded-lg p-0.5 w-fit"
+                                  onClick={(e) => e.stopPropagation()}
+                                  title="מה קורה לשיחה אחרי שליחת התבנית הזו"
+                                >
+                                  {([
+                                    { value: 'no_change', label: 'ללא שינוי' },
+                                    { value: 'agent', label: '→ נציג' },
+                                    { value: 'bot', label: '→ בוט' },
+                                  ] as const).map(opt => {
+                                    const active = (templatePostSendMode[name] ?? 'no_change') === opt.value;
+                                    return (
+                                      <button
+                                        key={opt.value}
+                                        onClick={() => updateTemplatePostSendMode(tmpl, opt.value)}
+                                        className={`px-2 py-1 rounded-md text-[10px] font-bold transition-all ${
+                                          active
+                                            ? 'bg-sky-500 text-white'
+                                            : 'text-slate-500 hover:bg-slate-100'
+                                        }`}
+                                      >
+                                        {opt.label}
+                                      </button>
+                                    );
+                                  })}
                                 </div>
                                 <div className="flex flex-wrap items-center gap-1.5 mt-2">
                                   {language && (

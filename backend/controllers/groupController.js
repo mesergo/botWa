@@ -10,6 +10,7 @@ import GroupBroadcast from '../models/GroupBroadcast.js';
 import GroupRemovalLog from '../models/GroupRemovalLog.js';
 import { getEffectiveUserId } from '../middleware/auth.js';
 import { buildWACredentials } from '../utils/whatsappSender.js';
+import { resolveTemplatePostSendMode, buildPostSendModeFields } from '../utils/templatePostSendMode.js';
  
 // ── Broadcast Queue (per-user) ────────────────────────────────────────────────
 // Ensures broadcasts for the same user run one at a time, never in parallel.
@@ -806,26 +807,32 @@ function buildBroadcastHistoryEntry(groupName, broadcastId, flowId, { isTemplate
 // - otherwise, queue it on Contact.pending_history — drained when their next session opens (chatController.js)
 // Each recipient gets its OWN history entry (not a shared one) so personalized template
 // params (__field:full_name etc.) show the real value for that specific contact.
-async function saveBroadcastToSessions(userId, flowId, broadcastId, groupName, sendOpts, phonesArr) {
+async function saveBroadcastToSessions(userId, flowId, broadcastId, groupName, sendOpts, phonesArr, postSendMode = 'no_change') {
   const normalizedPhones = phonesArr.map(p => p.phone);
   if (normalizedPhones.length === 0) return;
 
-  // Find the most recent session per phone for this bot
+  // Find the most recent session per phone for this bot (also grab its current
+  // status, needed to compute per-template post-send mode field updates below)
   const latestSessions = await BotSession.aggregate([
     { $match: { user_id: String(userId), flow_id: flowId, sender: { $in: normalizedPhones } } },
     { $sort: { createdAt: -1 } },
-    { $group: { _id: '$sender', sessionId: { $first: '$_id' } } },
+    { $group: { _id: '$sender', sessionId: { $first: '$_id' }, status: { $first: '$status' } } },
   ]);
-  const sessionIdByPhone = new Map(latestSessions.map(s => [s._id, s.sessionId]));
+  const sessionInfoByPhone = new Map(latestSessions.map(s => [s._id, { sessionId: s.sessionId, status: s.status }]));
 
   const sessionOps = [];
   const contactOps = [];
 
   for (const p of phonesArr) {
     const entry = buildBroadcastHistoryEntry(groupName, broadcastId, flowId, sendOpts, p.contact);
-    const sessionId = sessionIdByPhone.get(p.phone);
-    if (sessionId) {
-      sessionOps.push({ updateOne: { filter: { _id: sessionId }, update: { $push: { process_history: entry } } } });
+    const info = sessionInfoByPhone.get(p.phone);
+    if (info?.sessionId) {
+      const update = { $push: { process_history: entry } };
+      if (postSendMode !== 'no_change') {
+        const postSendFields = buildPostSendModeFields(postSendMode, info.status);
+        if (postSendFields) update.$set = postSendFields;
+      }
+      sessionOps.push({ updateOne: { filter: { _id: info.sessionId }, update } });
     } else if (p.contact?._id) {
       contactOps.push({ updateOne: { filter: { _id: p.contact._id }, update: { $push: { pending_history: entry } } } });
     }
@@ -1043,7 +1050,12 @@ async function processBroadcast(broadcastId, userId, group, contacts, opts) {
       // existing sessions get it right away; contacts with no session yet get it
       // queued in Contact.pending_history and drained when their next session opens.
       if (flowId) {
-        saveBroadcastToSessions(userId, flowId, broadcastId, group.name, { isTemplate, templateData, msgText, media }, phonesArr)
+        // Single broadcast = single template = resolve the post-send mode ONCE
+        // (not per-recipient).
+        const postSendMode = (isTemplate && templateData?.name)
+          ? await resolveTemplatePostSendMode(userId, templateData.name)
+          : 'no_change';
+        saveBroadcastToSessions(userId, flowId, broadcastId, group.name, { isTemplate, templateData, msgText, media }, phonesArr, postSendMode)
           .catch(err => console.error(`${TAG} Failed to save broadcast to session histories:`, err));
       }
     } else {

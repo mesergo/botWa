@@ -34,3 +34,15 @@
 33	מסמן session כלא פעיל ללא צורך בהרשאת Authorization	PATCH	/api/sessions/:id/deactivate	:id	אין	אין
 34	מזריק הודעה חיצונית ל-session, למשל ממערכת חיצונית או שירות משלים	POST	/api/sessions/send-message	אין	sessionId, message, simulator_id?	Content-Type: application/json
 35	מחזיר את הודעות ה-session עם תמיכה ב-polling וסינון לפי זמן או simulator	GET	/api/sessions/:sessionId/messages	:sessionId, since?, simulator_id?	אין	אין
+36	נרשם עסק/לקוח חדש ומתחבר מיידית עם טוקן (ללא login נפרד)	POST	/api/auth/register	אין	businessName/name, email, phone, password, role?	Content-Type: application/json
+37	שולח קוד אימות (OTP) בן 6 ספרות בוואטסאפ למספר טלפון קיים במערכת	POST	/api/auth/phone/start	אין	phone	Content-Type: application/json
+38	מאמת קוד OTP ומחזיר טוקן+משתמש; אם יש כמה חשבונות לאותו טלפון מבקש בחירה	POST	/api/auth/phone/verify	אין	phone, code, accountId?	Content-Type: application/json
+39	שולח הודעה/מדיה/טמפלייט לכל חברי קבוצה קיימת, מיידי או מתוזמן	POST	/api/groups/:id/broadcast	:id	message / media / templateData, bot_id?, scheduled_at?, exclude_group_id?	Authorization: Bearer <token>; Content-Type: application/json
+40	שולח לקהל מותאם אישית המורכב מאנשי קשר, קבוצות ומספרים ידניים	POST	/api/groups/broadcast-custom	אין	message/media/templateData, contact_ids?, phones?, group_ids?, bot_id?, scheduled_at?	Authorization: Bearer <token>; Content-Type: application/json
+41	מציג תצוגה מקדימה של גודל והרכב הקהל המותאם לפני שליחה בפועל	POST	/api/groups/broadcast-custom/preview	אין	contact_ids?, phones?, group_ids?	Authorization: Bearer <token>; Content-Type: application/json
+42	מחזיר רשימת קמפיינים (broadcasts) עם סינון לפי קבוצה והגבלת כמות	GET	/api/groups/broadcasts	group_id?, limit?	אין	Authorization: Bearer <token>
+43	מחזיר סטטוס מלא של קמפיין ספציפי כולל רשימת נמענים ושגיאות	GET	/api/groups/broadcasts/:id	:id	אין	Authorization: Bearer <token>
+44	ממשיך קמפיין broadcast שנעצר או נכשל	POST	/api/groups/broadcasts/:id/resume	:id	אין	Authorization: Bearer <token>
+45	מבטל קמפיין שעדיין במצב מתוזמן (scheduled בלבד)	DELETE	/api/groups/broadcasts/:id/cancel	:id	אין	Authorization: Bearer <token>
+46	מסמן קמפיין כהושלם; callback חיצוני ציבורי ללא אימות מהשירות השולח	GET/POST	/api/groups/broadcasts/:id/complete	:id	אין	אין
+47	רושם/מרענן Expo push token של מכשיר עבור המשתמש המחובר (upsert לפי token)	POST	/api/devices/token	אין	token, platform?	Authorization: Bearer <token>; Content-Type: application/json
