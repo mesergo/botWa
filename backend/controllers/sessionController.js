@@ -8,13 +8,13 @@ import Option from '../models/Option.js';
 import User from '../models/User.js';
 import Contact from '../models/Contact.js';
 import Notification from '../models/Notification.js';
-import { reconstructTimeRoutingBranches, isTimeRoutingBranchOption, findMatchedBranchIndex } from '../utils/timeRouting.js';
 import fetch from 'node-fetch'; 
 import { getEffectiveUserId, resolvePermissions, hasPermission } from '../middleware/auth.js';
 import { pushMessagesToWhatsApp } from '../utils/whatsappSender.js';
 import eventBus from '../utils/eventBus.js';
 import { buildConversationClosedHistoryEntry, buildConversationClosedSetFragment } from '../utils/conversationActions.js';
 import { normalizePhone } from '../utils/phone.js';
+import { resolveTemplatePostSendMode, buildPostSendModeFields } from '../utils/templatePostSendMode.js';
 
 const SSE_SECRET_KEY = 'dfghjukiolp;[p0o9i8uytgbhnjmk,l.;p9876543t4rre2asd';
 const CASE1_REMINDER_MINUTES = 30;
@@ -166,22 +166,18 @@ const buildCase2TriggerFlowGraph = async (session) => {
       runtimeNode.data.options = wOptions.filter(o => o.operator !== 'default').map(o => o.value);
     }
 
-    if (w.type === 'action_time_routing') {
-      Object.assign(runtimeNode.data, reconstructTimeRoutingBranches(wOptions));
-    }
-
     if (w.next) {
       edges.push({ source: w.id, target: w.next });
     }
 
     if (w.type === 'action_time_routing') {
-      const branchOpts = wOptions.filter(isTimeRoutingBranchOption);
-      const defaultOpts = wOptions.filter(o => o.operator === 'default');
-      branchOpts.forEach((o, i) => {
-        if (o.next) edges.push({ source: w.id, sourceHandle: `option-${i}`, target: o.next });
-      });
-      defaultOpts.forEach((o) => {
-        if (o.next) edges.push({ source: w.id, sourceHandle: 'option-default', target: o.next });
+      let rangeIndex = 0;
+      wOptions.forEach((o) => {
+        if (o.next) {
+          const sourceHandle = o.operator === 'default' ? 'option-default' : `option-${rangeIndex}`;
+          edges.push({ source: w.id, sourceHandle, target: o.next });
+        }
+        if (o.operator === 'time_range' || o.operator === 'date_range' || o.operator === 'weekday_range') rangeIndex += 1;
       });
     } else if (w.type === 'action_web_service') {
       const defaultOpts = wOptions.filter(o => o.operator === 'default');
@@ -288,9 +284,56 @@ const buildCase2TriggerMessages = async (session, startNodeId) => {
         return { messages, stopNodeId: node.id, waitingTextInput: false, supported: true };
       }
       case 'action_time_routing': {
+        const routingMode = nodeData.routingMode || 'time';
         const now = new Date();
         const israelTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Jerusalem' }));
-        const matchedIndex = findMatchedBranchIndex(nodeData.timeRoutingBranches || [], israelTime);
+        let matchedIndex = -1;
+
+        if (routingMode === 'date') {
+          const israelDateStr = [
+            israelTime.getFullYear(),
+            String(israelTime.getMonth() + 1).padStart(2, '0'),
+            String(israelTime.getDate()).padStart(2, '0')
+          ].join('-');
+          const dateRanges = Array.isArray(nodeData.dateRanges) ? nodeData.dateRanges : [];
+          for (let i = 0; i < dateRanges.length; i += 1) {
+            const range = dateRanges[i];
+            if (range?.fromDate && range?.toDate && israelDateStr >= range.fromDate && israelDateStr <= range.toDate) {
+              matchedIndex = i;
+              break;
+            }
+          }
+        } else if (routingMode === 'weekday') {
+          const israelDay = israelTime.getDay();
+          const weekdayRanges = Array.isArray(nodeData.weekdayRanges) ? nodeData.weekdayRanges : [];
+          for (let i = 0; i < weekdayRanges.length; i += 1) {
+            const range = weekdayRanges[i] || {};
+            const fromDay = Number.isInteger(range.fromDay) ? range.fromDay : 0;
+            const toDay = Number.isInteger(range.toDay) ? range.toDay : 6;
+            const inRange = fromDay <= toDay
+              ? (israelDay >= fromDay && israelDay <= toDay)
+              : (israelDay >= fromDay || israelDay <= toDay);
+            if (inRange) {
+              matchedIndex = i;
+              break;
+            }
+          }
+        } else {
+          const israelHour = israelTime.getHours();
+          const timeRanges = Array.isArray(nodeData.timeRanges) ? nodeData.timeRanges : [];
+          for (let i = 0; i < timeRanges.length; i += 1) {
+            const range = timeRanges[i] || {};
+            const fromHour = parseInt(range.fromHour, 10) || 0;
+            const toHour = parseInt(range.toHour, 10) || 23;
+            const inRange = fromHour <= toHour
+              ? (israelHour >= fromHour && israelHour < toHour)
+              : (israelHour >= fromHour || israelHour < toHour);
+            if (inRange) {
+              matchedIndex = i;
+              break;
+            }
+          }
+        }
 
         currentNodeId = matchedIndex >= 0
           ? findNextEdgeTarget(edges, currentNodeId, `option-${matchedIndex}`)
@@ -1024,47 +1067,40 @@ export const getContacts = async (req, res) => {
         $addFields: {
   // מקבץ לפי השולח (האדם שיצר קשר), לא לפי מספר הבוט
   contactKey: { $ifNull: ['$sender', { $ifNull: ['$customer_phone', 'לא ידוע'] }] },
-  _date: { $ifNull: ['$created_at', '$createdAt'] }
+  _date: { $ifNull: ['$created_at', '$createdAt'] },
+  // Last entry in this session's process_history (may be an incoming customer
+  // message OR an outgoing agent/bot message) — used below to derive the
+  // real "last activity" timestamp, since _date only reflects when the
+  // session document itself was created, not later messages appended to it.
+  _lastHistoryEntry: { $arrayElemAt: ['$process_history', -1] }
 }
       },
       {
-        // `_date` (session created_at) only reflects when the *session document* was
-        // created — it does NOT change when new messages (agent/bot/user) are pushed
-        // onto process_history of an EXISTING session, so a reply sent from an old
-        // session never bumped the contact to the top of the list. Instead, derive
-        // the true "last activity" timestamp from the newest `created` value across
-        // every process_history entry (falls back to `_date` when history is empty
-        // or has no parseable dates), covering incoming AND outgoing messages alike.
         $addFields: {
+          // Real last-activity timestamp for this session: prefer the last
+          // process_history entry's `created` (covers agent/bot replies sent
+          // into an already-open session), falling back to the session's own
+          // creation date when there's no history yet or `created` can't be parsed.
           _lastMsgDate: {
-            $max: {
-              $filter: {
-                input: {
-                  $concatArrays: [
-                    [{ $convert: { input: '$_date', to: 'date', onError: null, onNull: null } }],
-                    {
-                      $map: {
-                        input: { $ifNull: ['$process_history', []] },
-                        as: 'h',
-                        in: { $convert: { input: '$$h.created', to: 'date', onError: null, onNull: null } }
-                      }
-                    }
-                  ]
-                },
-                as: 'd',
-                cond: { $ne: ['$$d', null] }
-              }
+            $convert: {
+              input: { $ifNull: ['$_lastHistoryEntry.created', '$_date'] },
+              to: 'date',
+              onError: '$_date',
+              onNull: '$_date'
             }
           }
         }
       },
       // Sort newest-first so $first inside $group returns the latest session's status
-      { $sort: { _lastMsgDate: -1 } },
+      { $sort: { _date: -1 } },
       {
         $group: {
           _id: '$contactKey',
           sessionCount: { $sum: 1 },
           lastSeen: { $max: '$_date' },
+          // Last message in EITHER direction (customer, agent, or bot) across
+          // all of this contact's sessions — this is what the conversation
+          // list should be sorted by.
           lastMessageAt: { $max: '$_lastMsgDate' },
           widgetIds: { $addToSet: '$widget_id' },
           flowIds: { $addToSet: '$flow_id' },
@@ -1618,15 +1654,23 @@ export const getSessionsByPhone = async (req, res) => {
   }
 };
 
-// Same access rules as getSessionsByPhone, but returns only the single most recent
-// message with the contact (optionally scoped to a specific bot via botId).
+// Returns only the last message exchanged with a given contact through a specific
+// destination/bot phone number — a lightweight alternative to getSessionsByPhone
+// for callers that just need to know "what was the last message", not the full history.
+//
+// phone     = the contact's (customer's) phone number (BotSession.sender / customer_phone)
+// botPhone  = the number the message was sent to/from (BotFlow.display_phone_number),
+//             matched against BotSession.customer_phone for direct WhatsApp sessions.
 export const getLastMessageByPhone = async (req, res) => {
   const userId = getEffectiveUserId(req);
   const phone = normalizePhone(req.query.phone || '');
-  const botId = req.query.botId || '';
-  if (!phone) return res.status(400).json({ error: 'מספר טלפון הוא שדה חובה' });
+  const botPhoneRaw = req.query.botPhone || '';
+  const botPhoneDigits = botPhoneRaw.replace(/\D/g, '');
+  if (!phone) return res.status(400).json({ error: 'מספר טלפון של איש הקשר הוא שדה חובה' });
+  if (!botPhoneDigits) return res.status(400).json({ error: 'מספר הטלפון היעד (botPhone) הוא שדה חובה' });
 
   try {
+    // Enforce the same assigned-only restriction used by getContacts / getSessionsByPhone
     const userDoc = await User.findById(req.userId).select('rep_group_ids role user_type_id').lean();
     const perms = await resolvePermissions(userDoc || { role: req.user?.role });
     const viewOnlyAssigned = hasPermission(perms, 'sessions.view_assigned_only') && !hasPermission(perms, 'sessions.view_all');
@@ -1641,24 +1685,17 @@ export const getLastMessageByPhone = async (req, res) => {
       allowedByAssignment = assignedToRep;
     }
 
-    const [userBots, userWidgets] = await Promise.all([
-      BotFlow.find({ user_id: userId }).lean(),
-      Widget.find({ $or: [{ user_id: userId }, { user_id: userId.toString() }] }).select('id flow_id').lean()
-    ]);
+    // Resolve which bot(s)/flow(s) belong to this user and match botPhoneDigits
+    const userBots = await BotFlow.find({ user_id: userId }).lean();
+    const matchedBotIds = userBots
+      .filter(b => (b.display_phone_number || '').replace(/\D/g, '') === botPhoneDigits)
+      .map(b => b._id.toString());
 
-    const botNameMap = {};
-    userBots.forEach(b => { botNameMap[b._id.toString()] = b.name; });
-    const botIds = userBots.map(b => b._id.toString());
-
-    const botWidgets = await Widget.find({ flow_id: { $in: botIds } }).select('id flow_id').lean();
-    const allWidgets = [...userWidgets, ...botWidgets];
-    const widgetIds = [...new Set(allWidgets.map(w => w.id).filter(Boolean))];
-    const widgetFlowMap = {};
-    allWidgets.forEach(w => { if (w.id) widgetFlowMap[w.id] = w.flow_id; });
-
-    const botWidgetIds = botId
-      ? allWidgets.filter(w => w.flow_id?.toString() === botId).map(w => w.id).filter(Boolean)
-      : null;
+    const userWidgets = await Widget.find({ $or: [{ user_id: userId }, { user_id: userId.toString() }] }).select('id flow_id').lean();
+    const matchedWidgetIds = userWidgets
+      .filter(w => matchedBotIds.includes((w.flow_id || '').toString()))
+      .map(w => w.id)
+      .filter(Boolean);
 
     const collection = mongoose.connection.collection('BotSession');
 
@@ -1668,21 +1705,26 @@ export const getLastMessageByPhone = async (req, res) => {
         $or: [
           { user_id: userId },
           { user_id: userId.toString() },
-          { widget_id: { $in: widgetIds } }
+          { widget_id: { $in: matchedWidgetIds } },
+          { flow_id: { $in: matchedBotIds } }
+        ]
+      },
+      {
+        // Destination/bot number match: direct WhatsApp sessions store the bot's
+        // number in customer_phone; widget/flow-based sessions are matched above.
+        $or: [
+          { flow_id: { $in: matchedBotIds } },
+          { widget_id: { $in: matchedWidgetIds } },
+          { customer_phone: { $regex: `${botPhoneDigits}$` } }
         ]
       }
     ];
 
-    if (botId && botWidgetIds !== null) {
-      const botOrConditions = [{ flow_id: botId }];
-      if (botWidgetIds.length > 0) botOrConditions.push({ widget_id: { $in: botWidgetIds } });
-      matchConditions.push({ $or: botOrConditions });
-    }
-
     const sessions = await collection.aggregate([
       { $match: { $and: matchConditions } },
       { $addFields: { _sortDate: { $ifNull: ['$created_at', '$createdAt', { $toDate: '$_id' }] } } },
-      { $sort: { _sortDate: 1 } }
+      { $sort: { _sortDate: -1 } },
+      { $limit: 1 }
     ]).toArray();
 
     if (viewOnlyAssigned && !allowedByAssignment) {
@@ -1693,25 +1735,27 @@ export const getLastMessageByPhone = async (req, res) => {
       );
     }
     if (viewOnlyAssigned && !allowedByAssignment) {
-      return res.json(null);
+      return res.json({ message: null });
     }
 
-    if (sessions.length === 0) return res.json(null);
+    const session = sessions[0];
+    if (!session) return res.json({ message: null });
 
-    const lastSession = sessions[sessions.length - 1];
-    const history = lastSession.process_history || [];
-    const lastMessage = history.length > 0 ? history[history.length - 1] : null;
-    const flowId = widgetFlowMap[lastSession.widget_id] || lastSession.flow_id;
-    const botName = flowId ? botNameMap[flowId] : null;
+    const history = session.process_history || [];
+    const lastEntry = history.length > 0 ? history[history.length - 1] : null;
+    if (!lastEntry) return res.json({ message: null });
 
     res.json({
-      session_id: lastSession._id.toString(),
-      phone: lastSession.customer_phone || lastSession.sender || phone,
-      widget_id: lastSession.widget_id,
-      bot_name: botName || 'לא ידוע',
-      is_agent: lastSession.is_agent || false,
-      status: lastSession.status || 'bot',
-      message: lastMessage
+      message: {
+        text: lastEntry.text ?? lastEntry.content ?? '',
+        type: lastEntry.type || null,
+        sender: lastEntry.sender || null,
+        agent_name: lastEntry.agent_name || null,
+        created: lastEntry.created || null,
+        wa_sent: lastEntry.wa_sent
+      },
+      sessionId: session._id.toString(),
+      status: session.status || 'bot'
     });
   } catch (err) {
     console.error('getLastMessageByPhone error:', err);
@@ -2685,6 +2729,18 @@ export const sendAgentMessage = async (req, res) => {
       'reminder_case2.claim_until': null
     };
 
+    // Per-template post-send mode: switch conversation to agent/bot mode after
+    // this specific template is sent (default 'no_change' preserves the
+    // behavior computed above).
+    if (isTemplate && templateData && waSent) {
+      const postSendMode = await resolveTemplatePostSendMode(getEffectiveUserId(req), templateData.name);
+      const postSendFields = buildPostSendModeFields(postSendMode, session.status);
+      if (postSendFields) {
+        update.$set = { ...update.$set, ...postSendFields };
+        newStatus = postSendFields.status;
+      }
+    }
+
     await collection.updateOne(
       { _id: new mongoose.Types.ObjectId(id) },
       update
@@ -2884,6 +2940,16 @@ export const sendTemplateToPhone = async (req, res) => {
       created_at: now,
       process_history: initialHistory
     };
+
+    // Per-template post-send mode: a brand-new session defaults to agent/waiting
+    // (today's behavior), unless the template is configured to switch to bot mode.
+    const postSendMode = await resolveTemplatePostSendMode(getEffectiveUserId(req), templateData.name);
+    if (postSendMode === 'bot') {
+      sessionDoc.is_agent = false;
+      sessionDoc.agent_since = null;
+      sessionDoc.status = 'bot';
+    }
+
     const insertResult = await collection.insertOne(sessionDoc);
     const sessionId = insertResult.insertedId.toString();
     console.log(`[sendTemplateToPhone] 💾 Created BotSession ${sessionId} for phone=${normalizedPhone}`);
@@ -3124,15 +3190,29 @@ export const sendAdminMessageToSession = async (req, res) => {
     }
     
     console.log(`[sendAdminMessageToSession] 💾 Saving history entry:`, JSON.stringify(historyEntry, null, 2));
-    
+
+    const adminUpdateSet = {
+      is_agent: true,
+      agent_since: now
+    };
+
+    // Per-template post-send mode: only applies to actual template sends,
+    // matching the other send paths' template-only trigger. When 'no_change'
+    // (default), preserves today's exact behavior (is_agent/agent_since only,
+    // status untouched).
+    if (isTemplate && templateData && waSent) {
+      const postSendMode = await resolveTemplatePostSendMode(String(session.user_id || ''), templateData.name);
+      const postSendFields = buildPostSendModeFields(postSendMode, session.status);
+      if (postSendFields) {
+        Object.assign(adminUpdateSet, postSendFields);
+      }
+    }
+
     await collection.updateOne(
       { _id: new mongoose.Types.ObjectId(sessionId) },
       {
         $push: { process_history: historyEntry },
-        $set: {
-          is_agent: true,
-          agent_since: now
-        }
+        $set: adminUpdateSet
       }
     );
 
