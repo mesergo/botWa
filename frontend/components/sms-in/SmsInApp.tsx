@@ -116,6 +116,9 @@ export default function SmsInApp({
     return parsed.map(normalizeDestSetting);
   });
   const [destSettingsFromMongo, setDestSettingsFromMongo] = useState(false);
+  // true when the loaded settings came from the account-scoped endpoint, i.e. every
+  // returned line belongs to this account (sub-users included)
+  const [destSettingsScoped, setDestSettingsScoped] = useState(false);
 
   const [webhookLogs, setWebhookLogs] = useState<WebhookLog[]>(() => {
     const saved = localStorage.getItem('mesergo_webhook_logs');
@@ -181,7 +184,13 @@ export default function SmsInApp({
     collection?: string;
     collectionsDetected?: string[];
   }>({ connected: false, configured: false });
+  // The initial dbStatus is a placeholder — don't warn about the connection before
+  // the real status arrives
+  const [dbStatusChecked, setDbStatusChecked] = useState(false);
   const [messagesSource, setMessagesSource] = useState<'mongodb' | 'local' | null>(null);
+  // 'unavailable' = server answered but the SMS database is unreachable/unconfigured,
+  // 'failed' = the request itself never completed
+  const [messagesLoadError, setMessagesLoadError] = useState<'unavailable' | 'failed' | null>(null);
   const [isLoadingMessages, setIsLoadingMessages] = useState<boolean>(false);
   const [searchTotal, setSearchTotal] = useState<number | null>(null);
 
@@ -210,6 +219,7 @@ export default function SmsInApp({
       const res = await fetch(`${API_BASE}/status`);
       const data = await res.json();
       setDbStatus(data);
+      setDbStatusChecked(true);
       return data;
     } catch (e) {
       console.error('Error fetching DB status', e);
@@ -252,6 +262,7 @@ export default function SmsInApp({
       if (Array.isArray(data.settings)) {
         setDestSettings(data.settings.map(normalizeDestSetting));
         setDestSettingsFromMongo(true);
+        setDestSettingsScoped(data.scoped === true);
       }
     } catch (e) {
       console.error('Error fetching dest settings:', e);
@@ -319,11 +330,22 @@ export default function SmsInApp({
           setMessages(data.messages);
           setSearchTotal(Number(data.total) || 0);
           setMessagesSource('mongodb');
+          setMessagesLoadError(null);
+        } else {
+          // The API answers with an empty fallback payload when the SMS database is
+          // unreachable — without this branch the table would look simply "empty".
+          setMessages([]);
+          setSearchTotal(0);
+          setMessagesSource('local');
+          setMessagesLoadError('unavailable');
+          fetchDbStatus();
         }
       } catch (e) {
         if ((e as Error).name !== 'AbortError') {
           console.error('Error loading SMS messages:', e);
-          showToastMsg('טעינת הודעות ה-SMS נכשלה', 'error');
+          setMessages([]);
+          setSearchTotal(null);
+          setMessagesLoadError('failed');
         }
       } finally {
         if (!controller.signal.aborted) setIsLoadingMessages(false);
@@ -452,9 +474,17 @@ export default function SmsInApp({
     return idOrName;
   };
 
-  /** Dest lines belonging to the logged-in customer / admin-user account */
+  /**
+   * Dest lines belonging to the logged-in account. When the settings came from the
+   * scoped endpoint every returned line is already the account's own — matching by
+   * userId there would hide lines from sub-users, whose id differs from the owner
+   * account the line is assigned to.
+   */
   const myAssignedDests = useMemo(() => {
     if (seeAllMessages || !userId) return null;
+    if (destSettingsScoped) {
+      return new Set(destSettings.map(ds => ds.dest));
+    }
     return new Set(
       destSettings
         .filter(ds =>
@@ -464,12 +494,40 @@ export default function SmsInApp({
         )
         .map(ds => ds.dest)
     );
-  }, [seeAllMessages, userId, userName, userEmail, destSettings]);
+  }, [seeAllMessages, userId, userName, userEmail, destSettings, destSettingsScoped]);
 
   const showToastMsg = (text: string, type: 'success' | 'info' | 'error' = 'success') => {
     setToast({ text, type });
     setTimeout(() => setToast(null), 4000);
   };
+
+  /**
+   * Why the messages table is empty for reasons that have nothing to do with the
+   * filters — an unreachable/unconfigured SMS database or a failed request both
+   * return an empty list, which on its own is indistinguishable from "no matches".
+   */
+  const smsDbNotice = useMemo(() => {
+    if (messagesLoadError === 'failed') {
+      return {
+        title: 'לא ניתן להתחבר לשרת',
+        detail: 'בקשת ההודעות נכשלה. בדוק שהשרת (backend) פועל ושהכתובת נגישה מהדפדפן.',
+      };
+    }
+    if (dbStatusChecked && !dbStatus.configured) {
+      return {
+        title: 'מסד ה-SMS אינו מוגדר',
+        detail: dbStatus.message || 'חסר SMS_MONGODB_URI בהגדרות השרת (backend/.env) — לכן אין מאיפה לטעון הודעות.',
+      };
+    }
+    if (messagesLoadError === 'unavailable' || (dbStatusChecked && dbStatus.configured && !dbStatus.connected)) {
+      return {
+        title: 'אין חיבור למסד ה-SMS',
+        detail: dbStatus.message
+          || 'השרת לא הצליח להתחבר למסד ה-SMS החיצוני. ההודעות אינן נטענות עד שהחיבור יחזור.',
+      };
+    }
+    return null;
+  }, [messagesLoadError, dbStatus, dbStatusChecked]);
 
   // Login handler
   const handleLogin = (e: React.FormEvent) => {
@@ -1374,6 +1432,23 @@ export default function SmsInApp({
                 {activeTab === 'sms_in' && (
                   <div className="space-y-4">
 
+                    {smsDbNotice && (
+                      <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4 flex items-start gap-3">
+                        <AlertCircle size={18} className="text-rose-600 mt-0.5 flex-shrink-0" />
+                        <div className="min-w-0">
+                          <p className="text-sm font-black text-rose-900">{smsDbNotice.title}</p>
+                          <p className="text-xs font-semibold text-rose-800/80 mt-1 leading-relaxed break-words">
+                            {smsDbNotice.detail}
+                          </p>
+                          {(dbStatus.dbName || dbStatus.collection) && (
+                            <p className="text-[11px] font-semibold text-rose-700/70 mt-1.5" dir="ltr">
+                              {dbStatus.dbName || '—'} / {dbStatus.collection || '—'}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
                     {/* ADVANCED FILTER BAR */}
                     <div className="bg-white shadow-sm rounded-2xl border border-slate-100 p-5 space-y-4">
                       <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
@@ -1649,7 +1724,9 @@ export default function SmsInApp({
                           <AlertCircle size={48} strokeWidth={1} />
                           <p className="text-lg font-bold text-center text-slate-700">לא נמצאו הודעות SMS תואמות</p>
                           <p className="text-sm text-slate-400 font-semibold text-center">
-                            {!isAdmin && myAssignedDests && myAssignedDests.size === 0
+                            {smsDbNotice
+                              ? 'ההודעות אינן נטענות כרגע — ראה את ההודעה בראש המסך.'
+                              : !isAdmin && myAssignedDests && myAssignedDests.size === 0
                               ? 'עדיין לא שויך אליך קו SMS. פנה למנהל המערכת לשיוך קו.'
                               : 'נסה לשנות את פרמטרי החיפוש או לבטל מסננים קיימים.'}
                           </p>

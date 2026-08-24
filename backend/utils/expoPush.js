@@ -1,84 +1,85 @@
-/**
- * expoPush.js
- * Shared utility for sending Expo push notifications via
- * https://exp.host/--/api/v2/push/send. Modeled on whatsappSender.js
- * (same fire-and-forget / never-throw / [PREFIX] logging style).
- */
 import fetch from 'node-fetch';
 import ExpoDeviceToken from '../models/ExpoDeviceToken.js';
 
-const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
-// Expo API accepts at most 100 messages per request.
-const EXPO_CHUNK_SIZE = 100;
+const EXPO_PUSH_ENDPOINT = 'https://exp.host/--/api/v2/push/send';
 
-const chunk = (arr, size) => {
-  const out = [];
-  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
-  return out;
-};
+// Expo rejects requests carrying more than 100 notifications.
+const MAX_MESSAGES_PER_REQUEST = 100;
 
 /**
- * Send an Expo push notification to every registered device of a user.
- * Minimal payload only (title + generic body) — never includes actual
- * message text, matching the existing FCM security posture.
+ * Sends an Expo push notification to every valid device registered by a user.
+ *
+ * Callers treat this as fire-and-forget (`void sendExpoPushToUser(...)`), so it
+ * never throws: any failure is logged and reported through the return value.
  *
  * @param {string} userId
- * @param {{ title?: string, body?: string, data?: object }} payload
- * @returns {Promise<{ success: boolean, skipped?: boolean, reason?: string, error?: string }>}
+ * @param {{ title?: string, body?: string, data?: Record<string, unknown> }} payload
+ * @returns {Promise<{ sent: number, invalidated: number }>}
  */
-export const sendExpoPushToUser = async (userId, { title, body, data } = {}) => {
-  try {
-    if (!userId) return { success: true, skipped: true, reason: 'no_user_id' };
+export async function sendExpoPushToUser(userId, payload = {}) {
+  const result = { sent: 0, invalidated: 0 };
 
-    const tokens = await ExpoDeviceToken.find({ user_id: String(userId), is_valid: true });
-    if (!tokens.length) {
-      return { success: true, skipped: true, reason: 'no_tokens' };
-    }
+  if (!userId) return result;
 
-    const messages = tokens.map((t) => ({
-      to: t.token,
-      title: title || 'הודעה חדשה',
-      body: body || 'עדכון',
-      data: data || {},
-      sound: 'default',
-    }));
+  const devices = await ExpoDeviceToken.find({ user_id: String(userId), is_valid: true })
+    .select('token')
+    .lean();
 
-    console.log(`[EXPO-PUSH] 📤 Sending to ${messages.length} device(s) for userId=${userId}`);
+  if (devices.length === 0) return result;
 
-    const batches = chunk(messages, EXPO_CHUNK_SIZE);
-    const tickets = [];
+  const messages = devices.map((device) => ({
+    to: device.token,
+    title: payload.title || '',
+    body: payload.body || '',
+    data: payload.data || {},
+    sound: 'default',
+    priority: 'high',
+  }));
 
-    for (const batch of batches) {
-      const res = await fetch(EXPO_PUSH_URL, {
+  for (let i = 0; i < messages.length; i += MAX_MESSAGES_PER_REQUEST) {
+    const batch = messages.slice(i, i + MAX_MESSAGES_PER_REQUEST);
+    try {
+      const response = await fetch(EXPO_PUSH_ENDPOINT, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Accept': 'application/json',
+          Accept: 'application/json',
         },
         body: JSON.stringify(batch),
       });
-      const respJson = await res.json().catch(() => ({}));
-      console.log(`[EXPO-PUSH] ⬅️  RESPONSE HTTP ${res.status} | body: ${JSON.stringify(respJson)}`);
-      if (Array.isArray(respJson?.data)) tickets.push(...respJson.data);
-    }
 
-    // Cleanup: DeviceNotRegistered tokens should stop receiving pushes.
-    await Promise.all(tickets.map(async (ticket, idx) => {
-      if (ticket?.status === 'error' && ticket?.details?.error === 'DeviceNotRegistered') {
-        const badToken = messages[idx]?.to;
-        if (!badToken) return;
-        try {
-          await ExpoDeviceToken.updateOne({ token: badToken }, { $set: { is_valid: false } });
-          console.log(`[EXPO-PUSH] 🧹 Marked token invalid (DeviceNotRegistered): ${badToken}`);
-        } catch (cleanupErr) {
-          console.error('[EXPO-PUSH] cleanup error:', cleanupErr?.message || cleanupErr);
-        }
+      if (!response.ok) {
+        console.error(`[EXPO-PUSH] HTTP ${response.status} for user=${userId}`);
+        continue;
       }
-    }));
 
-    return { success: true };
-  } catch (err) {
-    console.error('[EXPO-PUSH] isolated error:', err?.message || err);
-    return { success: false, error: err?.message || String(err) };
+      const tickets = (await response.json())?.data || [];
+      const staleTokens = [];
+
+      tickets.forEach((ticket, index) => {
+        if (ticket?.status === 'ok') {
+          result.sent += 1;
+          return;
+        }
+        console.error(`[EXPO-PUSH] ticket error for user=${userId}: ${ticket?.message || 'unknown'}`);
+        if (ticket?.details?.error === 'DeviceNotRegistered') {
+          staleTokens.push(batch[index].to);
+        }
+      });
+
+      if (staleTokens.length > 0) {
+        const { modifiedCount } = await ExpoDeviceToken.updateMany(
+          { token: { $in: staleTokens } },
+          { $set: { is_valid: false } }
+        );
+        result.invalidated += modifiedCount || 0;
+      }
+    } catch (err) {
+      console.error(`[EXPO-PUSH] send failed for user=${userId}:`, err?.message || err);
+    }
   }
-};
+
+  return result;
+}
+
+export default sendExpoPushToUser;

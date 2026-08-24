@@ -1,6 +1,6 @@
 import * as smsService from '../services/sms.service.js';
 import { getSmsDbName, getSmsCollectionName } from '../repositories/sms.repository.js';
-import { getAssignedDestsForUser } from './destSettings.controller.js';
+import { getAssignedDestsForUser, getSmsOwnerId } from './destSettings.controller.js';
 
 /**
  * Regular / user SMS tab — always scoped to the logged-in account's lines
@@ -29,7 +29,7 @@ export async function getMessages(req, res, next) {
     // Authenticated callers are always scoped to assigned lines.
     let allowedDests;
     if (req.user) {
-      allowedDests = await getAssignedDestsForUser(req.userId);
+      allowedDests = await getAssignedDestsForUser(getSmsOwnerId(req));
       if (allowedDests.length === 0) {
         return res.json({
           source: 'mongodb',
@@ -137,7 +137,7 @@ export async function getDests(req, res, next) {
   try {
     let allowedDests;
     if (req.user) {
-      allowedDests = await getAssignedDestsForUser(req.userId);
+      allowedDests = await getAssignedDestsForUser(getSmsOwnerId(req));
       if (allowedDests.length === 0) {
         return res.json({ dests: [] });
       }

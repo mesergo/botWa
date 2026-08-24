@@ -1,6 +1,7 @@
-import { ObjectId } from 'mongodb';
+// import { ObjectId } from 'mongodb';
 import { getSmsCollection, getSmsCollectionName, getSmsDbName } from '../smsDb.js';
-
+import mongodb from 'mongodb';
+const { ObjectId } = mongodb;
 export { getSmsCollectionName, getSmsDbName };
 
 export async function findRecent(limit = 500) {

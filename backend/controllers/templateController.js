@@ -4,9 +4,10 @@ import Option from '../models/Option.js';
 import BotFlow from '../models/BotFlow.js';
 import Version from '../models/Version.js';
 import User from '../models/User.js';
-import { ObjectId } from 'mongodb';
+// import { ObjectId } from 'mongodb';
 import { reconstructTimeRoutingBranches, serializeBranchConditions, isTimeRoutingBranchOption } from '../utils/timeRouting.js';
-
+import mongodb from 'mongodb';
+const { ObjectId } = mongodb;
 /**
  * Highly detailed templates data to seed the DB
  */

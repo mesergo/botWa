@@ -1,4 +1,5 @@
 {
+  "type": "module",
   "dependencies": {
     "react-router-dom": "^7.18.1"
   }

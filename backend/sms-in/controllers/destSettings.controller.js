@@ -17,12 +17,21 @@ function toClientShape(doc) {
 }
 
 /**
+ * Account that SMS lines are assigned to. Lines are only ever assigned to owner
+ * accounts (see clients.controller — reps are excluded from the client pool), so
+ * a sub-user must resolve to its manager to see the account's lines.
+ */
+export function getSmsOwnerId(req) {
+  return req.user?.manager_id || req.userId;
+}
+
+/**
  * GET /api/sms-in/dest-settings
- * Always scoped to the logged-in user (admin accounts included).
+ * Always scoped to the logged-in account (admin accounts included).
  */
 export async function getDestSettings(req, res) {
   try {
-    const userId = req.userId;
+    const userId = getSmsOwnerId(req);
     const docs = await SmsDestSetting.find({ assignedClientId: userId }).sort({ createdAt: -1 }).lean();
 
     res.json({
