@@ -21,6 +21,7 @@ import {
   updateUserDialog360TemplateDefaultMedia,
   getUserConnectedNumbers,
   getAllConnectedNumbers,
+  updateConnectedNumberPaymentCountries,
   getUserBots
 } from '../controllers/adminController.js';
 import { 
@@ -72,6 +73,7 @@ router.post('/users/:userId/dialog360-template-settings/default-media', requireA
 
 // Per-customer connected WhatsApp numbers (read-only admin view)
 router.get('/users/:userId/connected-numbers', requireAdmin, getUserConnectedNumbers);
+router.patch('/users/:userId/connected-numbers/:phoneNumberId/payment-countries', requireAdmin, updateConnectedNumberPaymentCountries);
 
 // Per-customer bot list (lightweight id/name, used for the Sessions tab's advanced bot search)
 router.get('/users/:userId/bots', requireAdmin, getUserBots);

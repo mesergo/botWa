@@ -30,6 +30,7 @@ interface User {
   user_type_id?: { _id: string; name: string; system_role: string } | null;
   sms_in_enabled?: boolean;
   facebook_connect_enabled?: boolean;
+  connected_numbers_count?: number;
   createdAt: string;
   updatedAt: string;
   stats?: {
@@ -143,6 +144,12 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
   const [allConnectedNumbers, setAllConnectedNumbers] = useState<any[]>([]);
   const [allConnectedNumbersLoading, setAllConnectedNumbersLoading] = useState(false);
   const [allConnectedNumbersSearch, setAllConnectedNumbersSearch] = useState('');
+
+  // Payment-country prefixes (972 / 1) editing — shared by both the global tab and the
+  // per-customer tab. Keyed by `${userId}:${phone_number_id}` since the global view spans
+  // multiple users.
+  const [paymentCountriesDraft, setPaymentCountriesDraft] = useState<Record<string, { il: boolean; us: boolean }>>({});
+  const [savingPaymentCountriesKey, setSavingPaymentCountriesKey] = useState<string | null>(null);
   
   // Forms state
   const [newTemplateData, setNewTemplateData] = useState({ name: '', description: '', botId: '' });
@@ -1073,6 +1080,50 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
       setAllConnectedNumbersLoading(false);
     }
   };
+
+  // Returns the current {il, us} checkbox selection for a connected number:
+  // prefers an in-progress draft, falling back to the value persisted in the DB.
+  const getPaymentCountriesSelection = (key: string, allowedPaymentCountries?: string): { il: boolean; us: boolean } => {
+    const draft = paymentCountriesDraft[key];
+    if (draft) return draft;
+    const stored = (allowedPaymentCountries || '972').split('|').map(s => s.trim());
+    return { il: stored.includes('972'), us: stored.includes('1') };
+  };
+
+  const handleTogglePaymentCountry = (key: string, current: { il: boolean; us: boolean }, field: 'il' | 'us') => {
+    setPaymentCountriesDraft(prev => ({ ...prev, [key]: { ...current, [field]: !current[field] } }));
+  };
+
+  // Saves the payment-country selection for a connected number via the admin
+  // endpoint (no ownership restriction), then refreshes the given view.
+  const handleSavePaymentCountries = async (userId: string, phone_number_id: string, refetch: () => void) => {
+    const key = `${userId}:${phone_number_id}`;
+    const sel = getPaymentCountriesSelection(key);
+    const allowedPaymentCountries = [sel.il && '972', sel.us && '1'].filter(Boolean).join('|');
+    if (!allowedPaymentCountries) {
+      alert('יש לבחור לפחות קידומת מדינה אחת');
+      return;
+    }
+    setSavingPaymentCountriesKey(key);
+    try {
+      const response = await fetch(`${API_BASE}/admin/users/${userId}/connected-numbers/${phone_number_id}/payment-countries`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ allowedPaymentCountries })
+      });
+      const data = await response.json();
+      if (data.success) {
+        setPaymentCountriesDraft(prev => { const n2 = { ...prev }; delete n2[key]; return n2; });
+        refetch();
+      } else {
+        alert(`שגיאה: ${data.error || 'לא ידוע'}`);
+      }
+    } catch (err: any) {
+      alert(`שגיאת רשת: ${err.message}`);
+    } finally {
+      setSavingPaymentCountriesKey(null);
+    }
+  };
   
   const persistRemovalConfig = async () => {
     if (!removalConfig) return;
@@ -1655,6 +1706,50 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                                 </div>
                               )}
                             </div>
+                          </div>
+
+                          {/* Payment-country prefixes (972 / 1) allowed for this number */}
+                          <div className="mt-4 pt-4 border-t border-slate-100 flex items-center gap-4 flex-wrap">
+                            <span className="text-[11px] font-bold text-slate-400">קידומות מדינה מותרות לתשלום:</span>
+                            {(() => {
+                              const key = `${n.user_id}:${n.phone_number_id}`;
+                              const sel = getPaymentCountriesSelection(key, n.allowedPaymentCountries);
+                              const isSaving = savingPaymentCountriesKey === key;
+                              const hasDraft = !!paymentCountriesDraft[key];
+                              return (
+                                <>
+                                  <label className="flex items-center gap-1.5 text-xs font-bold text-slate-600 cursor-pointer select-none">
+                                    <input
+                                      type="checkbox"
+                                      checked={sel.il}
+                                      onChange={() => handleTogglePaymentCountry(key, sel, 'il')}
+                                      className="w-4 h-4 rounded accent-blue-600"
+                                    />
+                                    🇮🇱 ישראל (972)
+                                  </label>
+                                  <label className="flex items-center gap-1.5 text-xs font-bold text-slate-600 cursor-pointer select-none">
+                                    <input
+                                      type="checkbox"
+                                      checked={sel.us}
+                                      onChange={() => handleTogglePaymentCountry(key, sel, 'us')}
+                                      className="w-4 h-4 rounded accent-blue-600"
+                                    />
+                                    🇺🇸 ארה"ב/קנדה (1)
+                                  </label>
+                                  {hasDraft && (
+                                    <button
+                                      onClick={() => handleSavePaymentCountries(n.user_id, n.phone_number_id, fetchAllConnectedNumbers)}
+                                      disabled={isSaving}
+                                      className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-[11px] font-bold hover:bg-blue-700 transition-all disabled:opacity-50 active:scale-95"
+                                    >
+                                      {isSaving
+                                        ? <span className="animate-spin inline-block w-3 h-3 border-2 border-white border-t-transparent rounded-full" />
+                                        : 'שמור'}
+                                    </button>
+                                  )}
+                                </>
+                              );
+                            })()}
                           </div>
                         </div>
                       ))}
@@ -2453,8 +2548,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                       {[
                         { id: 'profile' as const, label: 'פרופיל אישי', icon: UserIcon },
                         { id: 'removal-log' as const, label: 'לוג פעילות הסרה', icon: Activity },
-                        { id: 'cust-templates' as const, label: 'הודעות תבנית', icon: MessageSquare },
-                        { id: 'cust-connections' as const, label: 'חיבורים', icon: Phone },
+                        ...((selectedUser.connected_numbers_count || 0) > 0 ? [
+                          { id: 'cust-templates' as const, label: 'הודעות תבנית', icon: MessageSquare },
+                          { id: 'cust-connections' as const, label: 'חיבורים', icon: Phone },
+                        ] : []),
                         { id: 'cust-sessions' as const, label: 'סשנים', icon: List },
                       ].map(t => (
                         <button
@@ -3144,6 +3241,50 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                                         </div>
                                       )}
                                     </div>
+                                  </div>
+
+                                  {/* Payment-country prefixes (972 / 1) allowed for this number */}
+                                  <div className="mt-4 pt-4 border-t border-slate-200/70 flex items-center gap-4 flex-wrap">
+                                    <span className="text-[11px] font-bold text-slate-400">קידומות מדינה מותרות לתשלום:</span>
+                                    {(() => {
+                                      const key = `${selectedUser.id}:${n.phone_number_id}`;
+                                      const sel = getPaymentCountriesSelection(key, n.allowedPaymentCountries);
+                                      const isSaving = savingPaymentCountriesKey === key;
+                                      const hasDraft = !!paymentCountriesDraft[key];
+                                      return (
+                                        <>
+                                          <label className="flex items-center gap-1.5 text-xs font-bold text-slate-600 cursor-pointer select-none">
+                                            <input
+                                              type="checkbox"
+                                              checked={sel.il}
+                                              onChange={() => handleTogglePaymentCountry(key, sel, 'il')}
+                                              className="w-4 h-4 rounded accent-blue-600"
+                                            />
+                                            🇮🇱 ישראל (972)
+                                          </label>
+                                          <label className="flex items-center gap-1.5 text-xs font-bold text-slate-600 cursor-pointer select-none">
+                                            <input
+                                              type="checkbox"
+                                              checked={sel.us}
+                                              onChange={() => handleTogglePaymentCountry(key, sel, 'us')}
+                                              className="w-4 h-4 rounded accent-blue-600"
+                                            />
+                                            🇺🇸 ארה"ב/קנדה (1)
+                                          </label>
+                                          {hasDraft && (
+                                            <button
+                                              onClick={() => handleSavePaymentCountries(selectedUser.id, n.phone_number_id, () => fetchCustomerConnectedNumbers(selectedUser.id))}
+                                              disabled={isSaving}
+                                              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-[11px] font-bold hover:bg-blue-700 transition-all disabled:opacity-50 active:scale-95"
+                                            >
+                                              {isSaving
+                                                ? <span className="animate-spin inline-block w-3 h-3 border-2 border-white border-t-transparent rounded-full" />
+                                                : 'שמור'}
+                                            </button>
+                                          )}
+                                        </>
+                                      );
+                                    })()}
                                   </div>
                                 </div>
                               ))}

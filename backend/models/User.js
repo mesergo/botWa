@@ -40,7 +40,11 @@ const userSchema = new mongoose.Schema({
       // Most recent connection error (Meta register / PHP account creation failure).
       // Overwritten on every connect attempt; cleared to '' on a successful connect.
       last_error: { type: String, default: '' },
-      last_error_at: { type: Date, default: null }
+      last_error_at: { type: Date, default: null },
+      // Payment-country prefixes allowed for this number, pipe-joined (e.g. "972", "1", "972|1").
+      // Mirrors the external gateway's `allowedCountries` config. Default matches the
+      // system's pre-existing hardcoded default (see createPhpAccount's countriesPrefix).
+      allowedPaymentCountries: { type: String, default: '972' }
     }],  
     default: []
   },

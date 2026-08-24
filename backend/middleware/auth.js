@@ -18,6 +18,16 @@ export const authenticateToken = (req, res, next) => {
   });
 };
 
+// Simple shared-secret guard for server-to-server external callers (no user/JWT involved).
+// Used e.g. by the external "maskyoo" SMS log endpoint.
+export const requireApiKey = (req, res, next) => {
+  const key = req.headers['x-api-key'];
+  if (!key || key !== process.env.SMS_EXTERNAL_LOG_API_KEY) {
+    return res.sendStatus(401);
+  }
+  next();
+};
+
 // Returns the effective owner user ID:
 // For rep roles (rep / rep_manager / rep_bot), returns their manager's ID so they see the manager's data.
 // For all other roles, returns the authenticated user's own ID.
