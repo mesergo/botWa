@@ -24,7 +24,12 @@ const dialog360TemplateSettingSchema = new mongoose.Schema({
   // When set, agents sending this template can choose to reuse it instead of
   // uploading a new file each time.
   defaultHeaderMediaUrl: { type: String, default: null },
-  defaultHeaderMediaType: { type: String, enum: ['image', 'video', 'document', null], default: null }
+  defaultHeaderMediaType: { type: String, enum: ['image', 'video', 'document', null], default: null },
+  // What happens to a conversation right after this template is sent:
+  //   'no_change' – preserve each send-path's existing default behavior (default)
+  //   'agent'     – switch conversation to agent mode after send
+  //   'bot'       – switch conversation to bot mode after send
+  postSendMode: { type: String, enum: ['no_change', 'agent', 'bot'], default: 'no_change' }
 }, {
   timestamps: true,
   collection: 'dialog360_template_settings'

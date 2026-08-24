@@ -1,6 +1,7 @@
 
 import mongoose from 'mongoose';
 import crypto from 'crypto';
+import bcrypt from 'bcryptjs';
 import User from '../models/User.js';
 import BotFlow from '../models/BotFlow.js';
 import Version from '../models/Version.js';
@@ -15,6 +16,8 @@ import {
 } from '../utils/removalConfig.js';
 import AuditLog from '../models/AuditLog.js';
 import { buildRemovalConfigDiff } from './adminController.js';
+import PhoneOtp from '../models/PhoneOtp.js';
+import { pushMessagesToWhatsApp } from '../utils/whatsappSender.js';
  
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
@@ -29,6 +32,33 @@ const GOOGLE_AUDIENCES = [
 const hashInviteToken = (token) => crypto.createHash('sha256').update(token).digest('hex');
 const asBoolean = (value) => value === true || value === 'true' || value === 1 || value === '1';
 const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+// Phone-number login (OTP via WhatsApp) helpers.
+// Normalize a raw phone string down to its last 9 digits (digits-only). Used as the
+// matching key since the `phone` field on User is unstructured free text (spaces,
+// dashes, parens, optional country code allowed by PHONE_REGEX).
+const phoneKeyOf = (raw) => {
+  const digits = String(raw || '').replace(/\D/g, '');
+  return digits.slice(-9);
+};
+const hashOtp = (code) => crypto.createHash('sha256').update(code).digest('hex');
+
+// Scan users with a non-empty phone and return those whose normalized last-9-digit
+// key matches phoneKey. Full-table scan over users-with-phone; acceptable at current
+// scale (no phone_normalized index field by design — see plan doc).
+const findUsersByPhoneKey = async (phoneKey) => {
+  if (!phoneKey) return [];
+  const candidates = await User.find({ phone: { $exists: true, $ne: '' } })
+    .select('name email phone role manager_id public_id account_type status availability_status trial_expires_at token user_type_id');
+  return candidates.filter(u => phoneKeyOf(u.phone) === phoneKey);
+};
+
+// Shared with frontend/components/RegisterPage.tsx validation patterns.
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const PHONE_REGEX = /^[\d\s\-+()]{7,15}$/;
+// bcrypt/bcryptjs hash prefix ($2a$, $2b$ or $2y$) — used to distinguish hashed
+// passwords from legacy plain-text ones stored before hashing was introduced.
+const BCRYPT_HASH_REGEX = /^\$2[aby]\$/;
 const inviteRequiresLoginConfirmation = async (user) => {
   if (!user) return false;
 
@@ -263,8 +293,27 @@ export const registerFromInviteGoogle = async (req, res) => {
 };
 
 export const register = async (req, res) => {
-  const { name, email, phone, password, role } = req.body;
+  // Accepts either `businessName` (mobile app registration screen) or `name`
+  // (existing web RegisterPage) for the account/business name field.
+  const { businessName, name, email, phone, password, role } = req.body;
   try {
+    const resolvedName = (businessName || name || '').toString().trim();
+    const normalizedEmail = (email || '').toString().trim().toLowerCase();
+    const trimmedPhone = (phone || '').toString().trim();
+
+    if (!resolvedName) {
+      return res.status(400).json({ error: 'שם העסק הוא שדה חובה' });
+    }
+    if (!normalizedEmail || !EMAIL_REGEX.test(normalizedEmail)) {
+      return res.status(400).json({ error: 'כתובת אימייל אינה תקינה' });
+    }
+    if (!trimmedPhone || !PHONE_REGEX.test(trimmedPhone)) {
+      return res.status(400).json({ error: 'מספר טלפון אינו תקין' });
+    }
+    if (!password || typeof password !== 'string' || password.length < 6) {
+      return res.status(400).json({ error: 'הסיסמה חייבת להכיל לפחות 6 תווים' });
+    }
+
     const publicId = Math.random().toString(36).substring(2, 15);
     
     // Check if role=admin was requested
@@ -278,9 +327,9 @@ export const register = async (req, res) => {
       
       if (adminCount === 0 || isDevelopment) {
         userRole = 'admin';
-        console.log(`✅ Creating admin user: ${email} (First admin: ${adminCount === 0}, Dev mode: ${isDevelopment})`);
+        console.log(`✅ Creating admin user: ${normalizedEmail} (First admin: ${adminCount === 0}, Dev mode: ${isDevelopment})`);
       } else {
-        console.log(`⚠️ Attempted admin creation denied for ${email} - admins already exist in production`);
+        console.log(`⚠️ Attempted admin creation denied for ${normalizedEmail} - admins already exist in production`);
       }
     }
     
@@ -288,11 +337,13 @@ export const register = async (req, res) => {
     const trialExpiresAt = new Date();
     trialExpiresAt.setMonth(trialExpiresAt.getMonth() + 1);
 
+    const hashedPassword = await bcrypt.hash(password, 10);
+
     const user = await User.create({
-      name,
-      email,
-      phone,
-      password,
+      name: resolvedName,
+      email: normalizedEmail,
+      phone: trimmedPhone,
+      password: hashedPassword,
       role: userRole,
       public_id: publicId,
       account_type: 'Trial',
@@ -301,21 +352,34 @@ export const register = async (req, res) => {
     });
     
     const userId = user._id.toString();
-    const jwtToken = jwt.sign({ id: userId, email }, SECRET_KEY, { expiresIn: '24h' });
-    
-    // Return both JWT token (for dashboard) and API token (for WhatsApp)
+    const managerId = user.manager_id || null;
+    const jwtToken = jwt.sign({
+      id: userId,
+      email: user.email,
+      role: userRole,
+      manager_id: managerId,
+      user_type_id: user.user_type_id || null
+    }, SECRET_KEY, { expiresIn: '24h' });
+
+    const permissions = await resolvePermissions(user);
+
+    // Same response shape as login: JWT token + full user object.
     res.json({ 
       token: jwtToken, 
       user: { 
         id: userId, 
-        name, 
-        email, 
-        role: 'user',
-        public_id: publicId, 
-        account_type: 'Trial', 
-        status: 'active',
-        trial_expires_at: user.trial_expires_at,
-        api_token: user.token // API token for WhatsApp integration
+        name: user.name, 
+        email: user.email, 
+        role: userRole,
+        manager_id: managerId,
+        public_id: user.public_id, 
+        account_type: user.account_type || 'Trial', 
+        status: user.status || 'active',
+        availability_status: user.availability_status || 'unavailable',
+        trial_expires_at: user.trial_expires_at || null,
+        api_token: user.token, // API token for WhatsApp integration
+        user_type_id: user.user_type_id || null,
+        permissions
       } 
     });
   } catch (err) {
@@ -326,9 +390,23 @@ export const register = async (req, res) => {
 export const login = async (req, res) => {
   const { email, password, accountId } = req.body;
   try {
-    // Find every account matching this email+password combo — with multiple accounts
-    // per email now allowed, more than one could share identical credentials.
-    const matches = await User.find({ email, password });
+    if (!password || typeof password !== 'string') {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    // Find every account matching this email — with multiple accounts per email
+    // now allowed, more than one could share identical credentials. Passwords may
+    // be bcrypt-hashed (accounts created after hashing was introduced) or legacy
+    // plain-text (older accounts) — check each candidate accordingly.
+    const candidates = await User.find({ email });
+    const matches = [];
+    for (const candidate of candidates) {
+      const stored = candidate.password || '';
+      const isMatch = BCRYPT_HASH_REGEX.test(stored)
+        ? await bcrypt.compare(password, stored)
+        : stored === password;
+      if (isMatch) matches.push(candidate);
+    }
     if (matches.length === 0) return res.status(401).json({ error: 'Invalid credentials' });
 
     let user;
@@ -389,6 +467,156 @@ export const login = async (req, res) => {
         user_type_id: user.user_type_id || null,
         permissions
       } 
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// Phone-number login step 1: validate phone, look up matching user(s), send a 6-digit
+// OTP code via WhatsApp. Login only — does not create accounts. 404 if no user matches
+// (no enumeration-hiding concern in this codebase; checkEmail already reveals existence).
+export const startPhoneAuth = async (req, res) => {
+  const { phone } = req.body;
+  try {
+    const phoneKey = phoneKeyOf(phone);
+    if (phoneKey.length < 9) {
+      return res.status(400).json({ error: 'מספר טלפון אינו תקין' });
+    }
+
+    const matches = await findUsersByPhoneKey(phoneKey);
+    if (matches.length === 0) {
+      return res.status(404).json({ error: 'מספר טלפון לא רשום במערכת' });
+    }
+
+    const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
+    const recentRequests = await PhoneOtp.countDocuments({
+      phone_key: phoneKey,
+      created_at: { $gt: tenMinutesAgo }
+    });
+    if (recentRequests >= 3) {
+      return res.status(429).json({ error: 'יותר מדי בקשות, נסה שוב מאוחר יותר' });
+    }
+
+    const code = crypto.randomInt(0, 1000000).toString().padStart(6, '0');
+    await PhoneOtp.create({
+      phone_key: phoneKey,
+      code_hash: hashOtp(code),
+      otp_expires_at: new Date(Date.now() + 5 * 60 * 1000),
+      created_at: new Date(),
+      attempts: 0,
+      consumed: false
+    });
+
+    const authBot = { endpoint: process.env.AUTH_WHATSAPP_ENDPOINT || process.env.WHATSAPP_ENDPOINT };
+    await pushMessagesToWhatsApp(phone, [{ type: 'Text', text: `קוד האימות שלך: ${code}\nהקוד בתוקף ל-5 דקות.` }], null, authBot);
+
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// Phone-number login step 2: verify the OTP code and issue a JWT, identical response
+// shape to login(). Supports multi-account-per-phone via the same 409
+// requiresAccountSelection pattern used by login()/googleAuth().
+export const verifyPhoneAuth = async (req, res) => {
+  const { phone, code, accountId } = req.body;
+  try {
+    const phoneKey = phoneKeyOf(phone);
+    if (phoneKey.length < 9 || !code) {
+      return res.status(400).json({ error: 'הקוד שגוי או פג תוקף' });
+    }
+
+    const otpDoc = await PhoneOtp.findOne({
+      phone_key: phoneKey,
+      consumed: false,
+      otp_expires_at: { $gt: new Date() }
+    }).sort({ created_at: -1 });
+
+    if (!otpDoc) {
+      return res.status(400).json({ error: 'הקוד שגוי או פג תוקף' });
+    }
+
+    if (otpDoc.attempts >= 5) {
+      otpDoc.consumed = true;
+      await otpDoc.save();
+      return res.status(400).json({ error: 'הקוד שגוי או פג תוקף' });
+    }
+
+    const providedHash = Buffer.from(hashOtp(String(code)), 'hex');
+    const storedHash = Buffer.from(otpDoc.code_hash, 'hex');
+    const isMatch = storedHash.length === providedHash.length && crypto.timingSafeEqual(storedHash, providedHash);
+
+    if (!isMatch) {
+      otpDoc.attempts += 1;
+      await otpDoc.save();
+      return res.status(400).json({ error: 'הקוד שגוי או פג תוקף' });
+    }
+
+    otpDoc.consumed = true;
+    await otpDoc.save();
+
+    const matches = await findUsersByPhoneKey(phoneKey);
+    if (matches.length === 0) {
+      return res.status(404).json({ error: 'מספר טלפון לא רשום במערכת' });
+    }
+
+    let user;
+    if (matches.length === 1) {
+      user = matches[0];
+    } else {
+      user = accountId ? matches.find(u => u._id.toString() === accountId) : null;
+      if (!user) {
+        return res.status(409).json({
+          requiresAccountSelection: true,
+          accounts: matches.map(u => ({
+            id: u._id.toString(),
+            name: u.name,
+            account_type: u.account_type || 'Basic',
+            role: u.role || 'user',
+            created_at: u.createdAt
+          }))
+        });
+      }
+    }
+
+    const userId = user._id.toString();
+    const userRole = user.role || 'user';
+    const managerId = user.manager_id || null;
+
+    if (userRole === 'rep' || userRole === 'rep_manager') {
+      user.availability_status = 'available';
+      await user.save();
+    }
+
+    const jwtToken = jwt.sign({
+      id: userId,
+      email: user.email,
+      role: userRole,
+      manager_id: managerId,
+      user_type_id: user.user_type_id || null
+    }, SECRET_KEY, { expiresIn: '24h' });
+
+    const permissions = await resolvePermissions(user);
+
+    res.json({
+      token: jwtToken,
+      user: {
+        id: userId,
+        name: user.name,
+        email: user.email,
+        role: userRole,
+        manager_id: managerId,
+        public_id: user.public_id,
+        account_type: user.account_type || 'Basic',
+        status: user.status || 'active',
+        availability_status: user.availability_status || 'unavailable',
+        trial_expires_at: user.trial_expires_at || null,
+        api_token: user.token,
+        user_type_id: user.user_type_id || null,
+        permissions
+      }
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

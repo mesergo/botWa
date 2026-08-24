@@ -1,5 +1,6 @@
-import { MongoClient } from 'mongodb';
-
+// import { MongoClient } from 'mongodb';
+import mongodb from 'mongodb';
+const { MongoClient } = mongodb;
 const SMS_MONGODB_URI = process.env.SMS_MONGODB_URI || '';
 const SMS_COLLECTION = process.env.SMS_MONGODB_COLLECTION || 'sms';
 

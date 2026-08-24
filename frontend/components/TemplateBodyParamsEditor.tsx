@@ -13,11 +13,14 @@ interface TemplateBodyParamsEditorProps {
   agentName?: string | null;
 }
 
-const STD_FIELDS = [
-  { ref: 'full_name', label: 'שם מלא' },
-  { ref: 'phone', label: 'טלפון' },
-  { ref: 'whatsapp_name', label: 'שם וואטסאפ' },
-  { ref: 'email', label: 'מייל' },
+// `token` = the literal key used inside a `$token$` placeholder when this field is
+// inserted into a plain-text broadcast message (see PersonalizedTextarea.tsx). Not used
+// by the template {{n}} param editor below, only by the free-text personalization flow.
+export const STD_FIELDS = [
+  { ref: 'full_name', label: 'שם מלא', token: 'name' },
+  { ref: 'phone', label: 'טלפון', token: 'phone' },
+  { ref: 'whatsapp_name', label: 'שם וואטסאפ', token: 'wa_name' },
+  { ref: 'email', label: 'מייל', token: 'email' },
 ];
 
 /**

@@ -710,9 +710,13 @@ export const StartNode = (props: any) => {
   );
 };
 
+const FIXED_CONTACT_FIELDS = [
+  { id: 'full_name', label: 'שם מלא' },
+  { id: 'email', label: 'מייל' },
+];
+
 export const InputTextNode = (props: any) => {
   const { fields: contactFields } = useContactFields();
-  const hasFields = contactFields.length > 0;
 
   return (
     <BaseNode id={props.id} title="קלט: טקסט" icon={<Type size={20} />} type={NodeType.INPUT_TEXT} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} isSearchMatch={props.data.isSearchMatch}>
@@ -741,8 +745,6 @@ export const InputTextNode = (props: any) => {
             type="checkbox"
             className="w-4 h-4 cursor-pointer accent-blue-500 disabled:opacity-40"
             checked={!!props.data.saveToContact}
-            disabled={!hasFields}
-            title={!hasFields ? 'יש להגדיר שדות מוגדרים אישית בדף אנשי קשר תחילה' : undefined}
             onChange={(e) => {
               if (!e.target.checked) {
                 props.data.onChange({ saveToContact: false, contactFieldKey: undefined });
@@ -752,12 +754,7 @@ export const InputTextNode = (props: any) => {
             }}
           />
         </div>
-        {!hasFields && (
-          <p className="text-[11px] text-slate-400 text-right mt-1">
-            הגדר שדות בדף <strong>אנשי קשר</strong> → ניהול שדות
-          </p>
-        )}
-        {props.data.saveToContact && hasFields && (
+        {props.data.saveToContact && (
           <div className="mt-2 flex flex-col gap-1">
             <label className="text-[12px] font-bold text-right" style={{ color: !props.data.contactFieldKey ? '#ef4444' : '#94a3b8' }}>
               {!props.data.contactFieldKey ? '⚠ חובה לבחור שדה לשמירה' : 'בחר שדה לשמירה *'}
@@ -774,10 +771,22 @@ export const InputTextNode = (props: any) => {
               dir="rtl"
             >
               <option value="" disabled>בחר שדה...</option>
-              {contactFields.map((f: any) => (
-                <option key={f._id} value={f._id}>{f.label}</option>
+              {FIXED_CONTACT_FIELDS.map((f) => (
+                <option key={f.id} value={f.id}>{f.label}</option>
               ))}
+              {contactFields.length > 0 && (
+                <optgroup label="שדות מותאמים אישית">
+                  {contactFields.map((f: any) => (
+                    <option key={f._id} value={f._id}>{f.label}</option>
+                  ))}
+                </optgroup>
+              )}
             </select>
+            {/* {contactFields.length === 0 && ( */}
+              <p className="text-[11px] text-slate-500 text-right mt-1">
+                ניתן להגדיר שדות נוספים בדף <strong>אנשי קשר</strong> → ניהול שדות
+              </p>
+            {/* )} */}
           </div>
         )}
       </div>
@@ -1269,13 +1278,8 @@ export const FixedProcessNode = (props: any) => (
 );
 
 export const ActionTimeRoutingNode = (props: any) => {
-  const routingMode: 'time' | 'date' | 'weekday' = props.data.routingMode || 'time';
-  const timeRanges = props.data.timeRanges || [];
-  const dateRanges = props.data.dateRanges || [];
-  const weekdayRanges = props.data.weekdayRanges || [];
-  const isDateMode = routingMode === 'date';
-  const isWeekdayMode = routingMode === 'weekday';
- 
+  const branches: Array<{ conditions: any[] }> = props.data.timeRoutingBranches || [];
+
   const WEEKDAYS = [
     { value: 0, label: 'ראשון' },
     { value: 1, label: 'שני' },
@@ -1286,224 +1290,216 @@ export const ActionTimeRoutingNode = (props: any) => {
     { value: 6, label: 'שבת' },
   ];
 
-  const setMode = (mode: 'time' | 'date' | 'weekday') => {
-    props.data.onChange({ routingMode: mode });
+  const CONDITION_KINDS = [
+    { value: 'time', label: 'שעה' },
+    { value: 'date', label: 'תאריך' },
+    { value: 'weekday', label: 'יום' },
+  ];
+
+  const defaultConditionForKind = (kind: 'time' | 'date' | 'weekday') => {
+    if (kind === 'date') {
+      const today = new Date().toISOString().split('T')[0];
+      return { kind: 'date', fromDate: today, toDate: today };
+    }
+    if (kind === 'weekday') {
+      return { kind: 'weekday', fromDay: 0, toDay: 4 };
+    }
+    return { kind: 'time', fromHour: 9, fromMinute: 0, toHour: 17, toMinute: 0 };
   };
 
-  // Time mode helpers
   const formatHM = (hour: number, minute: number) => {
     const h = Number.isFinite(hour) ? hour : 0;
     const m = Number.isFinite(minute) ? minute : 0;
     return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
   };
 
-  const updateTimeRange = (index: number, side: 'from' | 'to', hhmm: string) => {
-    const [hourStr, minuteStr] = (hhmm || '0:0').split(':');
-    const hour = parseInt(hourStr, 10) || 0;
-    const minute = parseInt(minuteStr, 10) || 0;
-    const newRanges = [...timeRanges];
-    newRanges[index] = {
-      ...newRanges[index],
-      [`${side}Hour`]: hour,
-      [`${side}Minute`]: minute,
-    };
-    props.data.onChange({ timeRanges: newRanges });
+  const updateBranches = (newBranches: Array<{ conditions: any[] }>) => {
+    props.data.onChange({ timeRoutingBranches: newBranches });
   };
 
-  const addTimeRange = () => {
-    props.data.onChange({ timeRanges: [...timeRanges, { fromHour: 9, fromMinute: 0, toHour: 17, toMinute: 0 }] });
+  const updateCondition = (branchIndex: number, condIndex: number, patch: any) => {
+    const newBranches = branches.map((b, bi) => {
+      if (bi !== branchIndex) return b;
+      const newConditions = b.conditions.map((c, ci) => (ci === condIndex ? { ...c, ...patch } : c));
+      return { ...b, conditions: newConditions };
+    });
+    updateBranches(newBranches);
   };
 
-  const removeTimeRange = (index: number) => {
-    props.data.onChange({ timeRanges: timeRanges.filter((_: any, i: number) => i !== index) });
+  const changeConditionKind = (branchIndex: number, condIndex: number, kind: 'time' | 'date' | 'weekday') => {
+    const newBranches = branches.map((b, bi) => {
+      if (bi !== branchIndex) return b;
+      const newConditions = b.conditions.map((c, ci) => (ci === condIndex ? defaultConditionForKind(kind) : c));
+      return { ...b, conditions: newConditions };
+    });
+    updateBranches(newBranches);
   };
 
-  // Date mode helpers
-  const updateDateRange = (index: number, field: 'fromDate' | 'toDate', value: string) => {
-    const newRanges = [...dateRanges];
-    newRanges[index] = { ...newRanges[index], [field]: value };
-    props.data.onChange({ dateRanges: newRanges });
+  const addCondition = (branchIndex: number) => {
+    const newBranches = branches.map((b, bi) =>
+      bi === branchIndex ? { ...b, conditions: [...b.conditions, defaultConditionForKind('time')] } : b
+    );
+    updateBranches(newBranches);
   };
 
-  const addDateRange = () => {
-    const today = new Date().toISOString().split('T')[0];
-    props.data.onChange({ dateRanges: [...dateRanges, { fromDate: today, toDate: today }] });
+  const removeCondition = (branchIndex: number, condIndex: number) => {
+    const branch = branches[branchIndex];
+    if (!branch || branch.conditions.length <= 1) {
+      removeBranch(branchIndex);
+      return;
+    }
+    const newBranches = branches.map((b, bi) =>
+      bi === branchIndex ? { ...b, conditions: b.conditions.filter((_, ci) => ci !== condIndex) } : b
+    );
+    updateBranches(newBranches);
   };
 
-  const removeDateRange = (index: number) => {
-    props.data.onChange({ dateRanges: dateRanges.filter((_: any, i: number) => i !== index) });
+  const addBranch = () => {
+    updateBranches([...branches, { conditions: [defaultConditionForKind('time')] }]);
   };
 
-  // Weekday mode helpers
-  const updateWeekdayRange = (index: number, field: 'fromDay' | 'toDay', value: number) => {
-    const newRanges = [...weekdayRanges];
-    newRanges[index] = { ...newRanges[index], [field]: value };
-    props.data.onChange({ weekdayRanges: newRanges });
+  const removeBranch = (branchIndex: number) => {
+    props.data.onRemoveOption?.(branchIndex);
+    updateBranches(branches.filter((_, bi) => bi !== branchIndex));
   };
-
-  const addWeekdayRange = () => {
-    props.data.onChange({ weekdayRanges: [...weekdayRanges, { fromDay: 0, toDay: 4 }] });
-  };
-
-  const removeWeekdayRange = (index: number) => {
-    props.data.onChange({ weekdayRanges: weekdayRanges.filter((_: any, i: number) => i !== index) });
-  };
-
-  const nodeTitle = isDateMode ? 'ניתוב לפי תאריך' : isWeekdayMode ? 'ניתוב לפי ימי שבוע' : 'ניתוב לפי שעות';
 
   return (
-    <BaseNode id={props.id} title={nodeTitle} icon={<Clock size={20} />} type={NodeType.ACTION_TIME_ROUTING} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} isSearchMatch={props.data.isSearchMatch}>
+    <BaseNode id={props.id} title="ניתוב לפי זמן" icon={<Clock size={20} />} type={NodeType.ACTION_TIME_ROUTING} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} isSearchMatch={props.data.isSearchMatch}>
       <div className="space-y-4 relative text-right">
 
-        {/* Mode toggle */}
-        <div className="flex rounded-xl overflow-hidden border border-slate-200">
-          <button
-            onClick={() => setMode('time')}
-            className={`flex-1 py-2 text-sm font-bold nodrag transition-colors ${routingMode === 'time' ? 'bg-orange-500 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}`}
-          >
-            לפי שעה
-          </button>
-          <button
-            onClick={() => setMode('date')}
-            className={`flex-1 py-2 text-sm font-bold nodrag transition-colors ${routingMode === 'date' ? 'bg-orange-500 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}`}
-          >
-            לפי תאריך
-          </button>
-          <button
-            onClick={() => setMode('weekday')}
-            className={`flex-1 py-2 text-sm font-bold nodrag transition-colors ${routingMode === 'weekday' ? 'bg-orange-500 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}`}
-          >
-            לפי יום
-          </button>
-        </div>
-
-        <label className="block text-[14px] font-bold text-slate-400 uppercase tracking-widest">
-          {isDateMode ? 'טווחי תאריכים' : isWeekdayMode ? 'טווחי ימים' : 'טווחי שעות'}
-        </label>
+        <label className="block text-[14px] font-bold text-slate-400 uppercase tracking-widest">ענפי ניתוב</label>
 
         {/* Default option */}
         <div className="flex items-center gap-2 p-2 bg-slate-50 border border-slate-200 rounded-2xl relative">
           <DeletableHandle nodeId={props.id} handleId="option-default" style={{ top: '50%', right: -10 }} />
           <div className="flex-1 text-center py-2">
-            <span className="text-sm font-bold text-slate-600">
-              {isDateMode ? 'ברירת מחדל (כל שאר התאריכים)' : isWeekdayMode ? 'ברירת מחדל (כל שאר הימים)' : 'ברירת מחדל (כל שאר השעות)'}
-            </span>
+            <span className="text-sm font-bold text-slate-600">ברירת מחדל (כל שאר המקרים)</span>
           </div>
         </div>
 
-        {/* Time ranges */}
-        {routingMode === 'time' && timeRanges.map((range: any, i: number) => (
-          <div key={i} className="flex items-center gap-2 p-3 bg-slate-50 border border-slate-100 rounded-2xl group/item relative transition-colors hover:bg-white hover:border-orange-100">
-            <DeletableHandle nodeId={props.id} handleId={`option-${i}`} style={{ top: '50%', right: -10 }} />
+        {/* Branches */}
+        {branches.map((branch, bi) => (
+          <div key={bi} className="p-3 bg-slate-50 border border-slate-100 rounded-2xl group/item relative transition-colors hover:bg-white hover:border-orange-100 space-y-2">
+            <DeletableHandle nodeId={props.id} handleId={`option-${bi}`} style={{ top: '50%', right: -10 }} />
 
-            <div className="flex-1">
-              <div className="flex gap-2 items-center justify-center py-1" dir="rtl">
-                <span className="text-sm font-bold text-slate-500">משעה</span>
-                <input
-                  type="time"
-                  value={formatHM(range.fromHour, range.fromMinute)}
-                  onChange={(e) => updateTimeRange(i, 'from', e.target.value)}
-                  className="w-24 px-2 py-2 border border-slate-200 rounded-lg text-center nodrag font-bold"
-                />
-                <span className="text-sm font-bold text-slate-500">עד</span>
-                <input
-                  type="time"
-                  value={formatHM(range.toHour, range.toMinute)}
-                  onChange={(e) => updateTimeRange(i, 'to', e.target.value)}
-                  className="w-24 px-2 py-2 border border-slate-200 rounded-lg text-center nodrag font-bold"
-                />
-              </div>
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-black text-slate-400 uppercase tracking-widest">אופציה {bi + 1}</span>
+              <button
+                onClick={() => removeBranch(bi)}
+                className="w-8 h-8 rounded-lg flex items-center justify-center text-red-500 hover:text-red-600 hover:bg-red-50 transition-all nodrag flex-shrink-0"
+                title="מחק אופציה"
+              >
+                <Trash2 size={15} />
+              </button>
             </div>
 
+            {branch.conditions.map((condition: any, ci: number) => (
+              <React.Fragment key={ci}>
+                <div className="flex items-center gap-1.5 p-2 bg-white border border-slate-200 rounded-xl">
+                  <select
+                    value={condition.kind}
+                    onChange={(e) => changeConditionKind(bi, ci, e.target.value as 'time' | 'date' | 'weekday')}
+                    className="px-1.5 py-1.5 border border-slate-200 rounded-lg nodrag font-bold text-xs bg-slate-50 flex-shrink-0"
+                  >
+                    {CONDITION_KINDS.map((k) => (
+                      <option key={k.value} value={k.value}>{k.label}</option>
+                    ))}
+                  </select>
+
+                  {condition.kind === 'time' && (
+                    <div className="flex-1 flex gap-1 items-center justify-center" dir="rtl">
+                      <span className="text-xs font-bold text-slate-500 whitespace-nowrap">משעה</span>
+                      <input
+                        type="time"
+                        value={formatHM(condition.fromHour, condition.fromMinute)}
+                        onChange={(e) => {
+                          const [h, m] = (e.target.value || '0:0').split(':');
+                          updateCondition(bi, ci, { fromHour: parseInt(h, 10) || 0, fromMinute: parseInt(m, 10) || 0 });
+                        }}
+                        className="min-w-0 flex-1 px-1 py-1 border border-slate-200 rounded-lg text-center nodrag font-bold text-xs"
+                      />
+                      <span className="text-xs font-bold text-slate-500 whitespace-nowrap">עד</span>
+                      <input
+                        type="time"
+                        value={formatHM(condition.toHour, condition.toMinute)}
+                        onChange={(e) => {
+                          const [h, m] = (e.target.value || '0:0').split(':');
+                          updateCondition(bi, ci, { toHour: parseInt(h, 10) || 0, toMinute: parseInt(m, 10) || 0 });
+                        }}
+                        className="min-w-0 flex-1 px-1 py-1 border border-slate-200 rounded-lg text-center nodrag font-bold text-xs"
+                      />
+                    </div>
+                  )}
+
+                  {condition.kind === 'date' && (
+                    <div className="flex-1 flex gap-1 items-center" dir="rtl">
+                      <span className="text-xs font-bold text-slate-500 whitespace-nowrap">מ</span>
+                      <input
+                        type="date"
+                        value={condition.fromDate || ''}
+                        onChange={(e) => updateCondition(bi, ci, { fromDate: e.target.value })}
+                        className="flex-1 min-w-0 px-1 py-1 border border-slate-200 rounded-lg nodrag font-bold text-xs"
+                      />
+                      <span className="text-xs font-bold text-slate-500 whitespace-nowrap">עד</span>
+                      <input
+                        type="date"
+                        value={condition.toDate || ''}
+                        onChange={(e) => updateCondition(bi, ci, { toDate: e.target.value })}
+                        className="flex-1 min-w-0 px-1 py-1 border border-slate-200 rounded-lg nodrag font-bold text-xs"
+                      />
+                    </div>
+                  )}
+
+                  {condition.kind === 'weekday' && (
+                    <div className="flex-1 flex gap-1 items-center" dir="rtl">
+                      <span className="text-xs font-bold text-slate-500 whitespace-nowrap">מ</span>
+                      <select
+                        value={Number.isInteger(condition.fromDay) ? condition.fromDay : 0}
+                        onChange={(e) => updateCondition(bi, ci, { fromDay: parseInt(e.target.value, 10) })}
+                        className="flex-1 min-w-0 px-1 py-1 border border-slate-200 rounded-lg nodrag font-bold text-xs bg-white"
+                      >
+                        {WEEKDAYS.map((d) => (
+                          <option key={`from-${d.value}`} value={d.value}>{d.label}</option>
+                        ))}
+                      </select>
+                      <span className="text-xs font-bold text-slate-500 whitespace-nowrap">עד</span>
+                      <select
+                        value={Number.isInteger(condition.toDay) ? condition.toDay : 4}
+                        onChange={(e) => updateCondition(bi, ci, { toDay: parseInt(e.target.value, 10) })}
+                        className="flex-1 min-w-0 px-1 py-1 border border-slate-200 rounded-lg nodrag font-bold text-xs bg-white"
+                      >
+                        {WEEKDAYS.map((d) => (
+                          <option key={`to-${d.value}`} value={d.value}>{d.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  <button
+                    onClick={() => removeCondition(bi, ci)}
+                    className="w-6 h-6 rounded-md flex items-center justify-center text-slate-200 hover:text-red-500 hover:bg-red-50 transition-all nodrag flex-shrink-0"
+                    title="מחק תנאי"
+                  >
+                    <X size={13} />
+                  </button>
+                </div>
+              </React.Fragment>
+            ))}
+
             <button
-              onClick={() => removeTimeRange(i)}
-              className="w-10 h-10 rounded-lg flex items-center justify-center text-slate-200 hover:text-red-500 hover:bg-red-50 transition-all opacity-0 group-hover/item:opacity-100 nodrag flex-shrink-0"
-              title="מחק טווח"
+              onClick={() => addCondition(bi)}
+              className="w-full py-2 text-[12px] font-bold bg-white text-blue-600 rounded-xl border-2 border-dashed border-blue-100 hover:bg-blue-50 hover:border-blue-400 flex items-center justify-center gap-1.5 transition-all nodrag"
             >
-              <X size={18} />
-            </button>
-          </div>
-        ))}
-
-        {/* Date ranges */}
-        {routingMode === 'date' && dateRanges.map((range: any, i: number) => (
-          <div key={i} className="flex items-center gap-1 p-1.5 bg-slate-50 border border-slate-100 rounded-xl group/item relative transition-colors hover:bg-white hover:border-orange-100">
-            <DeletableHandle nodeId={props.id} handleId={`option-${i}`} style={{ top: '50%', right: -10 }} />
-
-            <div className="flex-1">
-              <div className="flex gap-1 items-center" dir="rtl">
-                <span className="text-xs font-bold text-slate-500 whitespace-nowrap">מ</span>
-                <input
-                  type="date"
-                  value={range.fromDate || ''}
-                  onChange={(e) => updateDateRange(i, 'fromDate', e.target.value)}
-                  className="flex-1 min-w-0 px-1 py-1 border border-slate-200 rounded-lg nodrag font-bold text-xs"
-                />
-                <span className="text-xs font-bold text-slate-500 whitespace-nowrap">עד</span>
-                <input
-                  type="date"
-                  value={range.toDate || ''}
-                  onChange={(e) => updateDateRange(i, 'toDate', e.target.value)}
-                  className="flex-1 min-w-0 px-1 py-1 border border-slate-200 rounded-lg nodrag font-bold text-xs"
-                />
-              </div>
-            </div>
-
-            <button
-              onClick={() => removeDateRange(i)}
-              className="w-6 h-6 rounded-md flex items-center justify-center text-slate-200 hover:text-red-500 hover:bg-red-50 transition-all opacity-0 group-hover/item:opacity-100 nodrag flex-shrink-0"
-              title="מחק טווח"
-            >
-              <X size={13} />
-            </button>
-          </div>
-        ))}
-
-        {/* Weekday ranges */}
-        {routingMode === 'weekday' && weekdayRanges.map((range: any, i: number) => (
-          <div key={i} className="flex items-center gap-1 p-1.5 bg-slate-50 border border-slate-100 rounded-xl group/item relative transition-colors hover:bg-white hover:border-orange-100">
-            <DeletableHandle nodeId={props.id} handleId={`option-${i}`} style={{ top: '50%', right: -10 }} />
-
-            <div className="flex-1">
-              <div className="flex gap-1 items-center" dir="rtl">
-                <span className="text-xs font-bold text-slate-500 whitespace-nowrap">מ</span>
-                <select
-                  value={Number.isInteger(range.fromDay) ? range.fromDay : 0}
-                  onChange={(e) => updateWeekdayRange(i, 'fromDay', parseInt(e.target.value, 10))}
-                  className="flex-1 min-w-0 px-1 py-1 border border-slate-200 rounded-lg nodrag font-bold text-xs bg-white"
-                >
-                  {WEEKDAYS.map((d) => (
-                    <option key={`from-${d.value}`} value={d.value}>{d.label}</option>
-                  ))}
-                </select>
-                <span className="text-xs font-bold text-slate-500 whitespace-nowrap">עד</span>
-                <select
-                  value={Number.isInteger(range.toDay) ? range.toDay : 4}
-                  onChange={(e) => updateWeekdayRange(i, 'toDay', parseInt(e.target.value, 10))}
-                  className="flex-1 min-w-0 px-1 py-1 border border-slate-200 rounded-lg nodrag font-bold text-xs bg-white"
-                >
-                  {WEEKDAYS.map((d) => (
-                    <option key={`to-${d.value}`} value={d.value}>{d.label}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <button
-              onClick={() => removeWeekdayRange(i)}
-              className="w-6 h-6 rounded-md flex items-center justify-center text-slate-200 hover:text-red-500 hover:bg-red-50 transition-all opacity-0 group-hover/item:opacity-100 nodrag flex-shrink-0"
-              title="מחק טווח"
-            >
-              <X size={13} />
+              <Plus size={14} /> הוסף תנאי
             </button>
           </div>
         ))}
 
         <button
-          onClick={routingMode === 'date' ? addDateRange : routingMode === 'weekday' ? addWeekdayRange : addTimeRange}
+          onClick={addBranch}
           className="w-full mt-2 py-4 text-[13px] font-bold bg-white text-blue-600 rounded-2xl border-2 border-dashed border-blue-100 hover:bg-blue-50 hover:border-blue-400 flex items-center justify-center gap-2 transition-all nodrag uppercase tracking-wider"
         >
-          <Plus size={18} /> {routingMode === 'date' ? 'הוסף טווח תאריכים' : routingMode === 'weekday' ? 'הוסף טווח ימים' : 'הוסף טווח שעות'}
+          <Plus size={18} /> הוסף אופציית ניתוב
         </button>
       </div>
     </BaseNode>

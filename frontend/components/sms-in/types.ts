@@ -21,6 +21,8 @@ export interface DestSetting {
   webhookUrl: string;       // Optional generic webhook URL (can also point to Google Sheets)
   isActive: boolean;
   notes?: string;
+  /** When the line assignment row was first created — used to sort newest-first */
+  createdAt?: string;
 }
 
 export interface Client {

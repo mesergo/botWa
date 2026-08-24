@@ -374,12 +374,23 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
           allowDuplicateEmail
         })
       });
-      const d = await r.json();
+      const raw = await r.text();
+      let d: any;
+      try {
+        d = raw ? JSON.parse(raw) : {};
+      } catch {
+        setCreateUserError(
+          r.status === 502 || r.status === 504
+            ? 'השרת אינו זמין כרגע (שגיאת שער). נסה שוב בעוד רגע.'
+            : `השרת החזיר תגובה לא תקינה (קוד ${r.status}). ייתכן שהשרת נפל או שכתובת ה-API שגויה.`
+        );
+        return;
+      }
       if (r.status === 409 && d.emailExists) {
         setCreateUserDuplicate({ count: d.count, accounts: d.accounts || [] });
         return;
       }
-      if (!r.ok) { setCreateUserError(d.error); return; }
+      if (!r.ok) { setCreateUserError(d.error || `שגיאה (קוד ${r.status})`); return; }
       setShowCreateUserModal(false);
       setCreateUserForm({ name: '', email: '', phone: '', password: '', account_type: 'Trial', user_type_id: '', manager_id: '', allowed_bot_ids: [] });
       setCreateUserDuplicate(null);

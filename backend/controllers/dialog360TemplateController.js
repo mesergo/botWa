@@ -12,6 +12,9 @@ const normalizeSetting = (s) => {
   if (obj.showInChat === undefined || obj.showInChat === null) {
     obj.showInChat = obj.visibility !== 'hidden';
   }
+  if (!obj.postSendMode) {
+    obj.postSendMode = 'no_change';
+  }
   return obj;
 };
 
@@ -117,6 +120,40 @@ export const setDefaultMedia = async (req, res) => {
       templateId,
       defaultHeaderMediaUrl: url || null,
       defaultHeaderMediaType: url ? mediaType : null,
+      userId,
+    };
+
+    const setting = await Dialog360TemplateSetting.findOneAndUpdate(
+      { templateName, userId },
+      { $set: update },
+      { upsert: true, new: true }
+    );
+
+    res.json({ success: true, setting: normalizeSetting(setting) });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+/**
+ * Set the post-send mode for a template: what happens to the conversation
+ * right after this specific template is sent (no_change / agent / bot).
+ */
+export const updatePostSendMode = async (req, res) => {
+  try {
+    const { templateName, templateId, postSendMode } = req.body;
+    const userId = getEffectiveUserId(req);
+
+    if (!templateName) {
+      return res.status(400).json({ error: 'templateName is required' });
+    }
+    if (!['no_change', 'agent', 'bot'].includes(postSendMode)) {
+      return res.status(400).json({ error: 'postSendMode must be one of: no_change, agent, bot' });
+    }
+
+    const update = {
+      templateId,
+      postSendMode,
       userId,
     };
 

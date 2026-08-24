@@ -10,6 +10,7 @@ import { FileUploader } from './FileUploader';
 import { TemplateHeaderMediaField } from './TemplateHeaderMediaField';
 import ImportContactsModal from './ImportContactsModal';
 import TemplateBodyParamsEditor from './TemplateBodyParamsEditor';
+import PersonalizedTextarea from './shared/PersonalizedTextarea';
 import { usePermission } from '../hooks/usePermission';
 import PageTopBar from './PageTopBar';
 import AppNav from './AppNav';
@@ -1791,9 +1792,10 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
               {!selectedTemplate && (
                 <div>
                   <label className="text-xs font-black text-slate-500 mb-2 block">או הקלד הודעת טקסט חופשית:</label>
-                  <textarea
+                  <PersonalizedTextarea
                     value={sendText}
-                    onChange={e => setSendText(e.target.value)}
+                    onChange={setSendText}
+                    contactFields={contactFields}
                     rows={6}
                     placeholder={mediaType ? 'כיתוב למדיה (אופציונלי)...' : 'הקלד את ההודעה כאן...'}
                     className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm outline-none focus:ring-4 focus:ring-green-600/10 focus:border-green-600 resize-none"

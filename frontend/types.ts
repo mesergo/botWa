@@ -31,6 +31,11 @@ export enum NodeType {
   AUTOMATIC_RESPONSES = 'automatic_responses'
 }
 
+export type TimeRoutingCondition =
+  | { kind: 'time'; fromHour: number; fromMinute?: number; toHour: number; toMinute?: number }
+  | { kind: 'date'; fromDate: string; toDate: string }
+  | { kind: 'weekday'; fromDay: number; toDay: number };
+
 export interface NodeData {
   label: string;
   variableName?: string;
@@ -46,10 +51,7 @@ export interface NodeData {
   optionOperators?: string[];
   optionImages?: string[];
   dateTimeMode?: 'date' | 'time' | 'datetime';
-  routingMode?: 'time' | 'date' | 'weekday';
-  timeRanges?: Array<{ fromHour: number; fromMinute?: number; toHour: number; toMinute?: number; }>;
-  dateRanges?: Array<{ fromDate: string; toDate: string; }>;
-  weekdayRanges?: Array<{ fromDay: number; toDay: number; }>;
+  timeRoutingBranches?: Array<{ conditions: TimeRoutingCondition[] }>;
   groupId?: string;
   removeFromGroupMode?: 'specific' | 'all';
   removeGroupId?: string;
@@ -85,7 +87,7 @@ export interface NodeData {
   onNavigateToNode?: (nodeId: string) => void;
   /** Whether to save the captured value to the contact's custom_field_values */
   saveToContact?: boolean;
-  /** The ContactFieldDef._id to store the value into; required when saveToContact is true */
+  /** Where to store the value when saveToContact is true: 'full_name' | 'email' (fixed Contact fields) or a ContactFieldDef._id (custom field) */
   contactFieldKey?: string;
   /** For action_web_service: HTTP method (default: POST) */
   apiMethod?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';

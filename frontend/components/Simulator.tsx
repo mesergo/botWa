@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { WhatsAppText } from '../utils/whatsappFormat';
+import { findMatchedBranchIndex } from '../utils/timeRouting';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Send, X, RotateCcw, User, Bot, ExternalLink, FileText, ChevronLeft, ChevronRight, Maximize2, Share2, Check, GitBranch, Upload, History, Globe } from 'lucide-react';
 import { ChatMessage, NodeType, FixedProcess, CarouselItem, User as UserType, Version } from '../types';
@@ -809,73 +810,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
         // Get current date/time in Israel timezone
         const now = new Date();
         const israelTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Jerusalem' }));
-        const routingMode = node.data.routingMode || 'time';
-
-        let matchedIndex = -1;
-
-        if (routingMode === 'date') {
-          const israelDateStr = [
-            israelTime.getFullYear(),
-            String(israelTime.getMonth() + 1).padStart(2, '0'),
-            String(israelTime.getDate()).padStart(2, '0'),
-          ].join('-');
-
-          const dateRanges = node.data.dateRanges || [];
-          for (let i = 0; i < dateRanges.length; i++) {
-            const range = dateRanges[i];
-            if (range.fromDate && range.toDate && israelDateStr >= range.fromDate && israelDateStr <= range.toDate) {
-              matchedIndex = i;
-              break;
-            }
-          }
-        } else if (routingMode === 'weekday') {
-          const israelDay = israelTime.getDay(); // 0=Sunday ... 6=Saturday
-          const weekdayRanges = node.data.weekdayRanges || [];
-          for (let i = 0; i < weekdayRanges.length; i++) {
-            const range = weekdayRanges[i];
-            const fromDay = Number.isInteger(range.fromDay) ? range.fromDay : 0;
-            const toDay = Number.isInteger(range.toDay) ? range.toDay : 6;
-
-            let inRange = false;
-            if (fromDay <= toDay) {
-              inRange = israelDay >= fromDay && israelDay <= toDay;
-            } else {
-              inRange = israelDay >= fromDay || israelDay <= toDay;
-            }
-
-            if (inRange) {
-              matchedIndex = i;
-              break;
-            }
-          }
-        } else {
-          const israelHour = israelTime.getHours();
-          const israelMinute = israelTime.getMinutes();
-          const timeRanges = node.data.timeRanges || [];
-          for (let i = 0; i < timeRanges.length; i++) {
-            const range = timeRanges[i];
-            const fromHour = parseInt(range.fromHour) || 0;
-            const fromMinute = parseInt(range.fromMinute) || 0;
-            const toHour = parseInt(range.toHour) || 23;
-            const toMinute = parseInt(range.toMinute) || 0;
-
-            const currentMinutes = israelHour * 60 + israelMinute;
-            const fromMinutes = fromHour * 60 + fromMinute;
-            const toMinutes = toHour * 60 + toMinute;
-
-            let inRange = false;
-            if (fromMinutes <= toMinutes) {
-              inRange = currentMinutes >= fromMinutes && currentMinutes < toMinutes;
-            } else {
-              inRange = currentMinutes >= fromMinutes || currentMinutes < toMinutes;
-            }
-
-            if (inRange) {
-              matchedIndex = i;
-              break;
-            }
-          }
-        }
+        const matchedIndex = findMatchedBranchIndex(node.data.timeRoutingBranches || [], israelTime);
 
         const targetHandle = matchedIndex >= 0 ? `option-${matchedIndex}` : 'option-default';
         return processNext(findNextNodeId(nodeId, instance, targetHandle), instance, depth + 1, stack);

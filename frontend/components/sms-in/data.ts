@@ -19,5 +19,6 @@ export function normalizeDestSetting(raw: Partial<DestSetting> & { dest: string 
     webhookUrl: hasNewFormat ? (raw.webhookUrl ?? '') : '',
     isActive: raw.isActive ?? false,
     notes: raw.notes,
+    createdAt: raw.createdAt,
   };
 }

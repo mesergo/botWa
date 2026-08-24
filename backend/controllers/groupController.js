@@ -9,6 +9,8 @@ import BotSession from '../models/BotSession.js';
 import GroupBroadcast from '../models/GroupBroadcast.js';
 import GroupRemovalLog from '../models/GroupRemovalLog.js';
 import { getEffectiveUserId } from '../middleware/auth.js';
+import { buildWACredentials } from '../utils/whatsappSender.js';
+import { resolveTemplatePostSendMode, buildPostSendModeFields } from '../utils/templatePostSendMode.js';
  
 // ── Broadcast Queue (per-user) ────────────────────────────────────────────────
 // Ensures broadcasts for the same user run one at a time, never in parallel.
@@ -17,14 +19,38 @@ const broadcastQueues = new Map(); // userId -> { running: boolean, queue: Array
 // ── Scheduled broadcast ticker ────────────────────────────────────────────────
 // Every 60s, find broadcasts whose scheduled_at has arrived and fire them via the
 // normal per-user queue — exactly like an immediate send.
+//
+// Expiry: a scheduled broadcast is only allowed to fire within SCHEDULE_EXPIRY_MS of its
+// scheduled_at. If the server was down (e.g. restarted a week later) and misses the window,
+// the ticker marks it 'failed' instead of sending it late.
+const SCHEDULE_EXPIRY_MS = 60 * 60 * 1000; // 1 hour
+
 setInterval(async () => {
   try {
     const due = await GroupBroadcast.find({
       status: 'scheduled',
       scheduled_at: { $lte: new Date() },
-    }).select('_id user_id group_id group_name audience_type audience_contact_ids is_template template_data message media');
+    }).select('_id user_id group_id group_name audience_type audience_contact_ids is_template template_data message media scheduled_at');
 
     for (const rec of due) {
+      const msPastDue = Date.now() - new Date(rec.scheduled_at).getTime();
+      if (msPastDue > SCHEDULE_EXPIRY_MS) {
+        // Too late to send (e.g. server was down past the scheduled time) — expire it instead
+        // of sending an outdated message unexpectedly.
+        const expired = await GroupBroadcast.findOneAndUpdate(
+          { _id: rec._id, status: 'scheduled' },
+          {
+            $set: { status: 'failed', completed_at: new Date() },
+            $push: { errors: { phone: '', status: 'expired', error: 'ההודעה המתוזמנת לא נשלחה — עברה יותר משעה מהמועד המתוזמן (כנראה בשל הפסקת שירות)' } },
+          },
+          { new: true }
+        );
+        if (expired) {
+          console.warn(`[scheduledTicker] ⌛ Broadcast ${rec._id} expired (${Math.round(msPastDue / 60000)}m past scheduled_at) — marked failed, not sent`);
+        }
+        continue;
+      }
+
       // Atomically claim this broadcast — prevents double-firing if two ticks overlap
       const claimed = await GroupBroadcast.findOneAndUpdate(
         { _id: rec._id, status: 'scheduled' },
@@ -649,6 +675,67 @@ function resolveContactField(contact, fieldRef) {
   return '';
 }
 
+// Substitute one or more `$token$` personalization placeholders in a plain-text
+// (non-template) broadcast message with each recipient's own field value. Multiple
+// DIFFERENT tokens can appear in the same message (e.g. `$name$` and `$email$`) — each
+// is resolved independently. Mirrors the __field: convention used for templates, but
+// for free-text messages (see frontend/components/shared/PersonalizedTextarea.tsx for
+// the exact token keys the UI inserts).
+const STD_TEXT_TOKENS = {
+  name: 'full_name',
+  wa_name: 'whatsapp_name',
+  phone: 'phone',
+  email: 'email',
+};
+
+// Map a literal `$token$` key (as inserted into message text) to the contact field ref
+// resolveContactField() understands.
+function textTokenToFieldRef(token) {
+  if (STD_TEXT_TOKENS[token]) return STD_TEXT_TOKENS[token];
+  if (token.startsWith('field_')) return `custom:${token.slice(6)}`;
+  return null;
+}
+
+// Find every recognized `$token$` placeholder referenced in a plain-text broadcast
+// message (deduplicated). Unknown `$..$` sequences are left untouched.
+function extractTextTokens(text) {
+  const matches = String(text || '').match(/\$([a-zA-Z0-9_]+)\$/g) || [];
+  const tokens = new Set();
+  for (const m of matches) {
+    const token = m.slice(1, -1);
+    if (textTokenToFieldRef(token)) tokens.add(token);
+  }
+  return Array.from(tokens);
+}
+
+// Replace one `$token$` placeholder with its resolved value. When the value is empty
+// (e.g. contact has no email/custom field filled in), the placeholder is removed
+// entirely — together with one adjacent space — instead of leaving a hole behind, so
+// "שלום $name$" with no name becomes "שלום" (not "שלום " with a trailing space, and
+// not the literal "שלום $name$").
+function replaceTokenWithValue(text, token, val) {
+  const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const placeholder = new RegExp(`\\$${escaped}\\$`, 'g');
+  if (val) return text.replace(placeholder, val);
+  return text
+    .replace(new RegExp(`[ \\t]\\$${escaped}\\$`, 'g'), '')   // "word $token$" → "word"
+    .replace(new RegExp(`\\$${escaped}\\$[ \\t]`, 'g'), '')   // "$token$ word" → "word"
+    .replace(placeholder, '');                                 // no adjacent space at all
+}
+
+function renderPersonalizedText(msgText, contact) {
+  const text = msgText || '';
+  const tokens = extractTextTokens(text);
+  if (tokens.length === 0) return text;
+  let out = text;
+  for (const token of tokens) {
+    const val = resolveContactField(contact, textTokenToFieldRef(token)) || '';
+    out = replaceTokenWithValue(out, token, val);
+  }
+  // Collapse any double spaces left behind by a removed placeholder, and trim ends.
+  return out.replace(/[ \t]{2,}/g, ' ').trim();
+}
+
 // Render a WhatsApp template's BODY text with its actual sent params substituted in,
 // so the session history shows real content instead of just the template's internal name.
 // `contact` (when provided) is used to resolve __field: personalization tokens per-recipient.
@@ -685,6 +772,16 @@ function buildBroadcastHistoryEntry(groupName, broadcastId, flowId, { isTemplate
   if (isTemplate && templateData) {
     const bodyText = renderTemplateBodyText(templateData, contact);
     const templateMeta = { template_name: templateData.name || '' };
+    // Extract buttons from the template's BUTTONS component so they render in the chat bubble.
+    const buttonsComp = (templateData.components || []).find(c => c.type === 'BUTTONS');
+    if (buttonsComp && Array.isArray(buttonsComp.buttons) && buttonsComp.buttons.length > 0) {
+      templateMeta.template_buttons = buttonsComp.buttons.map(b => ({
+        type: b.type || 'QUICK_REPLY',
+        text: b.text || '',
+        ...(b.url ? { url: b.url } : {}),
+        ...(b.phone_number ? { phone_number: b.phone_number } : {})
+      }));
+    }
     const headerUrl = templateData.params?.header?.url;
     const headerType = templateData.params?.header?.type; // 'image' | 'video' | 'document'
     if (headerUrl && headerType) {
@@ -700,9 +797,9 @@ function buildBroadcastHistoryEntry(groupName, broadcastId, flowId, { isTemplate
   }
   if (media?.url && media?.type) {
     const typeMap = { image: 'Image', video: 'Video', document: 'Document' };
-    return { ...base, type: typeMap[media.type] || 'Text', url: media.url, filename: media.filename || '', text: msgText || '' };
+    return { ...base, type: typeMap[media.type] || 'Text', url: media.url, filename: media.filename || '', text: renderPersonalizedText(msgText, contact) };
   }
-  return { ...base, type: 'Text', text: msgText || '' };
+  return { ...base, type: 'Text', text: renderPersonalizedText(msgText, contact) };
 }
 
 // After a successful broadcast send, reflect the message into each recipient's conversation:
@@ -710,26 +807,32 @@ function buildBroadcastHistoryEntry(groupName, broadcastId, flowId, { isTemplate
 // - otherwise, queue it on Contact.pending_history — drained when their next session opens (chatController.js)
 // Each recipient gets its OWN history entry (not a shared one) so personalized template
 // params (__field:full_name etc.) show the real value for that specific contact.
-async function saveBroadcastToSessions(userId, flowId, broadcastId, groupName, sendOpts, phonesArr) {
+async function saveBroadcastToSessions(userId, flowId, broadcastId, groupName, sendOpts, phonesArr, postSendMode = 'no_change') {
   const normalizedPhones = phonesArr.map(p => p.phone);
   if (normalizedPhones.length === 0) return;
 
-  // Find the most recent session per phone for this bot
+  // Find the most recent session per phone for this bot (also grab its current
+  // status, needed to compute per-template post-send mode field updates below)
   const latestSessions = await BotSession.aggregate([
     { $match: { user_id: String(userId), flow_id: flowId, sender: { $in: normalizedPhones } } },
     { $sort: { createdAt: -1 } },
-    { $group: { _id: '$sender', sessionId: { $first: '$_id' } } },
+    { $group: { _id: '$sender', sessionId: { $first: '$_id' }, status: { $first: '$status' } } },
   ]);
-  const sessionIdByPhone = new Map(latestSessions.map(s => [s._id, s.sessionId]));
+  const sessionInfoByPhone = new Map(latestSessions.map(s => [s._id, { sessionId: s.sessionId, status: s.status }]));
 
   const sessionOps = [];
   const contactOps = [];
 
   for (const p of phonesArr) {
     const entry = buildBroadcastHistoryEntry(groupName, broadcastId, flowId, sendOpts, p.contact);
-    const sessionId = sessionIdByPhone.get(p.phone);
-    if (sessionId) {
-      sessionOps.push({ updateOne: { filter: { _id: sessionId }, update: { $push: { process_history: entry } } } });
+    const info = sessionInfoByPhone.get(p.phone);
+    if (info?.sessionId) {
+      const update = { $push: { process_history: entry } };
+      if (postSendMode !== 'no_change') {
+        const postSendFields = buildPostSendModeFields(postSendMode, info.status);
+        if (postSendFields) update.$set = postSendFields;
+      }
+      sessionOps.push({ updateOne: { filter: { _id: info.sessionId }, update } });
     } else if (p.contact?._id) {
       contactOps.push({ updateOne: { filter: { _id: p.contact._id }, update: { $push: { pending_history: entry } } } });
     }
@@ -750,6 +853,7 @@ async function processBroadcast(broadcastId, userId, group, contacts, opts) {
     // Resolve endpoint ID dynamically from the user's first connected bot (without dialog360/ prefix)
     let sheetEndpointId = null;
     let flowId = null;
+    let resolvedBot = null;
     {
       const query = bot_id
         ? { _id: bot_id, user_id: userId, endpoint: { $nin: ['', null] } }
@@ -759,6 +863,7 @@ async function processBroadcast(broadcastId, userId, group, contacts, opts) {
         const ep = bot.endpoint.includes('/') ? bot.endpoint.split('/').pop() : bot.endpoint;
         sheetEndpointId = ep;
         flowId = bot._id.toString();
+        resolvedBot = bot;
       }
     }
     if (!sheetEndpointId) {
@@ -766,7 +871,7 @@ async function processBroadcast(broadcastId, userId, group, contacts, opts) {
       await GroupBroadcast.findByIdAndUpdate(broadcastId, { status: 'failed', completed_at: new Date() });
       return;
     }
-    const SHEET_URL = `https://wa.message.co.il/api/sheet/15xZeZ7kgS3aNx47Yy3d5flDYtV9Dxw-sij9Wcnio4mQ/test/${sheetEndpointId}/send`;
+    const SHEET_URL = `https://wa.message.co.il/api/sheet/${sheetEndpointId}/send-to-list`;
     const SHEET_TOKEN = crypto.createHash('sha1').update(sheetEndpointId + 'moomoo').digest('hex');
     console.log(`${TAG} 🔌 Resolved endpoint: ${sheetEndpointId}`);
 
@@ -800,6 +905,76 @@ async function processBroadcast(broadcastId, userId, group, contacts, opts) {
         status: 'completed', completed_at: new Date(),
         processed: contacts.length, sent: 0, failed: 0, skipped, recipients,
       });
+      return;
+    }
+
+    // A plain-text (non-template) message personalized with one or more `#`-inserted
+    // fields contains `$token$` placeholders (e.g. `$name$`, `$email$`). CONFIRMED BY
+    // REAL-WORLD TEST (2026-08-19): the external wa.message.co.il "sheet/send-to-list"
+    // batch endpoint does NOT substitute these — the customer received the literal
+    // un-replaced `$wa_name$`/`$phone$` text even though our own session-history view
+    // (rendered locally via renderPersonalizedText) showed it resolved correctly. So we
+    // do NOT rely on that endpoint's per-recipient merge for arbitrary tokens at all —
+    // instead we resolve the text OURSELVES per contact and send each recipient an
+    // individual message via the regular single-recipient /send endpoint.
+    const textTokens = !isTemplate ? extractTextTokens(msgText) : [];
+    const usePersonalizedPhones = textTokens.length > 0;
+
+    if (usePersonalizedPhones) {
+      const { endpoint: singleEndpoint, waToken: singleToken } = buildWACredentials(null, resolvedBot);
+      if (!singleEndpoint) {
+        console.error(`${TAG} ❌ Could not resolve single-send endpoint for personalized broadcast — aborting`);
+        await GroupBroadcast.findByIdAndUpdate(broadcastId, { status: 'failed', completed_at: new Date() });
+        return;
+      }
+      const singleSendUrl = `https://wa.message.co.il/api/${singleEndpoint}/send`;
+      console.log(`${TAG} 🎯 Personalized send (tokens: ${textTokens.join(', ')}) — sending ${phonesArr.length} individual messages via ${singleSendUrl}`);
+
+      let sentCount = 0;
+      let failedCount = 0;
+      const errors = [];
+      for (const p of phonesArr) {
+        const resolvedText = renderPersonalizedText(msgText, p.contact);
+        const payload = { phone: p.phone, text: resolvedText, fromMe: 1 };
+        if (media?.url && media?.type) {
+          const mediaKey = media.type === 'video' ? 'video' : media.type === 'document' ? 'file' : 'image';
+          payload[mediaKey] = media.url;
+        }
+        try {
+          const waRes = await fetch(singleSendUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json; charset=utf-8', 'Accept': 'application/json', token: singleToken },
+            body: JSON.stringify(payload),
+          });
+          if (waRes.ok) {
+            sentCount++;
+            recipients.push({ phone: p.phone, name: p.name, status: 'sent' });
+          } else {
+            const errText = await waRes.text().catch(() => '');
+            failedCount++;
+            recipients.push({ phone: p.phone, name: p.name, status: 'failed', error: `HTTP ${waRes.status}` });
+            errors.push({ phone: p.phone, error: `HTTP ${waRes.status}: ${errText.substring(0, 200)}` });
+            console.error(`${TAG} ❌ Personalized send failed for ${p.phone}: HTTP ${waRes.status} — ${errText.substring(0, 200)}`);
+          }
+        } catch (sendErr) {
+          failedCount++;
+          recipients.push({ phone: p.phone, name: p.name, status: 'failed', error: sendErr.message });
+          errors.push({ phone: p.phone, error: sendErr.message });
+          console.error(`${TAG} ❌ Personalized send exception for ${p.phone}:`, sendErr.message);
+        }
+        await GroupBroadcast.findByIdAndUpdate(broadcastId, {
+          processed: sentCount + failedCount + skipped, sent: sentCount, failed: failedCount, skipped, recipients, errors,
+        }).catch(() => {});
+        await new Promise(r => setTimeout(r, 350)); // gentle pacing between individual sends
+      }
+
+      await GroupBroadcast.findByIdAndUpdate(broadcastId, { status: 'completed', completed_at: new Date() });
+      console.log(`${TAG} ✅ Personalized send complete — sent=${sentCount} failed=${failedCount} skipped=${skipped}`);
+
+      if (flowId) {
+        saveBroadcastToSessions(userId, flowId, broadcastId, group.name, { isTemplate, templateData, msgText, media }, phonesArr)
+          .catch(err => console.error(`${TAG} Failed to save broadcast to session histories:`, err));
+      }
       return;
     }
 
@@ -837,8 +1012,16 @@ async function processBroadcast(broadcastId, userId, group, contacts, opts) {
 
     const fullUrl = `${SHEET_URL}?${queryParts.join('&')}`;
 
-    // Body: only phones as flat array of strings
-    const body = { phones: phonesArr.map(p => p.phone) };
+    // Body: phones as { phone, name } objects (personalized plain-text messages never
+    // reach this point — they're handled earlier via the per-recipient loop above).
+    // CONFIRMED from the actual send-to-list server source: it maps each phones[] entry
+    // to `[phone, name]` via `typeof p === 'object' ? [p.phone, p.name] : [p, '']` and
+    // ONLY ever substitutes `$name$` (or positionally `$A$`/`$B$`) — no other key is read.
+    // Sending flat phone strings here (as before) meant `name` was always '' server-side,
+    // silently breaking template `$name$` params (__field:full_name/whatsapp_name). Always
+    // sending `{ phone, name }` fixes that, and is a harmless no-op for messages that don't
+    // reference `$name$`.
+    const body = { phones: phonesArr.map(p => ({ phone: p.phone, name: p.name })) };
 
     console.log(`${TAG} 📤 POST ${fullUrl}`);
     console.log(`${TAG}   → phones: ${phonesArr.length} | template: ${isTemplate ? (templateData?.name || 'N/A') : 'N/A'} | text: ${!isTemplate ? String(msgText || '').substring(0, 50) : 'N/A'} | reportId: ${broadcastId}`);
@@ -867,7 +1050,12 @@ async function processBroadcast(broadcastId, userId, group, contacts, opts) {
       // existing sessions get it right away; contacts with no session yet get it
       // queued in Contact.pending_history and drained when their next session opens.
       if (flowId) {
-        saveBroadcastToSessions(userId, flowId, broadcastId, group.name, { isTemplate, templateData, msgText, media }, phonesArr)
+        // Single broadcast = single template = resolve the post-send mode ONCE
+        // (not per-recipient).
+        const postSendMode = (isTemplate && templateData?.name)
+          ? await resolveTemplatePostSendMode(userId, templateData.name)
+          : 'no_change';
+        saveBroadcastToSessions(userId, flowId, broadcastId, group.name, { isTemplate, templateData, msgText, media }, phonesArr, postSendMode)
           .catch(err => console.error(`${TAG} Failed to save broadcast to session histories:`, err));
       }
     } else {

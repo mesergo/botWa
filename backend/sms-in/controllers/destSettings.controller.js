@@ -12,17 +12,27 @@ function toClientShape(doc) {
     webhookUrl: doc.webhookUrl || '',
     isActive: !!doc.isActive,
     notes: doc.notes || '',
+    createdAt: doc.createdAt || null,
   };
 }
 
 /**
+ * Account that SMS lines are assigned to. Lines are only ever assigned to owner
+ * accounts (see clients.controller — reps are excluded from the client pool), so
+ * a sub-user must resolve to its manager to see the account's lines.
+ */
+export function getSmsOwnerId(req) {
+  return req.user?.manager_id || req.userId;
+}
+
+/**
  * GET /api/sms-in/dest-settings
- * Always scoped to the logged-in user (admin accounts included).
+ * Always scoped to the logged-in account (admin accounts included).
  */
 export async function getDestSettings(req, res) {
   try {
-    const userId = req.userId;
-    const docs = await SmsDestSetting.find({ assignedClientId: userId }).sort({ dest: 1 }).lean();
+    const userId = getSmsOwnerId(req);
+    const docs = await SmsDestSetting.find({ assignedClientId: userId }).sort({ createdAt: -1 }).lean();
 
     res.json({
       settings: docs.map(toClientShape),
@@ -41,7 +51,7 @@ export async function getDestSettings(req, res) {
  */
 export async function getAdminDestSettings(req, res) {
   try {
-    const docs = await SmsDestSetting.find({}).sort({ dest: 1 }).lean();
+    const docs = await SmsDestSetting.find({}).sort({ createdAt: -1 }).lean();
 
     res.json({
       settings: docs.map(toClientShape),
@@ -142,7 +152,11 @@ export async function bulkAssignDestSettings(req, res) {
             assignedClientName: assignedClientName || '',
             isActive: true,
             notes: 'נוסף משיוך מספרים מרוכז',
+            updatedAt: new Date(),
           },
+          // bulkWrite bypasses mongoose timestamps middleware, so stamp createdAt
+          // manually — only applied when the upsert actually inserts a new doc.
+          $setOnInsert: { createdAt: new Date() },
         },
         upsert: true,
       },

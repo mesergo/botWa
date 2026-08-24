@@ -7,7 +7,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "firebase": "^12.16.0",
+    "firebase": "^12.17.1",
     "framer-motion": "^12.26.2",
     "lucide-react": "^0.562.0",
     "react-router-dom": "^7.13.0",

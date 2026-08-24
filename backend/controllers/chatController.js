@@ -13,7 +13,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import crypto from 'crypto';
-import { parseTimeRangeValue, matchTimeRange } from '../utils/timeRouting.js';
+import { reconstructTimeRoutingBranches, isTimeRoutingBranchOption, findMatchedBranchIndex } from '../utils/timeRouting.js';
 import { handleWebService, findMatchingOption } from '../utils/webserviceHandler.js';
 import { normalizePhone } from '../utils/phone.js';
 import { getEffectiveRemovalConfig, matchRemovalKeywordWithLang, DEFAULT_REMOVAL_CONFIG } from '../utils/removalConfig.js';
@@ -22,6 +22,7 @@ import eventBus from '../utils/eventBus.js';
 import { applyConversationClosedToDoc } from '../utils/conversationActions.js';
 
 import { notifyWaitingCustomerMessage } from '../config/pushNotificationsRuntime.js';
+import { sendExpoPushToUser } from '../utils/expoPush.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -212,34 +213,13 @@ const getFlowData = async (flowId, processId = null) => {
     let metadata = w.image_file || {};
     const nodeOptions = options.filter(o => o.widget_id === w.id);
 
-    // Reconstruct timeRanges / dateRanges for action_time_routing
+    // Reconstruct timeRoutingBranches for action_time_routing
     if (w.type === 'action_time_routing') {
-      const routingMode = metadata.routingMode || 'time';
-      let ranges = {};
-      if (routingMode === 'date') {
-        ranges.dateRanges = nodeOptions
-          .filter(o => o.operator === 'date_range')
-          .map(o => {
-            const [fromDate, toDate] = o.value.split('|');
-            return { fromDate, toDate };
-          });
-      } else if (routingMode === 'weekday') {
-        ranges.weekdayRanges = nodeOptions
-          .filter(o => o.operator === 'weekday_range')
-          .map(o => {
-            const [fromDay, toDay] = o.value.split('-').map(Number);
-            return { fromDay, toDay };
-          });
-      } else {
-        ranges.timeRanges = nodeOptions
-          .filter(o => o.operator === 'time_range')
-          .map(o => parseTimeRangeValue(o.value));
-      }
       return {
         id: w.id,
         type: w.type,
         position: { x: w.pos_x, y: w.pos_y },
-        data: { ...metadata, ...ranges }
+        data: { ...metadata, ...reconstructTimeRoutingBranches(nodeOptions) }
       };
     }
     
@@ -292,13 +272,17 @@ const getFlowData = async (flowId, processId = null) => {
 
     // Special handling for time routing: use correct sourceHandle names
     if (w.type === 'action_time_routing') {
-      let rangeIndex = 0;
-      wOptions.forEach((o) => {
+      const branchOpts = wOptions.filter(isTimeRoutingBranchOption);
+      const defaultOpts = wOptions.filter(o => o.operator === 'default');
+      branchOpts.forEach((o, i) => {
         if (o.next) {
-          const sourceHandle = o.operator === 'default' ? 'option-default' : `option-${rangeIndex}`;
-          edges.push({ id: `e-${w.id}-${sourceHandle}-${o.next}`, source: w.id, sourceHandle, target: o.next });
+          edges.push({ id: `e-${w.id}-option-${i}-${o.next}`, source: w.id, sourceHandle: `option-${i}`, target: o.next });
         }
-        if (o.operator === 'time_range' || o.operator === 'date_range' || o.operator === 'weekday_range') rangeIndex++;
+      });
+      defaultOpts.forEach((o) => {
+        if (o.next) {
+          edges.push({ id: `e-${w.id}-option-default-${o.next}`, source: w.id, sourceHandle: 'option-default', target: o.next });
+        }
       });
     } else if (w.type === 'action_web_service') {
       // For action_web_service: build conditional option edges with sequential indices
@@ -531,8 +515,16 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
       }
 
       case 'action_wait': {
+        // NOTE: We do NOT block here with a synchronous sleep. All messages
+        // produced by walkChain are only actually sent (to WhatsApp) once the
+        // whole chain finishes, so a synchronous await here just delayed the
+        // entire batch and then sent every message at once — the delay was
+        // never perceived between messages. Instead we emit a 'Wait' marker
+        // into the messages array; pushMessagesToWhatsApp() honors it by
+        // pausing for the requested duration between the messages sent
+        // before and after it.
         const waitTime = parseInt(nodeData.waitTime) || 1;
-        await new Promise(resolve => setTimeout(resolve, waitTime * 1000));
+        messages.push({ type: 'Wait', ms: waitTime * 1000, created: new Date().toISOString() });
         currentNodeId = findNextNode(currentNodeId, edges);
         break;
       }
@@ -895,57 +887,7 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
         // Get current date/time in Israel timezone (handles DST automatically)
         const now = new Date();
         const israelTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Jerusalem' }));
-        const routingMode = nodeData.routingMode || 'time';
-
-        let matchedIndex = -1;
-
-        if (routingMode === 'date') {
-          const israelDateStr = [
-            israelTime.getFullYear(),
-            String(israelTime.getMonth() + 1).padStart(2, '0'),
-            String(israelTime.getDate()).padStart(2, '0'),
-          ].join('-');
-
-          const dateRanges = nodeData.dateRanges || [];
-          for (let i = 0; i < dateRanges.length; i++) {
-            const range = dateRanges[i];
-            if (range.fromDate && range.toDate && israelDateStr >= range.fromDate && israelDateStr <= range.toDate) {
-              matchedIndex = i;
-              break;
-            }
-          }
-        } else if (routingMode === 'weekday') {
-          const israelDay = israelTime.getDay(); // 0=Sunday ... 6=Saturday
-          const weekdayRanges = nodeData.weekdayRanges || [];
-          for (let i = 0; i < weekdayRanges.length; i++) {
-            const range = weekdayRanges[i];
-            const fromDay = Number.isInteger(range.fromDay) ? range.fromDay : 0;
-            const toDay = Number.isInteger(range.toDay) ? range.toDay : 6;
-
-            let inRange = false;
-            if (fromDay <= toDay) {
-              inRange = israelDay >= fromDay && israelDay <= toDay;
-            } else {
-              inRange = israelDay >= fromDay || israelDay <= toDay;
-            }
-
-            if (inRange) {
-              matchedIndex = i;
-              break;
-            }
-          }
-        } else {
-          const israelHour = israelTime.getHours();
-          const israelMinute = israelTime.getMinutes();
-          const timeRanges = nodeData.timeRanges || [];
-          for (let i = 0; i < timeRanges.length; i++) {
-            const range = timeRanges[i];
-            if (matchTimeRange(israelHour, israelMinute, range)) {
-              matchedIndex = i;
-              break;
-            }
-          }
-        }
+        const matchedIndex = findMatchedBranchIndex(nodeData.timeRoutingBranches || [], israelTime);
 
         // Route to matched option or default
         if (matchedIndex >= 0) {
@@ -1439,6 +1381,12 @@ export const respondToMessage = async (req, res) => {
           previewText: String(text || '').slice(0, 80),
           clickAction: `/sessions?phone=${encodeURIComponent(sender)}`,
         });
+        // Expo push (mobile) — same trigger, fire-and-forget, never blocks the bot pipeline
+        void sendExpoPushToUser(agentCheckSession.rep_user_id || String(user._id), {
+          title: name || sender || 'לקוח',
+          body: 'הודעה חדשה מלקוח',
+          data: { sessionId: String(agentCheckSession._id) },
+        }).catch((err) => console.error('[EXPO-PUSH] chatController isolated error:', err?.message || err));
         console.log(`[BOT] 🙋 AGENT MODE active for sessionId=${agentCheckSession._id} phone=${phone} — bot suppressed, message recorded`);
         console.log(`${'═'.repeat(80)}\n`);
         return res.json({ StatusId: 1, StatusDescription: 'Agent mode active', sender, messages: [], agentMode: true });
@@ -1832,7 +1780,7 @@ export const respondToMessage = async (req, res) => {
             await session.save();
             const { anySuccess: waPushedInterrupt1, wamidPerMsg: wamids1 } = await pushMessagesToWhatsApp(sender, messages, user, tokenBot);
             try { await applyWamids(session, messages, wamids1); } catch (e) { console.error('[BOT] applyWamids failed (non-critical):', e.message); }
-            return res.json({ StatusId: 1, StatusDescription: 'Success', sender, messages: waPushedInterrupt1 ? [] : messages, control: null, ...(waPushedInterrupt1 && { wa_pushed: true }) });
+            return res.json({ StatusId: 1, StatusDescription: 'Success', sender, messages: waPushedInterrupt1 ? [] : messages.filter(m => m.type !== 'Wait'), control: null, ...(waPushedInterrupt1 && { wa_pushed: true }) });
           }
         }
       }
@@ -1871,7 +1819,7 @@ export const respondToMessage = async (req, res) => {
               await session.save();
               const { anySuccess: waPushedInterrupt2, wamidPerMsg: wamids2 } = await pushMessagesToWhatsApp(sender, messages, user, tokenBot);
               try { await applyWamids(session, messages, wamids2); } catch (e) { console.error('[BOT] applyWamids failed (non-critical):', e.message); }
-              return res.json({ StatusId: 1, StatusDescription: 'Success', sender, messages: waPushedInterrupt2 ? [] : messages, control: null, ...(waPushedInterrupt2 && { wa_pushed: true }) });
+              return res.json({ StatusId: 1, StatusDescription: 'Success', sender, messages: waPushedInterrupt2 ? [] : messages.filter(m => m.type !== 'Wait'), control: null, ...(waPushedInterrupt2 && { wa_pushed: true }) });
             }
           }
         }
@@ -2012,16 +1960,20 @@ export const respondToMessage = async (req, res) => {
       session.parameters = params;
       session.markModified('parameters');
 
-      // Save to contact custom_field_values if flagged
+      // Save to contact if flagged — either a fixed Contact field (full_name/email)
+      // or a custom_field_values entry (field _id, or varName for legacy flows)
       if (currentNode.data.saveToContact) {
-        // contactFieldKey (field _id) takes precedence; fall back to varName for legacy flows
         const contactKey = currentNode.data.contactFieldKey || varName;
         // session.sender is the customer's phone; session.customer_phone is the bot's phone
         const contactPhone = session.sender || session.customer_phone;
         if (contactKey && contactPhone) {
+          const FIXED_CONTACT_FIELDS = ['full_name', 'email'];
+          const updateDoc = FIXED_CONTACT_FIELDS.includes(contactKey)
+            ? { $set: { [contactKey]: text } }
+            : { $set: { [`custom_field_values.${contactKey}`]: text } };
           Contact.findOneAndUpdate(
             { user_id: session.user_id, phone: contactPhone },
-            { $set: { [`custom_field_values.${contactKey}`]: text } },
+            updateDoc,
             { upsert: true, new: true }
           ).catch(err => console.error('[BOT] Failed to save contact field:', err));
         }
@@ -2240,6 +2192,12 @@ export const respondToMessage = async (req, res) => {
         previewText: String(text || '').slice(0, 80),
         clickAction: `/sessions?phone=${encodeURIComponent(sender)}`,
       });
+      // Expo push (mobile) — same trigger, fire-and-forget, never blocks the bot pipeline
+      void sendExpoPushToUser(session.rep_user_id || String(user._id), {
+        title: name || sender || 'לקוח',
+        body: 'הודעה חדשה מלקוח',
+        data: { sessionId: String(session._id) },
+      }).catch((err) => console.error('[EXPO-PUSH] chatController isolated error:', err?.message || err));
     }
 
     // Build control object if needed
@@ -2272,7 +2230,7 @@ export const respondToMessage = async (req, res) => {
       StatusId: 1,
       StatusDescription: 'Success',
       sender,
-      messages: waPushed ? [] : messages,
+      messages: waPushed ? [] : messages.filter(m => m.type !== 'Wait'),
       control,
       ...(waPushed && { wa_pushed: true }),
     });
@@ -2286,6 +2244,63 @@ export const respondToMessage = async (req, res) => {
       StatusDescription: error.message
     });
   }
+};
+
+// Helper: pull a flat array of template body-parameter values out of an external
+// caller's request, regardless of the exact shape they used to send them. External
+// systems integrating with /api/360/:wa_id/send don't all follow the same convention
+// (params[] as an array, an object of numeric keys, a JSON-encoded string, a
+// comma-separated string, or flat param1/param2/... keys), so we try several
+// reasonable shapes in order and return the first one that yields values. This keeps
+// {{1}}, {{2}}... from ever being left unresolved in the saved/displayed message just
+// because the caller used a slightly different (but still reasonable) format.
+const extractTemplateParams = (source) => {
+  const toArrayFromValue = (val) => {
+    if (val === null || val === undefined) return [];
+    if (Array.isArray(val)) return val.map(String);
+    if (typeof val === 'object') {
+      const keys = Object.keys(val);
+      const allNumeric = keys.length > 0 && keys.every(k => /^\d+$/.test(k));
+      const ordered = allNumeric ? keys.sort((a, b) => Number(a) - Number(b)) : keys;
+      return ordered.map(k => String(val[k]));
+    }
+    if (typeof val === 'string') {
+      const trimmed = val.trim();
+      if (!trimmed) return [];
+      if ((trimmed.startsWith('[') && trimmed.endsWith(']')) || (trimmed.startsWith('{') && trimmed.endsWith('}'))) {
+        try {
+          const parsed = JSON.parse(trimmed);
+          const arr = toArrayFromValue(parsed);
+          if (arr.length > 0) return arr;
+        } catch { /* fall through to delimiter split */ }
+      }
+      if (trimmed.includes(',') || trimmed.includes('|')) {
+        return trimmed.split(/[,|]/).map(s => s.trim());
+      }
+      return [trimmed];
+    }
+    return [String(val)];
+  };
+
+  // 1) Try common container keys, in priority order.
+  for (const key of ['params', 'parameters', 'body', 'variables', 'values']) {
+    const arr = toArrayFromValue(source[key]);
+    if (arr.length > 0) return arr;
+  }
+
+  // 2) Fall back to flat top-level keys like param1/param2 or parameter_1/parameter_2.
+  const flatMatches = Object.keys(source || {})
+    .map(k => {
+      const m = k.match(/^param(?:eter)?s?_?(\d+)$/i);
+      return m ? { index: Number(m[1]), key: k } : null;
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.index - b.index);
+  if (flatMatches.length > 0) {
+    return flatMatches.map(({ key }) => String(source[key]));
+  }
+
+  return [];
 };
 
 /**
@@ -2348,17 +2363,7 @@ export const sendTemplateExternal = async (req, res) => {
 
     // ── Step 3: Flatten params[] and extract header media ────────────────────
     console.log(`[360-TEMPLATE] 🔢 STEP 3 — Parsing params and header`);
-    const rawParams = source.params || {};
-    let paramsArray;
-    if (Array.isArray(rawParams)) {
-      paramsArray = rawParams.map(String);
-    } else if (rawParams && typeof rawParams === 'object') {
-      paramsArray = Object.keys(rawParams)
-        .sort((a, b) => Number(a) - Number(b))
-        .map(k => String(rawParams[k]));
-    } else {
-      paramsArray = [];
-    }
+    const paramsArray = extractTemplateParams(source);
     console.log(`[360-TEMPLATE]    params (${paramsArray.length}): ${JSON.stringify(paramsArray)}`);
 
     // Walk any nested structure to find media URL + type inside header[...]
@@ -2392,6 +2397,7 @@ export const sendTemplateExternal = async (req, res) => {
     let displayText = paramsArray.length > 0
       ? `[${template}]: ${paramsArray.join(' | ')}`
       : `[${template}]`;
+    let templateButtons = null;
 
     try {
       const apiToken = crypto.createHash('sha1').update(wa_id + 'moomoo').digest('hex');
@@ -2434,6 +2440,17 @@ export const sendTemplateExternal = async (req, res) => {
               }
             }
           }
+          // Extract buttons from BUTTONS component and save for display
+          const buttonsComp = components.find(c => c.type === 'BUTTONS');
+          if (buttonsComp && Array.isArray(buttonsComp.buttons) && buttonsComp.buttons.length > 0) {
+            templateButtons = buttonsComp.buttons.map(b => ({
+              type: b.type || 'QUICK_REPLY',
+              text: b.text || '',
+              ...(b.url ? { url: b.url } : {}),
+              ...(b.phone_number ? { phone_number: b.phone_number } : {})
+            }));
+            console.log(`[360-TEMPLATE]    🔘 Extracted ${templateButtons.length} button(s)`);
+          }
         } else {
           console.log(`[360-TEMPLATE]    ⚠️ Template "${template}" not found in list — using fallback display text`);
         }
@@ -2442,6 +2459,14 @@ export const sendTemplateExternal = async (req, res) => {
       }
     } catch (tplErr) {
       console.warn(`[360-TEMPLATE]    ⚠️ Template fetch error: ${tplErr.message} — using fallback display text`);
+    }
+
+    // Safety net: never leave a raw unresolved {{n}} placeholder in the text we save/display —
+    // this is what would happen if the caller's params didn't cover every placeholder in the
+    // template (e.g. wrong count/shape). Strip any leftovers rather than showing "{{1}}" etc.
+    if (/\{\{\d+\}\}/.test(displayText)) {
+      console.warn(`[360-TEMPLATE]    ⚠️ Unresolved {{n}} placeholder(s) remained after substitution — stripping. text="${displayText.substring(0, 120)}"`);
+      displayText = displayText.replace(/\{\{\d+\}\}/g, '').replace(/[ \t]{2,}/g, ' ').trim();
     }
 
     // ── Step 5: Forward to wa.message.co.il ─────────────────────────────────
@@ -2512,6 +2537,7 @@ export const sendTemplateExternal = async (req, res) => {
       node_id: 'outgoing_template',
       template_name: String(template),
       template_params: paramsArray,
+      ...(templateButtons ? { template_buttons: templateButtons } : {}),
       wa_sent: waSent,
       created: now.toISOString(),
       wamid: null,
