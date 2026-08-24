@@ -271,6 +271,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
     connected_at?: string;
     provider?: 'facebook' | 'dialog360';
     link?: string;
+    allowedPaymentCountries?: string;
   }
   const [connectedNumbers, setConnectedNumbers] = useState<ConnectedNumber[]>([]);
   const [cnLoading, setCnLoading] = useState(false);
@@ -282,6 +283,9 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
   const [removingPnid, setRemovingPnid] = useState<string | null>(null);
   const [phpCreatingPnid, setPhpCreatingPnid] = useState<string | null>(null);
   const [phpCreateResults, setPhpCreateResults] = useState<Record<string, { success: boolean; logs: string[]; webhook?: string | null; endpoint?: string | null }>>({});
+  // Payment-country prefixes per connected number (972 = ישראל, 1 = ארה"ב/קנדה)
+  const [paymentCountriesDraft, setPaymentCountriesDraft] = useState<Record<string, { il: boolean; us: boolean }>>({});
+  const [savingPaymentCountriesPnid, setSavingPaymentCountriesPnid] = useState<string | null>(null);
   // Dialog360 add-number form
   const [d360FormOpen, setD360FormOpen] = useState(false);
   const [d360Token, setD360Token] = useState('');
@@ -638,6 +642,48 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
       alert(`שגיאת רשת: ${e.message}`);
     } finally {
       setRemovingPnid(null);
+    }
+  };
+
+  // Returns the current {il, us} checkbox selection for a connected number:
+  // prefers an in-progress draft, falling back to the value persisted in the DB.
+  const getPaymentCountriesSelection = (n: ConnectedNumber): { il: boolean; us: boolean } => {
+    const draft = paymentCountriesDraft[n.phone_number_id];
+    if (draft) return draft;
+    const stored = (n.allowedPaymentCountries || '972').split('|').map(s => s.trim());
+    return { il: stored.includes('972'), us: stored.includes('1') };
+  };
+
+  const handleTogglePaymentCountry = (phone_number_id: string, current: { il: boolean; us: boolean }, key: 'il' | 'us') => {
+    setPaymentCountriesDraft(prev => ({ ...prev, [phone_number_id]: { ...current, [key]: !current[key] } }));
+  };
+
+  const handleSavePaymentCountries = async (n: ConnectedNumber) => {
+    if (!token) return;
+    const sel = getPaymentCountriesSelection(n);
+    const allowedPaymentCountries = [sel.il && '972', sel.us && '1'].filter(Boolean).join('|');
+    if (!allowedPaymentCountries) {
+      alert('יש לבחור לפחות קידומת מדינה אחת');
+      return;
+    }
+    setSavingPaymentCountriesPnid(n.phone_number_id);
+    try {
+      const res = await fetch(`${API_BASE}/whatsapp-registration/update-payment-countries`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ phone_number_id: n.phone_number_id, allowedPaymentCountries }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setPaymentCountriesDraft(prev => { const n2 = { ...prev }; delete n2[n.phone_number_id]; return n2; });
+        await loadConnectedNumbers();
+      } else {
+        alert(`שגיאה: ${data.error || 'לא ידוע'}`);
+      }
+    } catch (e: any) {
+      alert(`שגיאת רשת: ${e.message}`);
+    } finally {
+      setSavingPaymentCountriesPnid(null);
     }
   };
 
@@ -1691,6 +1737,49 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                                 </>
                               )}
                             </div>
+                          </div>
+
+                          {/* Payment-country prefixes (972 / 1) allowed for this number */}
+                          <div className="mt-4 pt-4 border-t border-slate-200/70 flex items-center gap-4 flex-wrap">
+                            <span className="text-[11px] font-bold text-slate-400">קידומות מדינה מותרות לתשלום:</span>
+                            {(() => {
+                              const sel = getPaymentCountriesSelection(n);
+                              const isSaving = savingPaymentCountriesPnid === n.phone_number_id;
+                              const hasDraft = !!paymentCountriesDraft[n.phone_number_id];
+                              return (
+                                <>
+                                  <label className="flex items-center gap-1.5 text-xs font-bold text-slate-600 cursor-pointer select-none">
+                                    <input
+                                      type="checkbox"
+                                      checked={sel.il}
+                                      onChange={() => handleTogglePaymentCountry(n.phone_number_id, sel, 'il')}
+                                      className="w-4 h-4 rounded accent-blue-600"
+                                    />
+                                    🇮🇱 ישראל (972)
+                                  </label>
+                                  <label className="flex items-center gap-1.5 text-xs font-bold text-slate-600 cursor-pointer select-none">
+                                    <input
+                                      type="checkbox"
+                                      checked={sel.us}
+                                      onChange={() => handleTogglePaymentCountry(n.phone_number_id, sel, 'us')}
+                                      className="w-4 h-4 rounded accent-blue-600"
+                                    />
+                                    🇺🇸 ארה"ב/קנדה (1)
+                                  </label>
+                                  {hasDraft && (
+                                    <button
+                                      onClick={() => handleSavePaymentCountries(n)}
+                                      disabled={isSaving}
+                                      className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-[11px] font-bold hover:bg-blue-700 transition-all disabled:opacity-50 active:scale-95"
+                                    >
+                                      {isSaving
+                                        ? <span className="animate-spin inline-block w-3 h-3 border-2 border-white border-t-transparent rounded-full" />
+                                        : 'שמור'}
+                                    </button>
+                                  )}
+                                </>
+                              );
+                            })()}
                           </div>
 
                           {/* Per-number activation log */}

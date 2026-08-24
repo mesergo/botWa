@@ -30,7 +30,10 @@ const botFlowSchema = new mongoose.Schema({
   whatsapp_provider: { type: String, default: 'facebook' },
   // Dialog360-specific connection fields
   dialog360_token: { type: String, default: '' },
-  dialog360_link: { type: String, default: '' }
+  dialog360_link: { type: String, default: '' },
+  // Payment-country prefixes allowed for this bot's number, pipe-joined (e.g. "972", "1", "972|1").
+  // Mirrored from the connected number's allowedPaymentCountries once assigned.
+  allowedPaymentCountries: { type: String, default: '972' }
 }, {
   timestamps: true,
   collection: 'bot_flows'

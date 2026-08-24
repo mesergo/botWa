@@ -6,6 +6,7 @@ import SystemSetting from '../models/SystemSetting.js';
 import { DEFAULT_REMOVAL_CONFIG, getGlobalRemovalConfig } from '../utils/removalConfig.js';
 import UserType from '../models/UserType.js';
 import Dialog360TemplateSetting from '../models/Dialog360TemplateSetting.js';
+import { updatePaymentCountriesOnGateway } from '../utils/whatsappSender.js';
  
 // Default configuration if DB is empty (used for fallback)
 const DEFAULT_ACCOUNTS_CONFIG = {
@@ -337,6 +338,59 @@ export const getAllConnectedNumbers = async (req, res) => {
   }
 };
 
+// PATCH /api/admin/users/:userId/connected-numbers/:phoneNumberId/payment-countries
+// Body: { allowedPaymentCountries }
+// Admin-only update of a customer's connected number payment-country prefixes
+// (no ownership restriction). Mirrors the self-service endpoint in
+// whatsappRegistrationController.js: persists on the connected number and,
+// when assigned to a bot, on the BotFlow document + notifies the external
+// WhatsApp gateway (skipped silently if the bot has no endpoint yet).
+export const updateConnectedNumberPaymentCountries = async (req, res) => {
+  try {
+    const { userId, phoneNumberId } = req.params;
+    const { allowedPaymentCountries } = req.body || {};
+
+    if (!allowedPaymentCountries || !/^[\d|]+$/.test(allowedPaymentCountries)) {
+      return res.status(400).json({ error: 'invalid_allowed_payment_countries' });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const entry = (user.connected_numbers || []).find(n => n.phone_number_id === phoneNumberId);
+    if (!entry) return res.status(404).json({ error: 'connected_number_not_found' });
+
+    entry.allowedPaymentCountries = allowedPaymentCountries;
+    user.markModified('connected_numbers');
+    await user.save();
+
+    let gatewayResult = { success: false, skipped: true };
+    if (entry.assigned_bot_id) {
+      const bot = await BotFlow.findById(entry.assigned_bot_id);
+      if (bot) {
+        bot.allowedPaymentCountries = allowedPaymentCountries;
+        await bot.save();
+        gatewayResult = await updatePaymentCountriesOnGateway({
+          user,
+          bot,
+          phone: entry.display_phone_number || phoneNumberId,
+          allowedPaymentCountries
+        });
+      }
+    }
+
+    const o = typeof entry.toObject === 'function' ? entry.toObject() : entry;
+    const { access_token, pin, token360, ...rest } = o;
+    res.json({
+      success: true,
+      connected_number: { ...rest, has_access_token: !!access_token, has_token360: !!token360 },
+      gateway: gatewayResult
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
 // Helper: diff two removal configs and return AuditLog documents to insert
 export const buildRemovalConfigDiff = (previous, next, actorId, actorEmail) => {
   const entries = [];
@@ -518,6 +572,7 @@ export const getUserDetails = async (req, res) => {
         limits_in_effect: limits,
         createdAt: user.createdAt,
         updatedAt: user.updatedAt,
+        connected_numbers_count: (user.connected_numbers || []).length,
         stats: {
             bots: bots.length, // Added this line to fix the bug
             flows: sessionCount

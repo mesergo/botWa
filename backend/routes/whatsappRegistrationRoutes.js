@@ -9,7 +9,8 @@ import {
   unassignFromBot,
   markRegistered,
   removeConnectedNumber,
-  createPhpAccount
+  createPhpAccount,
+  updatePaymentCountries
 } from '../controllers/whatsappRegistrationController.js';
 
 const router = express.Router();
@@ -32,6 +33,7 @@ router.post('/assign-to-bot', authenticateJwtOrApiToken, assignToBot);
 router.post('/unassign-from-bot', authenticateJwtOrApiToken, unassignFromBot);
 router.post('/mark-registered', authenticateJwtOrApiToken, markRegistered);
 router.post('/remove-connected-number', authenticateJwtOrApiToken, removeConnectedNumber);
+router.post('/update-payment-countries', authenticateJwtOrApiToken, updatePaymentCountries);
 
 // Stage 5: provision external dialog360/accounts/users via facebook-create.php.
 // Can be called standalone or chained after Stage 4 from the frontend.

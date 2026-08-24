@@ -34,6 +34,52 @@ export const buildWACredentials = (user = null, bot = null) => {
 };
 
 /**
+ * Notify the external WhatsApp gateway (wa.message.co.il) that the allowed
+ * payment-country prefixes changed for a given number, so it can rebuild its
+ * internal `allowedCountries` regex.
+ *
+ * Requires the bot to already have an `endpoint` (i.e. the external account
+ * was provisioned via php-create) — if not, the call is skipped and
+ * `{ success: false, skipped: true }` is returned so callers can still
+ * persist the value locally without failing the whole request.
+ *
+ * @param {Object} params
+ * @param {Object|null} params.user - User document (fallback credentials)
+ * @param {Object|null} params.bot  - BotFlow document with optional endpoint field
+ * @param {string} params.phone - Raw phone number (will be normalized internally)
+ * @param {string} params.allowedPaymentCountries - Pipe-joined prefixes, e.g. "972|1"
+ * @returns {Promise<{success:boolean, skipped?:boolean, status?:number, body?:any, error?:string}>}
+ */
+export const updatePaymentCountriesOnGateway = async ({ user = null, bot = null, phone, allowedPaymentCountries }) => {
+  const { endpoint, waToken } = buildWACredentials(user, bot);
+  if (!endpoint) return { success: false, skipped: true };
+
+  const normalizedPhone = normalizePhone(phone);
+  const url = `https://wa.message.co.il/api/${endpoint}/update-payment-countries`;
+  const body = { phone: normalizedPhone, allowedPaymentCountries };
+  console.log(`[WA-PAYMENT-COUNTRIES] 📤 REQUEST → ${url} | body=${JSON.stringify(body)}`);
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Accept': 'application/json',
+        'token': waToken,
+      },
+      body: JSON.stringify(body),
+    });
+    const respText = await res.text().catch(() => '');
+    console.log(`[WA-PAYMENT-COUNTRIES] ⬅️  RESPONSE HTTP ${res.status} | body: ${respText}`);
+    let respJson = {};
+    try { respJson = JSON.parse(respText); } catch { respJson = { raw: respText }; }
+    return { success: res.ok, status: res.status, body: respJson };
+  } catch (err) {
+    console.error('[WA-PAYMENT-COUNTRIES] ❌ Exception:', err.message);
+    return { success: false, error: err.message };
+  }
+};
+
+/**
  * Normalize a phone number to Israeli E.164 format (digits only, starting with 972).
  * @param {string} phone
  * @returns {string}
