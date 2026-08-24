@@ -383,7 +383,15 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
           setPhoneSessions(prev => {
             const prevMsgs = prev.reduce((acc, s) => acc + (s.process_history?.length || 0), 0);
             const newMsgs = data.reduce((acc, s) => acc + (s.process_history?.length || 0), 0);
-            if (prev.length === data.length && prevMsgs === newMsgs) return prev;
+            const prevLast = prev.length > 0 ? prev[prev.length - 1] : null;
+            const newLast = data.length > 0 ? data[data.length - 1] : null;
+            // Also refresh when the last session's status/agent flag changed
+            // (e.g. a template's post-send mode flipped the conversation to
+            // 'bot'/'agent'), even if no new message was appended — otherwise
+            // the UI stays stuck showing the pre-send status until the next
+            // message count change (typically the customer's next reply).
+            const statusChanged = prevLast?.status !== newLast?.status || prevLast?.is_agent !== newLast?.is_agent;
+            if (prev.length === data.length && prevMsgs === newMsgs && !statusChanged) return prev;
             return sortSessionsAsc(data);
           });
         })
@@ -1055,13 +1063,24 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 : { type: 'Text', text: messageToSend, sender: 'agent', name: 'נציג', agent_name: currentAgentName, created, wa_sent: msgData.waSent };
               setPhoneSessions(prev => prev.map((s, i) =>
                 i === prev.length - 1
-                  ? { ...s, status: replyStatus, process_history: [...s.process_history, msgData.historyEntry || fallbackEntry] }
+                  ? {
+                      ...s,
+                      status: replyStatus,
+                      ...(msgData.is_agent !== undefined ? { is_agent: msgData.is_agent, agent_since: msgData.agent_since } : {}),
+                      process_history: [...s.process_history, msgData.historyEntry || fallbackEntry]
+                    }
                   : s
               ));
               setContacts(prev => prev.map(c =>
                 c.phone === selectedPhone ? { ...c, status: replyStatus } : c
               ));
               if (selectedPhone) bumpContactToTop(selectedPhone, created);
+              // Keep agent-mode UI state in sync — a template configured to
+              // post-send into 'bot' mode should drop out of agent mode immediately.
+              if (msgData.is_agent !== undefined) {
+                setIsAgentMode(msgData.is_agent);
+                setAgentSessionId(msgData.is_agent ? sid : null);
+              }
               if (!msgData.waSent) {
                 setAgentWaFailed(true);
                 setAgentWaError(msgData.waError || null);
@@ -1215,6 +1234,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
           setTemplateParams({});
           if (data.waSent) {
             // Build session object locally from response — avoids phone normalisation mismatch
+            const resolvedIsAgent = data.is_agent !== undefined ? data.is_agent : true;
             const newSession = {
               id: data.sessionId,
               phone: data.phone || selectedPhone,
@@ -1225,12 +1245,13 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
               created_at: data.created,
               parameters: {},
               process_history: data.processHistory || [data.historyEntry],
-              is_agent: true,
-              agent_since: data.created
+              is_agent: resolvedIsAgent,
+              agent_since: data.agent_since ?? (resolvedIsAgent ? data.created : null),
+              status: data.status || 'waiting'
             };
             setPhoneSessions([newSession]);
-            setAgentSessionId(data.sessionId || null);
-            setIsAgentMode(true);
+            setAgentSessionId(resolvedIsAgent ? (data.sessionId || null) : null);
+            setIsAgentMode(resolvedIsAgent);
             fetchContacts();
           } else {
             setAgentWaFailed(true);
@@ -1318,13 +1339,25 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
           : { type: 'Text', text: msgText, sender: 'agent', name: 'נציג', agent_name: currentAgentName, created, wa_sent: data.waSent };
         setPhoneSessions(prev => prev.map((s, i) =>
           i === prev.length - 1
-            ? { ...s, status: replyStatus, process_history: [...s.process_history, data.historyEntry || fallbackEntry] }
+            ? {
+                ...s,
+                status: replyStatus,
+                ...(data.is_agent !== undefined ? { is_agent: data.is_agent, agent_since: data.agent_since } : {}),
+                process_history: [...s.process_history, data.historyEntry || fallbackEntry]
+              }
             : s
         ));
         setContacts(prev => prev.map(c =>
           c.phone === selectedPhone ? { ...c, status: replyStatus } : c
         ));
         if (selectedPhone) bumpContactToTop(selectedPhone, created);
+        // Keep the agent-mode UI (composer state) in sync with the resolved
+        // is_agent flag — e.g. a template configured to post-send into 'bot'
+        // mode should immediately drop out of agent mode, not just update the badge.
+        if (data.is_agent !== undefined) {
+          setIsAgentMode(data.is_agent);
+          setAgentSessionId(data.is_agent ? sessionId : null);
+        }
         if (!data.waSent) {
           setAgentWaFailed(true);
           setAgentWaError(data.waError || null);
@@ -1338,6 +1371,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
       setAgentSending(false);
     }
   };
+
 
   // Fetch templates from Dialog360
   const fetchTemplates = async () => {
