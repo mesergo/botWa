@@ -1917,6 +1917,9 @@ const FlowBuilder: React.FC = () => {
       }
       setEditingTemplateId(templateId);
       setViewMode('editing-template');
+      // Leave the /admin route — otherwise the /admin path check further down
+      // keeps rendering AdminPanel and the editor never shows up.
+      navigate('/');
     } catch (e) { 
       console.error(e); 
       alert("שגיאה בטעינת תבנית");
@@ -1935,6 +1938,9 @@ const FlowBuilder: React.FC = () => {
     setEdges([]);
     setCreatingTemplate(true);
     setViewMode('creating-template');
+    // Leave the /admin route — otherwise the /admin path check further down
+    // keeps rendering AdminPanel and the editor never shows up.
+    navigate('/');
   };
 
   const handleSaveNewTemplate = async (name: string, description: string, isPublic: boolean) => {
