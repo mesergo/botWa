@@ -12,6 +12,7 @@ import {
 import UserTypesManager from './UserTypesManager';
 import { FileUploader } from './FileUploader';
 import SmsInApp from './sms-in/SmsInApp';
+import SmsExternalLogTab from './sms-in/SmsExternalLogTab';
 import CustomerSessionsPanel from './CustomerSessionsPanel';
 
 interface User {
@@ -93,8 +94,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
   const navigate = useNavigate();
   const { tab } = useParams<{ tab?: string }>();
 
-  type AdminTab = 'dashboard' | 'users' | 'user-types' | 'templates' | 'settings' | 'sessions' | 'dialog360' | 'sms-in' | 'connected-numbers';
-  const VALID_TABS: AdminTab[] = ['dashboard', 'users', 'user-types', 'templates', 'settings', 'sessions', 'dialog360', 'sms-in', 'connected-numbers'];
+  type AdminTab = 'dashboard' | 'users' | 'user-types' | 'templates' | 'settings' | 'sessions' | 'dialog360' | 'sms-in' | 'sms-external-log' | 'connected-numbers';
+  const VALID_TABS: AdminTab[] = ['dashboard', 'users', 'user-types', 'templates', 'settings', 'sessions', 'dialog360', 'sms-in', 'sms-external-log', 'connected-numbers'];
   const activeTab: AdminTab = (VALID_TABS.includes(tab as AdminTab) ? tab : 'dashboard') as AdminTab;
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const setActiveTab = (t: AdminTab) => {
@@ -1473,6 +1474,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
               { id: 'user-types', label: 'סוגי משתמשים', icon: Shield },
               { id: 'connected-numbers', label: 'מספרים מחוברים', icon: Phone },
               { id: 'sms-in', label: 'הודעות SMS', icon: Inbox },
+              { id: 'sms-external-log', label: 'SMS פנימי', icon: MessageSquare },
               { id: 'templates', label: 'מאגר תבניות בוט', icon: FileText },
               { id: 'settings', label: 'הגדרות מערכת', icon: Settings },
             ].map(item => (
@@ -1541,9 +1543,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
               {activeTab === 'sessions' && 'כל הסשנים'}
               {activeTab === 'dialog360' && 'הודעות תבנית Dialog360'}
               {activeTab === 'connected-numbers' && 'מספרים מחוברים'}
+              {activeTab === 'sms-external-log' && 'SMS פנימי'}
               {activeTab === 'templates' && 'ניהול תבניות'}
               {activeTab === 'settings' && 'הגדרות מערכת'}
-            </h2>
+            </h2> 
             <p className="hidden sm:block text-sm font-medium text-slate-400 mt-1">
               {activeTab === 'dashboard' && 'סקירה מקיפה על נתוני וביצועי המערכת'}
               {activeTab === 'users' && 'צפייה, עריכה וניהול הרשאות משתמשים מתקדם'}
@@ -1551,6 +1554,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
               {activeTab === 'sessions' && 'צפייה בכל הסשנים של כל המשתמשים במערכת'}
               {activeTab === 'dialog360' && 'צפייה בהודעות תבנית מ-Dialog360'}
               {activeTab === 'connected-numbers' && 'צפייה בכל המספרים המחוברים במערכת, לאיזה משתמש הם שייכים והסטטוס שלהם'}
+              {activeTab === 'sms-external-log' && 'הודעות SMS שנרשמו על ידי המערכת החיצונית (maskyoo) לתוך מסד הנתונים שלנו'}
               {activeTab === 'templates' && 'ניהול ותחזוקת מאגר התבניות הגלובלי'}
               {activeTab === 'settings' && 'הגדרת מגבלות, מחירים ופרמטרים למערכת'}
             </p>
@@ -1586,6 +1590,13 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                 viewAll
                 token={token}
               />
+            </div>
+          )}
+
+          {/* SMS EXTERNAL LOG TAB — read-only copy log from the external "maskyoo" project (SmsExternalLog / collection `sms`) */}
+          {activeTab === 'sms-external-log' && (
+            <div className="animate-fade-in-up">
+              <SmsExternalLogTab token={token} />
             </div>
           )}
 

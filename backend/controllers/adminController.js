@@ -337,7 +337,7 @@ export const getAllConnectedNumbers = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
-
+ 
 // PATCH /api/admin/users/:userId/connected-numbers/:phoneNumberId/payment-countries
 // Body: { allowedPaymentCountries }
 // Admin-only update of a customer's connected number payment-country prefixes
@@ -350,24 +350,37 @@ export const updateConnectedNumberPaymentCountries = async (req, res) => {
     const { userId, phoneNumberId } = req.params;
     const { allowedPaymentCountries } = req.body || {};
 
+    console.log(`[ADMIN-PAYMENT-COUNTRIES] ▶️ START userId=${userId} phoneNumberId=${phoneNumberId} allowedPaymentCountries=${allowedPaymentCountries}`);
+
     if (!allowedPaymentCountries || !/^[\d|]+$/.test(allowedPaymentCountries)) {
+      console.log(`[ADMIN-PAYMENT-COUNTRIES] ❌ invalid_allowed_payment_countries value="${allowedPaymentCountries}"`);
       return res.status(400).json({ error: 'invalid_allowed_payment_countries' });
     }
 
     const user = await User.findById(userId);
-    if (!user) return res.status(404).json({ error: 'User not found' });
+    if (!user) {
+      console.log(`[ADMIN-PAYMENT-COUNTRIES] ❌ User not found: ${userId}`);
+      return res.status(404).json({ error: 'User not found' });
+    }
 
     const entry = (user.connected_numbers || []).find(n => n.phone_number_id === phoneNumberId);
-    if (!entry) return res.status(404).json({ error: 'connected_number_not_found' });
+    if (!entry) {
+      console.log(`[ADMIN-PAYMENT-COUNTRIES] ❌ connected_number_not_found for phoneNumberId=${phoneNumberId}. Available ids:`, (user.connected_numbers || []).map(n => n.phone_number_id));
+      return res.status(404).json({ error: 'connected_number_not_found' });
+    }
+
+    console.log(`[ADMIN-PAYMENT-COUNTRIES] ✅ Found connected_number entry. assigned_bot_id=${entry.assigned_bot_id || 'none'} display_phone_number=${entry.display_phone_number}`);
 
     entry.allowedPaymentCountries = allowedPaymentCountries;
     user.markModified('connected_numbers');
     await user.save();
+    console.log(`[ADMIN-PAYMENT-COUNTRIES] 💾 Saved allowedPaymentCountries on User.connected_numbers`);
 
     let gatewayResult = { success: false, skipped: true };
     if (entry.assigned_bot_id) {
       const bot = await BotFlow.findById(entry.assigned_bot_id);
       if (bot) {
+        console.log(`[ADMIN-PAYMENT-COUNTRIES] 🤖 Found bot ${bot._id} (endpoint=${bot.endpoint || 'none'}). Saving on BotFlow and notifying gateway...`);
         bot.allowedPaymentCountries = allowedPaymentCountries;
         await bot.save();
         gatewayResult = await updatePaymentCountriesOnGateway({
@@ -376,17 +389,24 @@ export const updateConnectedNumberPaymentCountries = async (req, res) => {
           phone: entry.display_phone_number || phoneNumberId,
           allowedPaymentCountries
         });
+        console.log(`[ADMIN-PAYMENT-COUNTRIES] 📡 Gateway result:`, gatewayResult);
+      } else {
+        console.log(`[ADMIN-PAYMENT-COUNTRIES] ⚠️ assigned_bot_id=${entry.assigned_bot_id} set but BotFlow not found`);
       }
+    } else {
+      console.log(`[ADMIN-PAYMENT-COUNTRIES] ⚠️ No assigned_bot_id on connected_number — skipping BotFlow update + gateway notify`);
     }
 
     const o = typeof entry.toObject === 'function' ? entry.toObject() : entry;
     const { access_token, pin, token360, ...rest } = o;
+    console.log(`[ADMIN-PAYMENT-COUNTRIES] 🏁 DONE success=true gateway.success=${gatewayResult.success} gateway.skipped=${!!gatewayResult.skipped}`);
     res.json({
       success: true,
       connected_number: { ...rest, has_access_token: !!access_token, has_token360: !!token360 },
       gateway: gatewayResult
     });
   } catch (error) {
+    console.error('[ADMIN-PAYMENT-COUNTRIES] 💥 EXCEPTION:', error);
     res.status(500).json({ error: error.message });
   }
 };

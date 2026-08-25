@@ -6,8 +6,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Send, X, RotateCcw, User, Bot, ExternalLink, FileText, ChevronLeft, ChevronRight, Maximize2, Share2, Check, GitBranch, Upload, History, Globe } from 'lucide-react';
 import { ChatMessage, NodeType, FixedProcess, CarouselItem, User as UserType, Version } from '../types';
 import { ReactFlowInstance } from 'reactflow';
-
-interface SimulatorProps {
+ 
+interface SimulatorProps { 
   isOpen: boolean;
   onClose: () => void;
   flowInstance: ReactFlowInstance | null;
@@ -295,6 +295,15 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
   const updateParam = (name: string, value: any) => {
     sessionParamsRef.current = { ...sessionParamsRef.current, [name]: value };
     setSessionParameters({ ...sessionParamsRef.current });
+  };
+
+  // 'openWa' holds the opening word/message that started the current session —
+  // it is captured once (the first user input after a (re)start) and must never
+  // be overwritten by later messages within the same session.
+  const setOpeningWord = (value: string) => {
+    if (sessionParamsRef.current.openWa === undefined || sessionParamsRef.current.openWa === null || sessionParamsRef.current.openWa === '') {
+      updateParam('openWa', value);
+    }
   };
 
   const getActiveInstance = () => {
@@ -856,6 +865,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
         const newValue = { string: tempText, number: isNum ? Number(tempText) : null };
         setLastUserValue(newValue);
         addMessage({ sender: 'user', type: 'text', content: tempText });
+        setOpeningWord(tempText);
         
         const instance = getActiveInstance();
         const startNode = instance?.getNodes().find((n: any) => n.type === NodeType.START || n.type === NodeType.AUTOMATIC_RESPONSES);
@@ -894,6 +904,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
       const startNode = instance?.getNodes().find((n: any) => n.type === NodeType.START || n.type === NodeType.AUTOMATIC_RESPONSES);
       if (startNode) {
         setCurrentInstance(instance);
+        setOpeningWord(text);
         await processNext(startNode.id, instance, 0, [], newValue, null);
       }
       return;
@@ -919,7 +930,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
     }
 
     if (node && node.data.variableName) updateParam(node.data.variableName, text);
-    updateParam('openWa', text);
+    setOpeningWord(text);
     
     if (node.type === NodeType.AUTOMATIC_RESPONSES) {
        await processNext(currentNodeId, currentInstance, 0, executionStack, newValue, null);
@@ -979,7 +990,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
     setDateInput('');
     if (node && node.data.variableName) updateParam(node.data.variableName, formattedValue);
     addMessage({ sender: 'user', type: 'text', content: formattedValue });
-    updateParam('openWa', formattedValue);
+    setOpeningWord(formattedValue);
     await processNext(findNextNodeId(currentNodeId, currentInstance), currentInstance, 0, executionStack);
   };
 
@@ -989,7 +1000,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
     
     const fileName = file.name;
     addMessage({ sender: 'user', type: 'text', content: `קובץ הועלה: ${fileName}` });
-    updateParam('openWa', fileName);
+    setOpeningWord(fileName);
     
     const nodesList = currentInstance.getNodes() || [];
     const node = nodesList.find((n: any) => n.id === currentNodeId);
@@ -1009,7 +1020,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
         // Show a visual separator so the user understands the context switched
         addMessage({ sender: 'bot', type: 'separator', content: '↩ חזרת לתפריט' });
         addMessage({ sender: 'user', type: 'text', content: option });
-        updateParam('openWa', option);
+        setOpeningWord(option);
         setLastUserValue({ string: option, number: null });
         setIsWaitingForWebserviceResponse(false);
         // Save the newly selected option to session parameters
@@ -1041,7 +1052,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
     console.log('[Simulator] 🔘 Current node:', { id: node?.id, type: node?.type });
     
     addMessage({ sender: 'user', type: 'text', content: option });
-    updateParam('openWa', option);
+    setOpeningWord(option);
     if (isWaitingForWebserviceResponse && node.type === NodeType.ACTION_WEB_SERVICE) {
       console.log('[Simulator] 🔘 Responding to webservice with option');
       const cmd = optionValue || option; setCurrentCommand(cmd);

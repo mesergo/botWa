@@ -30,7 +30,7 @@ export const buildWACredentials = (user = null, bot = null) => {
     endpoint = null;
     waToken = null;
   }
-  return { endpoint, waToken };
+  return { endpoint, waToken }; 
 };
 
 /**
@@ -49,16 +49,25 @@ export const buildWACredentials = (user = null, bot = null) => {
  * @param {string} params.phone - Raw phone number (will be normalized internally)
  * @param {string} params.allowedPaymentCountries - Pipe-joined prefixes, e.g. "972|1"
  * @returns {Promise<{success:boolean, skipped?:boolean, status?:number, body?:any, error?:string}>}
- */
+ */ 
 export const updatePaymentCountriesOnGateway = async ({ user = null, bot = null, phone, allowedPaymentCountries }) => {
   const { endpoint, waToken } = buildWACredentials(user, bot);
-  if (!endpoint) return { success: false, skipped: true };
+  console.log(`[WA-PAYMENT-COUNTRIES] 🔧 buildWACredentials → endpoint=${endpoint || 'null'} bot.endpoint=${bot?.endpoint || 'none'} user.dialog360_bot_id=${user?.dialog360_bot_id || 'none'}`);
+  if (!endpoint) {
+    console.log('[WA-PAYMENT-COUNTRIES] ⏭️ SKIPPED — no endpoint could be resolved (bot has no endpoint and user has no dialog360_bot_id)');
+    return { success: false, skipped: true };
+  }
 
-  const normalizedPhone = normalizePhone(phone);
-  const url = `https://wa.message.co.il/api/${endpoint}/update-payment-countries`;
+  // The external gateway route is registered as "/:botName/update-payment-countries"
+  // (a single path segment), unlike "/send" which accepts the full "provider/botId"
+  // path. Strip any "dialog360/" prefix so the URL has exactly one segment before
+  // "update-payment-countries", otherwise Express won't match the route (404).
+  const botIdPart = endpoint.split('/').pop();
+  const normalizedPhone = normalizePhone(phone); 
+  const url = `https://wa.message.co.il/api/dialog360/update-payment-countries`;
   const body = { phone: normalizedPhone, allowedPaymentCountries };
   console.log(`[WA-PAYMENT-COUNTRIES] 📤 REQUEST → ${url} | body=${JSON.stringify(body)}`);
-  try {
+  try { 
     const res = await fetch(url, {
       method: 'POST',
       headers: {
