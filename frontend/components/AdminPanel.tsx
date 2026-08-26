@@ -7,7 +7,7 @@ import {
   CreditCard, MoreVertical, X, Star, Globe, Lock, Copy, List, Phone, Clock,
   ChevronDown, ChevronUp, ToggleLeft, ToggleRight, XCircle, MessageSquare, Menu,
   User as UserIcon, ExternalLink, Sliders, Image as ImageIcon, Layers,
-  UserCheck, Headphones, UserMinus, RefreshCcw, Inbox
+  UserCheck, Headphones, UserMinus, RefreshCcw, Inbox, History
 } from 'lucide-react';
 import UserTypesManager from './UserTypesManager';
 import { FileUploader } from './FileUploader';
@@ -106,6 +106,26 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
   const [stats, setStats] = useState<SystemStats | null>(null);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [userDetailTab, setUserDetailTab] = useState<'profile' | 'removal-log' | 'cust-templates' | 'cust-connections' | 'cust-sessions'>('profile');
+  const [showRestoreModal, setShowRestoreModal] = useState(false);
+  const [restoreUntilDate, setRestoreUntilDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [restoreMonths, setRestoreMonths] = useState(3);
+  const [restoreCollection, setRestoreCollection] = useState('');
+  const [restorePreview, setRestorePreview] = useState<{
+    connected: boolean;
+    collections: {
+      name: string;
+      phone: string;
+      displayPhone?: string;
+      verifiedName?: string;
+      provider?: string;
+      phoneNumberId?: string;
+      exists: boolean;
+    }[];
+  } | null>(null);
+  const [restoreLoading, setRestoreLoading] = useState(false);
+  const [restoreResult, setRestoreResult] = useState<string | null>(null);
+  const [restoreError, setRestoreError] = useState<string | null>(null);
+  const [restoreNonce, setRestoreNonce] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
@@ -146,9 +166,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
   const [showLinkFacebookModal, setShowLinkFacebookModal] = useState(false);
   const [linkFacebookSubmitting, setLinkFacebookSubmitting] = useState(false);
   const [linkFacebookError, setLinkFacebookError] = useState<string | null>(null);
-  const DEFAULT_FB_ACCESS_TOKEN = 'EAAKM0vGZBqFkBRjoCVH2zlRVZBs7zcBKEjmVLY1ZCYpkfXNSsNx51MpZBzphLJTaXbidwVglUZB2ZCDuDSpX3MGDYrE9xvOye7TFbHkPeFtGb0fA6BBdOZCHj7y6VZC9h54fdr8iYbXD6Wdt6iSyiLUZCQI4iFVj4ZCcPOwCgm6wXps8CXGvz63q777yZALXSXxUQZDZD';
   const [linkFacebookForm, setLinkFacebookForm] = useState({
-    access_token: DEFAULT_FB_ACCESS_TOKEN,
+    access_token: '',
     waba_id: '',
     phone_number_id: '',
     display_phone_number: '',
@@ -158,17 +177,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
     code_verification_status: 'VERIFIED',
     name_status: 'APPROVED',
     messaging_limit_tier: 'TIER_1K'
-  });
-
-  // Admin-only "link Dialog360 number" modal — sends the data as an admin-triggered
-  // dialog360 link call, scoped to the selected customer.
-  const [showLinkDialog360Modal, setShowLinkDialog360Modal] = useState(false);
-  const [linkDialog360Submitting, setLinkDialog360Submitting] = useState(false);
-  const [linkDialog360Error, setLinkDialog360Error] = useState<string | null>(null);
-  const [linkDialog360Form, setLinkDialog360Form] = useState({
-    token360: '',
-    link: 'https://waba-v2.360dialog.io/',
-    display_phone_number: ''
   });
 
   // GLOBAL connected-numbers tab: every connected WhatsApp number across all customers
@@ -1095,6 +1103,65 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
     }
   };
 
+  const openRestoreConversations = async () => {
+    if (!selectedUser?.id) return;
+    setShowRestoreModal(true);
+    setRestoreResult(null);
+    setRestoreError(null);
+    setRestoreUntilDate(new Date().toISOString().slice(0, 10));
+    setRestoreMonths(3);
+    setRestoreCollection('');
+    try {
+      const response = await fetch(`${API_BASE}/admin/users/${selectedUser.id}/restore-conversations`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        setRestoreError(data.error || 'שגיאה בטעינת מקורות השחזור');
+        setRestorePreview(null);
+        return;
+      }
+      setRestorePreview({ connected: !!data.connected, collections: data.collections || [] });
+      const firstExisting = (data.collections || []).find((c: { exists: boolean }) => c.exists);
+      setRestoreCollection(firstExisting?.name || '');
+    } catch (err: any) {
+      setRestoreError(err.message || 'שגיאת רשת');
+    }
+  };
+
+  const handleRestoreConversations = async () => {
+    if (!selectedUser?.id) return;
+    setRestoreLoading(true);
+    setRestoreError(null);
+    setRestoreResult(null);
+    try {
+      const response = await fetch(`${API_BASE}/admin/users/${selectedUser.id}/restore-conversations`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          untilDate: restoreUntilDate,
+          months: restoreMonths,
+          collection: restoreCollection || undefined
+        })
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        setRestoreError(data.error || 'השחזור נכשל');
+        return;
+      }
+      setRestoreResult(
+        `שוחזרו ${data.createdSessions} שיחות · ${data.importedMessages} הודעות · ${data.contacts} אנשי קשר` +
+        (data.skippedDuplicates ? ` · ${data.skippedDuplicates} כפילויות דולגו` : '')
+      );
+      setRestoreNonce(n => n + 1);
+      setUserDetailTab('cust-sessions');
+    } catch (err: any) {
+      setRestoreError(err.message || 'שגיאת רשת');
+    } finally {
+      setRestoreLoading(false);
+    }
+  };
+
   // Admin-only: link a Facebook/WhatsApp Cloud API number to the selected customer.
   // Builds the same webhook-style body Meta sends, mirroring the documented
   // POST /api/whatsapp-registration/link-number call, but scoped to selectedUser via
@@ -1143,7 +1210,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
       }
       setShowLinkFacebookModal(false);
       setLinkFacebookForm({
-        access_token: DEFAULT_FB_ACCESS_TOKEN, waba_id: '', phone_number_id: '', display_phone_number: '', verified_name: '',
+        access_token: '', waba_id: '', phone_number_id: '', display_phone_number: '', verified_name: '',
         status: 'APPROVED', quality_rating: 'GREEN', code_verification_status: 'VERIFIED', name_status: 'APPROVED',
         messaging_limit_tier: 'TIER_1K'
       });
@@ -1152,43 +1219,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
       setLinkFacebookError(`שגיאת רשת: ${err.message}`);
     } finally {
       setLinkFacebookSubmitting(false);
-    }
-  };
-
-  // Admin-only: link an already-activated Dialog360 number to the selected customer.
-  // Mirrors the documented POST /api/whatsapp-registration/link-number { type: "dialog360" }
-  // call, but scoped to selectedUser via the admin route (no need for the customer's own token).
-  const handleLinkDialog360Number = async () => {
-    if (!selectedUser?.id) return;
-    const f = linkDialog360Form;
-    if (!f.token360.trim()) { setLinkDialog360Error('יש להזין token360'); return; }
-    if (!f.link.trim()) { setLinkDialog360Error('יש להזין link'); return; }
-
-    setLinkDialog360Submitting(true);
-    setLinkDialog360Error(null);
-    try {
-      const body = {
-        token360: f.token360.trim(),
-        link: f.link.trim(),
-        display_phone_number: f.display_phone_number.trim()
-      };
-      const response = await fetch(`${API_BASE}/admin/users/${selectedUser.id}/connected-numbers/link-dialog360`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify(body)
-      });
-      const data = await response.json();
-      if (!response.ok || !data.success) {
-        setLinkDialog360Error(data.message || data.error || 'שגיאה בשיוך המספר');
-        return;
-      }
-      setShowLinkDialog360Modal(false);
-      setLinkDialog360Form({ token360: '', link: 'https://waba-v2.360dialog.io/', display_phone_number: '' });
-      fetchCustomerConnectedNumbers(selectedUser.id);
-    } catch (err: any) {
-      setLinkDialog360Error(`שגיאת רשת: ${err.message}`);
-    } finally {
-      setLinkDialog360Submitting(false);
     }
   };
 
@@ -2688,8 +2718,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                         { id: 'removal-log' as const, label: 'לוג פעילות הסרה', icon: Activity },
                         ...((selectedUser.connected_numbers_count || 0) > 0 ? [
                           { id: 'cust-templates' as const, label: 'הודעות תבנית', icon: MessageSquare },
+                          { id: 'cust-connections' as const, label: 'חיבורים', icon: Phone },
                         ] : []),
-                        { id: 'cust-connections' as const, label: 'חיבורים', icon: Phone },
                         { id: 'cust-sessions' as const, label: 'סשנים', icon: List },
                       ].map(t => (
                         <button
@@ -2705,6 +2735,15 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                           {t.label}
                         </button>
                       ))}
+                      <button
+                        type="button"
+                        onClick={openRestoreConversations}
+                        className="mr-auto flex items-center gap-2 px-4 py-3 text-sm font-bold border-b-2 border-transparent text-violet-500 hover:text-violet-700 whitespace-nowrap"
+                        title="שחזור שיחות מהמערכת הישנה"
+                      >
+                        <History size={16} />
+                        שחזור שיחות
+                      </button>
                     </div>
 
                     {userDetailTab === 'profile' && (
@@ -3309,22 +3348,13 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                         <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-6">
                           <div className="flex items-center justify-between gap-3 mb-5">
                             <h3 className="text-base font-black text-slate-800">מספרים מחוברים</h3>
-                            <div className="flex items-center gap-2">
-                              <button
-                                onClick={() => { setLinkDialog360Error(null); setShowLinkDialog360Modal(true); }}
-                                className="flex items-center gap-1.5 bg-emerald-600 text-white px-3 py-2 rounded-xl text-xs font-bold hover:bg-emerald-700 transition-colors whitespace-nowrap shadow-sm"
-                              >
-                                <Plus size={14} />
-                                הוספת מספר Dialog360
-                              </button>
-                              <button
-                                onClick={() => { setLinkFacebookError(null); setShowLinkFacebookModal(true); }}
-                                className="flex items-center gap-1.5 bg-[#1877F2] text-white px-3 py-2 rounded-xl text-xs font-bold hover:bg-[#1466d1] transition-colors whitespace-nowrap shadow-sm"
-                              >
-                                <Plus size={14} />
-                                הוספת מספר לחשבון פייסבוק
-                              </button>
-                            </div>
+                            <button
+                              onClick={() => { setLinkFacebookError(null); setShowLinkFacebookModal(true); }}
+                              className="flex items-center gap-1.5 bg-[#1877F2] text-white px-3 py-2 rounded-xl text-xs font-bold hover:bg-[#1466d1] transition-colors whitespace-nowrap shadow-sm"
+                            >
+                              <Plus size={14} />
+                              שיוך מספר לחשבון פייסבוק
+                            </button>
                           </div>
                           {custConnectedNumbersLoading ? (
                             <div className="text-center py-10 text-slate-400 text-sm">טוען…</div>
@@ -3453,7 +3483,97 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
 
                     {userDetailTab === 'cust-sessions' && (
                       <div className="flex-1 overflow-hidden h-full">
-                        <CustomerSessionsPanel token={token} apiBase={API_BASE} userId={selectedUser.id} />
+                        <CustomerSessionsPanel key={`${selectedUser.id}-${restoreNonce}`} token={token} apiBase={API_BASE} userId={selectedUser.id} />
+                      </div>
+                    )}
+
+                    {showRestoreModal && (
+                      <div className="absolute inset-0 z-40 bg-slate-900/40 flex items-center justify-center p-4" dir="rtl">
+                        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg border border-slate-200 overflow-hidden">
+                          <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <History size={18} className="text-violet-500" />
+                              <h3 className="text-base font-black text-slate-800">שחזור שיחות</h3>
+                            </div>
+                            <button type="button" onClick={() => setShowRestoreModal(false)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400">
+                              <X size={16} />
+                            </button>
+                          </div>
+                          <div className="p-5 space-y-4">
+                            <p className="text-sm text-slate-500 font-medium">
+                              ייבוא היסטוריית הודעות מהמערכת הישנה (`fbiz_...`) אל השיחות של הלקוח, מתאריך סיום אחורה במספר חודשים.
+                            </p>
+                            <label className="block">
+                              <span className="text-xs font-black text-slate-400 uppercase tracking-widest">עד תאריך</span>
+                              <input
+                                type="date"
+                                value={restoreUntilDate}
+                                onChange={e => setRestoreUntilDate(e.target.value)}
+                                className="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm font-bold text-slate-700"
+                              />
+                            </label>
+                            <label className="block">
+                              <span className="text-xs font-black text-slate-400 uppercase tracking-widest">חודשים אחורה</span>
+                              <input
+                                type="number"
+                                min={1}
+                                max={24}
+                                value={restoreMonths}
+                                onChange={e => setRestoreMonths(Math.max(1, Math.min(24, Number(e.target.value) || 1)))}
+                                className="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm font-bold text-slate-700"
+                              />
+                            </label>
+                            {(restorePreview?.collections || []).length > 0 ? (
+                              <label className="block">
+                                <span className="text-xs font-black text-slate-400 uppercase tracking-widest">קו לשחזור</span>
+                                <select
+                                  value={restoreCollection}
+                                  onChange={e => setRestoreCollection(e.target.value)}
+                                  className="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm font-bold text-slate-700 bg-white"
+                                >
+                                  <option value="" disabled>בחר מספר מחובר</option>
+                                  {restorePreview!.collections.map(c => (
+                                    <option key={c.name} value={c.exists ? c.name : ''} disabled={!c.exists}>
+                                      {c.verifiedName ? `${c.verifiedName} — ` : ''}
+                                      {c.displayPhone || c.phone}
+                                      {c.exists ? '' : ' — לא נמצאה היסטוריה'}
+                                    </option>
+                                  ))}
+                                </select>
+                                <span className="mt-1 block text-[11px] font-medium text-slate-400">
+                                  השחזור יתבצע רק מהקו שנבחר
+                                </span>
+                              </label>
+                            ) : restorePreview ? (
+                              <p className="text-xs font-bold text-amber-600">
+                                לא נמצאו מספרי WhatsApp מחוברים ללקוח
+                              </p>
+                            ) : null}
+                            {restorePreview && !restorePreview.connected && (
+                              <p className="text-xs font-bold text-amber-600">אין חיבור כרגע למסד הישן. השחזור יעבוד בשרת שמחובר ל־SMS_MONGODB_URI.</p>
+                            )}
+                            {restoreError && <p className="text-sm font-bold text-rose-600">{restoreError}</p>}
+                            {restoreResult && <p className="text-sm font-bold text-emerald-600">{restoreResult}</p>}
+                          </div>
+                          <div className="px-5 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setShowRestoreModal(false)}
+                              className="px-4 py-2 rounded-xl text-sm font-bold text-slate-600 hover:bg-white border border-slate-200"
+                            >
+                              סגור
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleRestoreConversations}
+                              disabled={restoreLoading || !restoreCollection}
+                              className="px-4 py-2 rounded-xl text-sm font-bold text-white bg-violet-600 hover:bg-violet-700 disabled:opacity-40 flex items-center gap-2"
+                            >
+                              {restoreLoading && <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />}
+                              שחזר שיחות
+                            </button>
+                          </div>
+                        </div>
                       </div>
                     )}
 
@@ -4622,7 +4742,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" dir="rtl">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-1">
-              <h3 className="text-lg font-black text-slate-800">הוספת מספר לחשבון פייסבוק</h3>
+              <h3 className="text-lg font-black text-slate-800">שיוך מספר לחשבון פייסבוק</h3>
               <button onClick={() => setShowLinkFacebookModal(false)} className="p-2 rounded-lg hover:bg-slate-100 text-slate-400"><X size={18} /></button>
             </div>
             <p className="text-xs text-slate-400 font-medium mb-4">
@@ -4769,77 +4889,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
               </button>
               <button
                 onClick={() => setShowLinkFacebookModal(false)}
-                className="px-5 py-3 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-100 transition-colors"
-              >
-                ביטול
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Admin-only: Link Dialog360 Number Modal */}
-      {showLinkDialog360Modal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" dir="rtl">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-1">
-              <h3 className="text-lg font-black text-slate-800">הוספת מספר Dialog360</h3>
-              <button onClick={() => setShowLinkDialog360Modal(false)} className="p-2 rounded-lg hover:bg-slate-100 text-slate-400"><X size={18} /></button>
-            </div>
-            <p className="text-xs text-slate-400 font-medium mb-4">
-              שיוך מספר WhatsApp פעיל מ-Dialog360 ללקוח: <span className="font-bold text-slate-600">{selectedUser?.name}</span>
-            </p>
-            {linkDialog360Error && (
-              <div className="bg-red-50 border border-red-200 rounded-xl px-3 py-2 mb-3 text-xs font-bold text-red-600">
-                {linkDialog360Error}
-              </div>
-            )}
-            <div className="space-y-3">
-              <div>
-                <label className="block text-xs font-bold text-slate-600 mb-1">token360 *</label>
-                <input
-                  type="text"
-                  value={linkDialog360Form.token360}
-                  onChange={e => setLinkDialog360Form(f => ({ ...f, token360: e.target.value }))}
-                  className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-emerald-400"
-                  dir="ltr"
-                  placeholder="z0yJpFz7MASnLSXnliYLC3t1AK"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-600 mb-1">link *</label>
-                <input
-                  type="text"
-                  value={linkDialog360Form.link}
-                  onChange={e => setLinkDialog360Form(f => ({ ...f, link: e.target.value }))}
-                  className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-emerald-400"
-                  dir="ltr"
-                  placeholder="https://waba-v2.360dialog.io/"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-600 mb-1">display_phone_number</label>
-                <input
-                  type="text"
-                  value={linkDialog360Form.display_phone_number}
-                  onChange={e => setLinkDialog360Form(f => ({ ...f, display_phone_number: e.target.value }))}
-                  className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400"
-                  dir="ltr"
-                  placeholder="+972XXXXXXXXX"
-                />
-              </div>
-            </div>
-            <div className="flex gap-3 mt-5">
-              <button
-                onClick={handleLinkDialog360Number}
-                disabled={linkDialog360Submitting}
-                className="flex-1 flex items-center justify-center gap-2 bg-emerald-600 text-white py-3 rounded-xl font-bold text-sm hover:bg-emerald-700 disabled:opacity-50 transition-colors"
-              >
-                {linkDialog360Submitting ? <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Plus size={16} />}
-                שייך מספר
-              </button>
-              <button
-                onClick={() => setShowLinkDialog360Modal(false)}
                 className="px-5 py-3 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-100 transition-colors"
               >
                 ביטול
