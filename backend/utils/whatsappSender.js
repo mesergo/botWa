@@ -215,7 +215,7 @@ export const pushMessagesToWhatsApp = async (phone, messages, user = null, bot =
         anySuccess = true;
         if (wamid) indices.forEach(idx => { wamidPerMsg[idx] = wamid; });
       }
-      await _sleep(300);
+      await _sleep(300); 
     }
     await _sleep(100);
   };

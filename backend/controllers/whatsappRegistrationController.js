@@ -766,9 +766,9 @@ export const createPhpAccount = async (req, res) => {
     console.error(`${tag} exception:`, err);
     return res.status(500).json({ error: err.message });
   }
-};
+}; 
 
-function sanitizeNumber(n) {
+export function sanitizeNumber(n) {
   const o = (typeof n.toObject === 'function') ? n.toObject() : n;
   const { access_token, pin, token360, ...rest } = o;
   return {
@@ -783,7 +783,7 @@ function sanitizeNumber(n) {
 }
 
 /** Strip all spaces, dashes and dots from a phone number string, keeping the leading '+'. */
-function normalizePhone(phone) {
+export function normalizePhone(phone) {
   if (!phone) return phone;
   return phone.replace(/[\s\-\.]/g, '');
 }
@@ -923,7 +923,7 @@ export const fetchAndActivate = async (req, res) => {
 
 // Flattens a WhatsApp webhook payload (entry[].changes[].value) into the flat
 // shape linkNumber works with. Pass-through for already-flat bodies.
-function normalizeLinkBody(b) {
+export function normalizeLinkBody(b) {
   if (b && Array.isArray(b.entry) && b.entry.length > 0) {
     const entry = b.entry[0] || {};
     const change = (entry.changes && entry.changes[0]) || {};

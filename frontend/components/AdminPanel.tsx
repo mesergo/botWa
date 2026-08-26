@@ -141,6 +141,36 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
   const [custConnectedNumbers, setCustConnectedNumbers] = useState<any[]>([]);
   const [custConnectedNumbersLoading, setCustConnectedNumbersLoading] = useState(false);
 
+  // Admin-only "link Facebook number" modal — sends the data as an admin-triggered
+  // stage-3 whatsapp-registration/link-number call, scoped to the selected customer.
+  const [showLinkFacebookModal, setShowLinkFacebookModal] = useState(false);
+  const [linkFacebookSubmitting, setLinkFacebookSubmitting] = useState(false);
+  const [linkFacebookError, setLinkFacebookError] = useState<string | null>(null);
+  const DEFAULT_FB_ACCESS_TOKEN = 'EAAKM0vGZBqFkBRjoCVH2zlRVZBs7zcBKEjmVLY1ZCYpkfXNSsNx51MpZBzphLJTaXbidwVglUZB2ZCDuDSpX3MGDYrE9xvOye7TFbHkPeFtGb0fA6BBdOZCHj7y6VZC9h54fdr8iYbXD6Wdt6iSyiLUZCQI4iFVj4ZCcPOwCgm6wXps8CXGvz63q777yZALXSXxUQZDZD';
+  const [linkFacebookForm, setLinkFacebookForm] = useState({
+    access_token: DEFAULT_FB_ACCESS_TOKEN,
+    waba_id: '',
+    phone_number_id: '',
+    display_phone_number: '',
+    verified_name: '',
+    status: 'APPROVED',
+    quality_rating: 'GREEN',
+    code_verification_status: 'VERIFIED',
+    name_status: 'APPROVED',
+    messaging_limit_tier: 'TIER_1K'
+  });
+
+  // Admin-only "link Dialog360 number" modal — sends the data as an admin-triggered
+  // dialog360 link call, scoped to the selected customer.
+  const [showLinkDialog360Modal, setShowLinkDialog360Modal] = useState(false);
+  const [linkDialog360Submitting, setLinkDialog360Submitting] = useState(false);
+  const [linkDialog360Error, setLinkDialog360Error] = useState<string | null>(null);
+  const [linkDialog360Form, setLinkDialog360Form] = useState({
+    token360: '',
+    link: 'https://waba-v2.360dialog.io/',
+    display_phone_number: ''
+  });
+
   // GLOBAL connected-numbers tab: every connected WhatsApp number across all customers
   const [allConnectedNumbers, setAllConnectedNumbers] = useState<any[]>([]);
   const [allConnectedNumbersLoading, setAllConnectedNumbersLoading] = useState(false);
@@ -1062,6 +1092,103 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
       console.error('[admin cust connected-numbers]', err);
     } finally {
       setCustConnectedNumbersLoading(false);
+    }
+  };
+
+  // Admin-only: link a Facebook/WhatsApp Cloud API number to the selected customer.
+  // Builds the same webhook-style body Meta sends, mirroring the documented
+  // POST /api/whatsapp-registration/link-number call, but scoped to selectedUser via
+  // the admin route (no need for the customer's own token).
+  const handleLinkFacebookNumber = async () => {
+    if (!selectedUser?.id) return;
+    const f = linkFacebookForm;
+    if (!f.access_token.trim()) { setLinkFacebookError('יש להזין access_token'); return; }
+    if (!f.waba_id.trim()) { setLinkFacebookError('יש להזין waba_id'); return; }
+    if (!f.phone_number_id.trim()) { setLinkFacebookError('יש להזין phone_number_id'); return; }
+
+    setLinkFacebookSubmitting(true);
+    setLinkFacebookError(null);
+    try {
+      const body = {
+        object: 'whatsapp_business_account',
+        access_token: f.access_token.trim(),
+        entry: [{
+          id: f.waba_id.trim(),
+          time: Math.floor(Date.now() / 1000),
+          changes: [{
+            value: {
+              phone_number_id: f.phone_number_id.trim(),
+              display_phone_number: f.display_phone_number.trim(),
+              verified_name: f.verified_name.trim(),
+              status: f.status,
+              quality_rating: f.quality_rating,
+              code_verification_status: f.code_verification_status,
+              name_status: f.name_status,
+              event: 'phone_verified',
+              messaging_limit_tier: f.messaging_limit_tier
+            },
+            field: 'phone_number_name_status'
+          }]
+        }]
+      };
+      const response = await fetch(`${API_BASE}/admin/users/${selectedUser.id}/connected-numbers/link-facebook`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify(body)
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        setLinkFacebookError(data.message || data.error || 'שגיאה בשיוך המספר');
+        return;
+      }
+      setShowLinkFacebookModal(false);
+      setLinkFacebookForm({
+        access_token: DEFAULT_FB_ACCESS_TOKEN, waba_id: '', phone_number_id: '', display_phone_number: '', verified_name: '',
+        status: 'APPROVED', quality_rating: 'GREEN', code_verification_status: 'VERIFIED', name_status: 'APPROVED',
+        messaging_limit_tier: 'TIER_1K'
+      });
+      fetchCustomerConnectedNumbers(selectedUser.id);
+    } catch (err: any) {
+      setLinkFacebookError(`שגיאת רשת: ${err.message}`);
+    } finally {
+      setLinkFacebookSubmitting(false);
+    }
+  };
+
+  // Admin-only: link an already-activated Dialog360 number to the selected customer.
+  // Mirrors the documented POST /api/whatsapp-registration/link-number { type: "dialog360" }
+  // call, but scoped to selectedUser via the admin route (no need for the customer's own token).
+  const handleLinkDialog360Number = async () => {
+    if (!selectedUser?.id) return;
+    const f = linkDialog360Form;
+    if (!f.token360.trim()) { setLinkDialog360Error('יש להזין token360'); return; }
+    if (!f.link.trim()) { setLinkDialog360Error('יש להזין link'); return; }
+
+    setLinkDialog360Submitting(true);
+    setLinkDialog360Error(null);
+    try {
+      const body = {
+        token360: f.token360.trim(),
+        link: f.link.trim(),
+        display_phone_number: f.display_phone_number.trim()
+      };
+      const response = await fetch(`${API_BASE}/admin/users/${selectedUser.id}/connected-numbers/link-dialog360`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify(body)
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        setLinkDialog360Error(data.message || data.error || 'שגיאה בשיוך המספר');
+        return;
+      }
+      setShowLinkDialog360Modal(false);
+      setLinkDialog360Form({ token360: '', link: 'https://waba-v2.360dialog.io/', display_phone_number: '' });
+      fetchCustomerConnectedNumbers(selectedUser.id);
+    } catch (err: any) {
+      setLinkDialog360Error(`שגיאת רשת: ${err.message}`);
+    } finally {
+      setLinkDialog360Submitting(false);
     }
   };
 
@@ -2561,8 +2688,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                         { id: 'removal-log' as const, label: 'לוג פעילות הסרה', icon: Activity },
                         ...((selectedUser.connected_numbers_count || 0) > 0 ? [
                           { id: 'cust-templates' as const, label: 'הודעות תבנית', icon: MessageSquare },
-                          { id: 'cust-connections' as const, label: 'חיבורים', icon: Phone },
                         ] : []),
+                        { id: 'cust-connections' as const, label: 'חיבורים', icon: Phone },
                         { id: 'cust-sessions' as const, label: 'סשנים', icon: List },
                       ].map(t => (
                         <button
@@ -3180,6 +3307,25 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                     {userDetailTab === 'cust-connections' && (
                       <div className="flex-1 overflow-y-auto p-4 sm:p-8 content-start h-full" dir="rtl">
                         <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-6">
+                          <div className="flex items-center justify-between gap-3 mb-5">
+                            <h3 className="text-base font-black text-slate-800">מספרים מחוברים</h3>
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => { setLinkDialog360Error(null); setShowLinkDialog360Modal(true); }}
+                                className="flex items-center gap-1.5 bg-emerald-600 text-white px-3 py-2 rounded-xl text-xs font-bold hover:bg-emerald-700 transition-colors whitespace-nowrap shadow-sm"
+                              >
+                                <Plus size={14} />
+                                הוספת מספר Dialog360
+                              </button>
+                              <button
+                                onClick={() => { setLinkFacebookError(null); setShowLinkFacebookModal(true); }}
+                                className="flex items-center gap-1.5 bg-[#1877F2] text-white px-3 py-2 rounded-xl text-xs font-bold hover:bg-[#1466d1] transition-colors whitespace-nowrap shadow-sm"
+                              >
+                                <Plus size={14} />
+                                הוספת מספר לחשבון פייסבוק
+                              </button>
+                            </div>
+                          </div>
                           {custConnectedNumbersLoading ? (
                             <div className="text-center py-10 text-slate-400 text-sm">טוען…</div>
                           ) : custConnectedNumbers.length === 0 ? (
@@ -4462,6 +4608,238 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
               </button>
               <button
                 onClick={() => { setShowCreateUserModal(false); setCreateUserDuplicate(null); }}
+                className="px-5 py-3 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-100 transition-colors"
+              >
+                ביטול
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Admin-only: Link Facebook Number Modal */}
+      {showLinkFacebookModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" dir="rtl">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-1">
+              <h3 className="text-lg font-black text-slate-800">הוספת מספר לחשבון פייסבוק</h3>
+              <button onClick={() => setShowLinkFacebookModal(false)} className="p-2 rounded-lg hover:bg-slate-100 text-slate-400"><X size={18} /></button>
+            </div>
+            <p className="text-xs text-slate-400 font-medium mb-4">
+              שיוך מספר WhatsApp פעיל מ-Facebook ללקוח: <span className="font-bold text-slate-600">{selectedUser?.name}</span>
+            </p>
+            {linkFacebookError && (
+              <div className="bg-red-50 border border-red-200 rounded-xl px-3 py-2 mb-3 text-xs font-bold text-red-600">
+                {linkFacebookError}
+              </div>
+            )}
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-600 mb-1">access_token *</label>
+                <textarea
+                  value={linkFacebookForm.access_token}
+                  onChange={e => setLinkFacebookForm(f => ({ ...f, access_token: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-blue-400"
+                  dir="ltr"
+                  rows={3}
+                  placeholder="EAAK..."
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 mb-1">waba_id *</label>
+                  <input
+                    type="text"
+                    value={linkFacebookForm.waba_id}
+                    onChange={e => setLinkFacebookForm(f => ({ ...f, waba_id: e.target.value }))}
+                    className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                    dir="ltr"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 mb-1">phone_number_id *</label>
+                  <input
+                    type="text"
+                    value={linkFacebookForm.phone_number_id}
+                    onChange={e => setLinkFacebookForm(f => ({ ...f, phone_number_id: e.target.value }))}
+                    className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                    dir="ltr"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 mb-1">display_phone_number</label>
+                  <input
+                    type="text"
+                    value={linkFacebookForm.display_phone_number}
+                    onChange={e => setLinkFacebookForm(f => ({ ...f, display_phone_number: e.target.value }))}
+                    className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                    dir="ltr"
+                    placeholder="+972..."
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 mb-1">verified_name</label>
+                  <input
+                    type="text"
+                    value={linkFacebookForm.verified_name}
+                    onChange={e => setLinkFacebookForm(f => ({ ...f, verified_name: e.target.value }))}
+                    className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 mb-1">status</label>
+                  <select
+                    value={linkFacebookForm.status}
+                    onChange={e => setLinkFacebookForm(f => ({ ...f, status: e.target.value }))}
+                    className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                  >
+                    <option value="APPROVED">APPROVED</option>
+                    <option value="PENDING">PENDING</option>
+                    <option value="DECLINED">DECLINED</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 mb-1">quality_rating</label>
+                  <select
+                    value={linkFacebookForm.quality_rating}
+                    onChange={e => setLinkFacebookForm(f => ({ ...f, quality_rating: e.target.value }))}
+                    className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                  >
+                    <option value="GREEN">GREEN</option>
+                    <option value="YELLOW">YELLOW</option>
+                    <option value="RED">RED</option>
+                    <option value="UNKNOWN">UNKNOWN</option>
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 mb-1">code_verification_status</label>
+                  <select
+                    value={linkFacebookForm.code_verification_status}
+                    onChange={e => setLinkFacebookForm(f => ({ ...f, code_verification_status: e.target.value }))}
+                    className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                  >
+                    <option value="VERIFIED">VERIFIED</option>
+                    <option value="EXPIRED">EXPIRED</option>
+                    <option value="NOT_VERIFIED">NOT_VERIFIED</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 mb-1">name_status</label>
+                  <select
+                    value={linkFacebookForm.name_status}
+                    onChange={e => setLinkFacebookForm(f => ({ ...f, name_status: e.target.value }))}
+                    className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                  >
+                    <option value="APPROVED">APPROVED</option>
+                    <option value="PENDING_REVIEW">PENDING_REVIEW</option>
+                    <option value="DECLINED">DECLINED</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-600 mb-1">messaging_limit_tier</label>
+                <select
+                  value={linkFacebookForm.messaging_limit_tier}
+                  onChange={e => setLinkFacebookForm(f => ({ ...f, messaging_limit_tier: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                >
+                  <option value="TIER_50">TIER_50</option>
+                  <option value="TIER_250">TIER_250</option>
+                  <option value="TIER_1K">TIER_1K</option>
+                  <option value="TIER_10K">TIER_10K</option>
+                  <option value="TIER_100K">TIER_100K</option>
+                  <option value="TIER_UNLIMITED">TIER_UNLIMITED</option>
+                </select>
+              </div>
+            </div>
+            <div className="flex gap-3 mt-5">
+              <button
+                onClick={handleLinkFacebookNumber}
+                disabled={linkFacebookSubmitting}
+                className="flex-1 flex items-center justify-center gap-2 bg-[#1877F2] text-white py-3 rounded-xl font-bold text-sm hover:bg-[#1466d1] disabled:opacity-50 transition-colors"
+              >
+                {linkFacebookSubmitting ? <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Plus size={16} />}
+                שייך מספר
+              </button>
+              <button
+                onClick={() => setShowLinkFacebookModal(false)}
+                className="px-5 py-3 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-100 transition-colors"
+              >
+                ביטול
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Admin-only: Link Dialog360 Number Modal */}
+      {showLinkDialog360Modal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" dir="rtl">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-1">
+              <h3 className="text-lg font-black text-slate-800">הוספת מספר Dialog360</h3>
+              <button onClick={() => setShowLinkDialog360Modal(false)} className="p-2 rounded-lg hover:bg-slate-100 text-slate-400"><X size={18} /></button>
+            </div>
+            <p className="text-xs text-slate-400 font-medium mb-4">
+              שיוך מספר WhatsApp פעיל מ-Dialog360 ללקוח: <span className="font-bold text-slate-600">{selectedUser?.name}</span>
+            </p>
+            {linkDialog360Error && (
+              <div className="bg-red-50 border border-red-200 rounded-xl px-3 py-2 mb-3 text-xs font-bold text-red-600">
+                {linkDialog360Error}
+              </div>
+            )}
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-600 mb-1">token360 *</label>
+                <input
+                  type="text"
+                  value={linkDialog360Form.token360}
+                  onChange={e => setLinkDialog360Form(f => ({ ...f, token360: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                  dir="ltr"
+                  placeholder="z0yJpFz7MASnLSXnliYLC3t1AK"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-600 mb-1">link *</label>
+                <input
+                  type="text"
+                  value={linkDialog360Form.link}
+                  onChange={e => setLinkDialog360Form(f => ({ ...f, link: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                  dir="ltr"
+                  placeholder="https://waba-v2.360dialog.io/"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-600 mb-1">display_phone_number</label>
+                <input
+                  type="text"
+                  value={linkDialog360Form.display_phone_number}
+                  onChange={e => setLinkDialog360Form(f => ({ ...f, display_phone_number: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                  dir="ltr"
+                  placeholder="+972XXXXXXXXX"
+                />
+              </div>
+            </div>
+            <div className="flex gap-3 mt-5">
+              <button
+                onClick={handleLinkDialog360Number}
+                disabled={linkDialog360Submitting}
+                className="flex-1 flex items-center justify-center gap-2 bg-emerald-600 text-white py-3 rounded-xl font-bold text-sm hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+              >
+                {linkDialog360Submitting ? <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Plus size={16} />}
+                שייך מספר
+              </button>
+              <button
+                onClick={() => setShowLinkDialog360Modal(false)}
                 className="px-5 py-3 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-100 transition-colors"
               >
                 ביטול

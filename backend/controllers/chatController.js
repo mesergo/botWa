@@ -1708,11 +1708,28 @@ export const respondToMessage = async (req, res) => {
     console.log(`${'─'.repeat(60)}\n`);
 
     if (!currentNode) {
-      console.error('[BOT] ❌ Current node not found:', session.current_node_id);
-      return res.status(404).json({ 
-        StatusId: 0, 
-        StatusDescription: 'Current node not found' 
-      });
+      // Self-heal instead of dead-ending the conversation: this happens when
+      // session.current_node_id points at a node that no longer resolves (e.g. the
+      // flow was edited/republished mid-conversation, or a stale/closed session was
+      // somehow re-attached). Reset to the opening menu and treat this message like
+      // the first message of a new session so the customer gets a working bot reply
+      // instead of a silent 404.
+      console.error('[BOT] ❌ Current node not found:', session.current_node_id, '— resetting session to opening menu');
+      const autoResponseNode = flowData.nodes.find(n => n.type === 'automatic_responses');
+      if (!autoResponseNode) {
+        console.error('[BOT] ❌ No automatic_responses node found for bot:', session.flow_id, '— cannot self-heal');
+        return res.status(404).json({ 
+          StatusId: 0, 
+          StatusDescription: 'Current node not found' 
+        });
+      }
+      currentNode = autoResponseNode;
+      session.current_node_id = autoResponseNode.id;
+      session.execution_stack = [];
+      session.waiting_text_input = false;
+      session.waiting_webservice = false;
+      session.markModified('execution_stack');
+      isNewSession = true;
     }
     console.log(`[BOT] node=${currentNode.type} (${currentNode.id}) | newSession=${isNewSession} | waitText=${session.waiting_text_input} | waitWS=${session.waiting_webservice}`);
 

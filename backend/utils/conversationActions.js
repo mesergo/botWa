@@ -26,6 +26,12 @@ export const buildConversationClosedSetFragment = (now = new Date()) => ({
   agent_since: null,
   status: 'closed',
   ended_at: now,
+  // Closing the conversation ends this session for good — is_active:false means
+  // the next incoming customer message won't re-attach to this (now stale) session
+  // (BotSession lookups filter on is_active:true) and instead a brand-new session
+  // is created starting at the opening menu, so the bot never gets stuck resuming
+  // from a dead-end node.
+  is_active: false,
   'reminder_case1.next_due_at': null,
   'reminder_case1.claim_until': null,
   'reminder_case2.next_due_at': null,
@@ -44,6 +50,11 @@ export const applyConversationClosedToDoc = (session, now = new Date()) => {
   session.ended_at = now;
   session.waiting_text_input = false;
   session.waiting_webservice = false;
+  // Same reasoning as buildConversationClosedSetFragment above: mark the session
+  // inactive so the next customer message starts a fresh bot session instead of
+  // resuming from this closed/dead-end node (which previously left the session
+  // "stuck" — is_active stayed true while current_node_id was never advanced).
+  session.is_active = false;
   session.reminder_case1 = session.reminder_case1 || {};
   session.reminder_case2 = session.reminder_case2 || {};
   session.reminder_case1.next_due_at = null;
