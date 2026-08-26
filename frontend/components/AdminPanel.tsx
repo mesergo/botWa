@@ -7,11 +7,12 @@ import {
   CreditCard, MoreVertical, X, Star, Globe, Lock, Copy, List, Phone, Clock,
   ChevronDown, ChevronUp, ToggleLeft, ToggleRight, XCircle, MessageSquare, Menu,
   User as UserIcon, ExternalLink, Sliders, Image as ImageIcon, Layers,
-  UserCheck, Headphones, UserMinus, RefreshCcw, Inbox
+  UserCheck, Headphones, UserMinus, RefreshCcw, Inbox, History
 } from 'lucide-react';
 import UserTypesManager from './UserTypesManager';
 import { FileUploader } from './FileUploader';
 import SmsInApp from './sms-in/SmsInApp';
+import SmsExternalLogTab from './sms-in/SmsExternalLogTab';
 import CustomerSessionsPanel from './CustomerSessionsPanel';
 
 interface User {
@@ -30,6 +31,7 @@ interface User {
   user_type_id?: { _id: string; name: string; system_role: string } | null;
   sms_in_enabled?: boolean;
   facebook_connect_enabled?: boolean;
+  connected_numbers_count?: number;
   createdAt: string;
   updatedAt: string;
   stats?: {
@@ -92,8 +94,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
   const navigate = useNavigate();
   const { tab } = useParams<{ tab?: string }>();
 
-  type AdminTab = 'dashboard' | 'users' | 'user-types' | 'templates' | 'settings' | 'sessions' | 'dialog360' | 'sms-in' | 'connected-numbers';
-  const VALID_TABS: AdminTab[] = ['dashboard', 'users', 'user-types', 'templates', 'settings', 'sessions', 'dialog360', 'sms-in', 'connected-numbers'];
+  type AdminTab = 'dashboard' | 'users' | 'user-types' | 'templates' | 'settings' | 'sessions' | 'dialog360' | 'sms-in' | 'sms-external-log' | 'connected-numbers';
+  const VALID_TABS: AdminTab[] = ['dashboard', 'users', 'user-types', 'templates', 'settings', 'sessions', 'dialog360', 'sms-in', 'sms-external-log', 'connected-numbers'];
   const activeTab: AdminTab = (VALID_TABS.includes(tab as AdminTab) ? tab : 'dashboard') as AdminTab;
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const setActiveTab = (t: AdminTab) => {
@@ -104,6 +106,26 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
   const [stats, setStats] = useState<SystemStats | null>(null);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [userDetailTab, setUserDetailTab] = useState<'profile' | 'removal-log' | 'cust-templates' | 'cust-connections' | 'cust-sessions'>('profile');
+  const [showRestoreModal, setShowRestoreModal] = useState(false);
+  const [restoreUntilDate, setRestoreUntilDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [restoreMonths, setRestoreMonths] = useState(3);
+  const [restoreCollection, setRestoreCollection] = useState('');
+  const [restorePreview, setRestorePreview] = useState<{
+    connected: boolean;
+    collections: {
+      name: string;
+      phone: string;
+      displayPhone?: string;
+      verifiedName?: string;
+      provider?: string;
+      phoneNumberId?: string;
+      exists: boolean;
+    }[];
+  } | null>(null);
+  const [restoreLoading, setRestoreLoading] = useState(false);
+  const [restoreResult, setRestoreResult] = useState<string | null>(null);
+  const [restoreError, setRestoreError] = useState<string | null>(null);
+  const [restoreNonce, setRestoreNonce] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
@@ -139,10 +161,34 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
   const [custConnectedNumbers, setCustConnectedNumbers] = useState<any[]>([]);
   const [custConnectedNumbersLoading, setCustConnectedNumbersLoading] = useState(false);
 
+  // Admin-only "link Facebook number" modal — sends the data as an admin-triggered
+  // stage-3 whatsapp-registration/link-number call, scoped to the selected customer.
+  const [showLinkFacebookModal, setShowLinkFacebookModal] = useState(false);
+  const [linkFacebookSubmitting, setLinkFacebookSubmitting] = useState(false);
+  const [linkFacebookError, setLinkFacebookError] = useState<string | null>(null);
+  const [linkFacebookForm, setLinkFacebookForm] = useState({
+    access_token: '',
+    waba_id: '',
+    phone_number_id: '',
+    display_phone_number: '',
+    verified_name: '',
+    status: 'APPROVED',
+    quality_rating: 'GREEN',
+    code_verification_status: 'VERIFIED',
+    name_status: 'APPROVED',
+    messaging_limit_tier: 'TIER_1K'
+  });
+
   // GLOBAL connected-numbers tab: every connected WhatsApp number across all customers
   const [allConnectedNumbers, setAllConnectedNumbers] = useState<any[]>([]);
   const [allConnectedNumbersLoading, setAllConnectedNumbersLoading] = useState(false);
   const [allConnectedNumbersSearch, setAllConnectedNumbersSearch] = useState('');
+
+  // Payment-country prefixes (972 / 1) editing — shared by both the global tab and the
+  // per-customer tab. Keyed by `${userId}:${phone_number_id}` since the global view spans
+  // multiple users.
+  const [paymentCountriesDraft, setPaymentCountriesDraft] = useState<Record<string, { il: boolean; us: boolean }>>({});
+  const [savingPaymentCountriesKey, setSavingPaymentCountriesKey] = useState<string | null>(null);
   
   // Forms state
   const [newTemplateData, setNewTemplateData] = useState({ name: '', description: '', botId: '' });
@@ -1057,6 +1103,125 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
     }
   };
 
+  const openRestoreConversations = async () => {
+    if (!selectedUser?.id) return;
+    setShowRestoreModal(true);
+    setRestoreResult(null);
+    setRestoreError(null);
+    setRestoreUntilDate(new Date().toISOString().slice(0, 10));
+    setRestoreMonths(3);
+    setRestoreCollection('');
+    try {
+      const response = await fetch(`${API_BASE}/admin/users/${selectedUser.id}/restore-conversations`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        setRestoreError(data.error || 'שגיאה בטעינת מקורות השחזור');
+        setRestorePreview(null);
+        return;
+      }
+      setRestorePreview({ connected: !!data.connected, collections: data.collections || [] });
+      const firstExisting = (data.collections || []).find((c: { exists: boolean }) => c.exists);
+      setRestoreCollection(firstExisting?.name || '');
+    } catch (err: any) {
+      setRestoreError(err.message || 'שגיאת רשת');
+    }
+  };
+
+  const handleRestoreConversations = async () => {
+    if (!selectedUser?.id) return;
+    setRestoreLoading(true);
+    setRestoreError(null);
+    setRestoreResult(null);
+    try {
+      const response = await fetch(`${API_BASE}/admin/users/${selectedUser.id}/restore-conversations`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          untilDate: restoreUntilDate,
+          months: restoreMonths,
+          collection: restoreCollection || undefined
+        })
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        setRestoreError(data.error || 'השחזור נכשל');
+        return;
+      }
+      setRestoreResult(
+        `שוחזרו ${data.createdSessions} שיחות · ${data.importedMessages} הודעות · ${data.contacts} אנשי קשר` +
+        (data.skippedDuplicates ? ` · ${data.skippedDuplicates} כפילויות דולגו` : '')
+      );
+      setRestoreNonce(n => n + 1);
+      setUserDetailTab('cust-sessions');
+    } catch (err: any) {
+      setRestoreError(err.message || 'שגיאת רשת');
+    } finally {
+      setRestoreLoading(false);
+    }
+  };
+
+  // Admin-only: link a Facebook/WhatsApp Cloud API number to the selected customer.
+  // Builds the same webhook-style body Meta sends, mirroring the documented
+  // POST /api/whatsapp-registration/link-number call, but scoped to selectedUser via
+  // the admin route (no need for the customer's own token).
+  const handleLinkFacebookNumber = async () => {
+    if (!selectedUser?.id) return;
+    const f = linkFacebookForm;
+    if (!f.access_token.trim()) { setLinkFacebookError('יש להזין access_token'); return; }
+    if (!f.waba_id.trim()) { setLinkFacebookError('יש להזין waba_id'); return; }
+    if (!f.phone_number_id.trim()) { setLinkFacebookError('יש להזין phone_number_id'); return; }
+
+    setLinkFacebookSubmitting(true);
+    setLinkFacebookError(null);
+    try {
+      const body = {
+        object: 'whatsapp_business_account',
+        access_token: f.access_token.trim(),
+        entry: [{
+          id: f.waba_id.trim(),
+          time: Math.floor(Date.now() / 1000),
+          changes: [{
+            value: {
+              phone_number_id: f.phone_number_id.trim(),
+              display_phone_number: f.display_phone_number.trim(),
+              verified_name: f.verified_name.trim(),
+              status: f.status,
+              quality_rating: f.quality_rating,
+              code_verification_status: f.code_verification_status,
+              name_status: f.name_status,
+              event: 'phone_verified',
+              messaging_limit_tier: f.messaging_limit_tier
+            },
+            field: 'phone_number_name_status'
+          }]
+        }]
+      };
+      const response = await fetch(`${API_BASE}/admin/users/${selectedUser.id}/connected-numbers/link-facebook`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify(body)
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        setLinkFacebookError(data.message || data.error || 'שגיאה בשיוך המספר');
+        return;
+      }
+      setShowLinkFacebookModal(false);
+      setLinkFacebookForm({
+        access_token: '', waba_id: '', phone_number_id: '', display_phone_number: '', verified_name: '',
+        status: 'APPROVED', quality_rating: 'GREEN', code_verification_status: 'VERIFIED', name_status: 'APPROVED',
+        messaging_limit_tier: 'TIER_1K'
+      });
+      fetchCustomerConnectedNumbers(selectedUser.id);
+    } catch (err: any) {
+      setLinkFacebookError(`שגיאת רשת: ${err.message}`);
+    } finally {
+      setLinkFacebookSubmitting(false);
+    }
+  };
+
   // Fetch EVERY connected WhatsApp number across all customers (global admin view)
   const fetchAllConnectedNumbers = async () => {
     setAllConnectedNumbersLoading(true);
@@ -1071,6 +1236,50 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
       console.error('[admin all connected-numbers]', err);
     } finally {
       setAllConnectedNumbersLoading(false);
+    }
+  };
+
+  // Returns the current {il, us} checkbox selection for a connected number:
+  // prefers an in-progress draft, falling back to the value persisted in the DB.
+  const getPaymentCountriesSelection = (key: string, allowedPaymentCountries?: string): { il: boolean; us: boolean } => {
+    const draft = paymentCountriesDraft[key];
+    if (draft) return draft;
+    const stored = (allowedPaymentCountries || '972').split('|').map(s => s.trim());
+    return { il: stored.includes('972'), us: stored.includes('1') };
+  };
+
+  const handleTogglePaymentCountry = (key: string, current: { il: boolean; us: boolean }, field: 'il' | 'us') => {
+    setPaymentCountriesDraft(prev => ({ ...prev, [key]: { ...current, [field]: !current[field] } }));
+  };
+
+  // Saves the payment-country selection for a connected number via the admin
+  // endpoint (no ownership restriction), then refreshes the given view.
+  const handleSavePaymentCountries = async (userId: string, phone_number_id: string, refetch: () => void) => {
+    const key = `${userId}:${phone_number_id}`;
+    const sel = getPaymentCountriesSelection(key);
+    const allowedPaymentCountries = [sel.il && '972', sel.us && '1'].filter(Boolean).join('|');
+    if (!allowedPaymentCountries) {
+      alert('יש לבחור לפחות קידומת מדינה אחת');
+      return;
+    }
+    setSavingPaymentCountriesKey(key);
+    try {
+      const response = await fetch(`${API_BASE}/admin/users/${userId}/connected-numbers/${phone_number_id}/payment-countries`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ allowedPaymentCountries })
+      });
+      const data = await response.json();
+      if (data.success) {
+        setPaymentCountriesDraft(prev => { const n2 = { ...prev }; delete n2[key]; return n2; });
+        refetch();
+      } else {
+        alert(`שגיאה: ${data.error || 'לא ידוע'}`);
+      }
+    } catch (err: any) {
+      alert(`שגיאת רשת: ${err.message}`);
+    } finally {
+      setSavingPaymentCountriesKey(null);
     }
   };
   
@@ -1422,6 +1631,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
               { id: 'user-types', label: 'סוגי משתמשים', icon: Shield },
               { id: 'connected-numbers', label: 'מספרים מחוברים', icon: Phone },
               { id: 'sms-in', label: 'הודעות SMS', icon: Inbox },
+              { id: 'sms-external-log', label: 'SMS פנימי', icon: MessageSquare },
               { id: 'templates', label: 'מאגר תבניות בוט', icon: FileText },
               { id: 'settings', label: 'הגדרות מערכת', icon: Settings },
             ].map(item => (
@@ -1490,9 +1700,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
               {activeTab === 'sessions' && 'כל הסשנים'}
               {activeTab === 'dialog360' && 'הודעות תבנית Dialog360'}
               {activeTab === 'connected-numbers' && 'מספרים מחוברים'}
+              {activeTab === 'sms-external-log' && 'SMS פנימי'}
               {activeTab === 'templates' && 'ניהול תבניות'}
               {activeTab === 'settings' && 'הגדרות מערכת'}
-            </h2>
+            </h2> 
             <p className="hidden sm:block text-sm font-medium text-slate-400 mt-1">
               {activeTab === 'dashboard' && 'סקירה מקיפה על נתוני וביצועי המערכת'}
               {activeTab === 'users' && 'צפייה, עריכה וניהול הרשאות משתמשים מתקדם'}
@@ -1500,6 +1711,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
               {activeTab === 'sessions' && 'צפייה בכל הסשנים של כל המשתמשים במערכת'}
               {activeTab === 'dialog360' && 'צפייה בהודעות תבנית מ-Dialog360'}
               {activeTab === 'connected-numbers' && 'צפייה בכל המספרים המחוברים במערכת, לאיזה משתמש הם שייכים והסטטוס שלהם'}
+              {activeTab === 'sms-external-log' && 'הודעות SMS שנרשמו על ידי המערכת החיצונית (maskyoo) לתוך מסד הנתונים שלנו'}
               {activeTab === 'templates' && 'ניהול ותחזוקת מאגר התבניות הגלובלי'}
               {activeTab === 'settings' && 'הגדרת מגבלות, מחירים ופרמטרים למערכת'}
             </p>
@@ -1535,6 +1747,13 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                 viewAll
                 token={token}
               />
+            </div>
+          )}
+
+          {/* SMS EXTERNAL LOG TAB — read-only copy log from the external "maskyoo" project (SmsExternalLog / collection `sms`) */}
+          {activeTab === 'sms-external-log' && (
+            <div className="animate-fade-in-up">
+              <SmsExternalLogTab token={token} />
             </div>
           )}
 
@@ -1655,6 +1874,50 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                                 </div>
                               )}
                             </div>
+                          </div>
+
+                          {/* Payment-country prefixes (972 / 1) allowed for this number */}
+                          <div className="mt-4 pt-4 border-t border-slate-100 flex items-center gap-4 flex-wrap">
+                            <span className="text-[11px] font-bold text-slate-400">קידומות מדינה מותרות לתשלום:</span>
+                            {(() => {
+                              const key = `${n.user_id}:${n.phone_number_id}`;
+                              const sel = getPaymentCountriesSelection(key, n.allowedPaymentCountries);
+                              const isSaving = savingPaymentCountriesKey === key;
+                              const hasDraft = !!paymentCountriesDraft[key];
+                              return (
+                                <>
+                                  <label className="flex items-center gap-1.5 text-xs font-bold text-slate-600 cursor-pointer select-none">
+                                    <input
+                                      type="checkbox"
+                                      checked={sel.il}
+                                      onChange={() => handleTogglePaymentCountry(key, sel, 'il')}
+                                      className="w-4 h-4 rounded accent-blue-600"
+                                    />
+                                    🇮🇱 ישראל (972)
+                                  </label>
+                                  <label className="flex items-center gap-1.5 text-xs font-bold text-slate-600 cursor-pointer select-none">
+                                    <input
+                                      type="checkbox"
+                                      checked={sel.us}
+                                      onChange={() => handleTogglePaymentCountry(key, sel, 'us')}
+                                      className="w-4 h-4 rounded accent-blue-600"
+                                    />
+                                    🇺🇸 ארה"ב/קנדה (1)
+                                  </label>
+                                  {hasDraft && (
+                                    <button
+                                      onClick={() => handleSavePaymentCountries(n.user_id, n.phone_number_id, fetchAllConnectedNumbers)}
+                                      disabled={isSaving}
+                                      className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-[11px] font-bold hover:bg-blue-700 transition-all disabled:opacity-50 active:scale-95"
+                                    >
+                                      {isSaving
+                                        ? <span className="animate-spin inline-block w-3 h-3 border-2 border-white border-t-transparent rounded-full" />
+                                        : 'שמור'}
+                                    </button>
+                                  )}
+                                </>
+                              );
+                            })()}
                           </div>
                         </div>
                       ))}
@@ -2453,8 +2716,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                       {[
                         { id: 'profile' as const, label: 'פרופיל אישי', icon: UserIcon },
                         { id: 'removal-log' as const, label: 'לוג פעילות הסרה', icon: Activity },
-                        { id: 'cust-templates' as const, label: 'הודעות תבנית', icon: MessageSquare },
-                        { id: 'cust-connections' as const, label: 'חיבורים', icon: Phone },
+                        ...((selectedUser.connected_numbers_count || 0) > 0 ? [
+                          { id: 'cust-templates' as const, label: 'הודעות תבנית', icon: MessageSquare },
+                          { id: 'cust-connections' as const, label: 'חיבורים', icon: Phone },
+                        ] : []),
                         { id: 'cust-sessions' as const, label: 'סשנים', icon: List },
                       ].map(t => (
                         <button
@@ -2470,6 +2735,15 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                           {t.label}
                         </button>
                       ))}
+                      <button
+                        type="button"
+                        onClick={openRestoreConversations}
+                        className="mr-auto flex items-center gap-2 px-4 py-3 text-sm font-bold border-b-2 border-transparent text-violet-500 hover:text-violet-700 whitespace-nowrap"
+                        title="שחזור שיחות מהמערכת הישנה"
+                      >
+                        <History size={16} />
+                        שחזור שיחות
+                      </button>
                     </div>
 
                     {userDetailTab === 'profile' && (
@@ -3072,6 +3346,16 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                     {userDetailTab === 'cust-connections' && (
                       <div className="flex-1 overflow-y-auto p-4 sm:p-8 content-start h-full" dir="rtl">
                         <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-6">
+                          <div className="flex items-center justify-between gap-3 mb-5">
+                            <h3 className="text-base font-black text-slate-800">מספרים מחוברים</h3>
+                            <button
+                              onClick={() => { setLinkFacebookError(null); setShowLinkFacebookModal(true); }}
+                              className="flex items-center gap-1.5 bg-[#1877F2] text-white px-3 py-2 rounded-xl text-xs font-bold hover:bg-[#1466d1] transition-colors whitespace-nowrap shadow-sm"
+                            >
+                              <Plus size={14} />
+                              שיוך מספר לחשבון פייסבוק
+                            </button>
+                          </div>
                           {custConnectedNumbersLoading ? (
                             <div className="text-center py-10 text-slate-400 text-sm">טוען…</div>
                           ) : custConnectedNumbers.length === 0 ? (
@@ -3145,6 +3429,50 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                                       )}
                                     </div>
                                   </div>
+
+                                  {/* Payment-country prefixes (972 / 1) allowed for this number */}
+                                  <div className="mt-4 pt-4 border-t border-slate-200/70 flex items-center gap-4 flex-wrap">
+                                    <span className="text-[11px] font-bold text-slate-400">קידומות מדינה מותרות לתשלום:</span>
+                                    {(() => {
+                                      const key = `${selectedUser.id}:${n.phone_number_id}`;
+                                      const sel = getPaymentCountriesSelection(key, n.allowedPaymentCountries);
+                                      const isSaving = savingPaymentCountriesKey === key;
+                                      const hasDraft = !!paymentCountriesDraft[key];
+                                      return (
+                                        <>
+                                          <label className="flex items-center gap-1.5 text-xs font-bold text-slate-600 cursor-pointer select-none">
+                                            <input
+                                              type="checkbox"
+                                              checked={sel.il}
+                                              onChange={() => handleTogglePaymentCountry(key, sel, 'il')}
+                                              className="w-4 h-4 rounded accent-blue-600"
+                                            />
+                                            🇮🇱 ישראל (972)
+                                          </label>
+                                          <label className="flex items-center gap-1.5 text-xs font-bold text-slate-600 cursor-pointer select-none">
+                                            <input
+                                              type="checkbox"
+                                              checked={sel.us}
+                                              onChange={() => handleTogglePaymentCountry(key, sel, 'us')}
+                                              className="w-4 h-4 rounded accent-blue-600"
+                                            />
+                                            🇺🇸 ארה"ב/קנדה (1)
+                                          </label>
+                                          {hasDraft && (
+                                            <button
+                                              onClick={() => handleSavePaymentCountries(selectedUser.id, n.phone_number_id, () => fetchCustomerConnectedNumbers(selectedUser.id))}
+                                              disabled={isSaving}
+                                              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-[11px] font-bold hover:bg-blue-700 transition-all disabled:opacity-50 active:scale-95"
+                                            >
+                                              {isSaving
+                                                ? <span className="animate-spin inline-block w-3 h-3 border-2 border-white border-t-transparent rounded-full" />
+                                                : 'שמור'}
+                                            </button>
+                                          )}
+                                        </>
+                                      );
+                                    })()}
+                                  </div>
                                 </div>
                               ))}
                             </div>
@@ -3155,7 +3483,97 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
 
                     {userDetailTab === 'cust-sessions' && (
                       <div className="flex-1 overflow-hidden h-full">
-                        <CustomerSessionsPanel token={token} apiBase={API_BASE} userId={selectedUser.id} />
+                        <CustomerSessionsPanel key={`${selectedUser.id}-${restoreNonce}`} token={token} apiBase={API_BASE} userId={selectedUser.id} />
+                      </div>
+                    )}
+
+                    {showRestoreModal && (
+                      <div className="absolute inset-0 z-40 bg-slate-900/40 flex items-center justify-center p-4" dir="rtl">
+                        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg border border-slate-200 overflow-hidden">
+                          <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <History size={18} className="text-violet-500" />
+                              <h3 className="text-base font-black text-slate-800">שחזור שיחות</h3>
+                            </div>
+                            <button type="button" onClick={() => setShowRestoreModal(false)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400">
+                              <X size={16} />
+                            </button>
+                          </div>
+                          <div className="p-5 space-y-4">
+                            <p className="text-sm text-slate-500 font-medium">
+                              ייבוא היסטוריית הודעות מהמערכת הישנה (`fbiz_...`) אל השיחות של הלקוח, מתאריך סיום אחורה במספר חודשים.
+                            </p>
+                            <label className="block">
+                              <span className="text-xs font-black text-slate-400 uppercase tracking-widest">עד תאריך</span>
+                              <input
+                                type="date"
+                                value={restoreUntilDate}
+                                onChange={e => setRestoreUntilDate(e.target.value)}
+                                className="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm font-bold text-slate-700"
+                              />
+                            </label>
+                            <label className="block">
+                              <span className="text-xs font-black text-slate-400 uppercase tracking-widest">חודשים אחורה</span>
+                              <input
+                                type="number"
+                                min={1}
+                                max={24}
+                                value={restoreMonths}
+                                onChange={e => setRestoreMonths(Math.max(1, Math.min(24, Number(e.target.value) || 1)))}
+                                className="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm font-bold text-slate-700"
+                              />
+                            </label>
+                            {(restorePreview?.collections || []).length > 0 ? (
+                              <label className="block">
+                                <span className="text-xs font-black text-slate-400 uppercase tracking-widest">קו לשחזור</span>
+                                <select
+                                  value={restoreCollection}
+                                  onChange={e => setRestoreCollection(e.target.value)}
+                                  className="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm font-bold text-slate-700 bg-white"
+                                >
+                                  <option value="" disabled>בחר מספר מחובר</option>
+                                  {restorePreview!.collections.map(c => (
+                                    <option key={c.name} value={c.exists ? c.name : ''} disabled={!c.exists}>
+                                      {c.verifiedName ? `${c.verifiedName} — ` : ''}
+                                      {c.displayPhone || c.phone}
+                                      {c.exists ? '' : ' — לא נמצאה היסטוריה'}
+                                    </option>
+                                  ))}
+                                </select>
+                                <span className="mt-1 block text-[11px] font-medium text-slate-400">
+                                  השחזור יתבצע רק מהקו שנבחר
+                                </span>
+                              </label>
+                            ) : restorePreview ? (
+                              <p className="text-xs font-bold text-amber-600">
+                                לא נמצאו מספרי WhatsApp מחוברים ללקוח
+                              </p>
+                            ) : null}
+                            {restorePreview && !restorePreview.connected && (
+                              <p className="text-xs font-bold text-amber-600">אין חיבור כרגע למסד הישן. השחזור יעבוד בשרת שמחובר ל־SMS_MONGODB_URI.</p>
+                            )}
+                            {restoreError && <p className="text-sm font-bold text-rose-600">{restoreError}</p>}
+                            {restoreResult && <p className="text-sm font-bold text-emerald-600">{restoreResult}</p>}
+                          </div>
+                          <div className="px-5 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setShowRestoreModal(false)}
+                              className="px-4 py-2 rounded-xl text-sm font-bold text-slate-600 hover:bg-white border border-slate-200"
+                            >
+                              סגור
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleRestoreConversations}
+                              disabled={restoreLoading || !restoreCollection}
+                              className="px-4 py-2 rounded-xl text-sm font-bold text-white bg-violet-600 hover:bg-violet-700 disabled:opacity-40 flex items-center gap-2"
+                            >
+                              {restoreLoading && <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />}
+                              שחזר שיחות
+                            </button>
+                          </div>
+                        </div>
                       </div>
                     )}
 
@@ -4310,6 +4728,167 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
               </button>
               <button
                 onClick={() => { setShowCreateUserModal(false); setCreateUserDuplicate(null); }}
+                className="px-5 py-3 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-100 transition-colors"
+              >
+                ביטול
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Admin-only: Link Facebook Number Modal */}
+      {showLinkFacebookModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" dir="rtl">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-1">
+              <h3 className="text-lg font-black text-slate-800">שיוך מספר לחשבון פייסבוק</h3>
+              <button onClick={() => setShowLinkFacebookModal(false)} className="p-2 rounded-lg hover:bg-slate-100 text-slate-400"><X size={18} /></button>
+            </div>
+            <p className="text-xs text-slate-400 font-medium mb-4">
+              שיוך מספר WhatsApp פעיל מ-Facebook ללקוח: <span className="font-bold text-slate-600">{selectedUser?.name}</span>
+            </p>
+            {linkFacebookError && (
+              <div className="bg-red-50 border border-red-200 rounded-xl px-3 py-2 mb-3 text-xs font-bold text-red-600">
+                {linkFacebookError}
+              </div>
+            )}
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-600 mb-1">access_token *</label>
+                <textarea
+                  value={linkFacebookForm.access_token}
+                  onChange={e => setLinkFacebookForm(f => ({ ...f, access_token: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-blue-400"
+                  dir="ltr"
+                  rows={3}
+                  placeholder="EAAK..."
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 mb-1">waba_id *</label>
+                  <input
+                    type="text"
+                    value={linkFacebookForm.waba_id}
+                    onChange={e => setLinkFacebookForm(f => ({ ...f, waba_id: e.target.value }))}
+                    className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                    dir="ltr"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 mb-1">phone_number_id *</label>
+                  <input
+                    type="text"
+                    value={linkFacebookForm.phone_number_id}
+                    onChange={e => setLinkFacebookForm(f => ({ ...f, phone_number_id: e.target.value }))}
+                    className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                    dir="ltr"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 mb-1">display_phone_number</label>
+                  <input
+                    type="text"
+                    value={linkFacebookForm.display_phone_number}
+                    onChange={e => setLinkFacebookForm(f => ({ ...f, display_phone_number: e.target.value }))}
+                    className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                    dir="ltr"
+                    placeholder="+972..."
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 mb-1">verified_name</label>
+                  <input
+                    type="text"
+                    value={linkFacebookForm.verified_name}
+                    onChange={e => setLinkFacebookForm(f => ({ ...f, verified_name: e.target.value }))}
+                    className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 mb-1">status</label>
+                  <select
+                    value={linkFacebookForm.status}
+                    onChange={e => setLinkFacebookForm(f => ({ ...f, status: e.target.value }))}
+                    className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                  >
+                    <option value="APPROVED">APPROVED</option>
+                    <option value="PENDING">PENDING</option>
+                    <option value="DECLINED">DECLINED</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 mb-1">quality_rating</label>
+                  <select
+                    value={linkFacebookForm.quality_rating}
+                    onChange={e => setLinkFacebookForm(f => ({ ...f, quality_rating: e.target.value }))}
+                    className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                  >
+                    <option value="GREEN">GREEN</option>
+                    <option value="YELLOW">YELLOW</option>
+                    <option value="RED">RED</option>
+                    <option value="UNKNOWN">UNKNOWN</option>
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 mb-1">code_verification_status</label>
+                  <select
+                    value={linkFacebookForm.code_verification_status}
+                    onChange={e => setLinkFacebookForm(f => ({ ...f, code_verification_status: e.target.value }))}
+                    className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                  >
+                    <option value="VERIFIED">VERIFIED</option>
+                    <option value="EXPIRED">EXPIRED</option>
+                    <option value="NOT_VERIFIED">NOT_VERIFIED</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 mb-1">name_status</label>
+                  <select
+                    value={linkFacebookForm.name_status}
+                    onChange={e => setLinkFacebookForm(f => ({ ...f, name_status: e.target.value }))}
+                    className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                  >
+                    <option value="APPROVED">APPROVED</option>
+                    <option value="PENDING_REVIEW">PENDING_REVIEW</option>
+                    <option value="DECLINED">DECLINED</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-600 mb-1">messaging_limit_tier</label>
+                <select
+                  value={linkFacebookForm.messaging_limit_tier}
+                  onChange={e => setLinkFacebookForm(f => ({ ...f, messaging_limit_tier: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                >
+                  <option value="TIER_50">TIER_50</option>
+                  <option value="TIER_250">TIER_250</option>
+                  <option value="TIER_1K">TIER_1K</option>
+                  <option value="TIER_10K">TIER_10K</option>
+                  <option value="TIER_100K">TIER_100K</option>
+                  <option value="TIER_UNLIMITED">TIER_UNLIMITED</option>
+                </select>
+              </div>
+            </div>
+            <div className="flex gap-3 mt-5">
+              <button
+                onClick={handleLinkFacebookNumber}
+                disabled={linkFacebookSubmitting}
+                className="flex-1 flex items-center justify-center gap-2 bg-[#1877F2] text-white py-3 rounded-xl font-bold text-sm hover:bg-[#1466d1] disabled:opacity-50 transition-colors"
+              >
+                {linkFacebookSubmitting ? <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Plus size={16} />}
+                שייך מספר
+              </button>
+              <button
+                onClick={() => setShowLinkFacebookModal(false)}
                 className="px-5 py-3 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-100 transition-colors"
               >
                 ביטול

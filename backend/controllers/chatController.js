@@ -23,7 +23,7 @@ import { applyConversationClosedToDoc } from '../utils/conversationActions.js';
 
 import { notifyWaitingCustomerMessage } from '../config/pushNotificationsRuntime.js';
 import { sendExpoPushToUser } from '../utils/expoPush.js';
-
+ 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -98,6 +98,24 @@ const replaceParameters = (text, parameters) => {
     const value = parameters[paramName];
     return value !== undefined ? String(value) : 'null';
   });
+};
+
+// Helper: 'waOpen' must hold the opening word/message that started the current
+// session — capture it once (first user input after a (re)start) and never
+// overwrite it with later messages within the same session.
+const setOpeningWord = (params, value) => {
+  if (params.waOpen === undefined || params.waOpen === null || params.waOpen === '') {
+    params.waOpen = value;
+  }
+};
+
+// Helper: unlike setOpeningWord, this always overwrites 'waOpen'. Used whenever
+// the automatic_responses component (re)matches a keyword — including when the
+// session returns to it after a previous script finished — so waOpen reflects
+// the word that triggered the *current* automatic response, not just the very
+// first message of the session.
+const resetOpeningWord = (params, value) => {
+  params.waOpen = value;
 };
 
 // Helper: Evaluate condition
@@ -525,6 +543,19 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
         // before and after it.
         const waitTime = parseInt(nodeData.waitTime) || 1;
         messages.push({ type: 'Wait', ms: waitTime * 1000, created: new Date().toISOString() });
+        currentNodeId = findNextNode(currentNodeId, edges);
+        break;
+      }
+
+      case 'action_set_parameter': {
+        const paramName = String(nodeData.parameterName || '').trim();
+        if (paramName) {
+          const rawValue = String(nodeData.parameterValue ?? '');
+          const resolvedValue = replaceParameters(rawValue, params);
+          params[paramName] = resolvedValue;
+          session.parameters = params;
+          console.log(`[BOT] action_set_parameter: ${paramName} = "${resolvedValue}"`);
+        }
         currentNodeId = findNextNode(currentNodeId, edges);
         break;
       }
@@ -1070,7 +1101,7 @@ const _UNUSED_pushMessagesToWhatsApp_MOVED = async (phone, messages, user = null
   } else {
     endpoint = null;
     waToken = null;
-  }
+  } 
   if (!endpoint) return false;
 
   // Normalize phone: strip non-digits, replace leading 0 with 972
@@ -1771,7 +1802,7 @@ export const respondToMessage = async (req, res) => {
               if (menuNode.data.variableName && matchedMenuIdx !== -1) {
                 interruptParams[menuNode.data.variableName] = text.trim();
               }
-              interruptParams['waOpen'] = text.trim();
+              setOpeningWord(interruptParams, text.trim());
               session.parameters = interruptParams;
               session.markModified('parameters');
             }
@@ -1808,7 +1839,7 @@ export const respondToMessage = async (req, res) => {
             session.waiting_text_input = false;
             {
               const interruptParams = session.parameters || {};
-              interruptParams['waOpen'] = text.trim();
+              resetOpeningWord(interruptParams, text.trim());
               session.parameters = interruptParams;
               session.markModified('parameters');
             }
@@ -1907,7 +1938,7 @@ export const respondToMessage = async (req, res) => {
 
       // Default to first option (כניסה) if no match
       const finalIdx = matchedIdx !== -1 ? matchedIdx : 0;
-      params['waOpen'] = text.trim();
+      setOpeningWord(params, text.trim());
       session.parameters = params;
       session.markModified('parameters');
       const nextNodeId = findNextNode(currentNode.id, flowData.edges, `option-${finalIdx}`);
@@ -1956,7 +1987,7 @@ export const respondToMessage = async (req, res) => {
       if (varName) {
         params[varName] = text;
       }
-      params['waOpen'] = text;
+      setOpeningWord(params, text);
       session.parameters = params;
       session.markModified('parameters');
 
@@ -2051,7 +2082,7 @@ export const respondToMessage = async (req, res) => {
         if (currentNode.data.variableName) {
           params[currentNode.data.variableName] = selectedValue;
         }
-        params['waOpen'] = selectedValue;
+        setOpeningWord(params, selectedValue);
         session.parameters = params;
         session.markModified('parameters');
 
@@ -2082,7 +2113,7 @@ export const respondToMessage = async (req, res) => {
         console.log(`[SUB-FLOW]   no match for "${selectedValue}" → defaultNextId=${defaultNextId || '(none)'}`);
         if (defaultNextId) {
           console.log(`[SUB-FLOW]   routing to option-default → ${defaultNextId}`);
-          params['waOpen'] = selectedValue;
+          setOpeningWord(params, selectedValue);
           session.parameters = params;
           session.markModified('parameters');
           messages = await walkChain(defaultNextId, menuActiveNodes, menuActiveEdges, session, session.flow_id, req);
@@ -2163,7 +2194,7 @@ export const respondToMessage = async (req, res) => {
         }
       }
 
-      params['waOpen'] = text.trim();
+      resetOpeningWord(params, text.trim());
       session.parameters = params;
       session.markModified('parameters');
       const finalIdx = matchedIdx !== -1 ? matchedIdx : 0;

@@ -2713,9 +2713,13 @@ export const sendAgentMessage = async (req, res) => {
     // (e.g. 'waiting') since they're typically opening/notification messages.
     const update = { $push: { process_history: historyEntry } };
     let newStatus = session.status || 'bot';
+    let newIsAgent = !!session.is_agent;
+    let newAgentSince = session.agent_since || null;
     if (!isTemplate && waSent) {
       newStatus = 'handling';
-      update.$set = { status: 'handling', is_agent: true, agent_since: new Date() };
+      newIsAgent = true;
+      newAgentSince = new Date();
+      update.$set = { status: 'handling', is_agent: true, agent_since: newAgentSince };
     }
 
     const repReplyAt = toDateSafe(created) || new Date();
@@ -2738,6 +2742,8 @@ export const sendAgentMessage = async (req, res) => {
       if (postSendFields) {
         update.$set = { ...update.$set, ...postSendFields };
         newStatus = postSendFields.status;
+        newIsAgent = postSendFields.is_agent;
+        newAgentSince = postSendFields.agent_since;
       }
     }
 
@@ -2747,7 +2753,7 @@ export const sendAgentMessage = async (req, res) => {
     );
     eventBus.emit('session:update', { userId: String(getEffectiveUserId(req)), phone: String(session.sender || session.customer_phone || '') });
 
-    res.json({ success: true, waSent, waError, waRetryable, created, historyEntry, status: newStatus });
+    res.json({ success: true, waSent, waError, waRetryable, created, historyEntry, status: newStatus, is_agent: newIsAgent, agent_since: newAgentSince ? new Date(newAgentSince).toISOString() : null });
   } catch (err) {
     console.error('sendAgentMessage error:', err);
     res.status(500).json({ error: err.message });
@@ -2967,7 +2973,19 @@ export const sendTemplateToPhone = async (req, res) => {
     const sessionId = insertResult.insertedId.toString();
     console.log(`[sendTemplateToPhone] 💾 Created BotSession ${sessionId} for phone=${normalizedPhone}`);
 
-    res.json({ success: true, waSent, waError, sessionId, historyEntry, processHistory: initialHistory, created, phone: normalizedPhone });
+    res.json({
+      success: true,
+      waSent,
+      waError,
+      sessionId,
+      historyEntry,
+      processHistory: initialHistory,
+      created,
+      phone: normalizedPhone,
+      status: sessionDoc.status,
+      is_agent: sessionDoc.is_agent,
+      agent_since: sessionDoc.agent_since ? sessionDoc.agent_since.toISOString() : null
+    });
   } catch (err) {
     console.error('sendTemplateToPhone error:', err);
     res.status(500).json({ error: err.message });

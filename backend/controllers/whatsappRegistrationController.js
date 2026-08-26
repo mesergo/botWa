@@ -24,6 +24,7 @@ import fetch from 'node-fetch';
 import User from '../models/User.js';
 import BotFlow from '../models/BotFlow.js';
 import { getUserLimits } from '../utils/limits.js';
+import { updatePaymentCountriesOnGateway } from '../utils/whatsappSender.js';
 
 const GRAPH_VERSION = () => process.env.FB_GRAPH_VERSION || 'v20.0';
 const PHP_CREATE_URL = () => process.env.PHP_CREATE_URL || 'https://wa.message.co.il/facebook-create.php';
@@ -162,7 +163,8 @@ export const activateNumber = async (req, res) => {
       // Every connect attempt overwrites the previous error: cleared on success,
       // set to the new failure reason on failure.
       last_error: result.success ? '' : extractMetaErrorMessage(result),
-      last_error_at: result.success ? null : new Date()
+      last_error_at: result.success ? null : new Date(),
+      allowedPaymentCountries: existingEntry?.allowedPaymentCountries || '972'
     };
     if (existingEntry) {
       Object.assign(existingEntry, payload);
@@ -276,7 +278,8 @@ export const linkNumber = async (req, res) => {
         registered: true,
         pin: '',
         assigned_bot_id: existing?.assigned_bot_id || null,
-        connected_at: existing?.connected_at || new Date()
+        connected_at: existing?.connected_at || new Date(),
+        allowedPaymentCountries: existing?.allowedPaymentCountries || '972'
       };
 
       if (existing) {
@@ -343,7 +346,8 @@ export const linkNumber = async (req, res) => {
       registered: typeof b.registered === 'boolean' ? b.registered : (existing?.registered || false),
       pin: (b.pin && /^\d{6}$/.test(b.pin)) ? b.pin : (existing?.pin || ''),
       assigned_bot_id: existing?.assigned_bot_id || null,
-      connected_at: existing?.connected_at || new Date()
+      connected_at: existing?.connected_at || new Date(),
+      allowedPaymentCountries: existing?.allowedPaymentCountries || '972'
     };
 
     if (existing) {
@@ -422,6 +426,7 @@ export const assignToBot = async (req, res) => {
     bot.whatsapp_two_factor_pin = entry.pin || bot.whatsapp_two_factor_pin;
     bot.whatsapp_registered = entry.registered;
     bot.whatsapp_connected_at = new Date();
+    bot.allowedPaymentCountries = entry.allowedPaymentCountries || bot.allowedPaymentCountries || '972';
     // Provider-specific fields
     bot.whatsapp_provider = entry.provider || 'facebook';
     if (entry.provider === 'dialog360') {
@@ -520,6 +525,60 @@ export const markRegistered = async (req, res) => {
     await user.save();
     console.log(`${tag} → marked as registered`);
     return res.json({ success: true, connected_number: sanitizeNumber(entry) });
+  } catch (err) {
+    console.error(`${tag} exception:`, err);
+    return res.status(500).json({ error: err.message });
+  }
+};
+
+/**
+ * POST /api/whatsapp-registration/update-payment-countries
+ * Body: { phone_number_id, allowedPaymentCountries }
+ *
+ * Updates the payment-country prefixes (e.g. "972", "1", "972|1") allowed for
+ * a connected number. Persists on User.connected_numbers[] and, when the
+ * number is assigned to a bot, also on the BotFlow document and notifies the
+ * external WhatsApp gateway (skipped silently if the bot has no `endpoint`
+ * yet, i.e. the external account was never provisioned via php-create).
+ */
+export const updatePaymentCountries = async (req, res) => {
+  const userId = req.user?.id;
+  const { phone_number_id, allowedPaymentCountries } = req.body || {};
+  const tag = `[WA-PaymentCountries user=${userId} pnid=${phone_number_id}]`;
+
+  if (!phone_number_id) return res.status(400).json({ error: 'missing_phone_number_id' });
+  if (!allowedPaymentCountries || !/^[\d|]+$/.test(allowedPaymentCountries)) {
+    return res.status(400).json({ error: 'invalid_allowed_payment_countries' });
+  }
+
+  try {
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ error: 'user_not_found' });
+
+    const entry = (user.connected_numbers || []).find(n => n.phone_number_id === phone_number_id);
+    if (!entry) return res.status(404).json({ error: 'connected_number_not_found' });
+
+    entry.allowedPaymentCountries = allowedPaymentCountries;
+    user.markModified('connected_numbers');
+    await user.save();
+
+    let gatewayResult = { success: false, skipped: true };
+    if (entry.assigned_bot_id) {
+      const bot = await BotFlow.findById(entry.assigned_bot_id);
+      if (bot) {
+        bot.allowedPaymentCountries = allowedPaymentCountries;
+        await bot.save();
+        gatewayResult = await updatePaymentCountriesOnGateway({
+          user,
+          bot,
+          phone: entry.display_phone_number || phone_number_id,
+          allowedPaymentCountries
+        });
+      }
+    }
+
+    console.log(`${tag} → saved (gateway: ${JSON.stringify(gatewayResult)})`);
+    return res.json({ success: true, connected_number: sanitizeNumber(entry), gateway: gatewayResult });
   } catch (err) {
     console.error(`${tag} exception:`, err);
     return res.status(500).json({ error: err.message });
@@ -707,9 +766,9 @@ export const createPhpAccount = async (req, res) => {
     console.error(`${tag} exception:`, err);
     return res.status(500).json({ error: err.message });
   }
-};
+}; 
 
-function sanitizeNumber(n) {
+export function sanitizeNumber(n) {
   const o = (typeof n.toObject === 'function') ? n.toObject() : n;
   const { access_token, pin, token360, ...rest } = o;
   return {
@@ -724,7 +783,7 @@ function sanitizeNumber(n) {
 }
 
 /** Strip all spaces, dashes and dots from a phone number string, keeping the leading '+'. */
-function normalizePhone(phone) {
+export function normalizePhone(phone) {
   if (!phone) return phone;
   return phone.replace(/[\s\-\.]/g, '');
 }
@@ -830,7 +889,8 @@ export const fetchAndActivate = async (req, res) => {
         // Every connect attempt overwrites the previous error: cleared on success,
         // set to the new failure reason on failure.
         last_error: regResult.success ? '' : extractMetaErrorMessage(regResult),
-        last_error_at: regResult.success ? null : new Date()
+        last_error_at: regResult.success ? null : new Date(),
+        allowedPaymentCountries: existingEntry?.allowedPaymentCountries || '972'
       };
 
       if (existingEntry) {
@@ -863,7 +923,7 @@ export const fetchAndActivate = async (req, res) => {
 
 // Flattens a WhatsApp webhook payload (entry[].changes[].value) into the flat
 // shape linkNumber works with. Pass-through for already-flat bodies.
-function normalizeLinkBody(b) {
+export function normalizeLinkBody(b) {
   if (b && Array.isArray(b.entry) && b.entry.length > 0) {
     const entry = b.entry[0] || {};
     const change = (entry.changes && entry.changes[0]) || {};

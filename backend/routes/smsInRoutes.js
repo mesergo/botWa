@@ -3,7 +3,8 @@ import { getMessages, getAdminMessages, createMessage, getDests, getAdminDests }
 import { getStatus } from '../sms-in/controllers/status.controller.js';
 import { getClients } from '../sms-in/controllers/clients.controller.js';
 import { getDestSettings, getAdminDestSettings, upsertDestSetting, bulkAssignDestSettings } from '../sms-in/controllers/destSettings.controller.js';
-import { authenticateToken, requireAdmin, optionalAuthToken } from '../middleware/auth.js';
+import { createExternalLog, getAdminExternalLogs } from '../sms-in/controllers/externalLog.controller.js';
+import { authenticateToken, requireAdmin, optionalAuthToken, requireApiKey } from '../middleware/auth.js';
 
 const router = express.Router();
 
@@ -16,10 +17,15 @@ router.get('/messages/dests', optionalAuthToken, getDests);
 router.get('/admin/messages', authenticateToken, requireAdmin, getAdminMessages);
 router.get('/admin/messages/dests', authenticateToken, requireAdmin, getAdminDests);
 router.post('/messages', createMessage);
+// Called by the external "maskyoo" project — stores a copy in our own MongoDB
+// (collection: sms), separate from the external ilbot SMS DB above.
+router.post('/external-log', requireApiKey, createExternalLog);
+// Management panel — full "maskyoo" copy log (DB-verified admin)
+router.get('/admin/external-log', authenticateToken, requireAdmin, getAdminExternalLogs);
 router.get('/clients', authenticateToken, requireAdmin, getClients);
 router.get('/dest-settings', authenticateToken, getDestSettings);
 router.get('/admin/dest-settings', authenticateToken, requireAdmin, getAdminDestSettings);
 router.put('/dest-settings/:dest', authenticateToken, requireAdmin, upsertDestSetting);
 router.post('/admin/dest-settings/bulk-assign', authenticateToken, requireAdmin, bulkAssignDestSettings);
-
+ 
 export default router;

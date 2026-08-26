@@ -64,13 +64,17 @@ export async function connectSmsDb() {
   }
 }
 
-async function getDb() {
+export async function getSmsDb() {
   if (!SMS_MONGODB_URI) return null;
   if (!connected || !client) {
     await connectSmsDb();
   }
   if (!connected || !client) return null;
   return client.db(getDbNameFromUri());
+}
+
+async function getDb() {
+  return getSmsDb();
 }
 
 export async function getSmsCollection() {

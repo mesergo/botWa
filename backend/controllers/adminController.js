@@ -6,7 +6,9 @@ import SystemSetting from '../models/SystemSetting.js';
 import { DEFAULT_REMOVAL_CONFIG, getGlobalRemovalConfig } from '../utils/removalConfig.js';
 import UserType from '../models/UserType.js';
 import Dialog360TemplateSetting from '../models/Dialog360TemplateSetting.js';
- 
+import { updatePaymentCountriesOnGateway } from '../utils/whatsappSender.js';
+import { normalizeLinkBody, sanitizeNumber, normalizePhone } from './whatsappRegistrationController.js';
+  
 // Default configuration if DB is empty (used for fallback)
 const DEFAULT_ACCOUNTS_CONFIG = {
   Trial: { maxBots: 1, maxVersions: 0, versionPrice: 0, botPrice: 0, canPublish: false, trialDays: 30, maxConnectedNumbers: 1 },
@@ -336,6 +338,168 @@ export const getAllConnectedNumbers = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
+ 
+// PATCH /api/admin/users/:userId/connected-numbers/:phoneNumberId/payment-countries
+// Body: { allowedPaymentCountries }
+// Admin-only update of a customer's connected number payment-country prefixes
+// (no ownership restriction). Mirrors the self-service endpoint in
+// whatsappRegistrationController.js: persists on the connected number and,
+// when assigned to a bot, on the BotFlow document + notifies the external
+// WhatsApp gateway (skipped silently if the bot has no endpoint yet).
+export const updateConnectedNumberPaymentCountries = async (req, res) => {
+  try {
+    const { userId, phoneNumberId } = req.params;
+    const { allowedPaymentCountries } = req.body || {};
+
+    console.log(`[ADMIN-PAYMENT-COUNTRIES] ▶️ START userId=${userId} phoneNumberId=${phoneNumberId} allowedPaymentCountries=${allowedPaymentCountries}`);
+
+    if (!allowedPaymentCountries || !/^[\d|]+$/.test(allowedPaymentCountries)) {
+      console.log(`[ADMIN-PAYMENT-COUNTRIES] ❌ invalid_allowed_payment_countries value="${allowedPaymentCountries}"`);
+      return res.status(400).json({ error: 'invalid_allowed_payment_countries' });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      console.log(`[ADMIN-PAYMENT-COUNTRIES] ❌ User not found: ${userId}`);
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const entry = (user.connected_numbers || []).find(n => n.phone_number_id === phoneNumberId);
+    if (!entry) {
+      console.log(`[ADMIN-PAYMENT-COUNTRIES] ❌ connected_number_not_found for phoneNumberId=${phoneNumberId}. Available ids:`, (user.connected_numbers || []).map(n => n.phone_number_id));
+      return res.status(404).json({ error: 'connected_number_not_found' });
+    }
+
+    console.log(`[ADMIN-PAYMENT-COUNTRIES] ✅ Found connected_number entry. assigned_bot_id=${entry.assigned_bot_id || 'none'} display_phone_number=${entry.display_phone_number}`);
+
+    entry.allowedPaymentCountries = allowedPaymentCountries;
+    user.markModified('connected_numbers');
+    await user.save();
+    console.log(`[ADMIN-PAYMENT-COUNTRIES] 💾 Saved allowedPaymentCountries on User.connected_numbers`);
+
+    let gatewayResult = { success: false, skipped: true };
+    if (entry.assigned_bot_id) {
+      const bot = await BotFlow.findById(entry.assigned_bot_id);
+      if (bot) {
+        console.log(`[ADMIN-PAYMENT-COUNTRIES] 🤖 Found bot ${bot._id} (endpoint=${bot.endpoint || 'none'}). Saving on BotFlow and notifying gateway...`);
+        bot.allowedPaymentCountries = allowedPaymentCountries;
+        await bot.save();
+        gatewayResult = await updatePaymentCountriesOnGateway({
+          user,
+          bot,
+          phone: entry.display_phone_number || phoneNumberId,
+          allowedPaymentCountries
+        });
+        console.log(`[ADMIN-PAYMENT-COUNTRIES] 📡 Gateway result:`, gatewayResult);
+      } else {
+        console.log(`[ADMIN-PAYMENT-COUNTRIES] ⚠️ assigned_bot_id=${entry.assigned_bot_id} set but BotFlow not found`);
+      }
+    } else {
+      console.log(`[ADMIN-PAYMENT-COUNTRIES] ⚠️ No assigned_bot_id on connected_number — skipping BotFlow update + gateway notify`);
+    }
+
+    const o = typeof entry.toObject === 'function' ? entry.toObject() : entry;
+    const { access_token, pin, token360, ...rest } = o;
+    console.log(`[ADMIN-PAYMENT-COUNTRIES] 🏁 DONE success=true gateway.success=${gatewayResult.success} gateway.skipped=${!!gatewayResult.skipped}`);
+    res.json({
+      success: true,
+      connected_number: { ...rest, has_access_token: !!access_token, has_token360: !!token360 },
+      gateway: gatewayResult
+    });
+  } catch (error) {
+    console.error('[ADMIN-PAYMENT-COUNTRIES] 💥 EXCEPTION:', error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// POST /api/admin/users/:userId/connected-numbers/link-facebook
+// Admin-only: link an already-activated Facebook/WhatsApp Cloud API number to a
+// SPECIFIC customer's account (no ownership/self-service token required — admin
+// acts directly on the target user by id). Reuses the exact same body parsing
+// (`normalizeLinkBody`) as the self-service `POST /whatsapp-registration/link-number`
+// endpoint, so it accepts either the flat Embedded-Signup shape or the raw
+// WhatsApp webhook shape ({ object, access_token, entry: [{ id, changes: [{ value, field }] }] }).
+export const linkNumberForCustomer = async (req, res) => {
+  const { userId } = req.params;
+  const raw = req.body || {};
+  const b = normalizeLinkBody(raw);
+  const phone_number_id = b.phone_number_id;
+  const tag = `[ADMIN-LINK-NUMBER user=${userId} pnid=${phone_number_id}]`;
+
+  console.log(`${tag} ▶️ START`);
+
+  if (!phone_number_id) {
+    console.log(`${tag} ❌ missing_phone_number_id`);
+    return res.status(400).json({ error: 'missing_phone_number_id' });
+  }
+  if (!b.access_token) {
+    console.log(`${tag} ❌ missing_access_token`);
+    return res.status(400).json({ error: 'missing_access_token' });
+  }
+
+  try {
+    const user = await User.findById(userId);
+    if (!user) {
+      console.log(`${tag} ❌ User not found`);
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const existing = (user.connected_numbers || []).find(n => n.phone_number_id === phone_number_id);
+
+    if (!existing) {
+      const limits = await getUserLimits(user);
+      const currentCount = (user.connected_numbers || []).length;
+      if (currentCount >= limits.maxConnectedNumbers) {
+        console.log(`${tag} ❌ quota_exceeded current=${currentCount} max=${limits.maxConnectedNumbers}`);
+        return res.status(403).json({
+          error: 'quota_exceeded',
+          message: 'המכסה נגמרה. יש ליצור קשר עם המשרד לתשלום להוספת מספר.',
+          current: currentCount,
+          max: limits.maxConnectedNumbers
+        });
+      }
+    }
+
+    const payload = {
+      phone_number_id,
+      provider: 'facebook',
+      waba_id: b.waba_id || existing?.waba_id || '',
+      display_phone_number: normalizePhone(b.display_phone_number ?? existing?.display_phone_number ?? ''),
+      verified_name: b.verified_name ?? existing?.verified_name ?? '',
+      quality_rating: b.quality_rating ?? existing?.quality_rating ?? '',
+      whatsapp_status: b.status ?? existing?.whatsapp_status ?? '',
+      access_token: b.access_token,
+      registered: typeof b.registered === 'boolean' ? b.registered : (existing?.registered || false),
+      pin: (b.pin && /^\d{6}$/.test(b.pin)) ? b.pin : (existing?.pin || ''),
+      assigned_bot_id: existing?.assigned_bot_id || null,
+      connected_at: existing?.connected_at || new Date(),
+      allowedPaymentCountries: existing?.allowedPaymentCountries || '972'
+    };
+
+    if (existing) {
+      Object.assign(existing, payload);
+      user.markModified('connected_numbers');
+      console.log(`${tag} 🔄 updated existing connected number entry`);
+    } else {
+      user.connected_numbers.push(payload);
+      console.log(`${tag} ➕ added new connected number entry`);
+    }
+
+    await user.save();
+    console.log(`${tag} 🏁 DONE success=true total_connected=${user.connected_numbers.length}`);
+
+    return res.json({
+      success: true,
+      user_id: userId,
+      user_status: user.status,
+      connected_number: sanitizeNumber(payload),
+      total_connected: user.connected_numbers.length
+    });
+  } catch (err) {
+    console.error(`${tag} 💥 EXCEPTION:`, err);
+    return res.status(500).json({ error: err.message });
+  }
+};
 
 // Helper: diff two removal configs and return AuditLog documents to insert
 export const buildRemovalConfigDiff = (previous, next, actorId, actorEmail) => {
@@ -518,6 +682,7 @@ export const getUserDetails = async (req, res) => {
         limits_in_effect: limits,
         createdAt: user.createdAt,
         updatedAt: user.updatedAt,
+        connected_numbers_count: (user.connected_numbers || []).length,
         stats: {
             bots: bots.length, // Added this line to fix the bug
             flows: sessionCount
@@ -861,5 +1026,45 @@ export const createUser = async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+};
+
+export const previewRestoreConversations = async (req, res) => {
+  try {
+    const user = await User.findById(req.params.userId).select('phone connected_numbers').lean();
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    const { previewLegacyCollections } = await import('../utils/legacyConversationRestore.js');
+    const preview = await previewLegacyCollections(user);
+    res.json({ success: true, ...preview });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+export const restoreConversations = async (req, res) => {
+  try {
+    req.setTimeout?.(10 * 60 * 1000);
+    const { untilDate, months, collection } = req.body || {};
+    const user = await User.findById(req.params.userId);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const { restoreLegacyConversations } = await import('../utils/legacyConversationRestore.js');
+    const result = await restoreLegacyConversations({
+      user,
+      untilDate,
+      months,
+      collectionName: collection || ''
+    });
+
+    await logAdminAction(req.userId, req.user?.email, 'RESTORE_CONVERSATIONS', req.params.userId, 'User', result);
+    res.json({ success: true, ...result });
+  } catch (err) {
+    const status = err.status || (err.message === 'invalid_until_date' ? 400 : 500);
+    const messages = {
+      legacy_db_unavailable: 'אין חיבור למסד הנתונים הישן של השיחות',
+      legacy_collection_not_found: 'לא נמצאה טבלת היסטוריה (fbiz) למספר של הלקוח',
+      invalid_until_date: 'תאריך סיום לא תקין'
+    };
+    res.status(status).json({ error: messages[err.message] || err.message });
   }
 };

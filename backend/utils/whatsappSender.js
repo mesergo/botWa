@@ -30,7 +30,62 @@ export const buildWACredentials = (user = null, bot = null) => {
     endpoint = null;
     waToken = null;
   }
-  return { endpoint, waToken };
+  return { endpoint, waToken }; 
+};
+
+/**
+ * Notify the external WhatsApp gateway (wa.message.co.il) that the allowed
+ * payment-country prefixes changed for a given number, so it can rebuild its
+ * internal `allowedCountries` regex.
+ *
+ * Requires the bot to already have an `endpoint` (i.e. the external account
+ * was provisioned via php-create) — if not, the call is skipped and
+ * `{ success: false, skipped: true }` is returned so callers can still
+ * persist the value locally without failing the whole request.
+ *
+ * @param {Object} params
+ * @param {Object|null} params.user - User document (fallback credentials)
+ * @param {Object|null} params.bot  - BotFlow document with optional endpoint field
+ * @param {string} params.phone - Raw phone number (will be normalized internally)
+ * @param {string} params.allowedPaymentCountries - Pipe-joined prefixes, e.g. "972|1"
+ * @returns {Promise<{success:boolean, skipped?:boolean, status?:number, body?:any, error?:string}>}
+ */ 
+export const updatePaymentCountriesOnGateway = async ({ user = null, bot = null, phone, allowedPaymentCountries }) => {
+  const { endpoint, waToken } = buildWACredentials(user, bot);
+  console.log(`[WA-PAYMENT-COUNTRIES] 🔧 buildWACredentials → endpoint=${endpoint || 'null'} bot.endpoint=${bot?.endpoint || 'none'} user.dialog360_bot_id=${user?.dialog360_bot_id || 'none'}`);
+  if (!endpoint) {
+    console.log('[WA-PAYMENT-COUNTRIES] ⏭️ SKIPPED — no endpoint could be resolved (bot has no endpoint and user has no dialog360_bot_id)');
+    return { success: false, skipped: true };
+  }
+
+  // The external gateway route is registered as "/:botName/update-payment-countries"
+  // (a single path segment), unlike "/send" which accepts the full "provider/botId"
+  // path. Strip any "dialog360/" prefix so the URL has exactly one segment before
+  // "update-payment-countries", otherwise Express won't match the route (404).
+  const botIdPart = endpoint.split('/').pop();
+  const normalizedPhone = normalizePhone(phone); 
+  const url = `https://wa.message.co.il/api/dialog360/update-payment-countries`;
+  const body = { phone: normalizedPhone, allowedPaymentCountries };
+  console.log(`[WA-PAYMENT-COUNTRIES] 📤 REQUEST → ${url} | body=${JSON.stringify(body)}`);
+  try { 
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Accept': 'application/json',
+        'token': waToken,
+      },
+      body: JSON.stringify(body),
+    });
+    const respText = await res.text().catch(() => '');
+    console.log(`[WA-PAYMENT-COUNTRIES] ⬅️  RESPONSE HTTP ${res.status} | body: ${respText}`);
+    let respJson = {};
+    try { respJson = JSON.parse(respText); } catch { respJson = { raw: respText }; }
+    return { success: res.ok, status: res.status, body: respJson };
+  } catch (err) {
+    console.error('[WA-PAYMENT-COUNTRIES] ❌ Exception:', err.message);
+    return { success: false, error: err.message };
+  }
 };
 
 /**
@@ -62,6 +117,16 @@ export const normalizePhone = (phone) => {
 const WA_MAX_TEXT = 4000;
 // WhatsApp interactive message (text + buttons) body limit
 const WA_MAX_INTERACTIVE_BODY = 1024;
+
+// Post-send delay per media type (ms) — gives the provider time to actually
+// deliver the media to the recipient's device before we send the next message,
+// so subsequent text/messages don't arrive out of order ahead of slower media.
+// Videos/documents tend to take longer to process+deliver than images.
+const MEDIA_SEND_DELAY = {
+  image: 3000,
+  video: 3000,
+  document: 3000,
+};
 
 /**
  * Split a long text into chunks of at most maxLen chars, splitting on newlines when possible.
@@ -150,7 +215,7 @@ export const pushMessagesToWhatsApp = async (phone, messages, user = null, bot =
         anySuccess = true;
         if (wamid) indices.forEach(idx => { wamidPerMsg[idx] = wamid; });
       }
-      await _sleep(300);
+      await _sleep(300); 
     }
     await _sleep(100);
   };
@@ -244,7 +309,7 @@ export const pushMessagesToWhatsApp = async (phone, messages, user = null, bot =
         console.log(`[WA-PUSH] 🖼  Sending IMAGE | url=${msg.url?.substring(0, 80)} | caption=${msg.text?.substring(0, 40) || '(none)'}`);
         const { success: imgOk, wamid: imgWamid } = await sendOne({ image: msg.url, text: msg.text || '' });
         if (imgOk) { anySuccess = true; if (imgWamid) wamidPerMsg[i] = imgWamid; }
-        await _sleep(600);
+        await _sleep(MEDIA_SEND_DELAY.image);
         break;
       }
 
@@ -253,7 +318,7 @@ export const pushMessagesToWhatsApp = async (phone, messages, user = null, bot =
         console.log(`[WA-PUSH] 🎬 Sending VIDEO | url=${msg.url?.substring(0, 80)} | caption=${msg.text?.substring(0, 40) || '(none)'}`);
         const { success: vidOk, wamid: vidWamid } = await sendOne({ video: msg.url, text: msg.text || '' });
         if (vidOk) { anySuccess = true; if (vidWamid) wamidPerMsg[i] = vidWamid; }
-        await _sleep(600);
+        await _sleep(MEDIA_SEND_DELAY.video);
         break;
       }
 
@@ -262,7 +327,7 @@ export const pushMessagesToWhatsApp = async (phone, messages, user = null, bot =
         console.log(`[WA-PUSH] 📄 Sending DOCUMENT | url=${msg.url?.substring(0, 80)} | filename=${msg.filename || 'file'}`);
         const { success: docOk, wamid: docWamid } = await sendOne({ file: msg.url, filename: msg.filename || 'file', text: msg.text || '' });
         if (docOk) { anySuccess = true; if (docWamid) wamidPerMsg[i] = docWamid; }
-        await _sleep(600);
+        await _sleep(MEDIA_SEND_DELAY.document);
         break;
       }
 
@@ -271,6 +336,17 @@ export const pushMessagesToWhatsApp = async (phone, messages, user = null, bot =
         textBuffer += `${msg.text ? msg.text + '\n' : ''}${msg.url}\n`;
         textBufIndices.push(i);
         break;
+
+      case 'Wait': {
+        // Delay/"השהיה" node: flush whatever was already buffered so it is
+        // actually sent to WhatsApp BEFORE pausing, then pause for the
+        // configured duration before continuing to send the rest.
+        await flushTextBuffer();
+        const waitMs = Number(msg.ms) || 1000;
+        console.log(`[WA-PUSH] ⏳ Wait node — pausing ${waitMs}ms before next message`);
+        await _sleep(waitMs);
+        break;
+      }
 
       case 'SendItem': {
         // שטוף textBuffer לפני SendItem
