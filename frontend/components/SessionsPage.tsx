@@ -2198,6 +2198,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
           onBack={onBack ?? onGoHome ?? (() => {})}
           onLogout={onLogout}
           onOpenAdminPanel={onOpenAdminPanel}
+          sidebarHandlesProfile
           showMobileNavToggle
           mobileNavOpen={mobileNavOpen}
           onMobileNavToggle={() => setMobileNavOpen((prev) => !prev)}
@@ -2260,6 +2261,9 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
               mobileMenuOpen={mobileNavOpen}
               onMobileMenuOpenChange={setMobileNavOpen}
               onGoHome={onGoHome}
+              currentUser={currentUser as any}
+              onLogout={onLogout}
+              onOpenAdminPanel={onOpenAdminPanel}
               onBots={onBack && can('bots.view_tab') ? onBack : undefined}
               onContacts={onOpenContacts ? () => onOpenContacts() : undefined}
               onGroups={onOpenGroups}
@@ -2335,6 +2339,9 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
             mobileMenuOpen={mobileNavOpen}
             onMobileMenuOpenChange={setMobileNavOpen}
             onGoHome={onGoHome}
+            currentUser={currentUser as any}
+            onLogout={onLogout}
+            onOpenAdminPanel={onOpenAdminPanel}
             onBots={onBack && can('bots.view_tab') ? onBack : undefined}
             onSessions={botList.length > 1 ? () => { setActiveBotFilter(null); setSelectedPhone(null); setShowBotPicker(true); } : undefined}
             onContacts={onOpenContacts ? () => onOpenContacts() : undefined}

@@ -53,7 +53,8 @@ const userSchema = new mongoose.Schema({
     max_versions: { type: Number, default: null },
     version_price: { type: Number, default: null },
     bot_price: { type: Number, default: null },
-    max_connected_numbers: { type: Number, default: null }
+    max_connected_numbers: { type: Number, default: null },
+    max_reps: { type: Number, default: null }
   },
   trial_expires_at: { type: Date, default: null },
   rep_group_ids: [{ type: mongoose.Schema.Types.ObjectId, ref: 'RepGroup', default: [] }],

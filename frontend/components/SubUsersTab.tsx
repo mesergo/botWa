@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { UserCog, Users, Plus, Trash2, Edit2, Check, X, Settings, Clock, MessageSquare, Copy, Send, Link as LinkIcon } from 'lucide-react';
+import { UserCog, Users, Plus, Trash2, Edit2, Check, X, Settings, Clock, MessageSquare, Copy, Send, Link as LinkIcon, AlertTriangle } from 'lucide-react';
 import { usePermission } from '../hooks/usePermission';
 import { User } from '../types';
 
@@ -105,6 +105,10 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
   const [groupsLoading, setGroupsLoading] = useState(false);
   const [availableUserTypes, setAvailableUserTypes] = useState<AvailableUserType[]>([]);
 
+  // Rep quota (based on the company's account plan / custom limits)
+  const [repsLimit, setRepsLimit] = useState<{ maxReps: number; repsCount: number } | null>(null);
+  const [quotaMessage, setQuotaMessage] = useState<string | null>(null);
+
   // Available bots for restriction selection
   const [availableBots, setAvailableBots] = useState<BotOption[]>([]);
 
@@ -166,6 +170,7 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
       const list = Array.isArray(data) ? data : (data.users || []);
       setUsers(list);
       setAvailableUserTypes(data.availableUserTypes || []);
+      setRepsLimit(data.repsLimit || null);
     } catch (e: any) {
       setError(e.message || 'שגיאה לא צפויה');
     } finally {
@@ -242,6 +247,10 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
   }, [activeTab, token]);
 
   const openCreate = () => {
+    if (repsLimit && repsLimit.repsCount >= repsLimit.maxReps) {
+      setQuotaMessage(`הגעת למכסת הנציגים המקסימלית (${repsLimit.repsCount}/${repsLimit.maxReps}) עבור סוג החשבון שלך. לצורך הוספת נציגים נוספים יש לפנות למשרד.`);
+      return;
+    }
     setEditingId(null);
     const firstType = availableUserTypes[0]?._id || '';
     const firstSystemRole = availableUserTypes[0]?.system_role || 'rep';
@@ -345,6 +354,11 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
       const data = await res.json();
       if (res.status === 409 && data.emailExists) {
         setDuplicateEmailInfo({ count: data.count, accounts: data.accounts || [] });
+        return;
+      }
+      if (data.repsQuotaExceeded) {
+        closeForm();
+        setQuotaMessage(data.error || 'הגעת למכסת הנציגים המקסימלית עבור סוג החשבון שלך. לצורך הוספת נציגים נוספים יש לפנות למשרד.');
         return;
       }
       if (!res.ok) throw new Error(data.error || 'שגיאה בשמירה');
@@ -977,6 +991,25 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
                 <X size={16} /> ביטול
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reps quota exceeded dialog */}
+      {quotaMessage && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[100] p-6">
+          <div className="bg-white w-full max-w-sm rounded-[2rem] shadow-2xl p-10 border border-slate-100 text-right relative" dir="rtl">
+            <button
+              onClick={() => setQuotaMessage(null)}
+              className="absolute top-6 left-6 p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-all"
+            >
+              <X size={20} />
+            </button>
+            <div className="w-14 h-14 bg-amber-100 text-amber-600 rounded-2xl flex items-center justify-center mb-6">
+              <AlertTriangle size={28} />
+            </div>
+            <h3 className="text-xl font-black text-slate-900 mb-2">מכסת הנציגים מלאה</h3>
+            <p className="text-slate-500 text-sm mb-2 font-medium">{quotaMessage}</p>
           </div>
         </div>
       )}

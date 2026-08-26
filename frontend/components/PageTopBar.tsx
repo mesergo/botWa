@@ -27,6 +27,8 @@ interface PageTopBarProps {
   onMobileNavToggle?: () => void;
   compact?: boolean;
   hideAvatar?: boolean;
+  /** Hide the logo, logout button and admin-panel button — use when the page's AppNav sidebar already renders them. */
+  sidebarHandlesProfile?: boolean;
 }
 
 interface MobileNavToggleProps {
@@ -64,6 +66,7 @@ const PageTopBar: React.FC<PageTopBarProps> = ({
   onMobileNavToggle,
   compact = false,
   hideAvatar = false,
+  sidebarHandlesProfile = false,
 }) => {
   const firstName = currentUser?.name?.charAt(0)?.toUpperCase() ?? currentUser?.email?.charAt(0)?.toUpperCase() ?? '?';
   const [isMobile, setIsMobile] = useState<boolean>(() => window.innerWidth <= 900);
@@ -84,9 +87,11 @@ const PageTopBar: React.FC<PageTopBarProps> = ({
   return (
     <nav className={`${compact ? 'h-14' : 'h-20'} bg-white border-b border-slate-100 flex items-center justify-between px-4 md:px-10 z-20 flex-shrink-0`} dir="ltr">
       <div className="flex items-center gap-4">
-        <button onClick={onLogout} className="p-2.5 text-slate-300 hover:text-red-500 transition-colors rounded-xl hover:bg-red-50">
-          <LogOut size={22} />
-        </button>
+        {!sidebarHandlesProfile && (
+          <button onClick={onLogout} className="p-2.5 text-slate-300 hover:text-red-500 transition-colors rounded-xl hover:bg-red-50">
+            <LogOut size={22} />
+          </button>
+        )}
         <img src="/images/mesergo-logo.png" alt="Logo" className={`${compact ? 'h-8' : 'h-10'} w-auto cursor-pointer`} onClick={onBack} />
       </div>
 
@@ -98,7 +103,7 @@ const PageTopBar: React.FC<PageTopBarProps> = ({
           </div>
         )}
         {rightSlot}
-        {currentUser?.role === 'admin' && onOpenAdminPanel && (
+        {!sidebarHandlesProfile && currentUser?.role === 'admin' && onOpenAdminPanel && (
           <button onClick={onOpenAdminPanel} className="flex items-center gap-2 px-4 py-2 bg-blue-100 text-blue-700 rounded-lg font-bold hover:bg-blue-200 transition-colors">
             <Shield size={18} /> פאנל ניהול
           </button>

@@ -2563,6 +2563,8 @@ const FlowBuilder: React.FC = () => {
               onGoToChats={() => { setSessionsOwnOnly(true); navigate('/sessions'); }}
               onGoToContacts={() => navigate('/contacts')}
               onGoToSmsIn={can('sms_in.view') ? () => navigate('/sms-in') : undefined}
+              onGoToSendMessages={can('send_messages.view') ? () => navigate('/send-messages') : undefined}
+              onGoToUsers={can('users.view') ? () => navigate('/users') : undefined}
               onGoToSettings={() => navigate('/settings')}
               onOpenAdminPanel={currentUser?.role === 'admin' ? () => navigate('/admin') : undefined}
               onLogout={handleLogout}

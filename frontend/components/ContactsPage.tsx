@@ -415,6 +415,7 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
         onBack={onBack}
         onLogout={onLogout}
         onOpenAdminPanel={onOpenAdminPanel}
+        sidebarHandlesProfile
         showMobileNavToggle
         mobileNavOpen={mobileNavOpen}
         onMobileNavToggle={() => setMobileNavOpen((prev) => !prev)}
@@ -429,6 +430,9 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
           mobileMenuOpen={mobileNavOpen}
           onMobileMenuOpenChange={setMobileNavOpen}
           onGoHome={onGoHome}
+          currentUser={currentUser as any}
+          onLogout={onLogout}
+          onOpenAdminPanel={onOpenAdminPanel}
           onBots={can('bots.view_tab') ? onBack : undefined}
           onSessions={onOpenSessions ? () => onOpenSessions() : undefined}
           onSmsIn={onOpenSmsIn}
