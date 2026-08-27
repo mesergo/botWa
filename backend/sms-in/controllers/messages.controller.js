@@ -41,8 +41,8 @@ export async function getMessages(req, res, next) {
       if (allowedDests.length === 0) {
         return res.json({
           source: 'mongodb',
-          dbName: getSmsDbName(),
-          collection: getSmsCollectionName(),
+          dbName: 'internal',
+          collection: 'sms',
           messages: [],
           total: 0,
           page,
@@ -52,22 +52,68 @@ export async function getMessages(req, res, next) {
       }
     }
 
-    // Always page through Mongo with skip/limit (never a fixed "recent N" cap) so
-    // browsing keeps going past any page and `total` always reflects the true count.
-    const result = await smsService.searchMessages({
-      search,
-      destQuery,
-      allowedDests,
-      page,
-      limit,
-    });
+    // --- Previous implementation: fetched from the external ilbot SMS DB. ---
+    // --- Kept commented (not deleted) per request — do not remove. ---
+    // // Always page through Mongo with skip/limit (never a fixed "recent N" cap) so
+    // // browsing keeps going past any page and `total` always reflects the true count.
+    // const result = await smsService.searchMessages({
+    //   search,
+    //   destQuery,
+    //   allowedDests,
+    //   page,
+    //   limit,
+    // });
+    //
+    // res.json({
+    //   source: 'mongodb',
+    //   dbName: getSmsDbName(),
+    //   collection: getSmsCollectionName(),
+    //   messages: result.messages,
+    //   total: result.total,
+    //   page,
+    //   limit,
+    //   scoped: !!req.user,
+    // });
+
+    // New implementation: "SMS נכנס" tab now reads from our own internal MongoDB
+    // (SmsExternalLog, collection `sms`) instead of the external ilbot SMS DB,
+    // still scoped to the account's assigned dest lines (same as before).
+    const andConditions = [];
+    if (Array.isArray(allowedDests)) {
+      andConditions.push({ dest: { $in: allowedDests } });
+    }
+    if (search) {
+      const regex = new RegExp(escapeRegexAdmin(search), 'i');
+      andConditions.push({ $or: [{ phone: regex }, { dest: regex }, { message: regex }, { appName: regex }] });
+    }
+    if (destQuery) {
+      andConditions.push({ dest: new RegExp(escapeRegexAdmin(destQuery), 'i') });
+    }
+    const filter = andConditions.length ? { $and: andConditions } : {};
+
+    const [docs, total] = await Promise.all([
+      SmsExternalLog.find(filter)
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .lean(),
+      SmsExternalLog.countDocuments(filter),
+    ]);
+
+    const messages = docs.map((doc) => ({
+      id_: String(doc._id),
+      dest: doc.dest || '',
+      phone: doc.phone || '',
+      date: doc.date || (doc.createdAt ? new Date(doc.createdAt).toLocaleString('he-IL') : ''),
+      message: doc.message || '',
+    }));
 
     res.json({
       source: 'mongodb',
-      dbName: getSmsDbName(),
-      collection: getSmsCollectionName(),
-      messages: result.messages,
-      total: result.total,
+      dbName: 'internal',
+      collection: 'sms',
+      messages,
+      total,
       page,
       limit,
       scoped: !!req.user,
@@ -192,7 +238,20 @@ export async function getDests(req, res, next) {
         return res.json({ dests: [] });
       }
     }
-    const dests = await smsService.getDistinctDests(allowedDests);
+
+    // --- Previous implementation: fetched from the external ilbot SMS DB. ---
+    // --- Kept commented (not deleted) per request — do not remove. ---
+    // const dests = await smsService.getDistinctDests(allowedDests);
+    // res.json({ dests });
+
+    // New implementation: reads dest numbers from our own internal MongoDB
+    // (SmsExternalLog, collection `sms`) instead of the external ilbot SMS DB,
+    // still scoped to the account's assigned dest lines (same as before).
+    const filter = Array.isArray(allowedDests) ? { dest: { $in: allowedDests } } : {};
+    const rawDests = await SmsExternalLog.distinct('dest', filter);
+    const dests = Array.from(
+      new Set(rawDests.map((d) => String(d || '').trim()).filter(Boolean))
+    ).sort();
     res.json({ dests });
   } catch (err) {
     if (err.message === 'Database not configured') {

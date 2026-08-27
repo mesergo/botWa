@@ -13,7 +13,9 @@ const FIXED_ACCESS_TOKEN = () => process.env.PHP_FB_API_KEY || 'EAAKM0vGZBqFkBRj
 
 const ACCOUNTS_CONFIG = {
   Basic: { maxBots: 3, maxVersions: 5, versionPrice: 5, botPrice: 30 },
-  Premium: { maxBots: 6, maxVersions: 10, versionPrice: 5, botPrice: 30 }
+  Premium: { maxBots: 6, maxVersions: 10, versionPrice: 5, botPrice: 30 },
+  Pro: { maxBots: 10, maxVersions: 15, versionPrice: 5, botPrice: 30 },
+  Unlimited: { maxBots: 999, maxVersions: 999, versionPrice: 0, botPrice: 0 }
 };
 
 export const createBot = async (req, res) => {

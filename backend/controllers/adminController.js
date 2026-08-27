@@ -10,9 +10,13 @@ import { updatePaymentCountriesOnGateway } from '../utils/whatsappSender.js';
  
 // Default configuration if DB is empty (used for fallback)
 const DEFAULT_ACCOUNTS_CONFIG = {
-  Trial: { maxBots: 1, maxVersions: 0, versionPrice: 0, botPrice: 0, canPublish: false, trialDays: 30, maxConnectedNumbers: 1, maxReps: 0 },
-  Basic: { maxBots: 3, maxVersions: 5, versionPrice: 5, botPrice: 30, canPublish: true, maxConnectedNumbers: 1, maxReps: 1 },
-  Premium: { maxBots: 6, maxVersions: 10, versionPrice: 5, botPrice: 30, canPublish: true, maxConnectedNumbers: 3, maxReps: 3 }
+  Trial: { maxBots: 1, maxVersions: 0, versionPrice: 0, botPrice: 0, canPublish: false, trialDays: 30, maxConnectedNumbers: 1, maxReps: 0, maxActiveContacts: 50 },
+  Basic: { maxBots: 3, maxVersions: 5, versionPrice: 5, botPrice: 30, canPublish: true, maxConnectedNumbers: 1, maxReps: 1, maxActiveContacts: 200 },
+  Premium: { maxBots: 6, maxVersions: 10, versionPrice: 5, botPrice: 30, canPublish: true, maxConnectedNumbers: 3, maxReps: 3, maxActiveContacts: 500 },
+  Pro: { maxBots: 10, maxVersions: 15, versionPrice: 5, botPrice: 30, canPublish: true, maxConnectedNumbers: 5, maxReps: 5, maxActiveContacts: 1000 },
+  Unlimited: { maxBots: 999, maxVersions: 999, versionPrice: 0, botPrice: 0, canPublish: true, maxConnectedNumbers: 999, maxReps: 999, maxActiveContacts: 999999 },
+  // Global (not per-plan) setting: size of the rolling window used to compute "active contacts".
+  activeContactsWindowDays: 60
 }; 
 
 export const getSystemSettings = async (req, res) => {
@@ -551,6 +555,8 @@ export const getAllUsers = async (req, res) => {
         updatedAt: user.updatedAt,
         custom_limits: user.custom_limits,
         limits_in_effect: limits,
+        active_contacts_count: user.active_contacts_count || 0,
+        active_contacts_quota_exceeded: user.active_contacts_quota_exceeded === true,
         reps_count: repsCountByManagerId.get(userId) || 0,
         stats: {
           bots: botCount,
@@ -599,6 +605,8 @@ export const getUserDetails = async (req, res) => {
         facebook_connect_enabled: user.facebook_connect_enabled === true,
         custom_limits: user.custom_limits,
         limits_in_effect: limits,
+        active_contacts_count: user.active_contacts_count || 0,
+        active_contacts_quota_exceeded: user.active_contacts_quota_exceeded === true,
         reps_count: repsCount,
         createdAt: user.createdAt,
         updatedAt: user.updatedAt,

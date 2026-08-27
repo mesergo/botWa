@@ -47,6 +47,7 @@ interface User {
     bot_price: number | null;
     max_connected_numbers: number | null;
     max_reps?: number | null;
+    max_active_contacts?: number | null;
   };
   limits_in_effect?: {
     maxBots: number;
@@ -54,7 +55,11 @@ interface User {
     versionPrice: number;
     botPrice: number;
     maxReps?: number;
+    maxActiveContacts?: number;
   };
+  /** Cached "active contacts" (60-day) quota check results — see plan: activeContactsQuota */
+  active_contacts_count?: number;
+  active_contacts_quota_exceeded?: boolean;
 }
 
 interface Template {
@@ -781,7 +786,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
         max_versions: limits.max_versions === '' ? null : limits.max_versions,
         version_price: limits.version_price === '' ? null : limits.version_price,
         bot_price: limits.bot_price === '' ? null : limits.bot_price,
-        max_connected_numbers: limits.max_connected_numbers === '' ? null : limits.max_connected_numbers
+        max_connected_numbers: limits.max_connected_numbers === '' ? null : limits.max_connected_numbers,
+        max_active_contacts: limits.max_active_contacts === '' ? null : limits.max_active_contacts
       };
 
       const isRep = (editForm.role || selectedUser.role) === 'rep' || (editForm.role || selectedUser.role) === 'rep_manager';
@@ -884,9 +890,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
       });
       if (!response.ok) throw new Error('Failed to fetch settings');
       const data = await response.json();
-      // Ensure Trial plan exists in config (merge defaults if missing)
-      const defaultTrial = { maxBots: 1, maxVersions: 0, versionPrice: 0, botPrice: 0, canPublish: false, trialDays: 30, maxConnectedNumbers: 1, maxReps: 0 };
-      setSystemConfig({ Trial: defaultTrial, ...data });
+      // Ensure Trial/Pro/Unlimited plans exist in config (merge defaults if missing)
+      const defaultTrial = { maxBots: 1, maxVersions: 0, versionPrice: 0, botPrice: 0, canPublish: false, trialDays: 30, maxConnectedNumbers: 1, maxReps: 0, maxActiveContacts: 50 };
+      const defaultPro = { maxBots: 10, maxVersions: 15, versionPrice: 5, botPrice: 30, canPublish: true, maxConnectedNumbers: 5, maxReps: 5, maxActiveContacts: 1000 };
+      const defaultUnlimited = { maxBots: 999, maxVersions: 999, versionPrice: 0, botPrice: 0, canPublish: true, maxConnectedNumbers: 999, maxReps: 999, maxActiveContacts: 999999 };
+      setSystemConfig({ Trial: defaultTrial, Pro: defaultPro, Unlimited: defaultUnlimited, activeContactsWindowDays: 60, ...data });
     } catch (err) {
       console.error(err);
     } finally {
@@ -1478,7 +1486,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
               { id: 'user-types', label: 'סוגי משתמשים', icon: Shield },
               { id: 'connected-numbers', label: 'מספרים מחוברים', icon: Phone },
               { id: 'sms-in', label: 'הודעות SMS', icon: Inbox },
-              { id: 'sms-external-log', label: 'SMS פנימי', icon: MessageSquare },
               { id: 'templates', label: 'מאגר תבניות בוט', icon: FileText },
               { id: 'settings', label: 'הגדרות מערכת', icon: Settings },
             ].map(item => (
@@ -2356,7 +2363,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                       { id: 'all', label: 'הכל' },
                       { id: 'admin', label: 'מנהלים' },
                       { id: 'trial', label: 'ניסיון' },
-                      { id: 'premium', label: 'פרימיום' },
+                      { id: 'premium', label: 'מתקדם' },
                       { id: 'inactive', label: 'חסומים' }
                     ].map(f => (
                       <button 
@@ -2723,9 +2730,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                                                 <div className="w-full bg-slate-50 px-4 py-3 rounded-xl border border-slate-100 text-slate-400 font-bold text-sm">— (נציג)</div>
                                             ) : (
                                                 <select className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none cursor-pointer" value={editForm.account_type || 'Basic'} onChange={e => setEditForm(prev => ({...prev, account_type: e.target.value}))}>
-                                                    <option value="Trial">Trial (ניסיוני)</option>
-                                                    <option value="Basic">Basic (בסיסי)</option>
-                                                    <option value="Premium">Premium (מתקדם)</option>
+                                                    <option value="Trial">ניסיוני</option>
+                                                    <option value="Basic">בסיסי</option>
+                                                    <option value="Premium">מתקדם</option>
+                                                    <option value="Pro">פרימיום</option>
+                                                    <option value="Unlimited">ללא הגבלה</option>
                                                 </select>
                                             )
                                         ) : (
@@ -2893,6 +2902,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                                         <h3 className="text-lg font-black text-amber-900">הגדרות מכסה אישיות</h3>
                                         <p className="text-sm text-amber-800/60 font-medium">הגדרות אלו גוברות על הגדרות ברירת המחדל של המערכת</p>
                                     </div>
+                                    {!isEditing && (selectedUser.active_contacts_count !== undefined) && (
+                                      <div className={`mr-auto px-4 py-2 rounded-xl text-xs font-black ${selectedUser.active_contacts_quota_exceeded ? 'bg-rose-100 text-rose-700 border border-rose-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-100'}`}>
+                                        אנשי קשר פעילים: {selectedUser.active_contacts_count} / {selectedUser.limits_in_effect?.maxActiveContacts ?? '—'}
+                                      </div>
+                                    )}
                                  </div>
                                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 sm:gap-6">
                                       {[
@@ -2901,6 +2915,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                                         { k: 'max_connected_numbers', label: 'Max Numbers', ph: 1 },
                                         { k: 'version_price', label: 'Version Cost', ph: 5 },
                                         { k: 'bot_price', label: 'Bot Cost', ph: 30 },
+                                        { k: 'max_active_contacts', label: 'Max Active Contacts', ph: 200 },
                                       ].map(field => (
                                         <div key={field.k} className="bg-white/60 rounded-2xl border border-amber-100/50 p-5 flex flex-col gap-3 shadow-sm hover:shadow-md transition-all">
                                           <span className="text-[10px] font-black text-amber-900/40 uppercase tracking-wider">{field.label}</span>
@@ -3741,6 +3756,15 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                      שינויים גלובליים ישפיעו על כל המשתמשים (למעט חריגים).
                    </p>
                  </div>
+                 <div className="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5">
+                   <label className="text-xs font-black text-slate-500 whitespace-nowrap">חלון ימים לספירת אנשי קשר פעילים</label>
+                   <input
+                     type="number"
+                     className="w-20 p-1.5 text-center text-sm font-black border border-slate-200 rounded-lg bg-white outline-none focus:ring-2 focus:ring-sky-300"
+                     value={systemConfig?.activeContactsWindowDays ?? 60}
+                     onChange={e => setSystemConfig((prev: any) => ({ ...prev, activeContactsWindowDays: Number(e.target.value) }))}
+                   />
+                 </div>
                  <button 
                    onClick={updateSystemConfig}
                    className="flex items-center gap-2 bg-sky-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-sky-700 transition-all shadow-lg shadow-sky-200 hover:-translate-y-1 active:scale-95 duration-200 text-sm"
@@ -3750,8 +3774,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                  </button>
                </div>
 
-               <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
-                 {(['Premium', 'Basic', 'Trial'] as const).map(plan => {
+               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-6 items-start">
+                 {(['Unlimited', 'Pro', 'Premium', 'Basic', 'Trial'] as const).map(plan => {
                    const isPremium = plan === 'Premium';
                    const isTrial = plan === 'Trial';
                    return (
@@ -3773,10 +3797,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                      {/* Header */}
                      <div className={`p-7 ${isPremium ? 'pt-11' : ''} text-right`}>
                        <h3 className={`text-lg font-black tracking-tight ${isPremium ? 'text-white' : isTrial ? 'text-white' : 'text-slate-800'}`}>
-                         {plan === 'Basic' ? 'בסיס' : plan === 'Premium' ? 'מתקדם' : 'ניסיוני'}
+                         {plan === 'Basic' ? 'בסיס' : plan === 'Premium' ? 'מתקדם' : plan === 'Pro' ? 'פרימיום' : plan === 'Unlimited' ? 'ללא הגבלה' : 'ניסיוני'}
                        </h3>
                        <p className={`text-xs font-medium mt-2 leading-relaxed ${isPremium ? 'text-sky-100' : isTrial ? 'text-slate-400' : 'text-slate-500'}`}>
-                         {plan === 'Basic' ? 'הגדרות ברירת מחדל למשתמשים החדשים' : plan === 'Premium' ? 'הגדרות למשתמשים משדרגים בתוכנית מלאה' : 'חשבון ניסיוני בתוקף מוגבל בימים'}
+                         {plan === 'Basic' ? 'הגדרות ברירת מחדל למשתמשים החדשים' : plan === 'Premium' ? 'הגדרות למשתמשים משדרגים בתוכנית מלאה' : plan === 'Pro' ? 'תוכנית פרימיום עם מכסות מורחבות' : plan === 'Unlimited' ? 'תוכנית ללא הגבלה למשתמשים מיוחדים' : 'חשבון ניסיוני בתוקף מוגבל בימים'}
                        </p>
 
                        {/* Primary quota shown as a big "price-like" figure */}
@@ -3838,6 +3862,21 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                          />
                          <span className="flex items-center gap-2 text-sm font-bold">
                            מספר נציגים
+                           <CheckCircle size={16} className={isPremium || isTrial ? 'text-emerald-300' : 'text-emerald-500'} />
+                         </span>
+                       </div>
+
+                       <div className={`flex items-center justify-between gap-3 rounded-2xl px-4 py-3 ${isPremium ? 'bg-white/10' : isTrial ? 'bg-white/5' : 'bg-slate-50'}`}>
+                         <input
+                           type="number"
+                           className={`w-16 text-center font-black rounded-lg outline-none px-1 py-1 ${
+                             isPremium ? 'bg-white/15 text-white' : isTrial ? 'bg-white/10 text-white' : 'bg-white border border-slate-200 text-slate-800'
+                           }`}
+                           value={systemConfig[plan]?.maxActiveContacts ?? 0}
+                           onChange={e => handleConfigChange(plan, 'maxActiveContacts', e.target.value)}
+                         />
+                         <span className="flex items-center gap-2 text-sm font-bold">
+                           אנשי קשר פעילים
                            <CheckCircle size={16} className={isPremium || isTrial ? 'text-emerald-300' : 'text-emerald-500'} />
                          </span>
                        </div>
@@ -4391,7 +4430,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                 >
                   <option value="Trial">ניסיון</option>
                   <option value="Basic">בסיסי</option>
-                  <option value="Premium">פרימיום</option>
+                  <option value="Premium">מתקדם</option>
+                  <option value="Pro">פרימיום</option>
+                  <option value="Unlimited">ללא הגבלה</option>
                 </select>
               </div>
               <div>
