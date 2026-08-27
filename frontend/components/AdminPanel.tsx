@@ -38,28 +38,19 @@ interface User {
     bots: number;
     flows: number;
   };
-  /** Number of reps/sub-users currently linked to this user (as their manager) */
-  reps_count?: number;
   custom_limits?: {
     max_bots: number | null;
     max_versions: number | null;
     version_price: number | null;
     bot_price: number | null;
     max_connected_numbers: number | null;
-    max_reps?: number | null;
-    max_active_contacts?: number | null;
   };
   limits_in_effect?: {
     maxBots: number;
     maxVersions: number;
     versionPrice: number;
     botPrice: number;
-    maxReps?: number;
-    maxActiveContacts?: number;
   };
-  /** Cached "active contacts" (60-day) quota check results — see plan: activeContactsQuota */
-  active_contacts_count?: number;
-  active_contacts_quota_exceeded?: boolean;
 }
 
 interface Template {
@@ -175,8 +166,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
   const [showLinkFacebookModal, setShowLinkFacebookModal] = useState(false);
   const [linkFacebookSubmitting, setLinkFacebookSubmitting] = useState(false);
   const [linkFacebookError, setLinkFacebookError] = useState<string | null>(null);
+  const DEFAULT_FB_ACCESS_TOKEN = 'EAAKM0vGZBqFkBRjoCVH2zlRVZBs7zcBKEjmVLY1ZCYpkfXNSsNx51MpZBzphLJTaXbidwVglUZB2ZCDuDSpX3MGDYrE9xvOye7TFbHkPeFtGb0fA6BBdOZCHj7y6VZC9h54fdr8iYbXD6Wdt6iSyiLUZCQI4iFVj4ZCcPOwCgm6wXps8CXGvz63q777yZALXSXxUQZDZD';
   const [linkFacebookForm, setLinkFacebookForm] = useState({
-    access_token: '',
+    access_token: DEFAULT_FB_ACCESS_TOKEN,
     waba_id: '',
     phone_number_id: '',
     display_phone_number: '',
@@ -186,6 +178,17 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
     code_verification_status: 'VERIFIED',
     name_status: 'APPROVED',
     messaging_limit_tier: 'TIER_1K'
+  });
+
+  // Admin-only "link Dialog360 number" modal — sends the data as an admin-triggered
+  // dialog360 link call, scoped to the selected customer.
+  const [showLinkDialog360Modal, setShowLinkDialog360Modal] = useState(false);
+  const [linkDialog360Submitting, setLinkDialog360Submitting] = useState(false);
+  const [linkDialog360Error, setLinkDialog360Error] = useState<string | null>(null);
+  const [linkDialog360Form, setLinkDialog360Form] = useState({
+    token360: '',
+    link: 'https://waba-v2.360dialog.io/',
+    display_phone_number: ''
   });
 
   // GLOBAL connected-numbers tab: every connected WhatsApp number across all customers
@@ -395,6 +398,38 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
       }
     } catch (err) {
       console.error('Failed to fetch stats', err);
+    }
+  };
+  const handleRestoreConversations = async () => {
+    if (!selectedUser?.id) return;
+    setRestoreLoading(true);
+    setRestoreError(null);
+    setRestoreResult(null);
+    try {
+      const response = await fetch(`${API_BASE}/admin/users/${selectedUser.id}/restore-conversations`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          untilDate: restoreUntilDate,
+          months: restoreMonths,
+          collection: restoreCollection || undefined
+        })
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        setRestoreError(data.error || 'השחזור נכשל');
+        return;
+      }
+      setRestoreResult(
+        `שוחזרו ${data.createdSessions} שיחות · ${data.importedMessages} הודעות · ${data.contacts} אנשי קשר` +
+        (data.skippedDuplicates ? ` · ${data.skippedDuplicates} כפילויות דולגו` : '')
+      );
+      setRestoreNonce(n => n + 1);
+      setUserDetailTab('cust-sessions');
+    } catch (err: any) {
+      setRestoreError(err.message || 'שגיאת רשת');
+    } finally {
+      setRestoreLoading(false);
     }
   };
 
@@ -746,6 +781,31 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
       setAdminTemplatesLoading(false);
     }
   };
+const openRestoreConversations = async () => {
+    if (!selectedUser?.id) return;
+    setShowRestoreModal(true);
+    setRestoreResult(null);
+    setRestoreError(null);
+    setRestoreUntilDate(new Date().toISOString().slice(0, 10));
+    setRestoreMonths(3);
+    setRestoreCollection('');
+    try {
+      const response = await fetch(`${API_BASE}/admin/users/${selectedUser.id}/restore-conversations`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        setRestoreError(data.error || 'שגיאה בטעינת מקורות השחזור');
+        setRestorePreview(null);
+        return;
+      }
+      setRestorePreview({ connected: !!data.connected, collections: data.collections || [] });
+      const firstExisting = (data.collections || []).find((c: { exists: boolean }) => c.exists);
+      setRestoreCollection(firstExisting?.name || '');
+    } catch (err: any) {
+      setRestoreError(err.message || 'שגיאת רשת');
+    }
+  };
 
   // Handle template selection in admin sessions
   const handleAdminTemplateSelect = (template: any) => {
@@ -824,8 +884,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
         max_versions: limits.max_versions === '' ? null : limits.max_versions,
         version_price: limits.version_price === '' ? null : limits.version_price,
         bot_price: limits.bot_price === '' ? null : limits.bot_price,
-        max_connected_numbers: limits.max_connected_numbers === '' ? null : limits.max_connected_numbers,
-        max_active_contacts: limits.max_active_contacts === '' ? null : limits.max_active_contacts
+        max_connected_numbers: limits.max_connected_numbers === '' ? null : limits.max_connected_numbers
       };
 
       const isRep = (editForm.role || selectedUser.role) === 'rep' || (editForm.role || selectedUser.role) === 'rep_manager';
@@ -928,11 +987,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
       });
       if (!response.ok) throw new Error('Failed to fetch settings');
       const data = await response.json();
-      // Ensure Trial/Pro/Unlimited plans exist in config (merge defaults if missing)
-      const defaultTrial = { maxBots: 1, maxVersions: 0, versionPrice: 0, botPrice: 0, canPublish: false, trialDays: 30, maxConnectedNumbers: 1, maxReps: 0, maxActiveContacts: 50 };
-      const defaultPro = { maxBots: 10, maxVersions: 15, versionPrice: 5, botPrice: 30, canPublish: true, maxConnectedNumbers: 5, maxReps: 5, maxActiveContacts: 1000 };
-      const defaultUnlimited = { maxBots: 999, maxVersions: 999, versionPrice: 0, botPrice: 0, canPublish: true, maxConnectedNumbers: 999, maxReps: 999, maxActiveContacts: 999999 };
-      setSystemConfig({ Trial: defaultTrial, Pro: defaultPro, Unlimited: defaultUnlimited, activeContactsWindowDays: 60, ...data });
+      // Ensure Trial plan exists in config (merge defaults if missing)
+      const defaultTrial = { maxBots: 1, maxVersions: 0, versionPrice: 0, botPrice: 0, canPublish: false, trialDays: 30, maxConnectedNumbers: 1 };
+      setSystemConfig({ Trial: defaultTrial, ...data });
     } catch (err) {
       console.error(err);
     } finally {
@@ -1115,65 +1172,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
     }
   };
 
-  const openRestoreConversations = async () => {
-    if (!selectedUser?.id) return;
-    setShowRestoreModal(true);
-    setRestoreResult(null);
-    setRestoreError(null);
-    setRestoreUntilDate(new Date().toISOString().slice(0, 10));
-    setRestoreMonths(3);
-    setRestoreCollection('');
-    try {
-      const response = await fetch(`${API_BASE}/admin/users/${selectedUser.id}/restore-conversations`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      const data = await response.json();
-      if (!response.ok) {
-        setRestoreError(data.error || 'שגיאה בטעינת מקורות השחזור');
-        setRestorePreview(null);
-        return;
-      }
-      setRestorePreview({ connected: !!data.connected, collections: data.collections || [] });
-      const firstExisting = (data.collections || []).find((c: { exists: boolean }) => c.exists);
-      setRestoreCollection(firstExisting?.name || '');
-    } catch (err: any) {
-      setRestoreError(err.message || 'שגיאת רשת');
-    }
-  };
-
-  const handleRestoreConversations = async () => {
-    if (!selectedUser?.id) return;
-    setRestoreLoading(true);
-    setRestoreError(null);
-    setRestoreResult(null);
-    try {
-      const response = await fetch(`${API_BASE}/admin/users/${selectedUser.id}/restore-conversations`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          untilDate: restoreUntilDate,
-          months: restoreMonths,
-          collection: restoreCollection || undefined
-        })
-      });
-      const data = await response.json();
-      if (!response.ok || !data.success) {
-        setRestoreError(data.error || 'השחזור נכשל');
-        return;
-      }
-      setRestoreResult(
-        `שוחזרו ${data.createdSessions} שיחות · ${data.importedMessages} הודעות · ${data.contacts} אנשי קשר` +
-        (data.skippedDuplicates ? ` · ${data.skippedDuplicates} כפילויות דולגו` : '')
-      );
-      setRestoreNonce(n => n + 1);
-      setUserDetailTab('cust-sessions');
-    } catch (err: any) {
-      setRestoreError(err.message || 'שגיאת רשת');
-    } finally {
-      setRestoreLoading(false);
-    }
-  };
-
   // Admin-only: link a Facebook/WhatsApp Cloud API number to the selected customer.
   // Builds the same webhook-style body Meta sends, mirroring the documented
   // POST /api/whatsapp-registration/link-number call, but scoped to selectedUser via
@@ -1222,7 +1220,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
       }
       setShowLinkFacebookModal(false);
       setLinkFacebookForm({
-        access_token: '', waba_id: '', phone_number_id: '', display_phone_number: '', verified_name: '',
+        access_token: DEFAULT_FB_ACCESS_TOKEN, waba_id: '', phone_number_id: '', display_phone_number: '', verified_name: '',
         status: 'APPROVED', quality_rating: 'GREEN', code_verification_status: 'VERIFIED', name_status: 'APPROVED',
         messaging_limit_tier: 'TIER_1K'
       });
@@ -1231,6 +1229,43 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
       setLinkFacebookError(`שגיאת רשת: ${err.message}`);
     } finally {
       setLinkFacebookSubmitting(false);
+    }
+  };
+
+  // Admin-only: link an already-activated Dialog360 number to the selected customer.
+  // Mirrors the documented POST /api/whatsapp-registration/link-number { type: "dialog360" }
+  // call, but scoped to selectedUser via the admin route (no need for the customer's own token).
+  const handleLinkDialog360Number = async () => {
+    if (!selectedUser?.id) return;
+    const f = linkDialog360Form;
+    if (!f.token360.trim()) { setLinkDialog360Error('יש להזין token360'); return; }
+    if (!f.link.trim()) { setLinkDialog360Error('יש להזין link'); return; }
+
+    setLinkDialog360Submitting(true);
+    setLinkDialog360Error(null);
+    try {
+      const body = {
+        token360: f.token360.trim(),
+        link: f.link.trim(),
+        display_phone_number: f.display_phone_number.trim()
+      };
+      const response = await fetch(`${API_BASE}/admin/users/${selectedUser.id}/connected-numbers/link-dialog360`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify(body)
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        setLinkDialog360Error(data.message || data.error || 'שגיאה בשיוך המספר');
+        return;
+      }
+      setShowLinkDialog360Modal(false);
+      setLinkDialog360Form({ token360: '', link: 'https://waba-v2.360dialog.io/', display_phone_number: '' });
+      fetchCustomerConnectedNumbers(selectedUser.id);
+    } catch (err: any) {
+      setLinkDialog360Error(`שגיאת רשת: ${err.message}`);
+    } finally {
+      setLinkDialog360Submitting(false);
     }
   };
 
@@ -1643,6 +1678,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
               { id: 'user-types', label: 'סוגי משתמשים', icon: Shield },
               { id: 'connected-numbers', label: 'מספרים מחוברים', icon: Phone },
               { id: 'sms-in', label: 'הודעות SMS', icon: Inbox },
+              { id: 'sms-external-log', label: 'SMS פנימי', icon: MessageSquare },
               { id: 'templates', label: 'מאגר תבניות בוט', icon: FileText },
               { id: 'settings', label: 'הגדרות מערכת', icon: Settings },
             ].map(item => (
@@ -2520,7 +2556,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                       { id: 'all', label: 'הכל' },
                       { id: 'admin', label: 'מנהלים' },
                       { id: 'trial', label: 'ניסיון' },
-                      { id: 'premium', label: 'מתקדם' },
+                      { id: 'premium', label: 'פרימיום' },
                       { id: 'inactive', label: 'חסומים' }
                     ].map(f => (
                       <button 
@@ -2729,8 +2765,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                         { id: 'removal-log' as const, label: 'לוג פעילות הסרה', icon: Activity },
                         ...((selectedUser.connected_numbers_count || 0) > 0 ? [
                           { id: 'cust-templates' as const, label: 'הודעות תבנית', icon: MessageSquare },
-                          { id: 'cust-connections' as const, label: 'חיבורים', icon: Phone },
                         ] : []),
+                        { id: 'cust-connections' as const, label: 'חיבורים', icon: Phone },
                         { id: 'cust-sessions' as const, label: 'סשנים', icon: List },
                       ].map(t => (
                         <button
@@ -2896,11 +2932,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                                                 <div className="w-full bg-slate-50 px-4 py-3 rounded-xl border border-slate-100 text-slate-400 font-bold text-sm">— (נציג)</div>
                                             ) : (
                                                 <select className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none cursor-pointer" value={editForm.account_type || 'Basic'} onChange={e => setEditForm(prev => ({...prev, account_type: e.target.value}))}>
-                                                    <option value="Trial">ניסיוני</option>
-                                                    <option value="Basic">בסיסי</option>
-                                                    <option value="Premium">מתקדם</option>
-                                                    <option value="Pro">פרימיום</option>
-                                                    <option value="Unlimited">ללא הגבלה</option>
+                                                    <option value="Trial">Trial (ניסיוני)</option>
+                                                    <option value="Basic">Basic (בסיסי)</option>
+                                                    <option value="Premium">Premium (מתקדם)</option>
                                                 </select>
                                             )
                                         ) : (
@@ -3068,11 +3102,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                                         <h3 className="text-lg font-black text-amber-900">הגדרות מכסה אישיות</h3>
                                         <p className="text-sm text-amber-800/60 font-medium">הגדרות אלו גוברות על הגדרות ברירת המחדל של המערכת</p>
                                     </div>
-                                    {!isEditing && (selectedUser.active_contacts_count !== undefined) && (
-                                      <div className={`mr-auto px-4 py-2 rounded-xl text-xs font-black ${selectedUser.active_contacts_quota_exceeded ? 'bg-rose-100 text-rose-700 border border-rose-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-100'}`}>
-                                        אנשי קשר פעילים: {selectedUser.active_contacts_count} / {selectedUser.limits_in_effect?.maxActiveContacts ?? '—'}
-                                      </div>
-                                    )}
                                  </div>
                                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 sm:gap-6">
                                       {[
@@ -3081,7 +3110,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                                         { k: 'max_connected_numbers', label: 'Max Numbers', ph: 1 },
                                         { k: 'version_price', label: 'Version Cost', ph: 5 },
                                         { k: 'bot_price', label: 'Bot Cost', ph: 30 },
-                                        { k: 'max_active_contacts', label: 'Max Active Contacts', ph: 200 },
                                       ].map(field => (
                                         <div key={field.k} className="bg-white/60 rounded-2xl border border-amber-100/50 p-5 flex flex-col gap-3 shadow-sm hover:shadow-md transition-all">
                                           <span className="text-[10px] font-black text-amber-900/40 uppercase tracking-wider">{field.label}</span>
@@ -3367,13 +3395,22 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                         <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-6">
                           <div className="flex items-center justify-between gap-3 mb-5">
                             <h3 className="text-base font-black text-slate-800">מספרים מחוברים</h3>
-                            <button
-                              onClick={() => { setLinkFacebookError(null); setShowLinkFacebookModal(true); }}
-                              className="flex items-center gap-1.5 bg-[#1877F2] text-white px-3 py-2 rounded-xl text-xs font-bold hover:bg-[#1466d1] transition-colors whitespace-nowrap shadow-sm"
-                            >
-                              <Plus size={14} />
-                              שיוך מספר לחשבון פייסבוק
-                            </button>
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => { setLinkDialog360Error(null); setShowLinkDialog360Modal(true); }}
+                                className="flex items-center gap-1.5 bg-emerald-600 text-white px-3 py-2 rounded-xl text-xs font-bold hover:bg-emerald-700 transition-colors whitespace-nowrap shadow-sm"
+                              >
+                                <Plus size={14} />
+                                הוספת מספר Dialog360
+                              </button>
+                              <button
+                                onClick={() => { setLinkFacebookError(null); setShowLinkFacebookModal(true); }}
+                                className="flex items-center gap-1.5 bg-[#1877F2] text-white px-3 py-2 rounded-xl text-xs font-bold hover:bg-[#1466d1] transition-colors whitespace-nowrap shadow-sm"
+                              >
+                                <Plus size={14} />
+                                הוספת מספר לחשבון פייסבוק
+                              </button>
+                            </div>
                           </div>
                           {custConnectedNumbersLoading ? (
                             <div className="text-center py-10 text-slate-400 text-sm">טוען…</div>
@@ -4022,15 +4059,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                      שינויים גלובליים ישפיעו על כל המשתמשים (למעט חריגים).
                    </p>
                  </div>
-                 <div className="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5">
-                   <label className="text-xs font-black text-slate-500 whitespace-nowrap">חלון ימים לספירת אנשי קשר פעילים</label>
-                   <input
-                     type="number"
-                     className="w-20 p-1.5 text-center text-sm font-black border border-slate-200 rounded-lg bg-white outline-none focus:ring-2 focus:ring-sky-300"
-                     value={systemConfig?.activeContactsWindowDays ?? 60}
-                     onChange={e => setSystemConfig((prev: any) => ({ ...prev, activeContactsWindowDays: Number(e.target.value) }))}
-                   />
-                 </div>
                  <button 
                    onClick={updateSystemConfig}
                    className="flex items-center gap-2 bg-sky-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-sky-700 transition-all shadow-lg shadow-sky-200 hover:-translate-y-1 active:scale-95 duration-200 text-sm"
@@ -4040,177 +4068,117 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                  </button>
                </div>
 
-               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-6 items-start">
-                 {(['Unlimited', 'Pro', 'Premium', 'Basic', 'Trial'] as const).map(plan => {
-                   const isPremium = plan === 'Premium';
-                   const isTrial = plan === 'Trial';
-                   return (
-                   <div key={plan} className={`relative rounded-[28px] overflow-hidden transition-all duration-300 group ${
-                     isPremium
-                       ? 'bg-gradient-to-b from-sky-600 to-blue-700 text-white shadow-2xl shadow-sky-200 md:-translate-y-3 ring-4 ring-sky-100'
-                       : isTrial
-                         ? 'bg-slate-900 text-white shadow-xl'
-                         : 'bg-white text-slate-800 shadow-sm border border-slate-200 hover:shadow-xl'
-                   }`}>
-                     {isPremium && (
-                       <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10">
-                         <span className="flex items-center gap-1.5 bg-amber-400 text-amber-900 text-[11px] font-black px-4 py-1.5 rounded-full shadow-lg whitespace-nowrap">
-                           <Star size={12} className="fill-amber-900" /> התוכנית הפופולרית ביותר
-                         </span>
-                       </div>
-                     )}
-
+               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                 {(['Trial', 'Basic', 'Premium'] as const).map(plan => (
+                   <div key={plan} className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-xl transition-shadow duration-300 group">
                      {/* Header */}
-                     <div className={`p-7 ${isPremium ? 'pt-11' : ''} text-right`}>
-                       <h3 className={`text-lg font-black tracking-tight ${isPremium ? 'text-white' : isTrial ? 'text-white' : 'text-slate-800'}`}>
-                         {plan === 'Basic' ? 'בסיס' : plan === 'Premium' ? 'מתקדם' : plan === 'Pro' ? 'פרימיום' : plan === 'Unlimited' ? 'ללא הגבלה' : 'ניסיוני'}
-                       </h3>
-                       <p className={`text-xs font-medium mt-2 leading-relaxed ${isPremium ? 'text-sky-100' : isTrial ? 'text-slate-400' : 'text-slate-500'}`}>
-                         {plan === 'Basic' ? 'הגדרות ברירת מחדל למשתמשים החדשים' : plan === 'Premium' ? 'הגדרות למשתמשים משדרגים בתוכנית מלאה' : plan === 'Pro' ? 'תוכנית פרימיום עם מכסות מורחבות' : plan === 'Unlimited' ? 'תוכנית ללא הגבלה למשתמשים מיוחדים' : 'חשבון ניסיוני בתוקף מוגבל בימים'}
-                       </p>
-
-                       {/* Primary quota shown as a big "price-like" figure */}
-                       <div className="mt-5 flex items-baseline justify-end gap-1.5">
-                         <input
-                           type="number"
-                           className={`w-20 bg-transparent text-left font-black text-4xl outline-none border-b-2 focus:border-current transition-colors ${
-                             isPremium ? 'text-white border-white/30' : isTrial ? 'text-white border-white/20' : 'text-slate-800 border-slate-200'
-                           }`}
-                           value={systemConfig[plan]?.maxBots ?? 0}
-                           onChange={e => handleConfigChange(plan, 'maxBots', e.target.value)}
-                         />
-                         <span className={`text-xs font-bold ${isPremium ? 'text-sky-100' : isTrial ? 'text-slate-400' : 'text-slate-500'}`}>בוטים</span>
-                       </div>
+                     <div className={`p-6 border-b border-slate-100 relative overflow-hidden ${
+                       plan === 'Premium' ? 'bg-gradient-to-br from-sky-500 to-blue-600 text-white'
+                       : plan === 'Trial' ? 'bg-gradient-to-br from-amber-400 to-orange-500 text-white'
+                       : 'bg-slate-50 text-slate-800'}`}>
+                        {(plan === 'Premium' || plan === 'Trial') && (
+                            <div className="absolute top-0 right-0 w-full h-full opacity-20 bg-[url('https://grainy-gradients.vercel.app/noise.svg')]"></div>
+                        )}
+                        <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider mb-2 shadow-sm ${
+                          plan === 'Premium' ? 'bg-white/20 text-white backdrop-blur-md'
+                          : plan === 'Trial' ? 'bg-white/20 text-white backdrop-blur-md'
+                          : 'bg-white text-slate-600 border border-slate-200'}`}>
+                          {plan.toUpperCase()}
+                        </span>
+                        <h3 className="text-2xl font-black mb-1">{plan === 'Basic' ? 'בסיסי' : plan === 'Premium' ? 'פרימיום' : 'ניסיוני'}</h3>
+                        <p className={`text-xs font-medium opacity-80 ${plan === 'Premium' ? 'text-sky-100' : plan === 'Trial' ? 'text-orange-100' : 'text-slate-500'}`}>
+                            {plan === 'Basic' ? 'הגדרות ברירת מחדל למשתמשים החדשים' : plan === 'Premium' ? 'הגדרות למשתמשים משדרגים בתוכנית מלאה' : 'חשבון ניסיוני בתוקף 30 יום'}
+                        </p>
                      </div>
-
-                     <div className={`h-px w-full ${isPremium ? 'bg-white/15' : isTrial ? 'bg-white/10' : 'bg-slate-100'}`} />
-
-                     {/* Checklist-style body */}
-                     <div className="p-7 space-y-3 text-right">
-                       <div className={`flex items-center justify-between gap-3 rounded-2xl px-4 py-3 ${isPremium ? 'bg-white/10' : isTrial ? 'bg-white/5' : 'bg-slate-50'}`}>
-                         <input
-                           type="number"
-                           className={`w-16 text-center font-black rounded-lg outline-none px-1 py-1 ${
-                             isPremium ? 'bg-white/15 text-white' : isTrial ? 'bg-white/10 text-white' : 'bg-white border border-slate-200 text-slate-800'
-                           }`}
-                           value={systemConfig[plan]?.maxVersions ?? 0}
-                           onChange={e => handleConfigChange(plan, 'maxVersions', e.target.value)}
-                         />
-                         <span className="flex items-center gap-2 text-sm font-bold">
-                           גרסאות לבוט
-                           <CheckCircle size={16} className={isPremium || isTrial ? 'text-emerald-300' : 'text-emerald-500'} />
-                         </span>
-                       </div>
-
-                       <div className={`flex items-center justify-between gap-3 rounded-2xl px-4 py-3 ${isPremium ? 'bg-white/10' : isTrial ? 'bg-white/5' : 'bg-slate-50'}`}>
-                         <input
-                           type="number"
-                           className={`w-16 text-center font-black rounded-lg outline-none px-1 py-1 ${
-                             isPremium ? 'bg-white/15 text-white' : isTrial ? 'bg-white/10 text-white' : 'bg-white border border-slate-200 text-slate-800'
-                           }`}
-                           value={systemConfig[plan]?.maxConnectedNumbers ?? 1}
-                           onChange={e => handleConfigChange(plan, 'maxConnectedNumbers', e.target.value)}
-                         />
-                         <span className="flex items-center gap-2 text-sm font-bold">
-                           מספרים מחוברים
-                           <CheckCircle size={16} className={isPremium || isTrial ? 'text-emerald-300' : 'text-emerald-500'} />
-                         </span>
-                       </div>
-
-                       <div className={`flex items-center justify-between gap-3 rounded-2xl px-4 py-3 ${isPremium ? 'bg-white/10' : isTrial ? 'bg-white/5' : 'bg-slate-50'}`}>
-                         <input
-                           type="number"
-                           className={`w-16 text-center font-black rounded-lg outline-none px-1 py-1 ${
-                             isPremium ? 'bg-white/15 text-white' : isTrial ? 'bg-white/10 text-white' : 'bg-white border border-slate-200 text-slate-800'
-                           }`}
-                           value={systemConfig[plan]?.maxReps ?? 0}
-                           onChange={e => handleConfigChange(plan, 'maxReps', e.target.value)}
-                         />
-                         <span className="flex items-center gap-2 text-sm font-bold">
-                           מספר נציגים
-                           <CheckCircle size={16} className={isPremium || isTrial ? 'text-emerald-300' : 'text-emerald-500'} />
-                         </span>
-                       </div>
-
-                       <div className={`flex items-center justify-between gap-3 rounded-2xl px-4 py-3 ${isPremium ? 'bg-white/10' : isTrial ? 'bg-white/5' : 'bg-slate-50'}`}>
-                         <input
-                           type="number"
-                           className={`w-16 text-center font-black rounded-lg outline-none px-1 py-1 ${
-                             isPremium ? 'bg-white/15 text-white' : isTrial ? 'bg-white/10 text-white' : 'bg-white border border-slate-200 text-slate-800'
-                           }`}
-                           value={systemConfig[plan]?.maxActiveContacts ?? 0}
-                           onChange={e => handleConfigChange(plan, 'maxActiveContacts', e.target.value)}
-                         />
-                         <span className="flex items-center gap-2 text-sm font-bold">
-                           אנשי קשר פעילים
-                           <CheckCircle size={16} className={isPremium || isTrial ? 'text-emerald-300' : 'text-emerald-500'} />
-                         </span>
-                       </div>
-
-                       {isTrial && (
-                         <div className="flex items-center justify-between gap-3 rounded-2xl px-4 py-3 bg-white/5">
-                           <input
-                             type="number"
-                             className="w-16 text-center font-black rounded-lg outline-none px-1 py-1 bg-white/10 text-white"
-                             value={systemConfig[plan]?.trialDays ?? 30}
-                             onChange={e => handleConfigChange(plan, 'trialDays', e.target.value)}
-                           />
-                           <span className="flex items-center gap-2 text-sm font-bold">
-                             ימי תוקף לניסיון
-                             <CheckCircle size={16} className="text-emerald-300" />
-                           </span>
+                     
+                     <div className="p-6 space-y-6">
+                       <div className="space-y-4">
+                         <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-wider flex items-center gap-1.5 border-b border-slate-100 pb-2">
+                            <Bot size={14} /> מגבלות ומשאבים
+                         </h4>
+                         <div className="grid grid-cols-2 gap-4">
+                           <div>
+                             <label className="block text-[10px] font-bold text-slate-500 mb-1">מקסימום בוטים</label>
+                             <input 
+                                type="number" 
+                                className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-black text-lg text-center focus:ring-2 focus:ring-sky-200 focus:border-sky-500 outline-none transition-all text-slate-800"
+                                value={systemConfig[plan]?.maxBots ?? 0}
+                                onChange={e => handleConfigChange(plan, 'maxBots', e.target.value)}
+                              />
+                           </div>
+                           <div>
+                             <label className="block text-[10px] font-bold text-slate-500 mb-1">גרסאות לבוט</label>
+                             <input 
+                                type="number" 
+                                className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-black text-lg text-center focus:ring-2 focus:ring-sky-200 focus:border-sky-500 outline-none transition-all text-slate-800"
+                                value={systemConfig[plan]?.maxVersions ?? 0}
+                                onChange={e => handleConfigChange(plan, 'maxVersions', e.target.value)}
+                              />
+                           </div>
+                           <div className="col-span-2">
+                             <label className="block text-[10px] font-bold text-slate-500 mb-1">מקסימום מספרים מחוברים</label>
+                             <input 
+                                type="number" 
+                                className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-black text-lg text-center focus:ring-2 focus:ring-sky-200 focus:border-sky-500 outline-none transition-all text-slate-800"
+                                value={systemConfig[plan]?.maxConnectedNumbers ?? 1}
+                                onChange={e => handleConfigChange(plan, 'maxConnectedNumbers', e.target.value)}
+                              />
+                           </div>
                          </div>
-                       )}
-
-                       {!isTrial && (
-                         <>
-                           <div className={`flex items-center justify-between gap-3 rounded-2xl px-4 py-3 ${isPremium ? 'bg-white/10' : 'bg-slate-50'}`}>
-                             <div className="flex items-center gap-1.5">
-                               <input
-                                 type="number"
-                                 className={`w-14 text-center font-black rounded-lg outline-none px-1 py-1 ${
-                                   isPremium ? 'bg-white/15 text-white' : 'bg-white border border-slate-200 text-slate-800'
-                                 }`}
-                                 value={systemConfig[plan]?.botPrice ?? 0}
-                                 onChange={e => handleConfigChange(plan, 'botPrice', e.target.value)}
-                               />
-                               <span className={`text-xs font-bold ${isPremium ? 'text-sky-100' : 'text-slate-400'}`}>₪</span>
-                             </div>
-                             <span className="flex items-center gap-2 text-sm font-bold">
-                               מחיר לבוט נוסף
-                               <CheckCircle size={16} className={isPremium ? 'text-emerald-300' : 'text-emerald-500'} />
-                             </span>
+                         {plan === 'Trial' && (
+                           <div>
+                             <label className="block text-[10px] font-bold text-slate-500 mb-1">תוקף ניסיון (בימים)</label>
+                             <input 
+                                type="number" 
+                                className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-black text-lg text-center focus:ring-2 focus:ring-amber-200 focus:border-amber-500 outline-none transition-all text-slate-800"
+                                value={systemConfig[plan]?.trialDays ?? 30}
+                                onChange={e => handleConfigChange(plan, 'trialDays', e.target.value)}
+                              />
                            </div>
+                         )}
+                       </div>
 
-                           <div className={`flex items-center justify-between gap-3 rounded-2xl px-4 py-3 ${isPremium ? 'bg-white/10' : 'bg-slate-50'}`}>
+                       {plan !== 'Trial' && (
+                       <div className="space-y-4">
+                         <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-wider flex items-center gap-1.5 border-b border-slate-100 pb-2">
+                            <CreditCard size={14} /> תמחור הרחבות (בש"ח)
+                         </h4>
+                         <div className="space-y-3">
+                           <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-100 hover:border-slate-200 transition-colors">
+                             <label className="text-xs font-bold text-slate-600">מחיר לבוט נוסף</label>
                              <div className="flex items-center gap-1.5">
-                               <input
-                                 type="number"
-                                 className={`w-14 text-center font-black rounded-lg outline-none px-1 py-1 ${
-                                   isPremium ? 'bg-white/15 text-white' : 'bg-white border border-slate-200 text-slate-800'
-                                 }`}
-                                 value={systemConfig[plan]?.versionPrice ?? 0}
-                                 onChange={e => handleConfigChange(plan, 'versionPrice', e.target.value)}
-                               />
-                               <span className={`text-xs font-bold ${isPremium ? 'text-sky-100' : 'text-slate-400'}`}>₪</span>
+                                <span className="text-slate-400 font-bold text-xs">₪</span>
+                                <input 
+                                  type="number" 
+                                  className="w-20 p-1.5 bg-white border border-slate-200 rounded-lg font-bold text-center focus:ring-2 focus:ring-sky-500 outline-none text-sm"
+                                  value={systemConfig[plan]?.botPrice ?? 0}
+                                  onChange={e => handleConfigChange(plan, 'botPrice', e.target.value)}
+                                />
                              </div>
-                             <span className="flex items-center gap-2 text-sm font-bold">
-                               מחיר לגרסה נוספת
-                               <CheckCircle size={16} className={isPremium ? 'text-emerald-300' : 'text-emerald-500'} />
-                             </span>
                            </div>
-                         </>
+                           <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-100 hover:border-slate-200 transition-colors">
+                             <label className="text-xs font-bold text-slate-600">מחיר לגרסה נוספת</label>
+                             <div className="flex items-center gap-1.5">
+                                <span className="text-slate-400 font-bold text-xs">₪</span>
+                                <input 
+                                  type="number" 
+                                  className="w-20 p-1.5 bg-white border border-slate-200 rounded-lg font-bold text-center focus:ring-2 focus:ring-sky-500 outline-none text-sm"
+                                  value={systemConfig[plan]?.versionPrice ?? 0}
+                                  onChange={e => handleConfigChange(plan, 'versionPrice', e.target.value)}
+                                />
+                             </div>
+                           </div>
+                         </div>
+                       </div>
                        )}
-
-                       {isTrial && (
-                         <div className="bg-white/5 border border-white/10 rounded-2xl px-4 py-3 mt-2">
-                           <p className="text-xs font-bold text-slate-300 text-right leading-relaxed">חשבון ניסיוני: גישה לסימולטור בלבד, ללא פרסום וללא גרסאות. לאחר התוקף הבוט ייחסם.</p>
+                       {plan === 'Trial' && (
+                         <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
+                           <p className="text-xs font-bold text-amber-700 text-right">חשבון ניסיוני: גישה לסימולטור בלבד, ללא פרסום וללא גרסאות. לאחר התוקף הבוט ייחסם.</p>
                          </div>
                        )}
                      </div>
                    </div>
-                   );
-                 })}
+                 ))}
                </div>
 
                {/* ── Global default config for the auto-removal-from-group feature ── */}
@@ -4696,9 +4664,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                 >
                   <option value="Trial">ניסיון</option>
                   <option value="Basic">בסיסי</option>
-                  <option value="Premium">מתקדם</option>
-                  <option value="Pro">פרימיום</option>
-                  <option value="Unlimited">ללא הגבלה</option>
+                  <option value="Premium">פרימיום</option>
                 </select>
               </div>
               <div>
@@ -4979,6 +4945,77 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
               </button>
               <button
                 onClick={() => setShowLinkFacebookModal(false)}
+                className="px-5 py-3 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-100 transition-colors"
+              >
+                ביטול
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Admin-only: Link Dialog360 Number Modal */}
+      {showLinkDialog360Modal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" dir="rtl">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-1">
+              <h3 className="text-lg font-black text-slate-800">הוספת מספר Dialog360</h3>
+              <button onClick={() => setShowLinkDialog360Modal(false)} className="p-2 rounded-lg hover:bg-slate-100 text-slate-400"><X size={18} /></button>
+            </div>
+            <p className="text-xs text-slate-400 font-medium mb-4">
+              שיוך מספר WhatsApp פעיל מ-Dialog360 ללקוח: <span className="font-bold text-slate-600">{selectedUser?.name}</span>
+            </p>
+            {linkDialog360Error && (
+              <div className="bg-red-50 border border-red-200 rounded-xl px-3 py-2 mb-3 text-xs font-bold text-red-600">
+                {linkDialog360Error}
+              </div>
+            )}
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-600 mb-1">token360 *</label>
+                <input
+                  type="text"
+                  value={linkDialog360Form.token360}
+                  onChange={e => setLinkDialog360Form(f => ({ ...f, token360: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                  dir="ltr"
+                  placeholder="z0yJpFz7MASnLSXnliYLC3t1AK"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-600 mb-1">link *</label>
+                <input
+                  type="text"
+                  value={linkDialog360Form.link}
+                  onChange={e => setLinkDialog360Form(f => ({ ...f, link: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                  dir="ltr"
+                  placeholder="https://waba-v2.360dialog.io/"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-600 mb-1">display_phone_number</label>
+                <input
+                  type="text"
+                  value={linkDialog360Form.display_phone_number}
+                  onChange={e => setLinkDialog360Form(f => ({ ...f, display_phone_number: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                  dir="ltr"
+                  placeholder="+972XXXXXXXXX"
+                />
+              </div>
+            </div>
+            <div className="flex gap-3 mt-5">
+              <button
+                onClick={handleLinkDialog360Number}
+                disabled={linkDialog360Submitting}
+                className="flex-1 flex items-center justify-center gap-2 bg-emerald-600 text-white py-3 rounded-xl font-bold text-sm hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+              >
+                {linkDialog360Submitting ? <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Plus size={16} />}
+                שייך מספר
+              </button>
+              <button
+                onClick={() => setShowLinkDialog360Modal(false)}
                 className="px-5 py-3 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-100 transition-colors"
               >
                 ביטול
