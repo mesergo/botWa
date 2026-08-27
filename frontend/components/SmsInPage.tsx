@@ -56,6 +56,7 @@ const SmsInPage: React.FC<SmsInPageProps> = ({
         onBack={onBack}
         onLogout={onLogout}
         onOpenAdminPanel={onOpenAdminPanel}
+        sidebarHandlesProfile
         showMobileNavToggle
         mobileNavOpen={mobileNavOpen}
         onMobileNavToggle={() => setMobileNavOpen((prev) => !prev)}
@@ -70,6 +71,9 @@ const SmsInPage: React.FC<SmsInPageProps> = ({
           mobileMenuOpen={mobileNavOpen}
           onMobileMenuOpenChange={setMobileNavOpen}
           onGoHome={onBack}
+          currentUser={currentUser as any}
+          onLogout={onLogout}
+          onOpenAdminPanel={onOpenAdminPanel}
           onBots={can('bots.view_tab') ? onBack : undefined}
           onSessions={onOpenSessions ? () => onOpenSessions() : undefined}
           onContacts={onOpenContacts ? () => onOpenContacts() : undefined}

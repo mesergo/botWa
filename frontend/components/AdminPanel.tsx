@@ -38,19 +38,28 @@ interface User {
     bots: number;
     flows: number;
   };
+  /** Number of reps/sub-users currently linked to this user (as their manager) */
+  reps_count?: number;
   custom_limits?: {
     max_bots: number | null;
     max_versions: number | null;
     version_price: number | null;
     bot_price: number | null;
     max_connected_numbers: number | null;
+    max_reps?: number | null;
+    max_active_contacts?: number | null;
   };
   limits_in_effect?: {
     maxBots: number;
     maxVersions: number;
     versionPrice: number;
     botPrice: number;
+    maxReps?: number;
+    maxActiveContacts?: number;
   };
+  /** Cached "active contacts" (60-day) quota check results — see plan: activeContactsQuota */
+  active_contacts_count?: number;
+  active_contacts_quota_exceeded?: boolean;
 }
 
 interface Template {
@@ -815,7 +824,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
         max_versions: limits.max_versions === '' ? null : limits.max_versions,
         version_price: limits.version_price === '' ? null : limits.version_price,
         bot_price: limits.bot_price === '' ? null : limits.bot_price,
-        max_connected_numbers: limits.max_connected_numbers === '' ? null : limits.max_connected_numbers
+        max_connected_numbers: limits.max_connected_numbers === '' ? null : limits.max_connected_numbers,
+        max_active_contacts: limits.max_active_contacts === '' ? null : limits.max_active_contacts
       };
 
       const isRep = (editForm.role || selectedUser.role) === 'rep' || (editForm.role || selectedUser.role) === 'rep_manager';
@@ -918,9 +928,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
       });
       if (!response.ok) throw new Error('Failed to fetch settings');
       const data = await response.json();
-      // Ensure Trial plan exists in config (merge defaults if missing)
-      const defaultTrial = { maxBots: 1, maxVersions: 0, versionPrice: 0, botPrice: 0, canPublish: false, trialDays: 30, maxConnectedNumbers: 1 };
-      setSystemConfig({ Trial: defaultTrial, ...data });
+      // Ensure Trial/Pro/Unlimited plans exist in config (merge defaults if missing)
+      const defaultTrial = { maxBots: 1, maxVersions: 0, versionPrice: 0, botPrice: 0, canPublish: false, trialDays: 30, maxConnectedNumbers: 1, maxReps: 0, maxActiveContacts: 50 };
+      const defaultPro = { maxBots: 10, maxVersions: 15, versionPrice: 5, botPrice: 30, canPublish: true, maxConnectedNumbers: 5, maxReps: 5, maxActiveContacts: 1000 };
+      const defaultUnlimited = { maxBots: 999, maxVersions: 999, versionPrice: 0, botPrice: 0, canPublish: true, maxConnectedNumbers: 999, maxReps: 999, maxActiveContacts: 999999 };
+      setSystemConfig({ Trial: defaultTrial, Pro: defaultPro, Unlimited: defaultUnlimited, activeContactsWindowDays: 60, ...data });
     } catch (err) {
       console.error(err);
     } finally {
@@ -1631,7 +1643,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
               { id: 'user-types', label: 'סוגי משתמשים', icon: Shield },
               { id: 'connected-numbers', label: 'מספרים מחוברים', icon: Phone },
               { id: 'sms-in', label: 'הודעות SMS', icon: Inbox },
-              { id: 'sms-external-log', label: 'SMS פנימי', icon: MessageSquare },
               { id: 'templates', label: 'מאגר תבניות בוט', icon: FileText },
               { id: 'settings', label: 'הגדרות מערכת', icon: Settings },
             ].map(item => (
@@ -2509,7 +2520,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                       { id: 'all', label: 'הכל' },
                       { id: 'admin', label: 'מנהלים' },
                       { id: 'trial', label: 'ניסיון' },
-                      { id: 'premium', label: 'פרימיום' },
+                      { id: 'premium', label: 'מתקדם' },
                       { id: 'inactive', label: 'חסומים' }
                     ].map(f => (
                       <button 
@@ -2885,9 +2896,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                                                 <div className="w-full bg-slate-50 px-4 py-3 rounded-xl border border-slate-100 text-slate-400 font-bold text-sm">— (נציג)</div>
                                             ) : (
                                                 <select className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none cursor-pointer" value={editForm.account_type || 'Basic'} onChange={e => setEditForm(prev => ({...prev, account_type: e.target.value}))}>
-                                                    <option value="Trial">Trial (ניסיוני)</option>
-                                                    <option value="Basic">Basic (בסיסי)</option>
-                                                    <option value="Premium">Premium (מתקדם)</option>
+                                                    <option value="Trial">ניסיוני</option>
+                                                    <option value="Basic">בסיסי</option>
+                                                    <option value="Premium">מתקדם</option>
+                                                    <option value="Pro">פרימיום</option>
+                                                    <option value="Unlimited">ללא הגבלה</option>
                                                 </select>
                                             )
                                         ) : (
@@ -3055,6 +3068,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                                         <h3 className="text-lg font-black text-amber-900">הגדרות מכסה אישיות</h3>
                                         <p className="text-sm text-amber-800/60 font-medium">הגדרות אלו גוברות על הגדרות ברירת המחדל של המערכת</p>
                                     </div>
+                                    {!isEditing && (selectedUser.active_contacts_count !== undefined) && (
+                                      <div className={`mr-auto px-4 py-2 rounded-xl text-xs font-black ${selectedUser.active_contacts_quota_exceeded ? 'bg-rose-100 text-rose-700 border border-rose-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-100'}`}>
+                                        אנשי קשר פעילים: {selectedUser.active_contacts_count} / {selectedUser.limits_in_effect?.maxActiveContacts ?? '—'}
+                                      </div>
+                                    )}
                                  </div>
                                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 sm:gap-6">
                                       {[
@@ -3063,6 +3081,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                                         { k: 'max_connected_numbers', label: 'Max Numbers', ph: 1 },
                                         { k: 'version_price', label: 'Version Cost', ph: 5 },
                                         { k: 'bot_price', label: 'Bot Cost', ph: 30 },
+                                        { k: 'max_active_contacts', label: 'Max Active Contacts', ph: 200 },
                                       ].map(field => (
                                         <div key={field.k} className="bg-white/60 rounded-2xl border border-amber-100/50 p-5 flex flex-col gap-3 shadow-sm hover:shadow-md transition-all">
                                           <span className="text-[10px] font-black text-amber-900/40 uppercase tracking-wider">{field.label}</span>
@@ -4003,6 +4022,15 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                      שינויים גלובליים ישפיעו על כל המשתמשים (למעט חריגים).
                    </p>
                  </div>
+                 <div className="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5">
+                   <label className="text-xs font-black text-slate-500 whitespace-nowrap">חלון ימים לספירת אנשי קשר פעילים</label>
+                   <input
+                     type="number"
+                     className="w-20 p-1.5 text-center text-sm font-black border border-slate-200 rounded-lg bg-white outline-none focus:ring-2 focus:ring-sky-300"
+                     value={systemConfig?.activeContactsWindowDays ?? 60}
+                     onChange={e => setSystemConfig((prev: any) => ({ ...prev, activeContactsWindowDays: Number(e.target.value) }))}
+                   />
+                 </div>
                  <button 
                    onClick={updateSystemConfig}
                    className="flex items-center gap-2 bg-sky-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-sky-700 transition-all shadow-lg shadow-sky-200 hover:-translate-y-1 active:scale-95 duration-200 text-sm"
@@ -4012,117 +4040,177 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                  </button>
                </div>
 
-               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                 {(['Trial', 'Basic', 'Premium'] as const).map(plan => (
-                   <div key={plan} className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-xl transition-shadow duration-300 group">
+               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-6 items-start">
+                 {(['Unlimited', 'Pro', 'Premium', 'Basic', 'Trial'] as const).map(plan => {
+                   const isPremium = plan === 'Premium';
+                   const isTrial = plan === 'Trial';
+                   return (
+                   <div key={plan} className={`relative rounded-[28px] overflow-hidden transition-all duration-300 group ${
+                     isPremium
+                       ? 'bg-gradient-to-b from-sky-600 to-blue-700 text-white shadow-2xl shadow-sky-200 md:-translate-y-3 ring-4 ring-sky-100'
+                       : isTrial
+                         ? 'bg-slate-900 text-white shadow-xl'
+                         : 'bg-white text-slate-800 shadow-sm border border-slate-200 hover:shadow-xl'
+                   }`}>
+                     {isPremium && (
+                       <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10">
+                         <span className="flex items-center gap-1.5 bg-amber-400 text-amber-900 text-[11px] font-black px-4 py-1.5 rounded-full shadow-lg whitespace-nowrap">
+                           <Star size={12} className="fill-amber-900" /> התוכנית הפופולרית ביותר
+                         </span>
+                       </div>
+                     )}
+
                      {/* Header */}
-                     <div className={`p-6 border-b border-slate-100 relative overflow-hidden ${
-                       plan === 'Premium' ? 'bg-gradient-to-br from-sky-500 to-blue-600 text-white'
-                       : plan === 'Trial' ? 'bg-gradient-to-br from-amber-400 to-orange-500 text-white'
-                       : 'bg-slate-50 text-slate-800'}`}>
-                        {(plan === 'Premium' || plan === 'Trial') && (
-                            <div className="absolute top-0 right-0 w-full h-full opacity-20 bg-[url('https://grainy-gradients.vercel.app/noise.svg')]"></div>
-                        )}
-                        <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider mb-2 shadow-sm ${
-                          plan === 'Premium' ? 'bg-white/20 text-white backdrop-blur-md'
-                          : plan === 'Trial' ? 'bg-white/20 text-white backdrop-blur-md'
-                          : 'bg-white text-slate-600 border border-slate-200'}`}>
-                          {plan.toUpperCase()}
-                        </span>
-                        <h3 className="text-2xl font-black mb-1">{plan === 'Basic' ? 'בסיסי' : plan === 'Premium' ? 'פרימיום' : 'ניסיוני'}</h3>
-                        <p className={`text-xs font-medium opacity-80 ${plan === 'Premium' ? 'text-sky-100' : plan === 'Trial' ? 'text-orange-100' : 'text-slate-500'}`}>
-                            {plan === 'Basic' ? 'הגדרות ברירת מחדל למשתמשים החדשים' : plan === 'Premium' ? 'הגדרות למשתמשים משדרגים בתוכנית מלאה' : 'חשבון ניסיוני בתוקף 30 יום'}
-                        </p>
+                     <div className={`p-7 ${isPremium ? 'pt-11' : ''} text-right`}>
+                       <h3 className={`text-lg font-black tracking-tight ${isPremium ? 'text-white' : isTrial ? 'text-white' : 'text-slate-800'}`}>
+                         {plan === 'Basic' ? 'בסיס' : plan === 'Premium' ? 'מתקדם' : plan === 'Pro' ? 'פרימיום' : plan === 'Unlimited' ? 'ללא הגבלה' : 'ניסיוני'}
+                       </h3>
+                       <p className={`text-xs font-medium mt-2 leading-relaxed ${isPremium ? 'text-sky-100' : isTrial ? 'text-slate-400' : 'text-slate-500'}`}>
+                         {plan === 'Basic' ? 'הגדרות ברירת מחדל למשתמשים החדשים' : plan === 'Premium' ? 'הגדרות למשתמשים משדרגים בתוכנית מלאה' : plan === 'Pro' ? 'תוכנית פרימיום עם מכסות מורחבות' : plan === 'Unlimited' ? 'תוכנית ללא הגבלה למשתמשים מיוחדים' : 'חשבון ניסיוני בתוקף מוגבל בימים'}
+                       </p>
+
+                       {/* Primary quota shown as a big "price-like" figure */}
+                       <div className="mt-5 flex items-baseline justify-end gap-1.5">
+                         <input
+                           type="number"
+                           className={`w-20 bg-transparent text-left font-black text-4xl outline-none border-b-2 focus:border-current transition-colors ${
+                             isPremium ? 'text-white border-white/30' : isTrial ? 'text-white border-white/20' : 'text-slate-800 border-slate-200'
+                           }`}
+                           value={systemConfig[plan]?.maxBots ?? 0}
+                           onChange={e => handleConfigChange(plan, 'maxBots', e.target.value)}
+                         />
+                         <span className={`text-xs font-bold ${isPremium ? 'text-sky-100' : isTrial ? 'text-slate-400' : 'text-slate-500'}`}>בוטים</span>
+                       </div>
                      </div>
-                     
-                     <div className="p-6 space-y-6">
-                       <div className="space-y-4">
-                         <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-wider flex items-center gap-1.5 border-b border-slate-100 pb-2">
-                            <Bot size={14} /> מגבלות ומשאבים
-                         </h4>
-                         <div className="grid grid-cols-2 gap-4">
-                           <div>
-                             <label className="block text-[10px] font-bold text-slate-500 mb-1">מקסימום בוטים</label>
-                             <input 
-                                type="number" 
-                                className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-black text-lg text-center focus:ring-2 focus:ring-sky-200 focus:border-sky-500 outline-none transition-all text-slate-800"
-                                value={systemConfig[plan]?.maxBots ?? 0}
-                                onChange={e => handleConfigChange(plan, 'maxBots', e.target.value)}
-                              />
-                           </div>
-                           <div>
-                             <label className="block text-[10px] font-bold text-slate-500 mb-1">גרסאות לבוט</label>
-                             <input 
-                                type="number" 
-                                className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-black text-lg text-center focus:ring-2 focus:ring-sky-200 focus:border-sky-500 outline-none transition-all text-slate-800"
-                                value={systemConfig[plan]?.maxVersions ?? 0}
-                                onChange={e => handleConfigChange(plan, 'maxVersions', e.target.value)}
-                              />
-                           </div>
-                           <div className="col-span-2">
-                             <label className="block text-[10px] font-bold text-slate-500 mb-1">מקסימום מספרים מחוברים</label>
-                             <input 
-                                type="number" 
-                                className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-black text-lg text-center focus:ring-2 focus:ring-sky-200 focus:border-sky-500 outline-none transition-all text-slate-800"
-                                value={systemConfig[plan]?.maxConnectedNumbers ?? 1}
-                                onChange={e => handleConfigChange(plan, 'maxConnectedNumbers', e.target.value)}
-                              />
-                           </div>
-                         </div>
-                         {plan === 'Trial' && (
-                           <div>
-                             <label className="block text-[10px] font-bold text-slate-500 mb-1">תוקף ניסיון (בימים)</label>
-                             <input 
-                                type="number" 
-                                className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-black text-lg text-center focus:ring-2 focus:ring-amber-200 focus:border-amber-500 outline-none transition-all text-slate-800"
-                                value={systemConfig[plan]?.trialDays ?? 30}
-                                onChange={e => handleConfigChange(plan, 'trialDays', e.target.value)}
-                              />
-                           </div>
-                         )}
+
+                     <div className={`h-px w-full ${isPremium ? 'bg-white/15' : isTrial ? 'bg-white/10' : 'bg-slate-100'}`} />
+
+                     {/* Checklist-style body */}
+                     <div className="p-7 space-y-3 text-right">
+                       <div className={`flex items-center justify-between gap-3 rounded-2xl px-4 py-3 ${isPremium ? 'bg-white/10' : isTrial ? 'bg-white/5' : 'bg-slate-50'}`}>
+                         <input
+                           type="number"
+                           className={`w-16 text-center font-black rounded-lg outline-none px-1 py-1 ${
+                             isPremium ? 'bg-white/15 text-white' : isTrial ? 'bg-white/10 text-white' : 'bg-white border border-slate-200 text-slate-800'
+                           }`}
+                           value={systemConfig[plan]?.maxVersions ?? 0}
+                           onChange={e => handleConfigChange(plan, 'maxVersions', e.target.value)}
+                         />
+                         <span className="flex items-center gap-2 text-sm font-bold">
+                           גרסאות לבוט
+                           <CheckCircle size={16} className={isPremium || isTrial ? 'text-emerald-300' : 'text-emerald-500'} />
+                         </span>
                        </div>
 
-                       {plan !== 'Trial' && (
-                       <div className="space-y-4">
-                         <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-wider flex items-center gap-1.5 border-b border-slate-100 pb-2">
-                            <CreditCard size={14} /> תמחור הרחבות (בש"ח)
-                         </h4>
-                         <div className="space-y-3">
-                           <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-100 hover:border-slate-200 transition-colors">
-                             <label className="text-xs font-bold text-slate-600">מחיר לבוט נוסף</label>
-                             <div className="flex items-center gap-1.5">
-                                <span className="text-slate-400 font-bold text-xs">₪</span>
-                                <input 
-                                  type="number" 
-                                  className="w-20 p-1.5 bg-white border border-slate-200 rounded-lg font-bold text-center focus:ring-2 focus:ring-sky-500 outline-none text-sm"
-                                  value={systemConfig[plan]?.botPrice ?? 0}
-                                  onChange={e => handleConfigChange(plan, 'botPrice', e.target.value)}
-                                />
-                             </div>
-                           </div>
-                           <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-100 hover:border-slate-200 transition-colors">
-                             <label className="text-xs font-bold text-slate-600">מחיר לגרסה נוספת</label>
-                             <div className="flex items-center gap-1.5">
-                                <span className="text-slate-400 font-bold text-xs">₪</span>
-                                <input 
-                                  type="number" 
-                                  className="w-20 p-1.5 bg-white border border-slate-200 rounded-lg font-bold text-center focus:ring-2 focus:ring-sky-500 outline-none text-sm"
-                                  value={systemConfig[plan]?.versionPrice ?? 0}
-                                  onChange={e => handleConfigChange(plan, 'versionPrice', e.target.value)}
-                                />
-                             </div>
-                           </div>
-                         </div>
+                       <div className={`flex items-center justify-between gap-3 rounded-2xl px-4 py-3 ${isPremium ? 'bg-white/10' : isTrial ? 'bg-white/5' : 'bg-slate-50'}`}>
+                         <input
+                           type="number"
+                           className={`w-16 text-center font-black rounded-lg outline-none px-1 py-1 ${
+                             isPremium ? 'bg-white/15 text-white' : isTrial ? 'bg-white/10 text-white' : 'bg-white border border-slate-200 text-slate-800'
+                           }`}
+                           value={systemConfig[plan]?.maxConnectedNumbers ?? 1}
+                           onChange={e => handleConfigChange(plan, 'maxConnectedNumbers', e.target.value)}
+                         />
+                         <span className="flex items-center gap-2 text-sm font-bold">
+                           מספרים מחוברים
+                           <CheckCircle size={16} className={isPremium || isTrial ? 'text-emerald-300' : 'text-emerald-500'} />
+                         </span>
                        </div>
+
+                       <div className={`flex items-center justify-between gap-3 rounded-2xl px-4 py-3 ${isPremium ? 'bg-white/10' : isTrial ? 'bg-white/5' : 'bg-slate-50'}`}>
+                         <input
+                           type="number"
+                           className={`w-16 text-center font-black rounded-lg outline-none px-1 py-1 ${
+                             isPremium ? 'bg-white/15 text-white' : isTrial ? 'bg-white/10 text-white' : 'bg-white border border-slate-200 text-slate-800'
+                           }`}
+                           value={systemConfig[plan]?.maxReps ?? 0}
+                           onChange={e => handleConfigChange(plan, 'maxReps', e.target.value)}
+                         />
+                         <span className="flex items-center gap-2 text-sm font-bold">
+                           מספר נציגים
+                           <CheckCircle size={16} className={isPremium || isTrial ? 'text-emerald-300' : 'text-emerald-500'} />
+                         </span>
+                       </div>
+
+                       <div className={`flex items-center justify-between gap-3 rounded-2xl px-4 py-3 ${isPremium ? 'bg-white/10' : isTrial ? 'bg-white/5' : 'bg-slate-50'}`}>
+                         <input
+                           type="number"
+                           className={`w-16 text-center font-black rounded-lg outline-none px-1 py-1 ${
+                             isPremium ? 'bg-white/15 text-white' : isTrial ? 'bg-white/10 text-white' : 'bg-white border border-slate-200 text-slate-800'
+                           }`}
+                           value={systemConfig[plan]?.maxActiveContacts ?? 0}
+                           onChange={e => handleConfigChange(plan, 'maxActiveContacts', e.target.value)}
+                         />
+                         <span className="flex items-center gap-2 text-sm font-bold">
+                           אנשי קשר פעילים
+                           <CheckCircle size={16} className={isPremium || isTrial ? 'text-emerald-300' : 'text-emerald-500'} />
+                         </span>
+                       </div>
+
+                       {isTrial && (
+                         <div className="flex items-center justify-between gap-3 rounded-2xl px-4 py-3 bg-white/5">
+                           <input
+                             type="number"
+                             className="w-16 text-center font-black rounded-lg outline-none px-1 py-1 bg-white/10 text-white"
+                             value={systemConfig[plan]?.trialDays ?? 30}
+                             onChange={e => handleConfigChange(plan, 'trialDays', e.target.value)}
+                           />
+                           <span className="flex items-center gap-2 text-sm font-bold">
+                             ימי תוקף לניסיון
+                             <CheckCircle size={16} className="text-emerald-300" />
+                           </span>
+                         </div>
                        )}
-                       {plan === 'Trial' && (
-                         <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
-                           <p className="text-xs font-bold text-amber-700 text-right">חשבון ניסיוני: גישה לסימולטור בלבד, ללא פרסום וללא גרסאות. לאחר התוקף הבוט ייחסם.</p>
+
+                       {!isTrial && (
+                         <>
+                           <div className={`flex items-center justify-between gap-3 rounded-2xl px-4 py-3 ${isPremium ? 'bg-white/10' : 'bg-slate-50'}`}>
+                             <div className="flex items-center gap-1.5">
+                               <input
+                                 type="number"
+                                 className={`w-14 text-center font-black rounded-lg outline-none px-1 py-1 ${
+                                   isPremium ? 'bg-white/15 text-white' : 'bg-white border border-slate-200 text-slate-800'
+                                 }`}
+                                 value={systemConfig[plan]?.botPrice ?? 0}
+                                 onChange={e => handleConfigChange(plan, 'botPrice', e.target.value)}
+                               />
+                               <span className={`text-xs font-bold ${isPremium ? 'text-sky-100' : 'text-slate-400'}`}>₪</span>
+                             </div>
+                             <span className="flex items-center gap-2 text-sm font-bold">
+                               מחיר לבוט נוסף
+                               <CheckCircle size={16} className={isPremium ? 'text-emerald-300' : 'text-emerald-500'} />
+                             </span>
+                           </div>
+
+                           <div className={`flex items-center justify-between gap-3 rounded-2xl px-4 py-3 ${isPremium ? 'bg-white/10' : 'bg-slate-50'}`}>
+                             <div className="flex items-center gap-1.5">
+                               <input
+                                 type="number"
+                                 className={`w-14 text-center font-black rounded-lg outline-none px-1 py-1 ${
+                                   isPremium ? 'bg-white/15 text-white' : 'bg-white border border-slate-200 text-slate-800'
+                                 }`}
+                                 value={systemConfig[plan]?.versionPrice ?? 0}
+                                 onChange={e => handleConfigChange(plan, 'versionPrice', e.target.value)}
+                               />
+                               <span className={`text-xs font-bold ${isPremium ? 'text-sky-100' : 'text-slate-400'}`}>₪</span>
+                             </div>
+                             <span className="flex items-center gap-2 text-sm font-bold">
+                               מחיר לגרסה נוספת
+                               <CheckCircle size={16} className={isPremium ? 'text-emerald-300' : 'text-emerald-500'} />
+                             </span>
+                           </div>
+                         </>
+                       )}
+
+                       {isTrial && (
+                         <div className="bg-white/5 border border-white/10 rounded-2xl px-4 py-3 mt-2">
+                           <p className="text-xs font-bold text-slate-300 text-right leading-relaxed">חשבון ניסיוני: גישה לסימולטור בלבד, ללא פרסום וללא גרסאות. לאחר התוקף הבוט ייחסם.</p>
                          </div>
                        )}
                      </div>
                    </div>
-                 ))}
+                   );
+                 })}
                </div>
 
                {/* ── Global default config for the auto-removal-from-group feature ── */}
@@ -4608,7 +4696,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                 >
                   <option value="Trial">ניסיון</option>
                   <option value="Basic">בסיסי</option>
-                  <option value="Premium">פרימיום</option>
+                  <option value="Premium">מתקדם</option>
+                  <option value="Pro">פרימיום</option>
+                  <option value="Unlimited">ללא הגבלה</option>
                 </select>
               </div>
               <div>

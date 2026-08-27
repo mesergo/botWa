@@ -486,6 +486,7 @@ const SendMessagesPage: React.FC<SendMessagesPageProps> = ({
         onBack={onBack}
         onLogout={onLogout}
         onOpenAdminPanel={onOpenAdminPanel}
+        sidebarHandlesProfile
         showMobileNavToggle
         mobileNavOpen={mobileNavOpen}
         onMobileNavToggle={() => setMobileNavOpen((prev) => !prev)}
@@ -500,6 +501,9 @@ const SendMessagesPage: React.FC<SendMessagesPageProps> = ({
           mobileMenuOpen={mobileNavOpen}
           onMobileMenuOpenChange={setMobileNavOpen}
           onGoHome={onGoHome}
+          currentUser={currentUser as any}
+          onLogout={onLogout}
+          onOpenAdminPanel={onOpenAdminPanel}
           onBots={can('bots.view_tab') ? onBack : undefined}
           onSessions={onOpenSessions ? () => onOpenSessions() : undefined}
           onContacts={onOpenContacts ? () => onOpenContacts() : undefined}

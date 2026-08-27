@@ -1045,7 +1045,9 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
       
       <nav className="h-20 bg-white border-b border-slate-100 flex items-center justify-between px-4 md:px-10 z-20">
         <div className="flex items-center gap-4">
-          <button onClick={onLogout} className="p-2.5 text-slate-300 hover:text-red-500 transition-colors rounded-xl hover:bg-red-50"><LogOut size={22} /></button>
+          {isMobileTopBar && (
+            <button onClick={onLogout} className="p-2.5 text-slate-300 hover:text-red-500 transition-colors rounded-xl hover:bg-red-50"><LogOut size={22} /></button>
+          )}
           <img src="/images/mesergo-logo.png" alt="Logo" className="h-10 w-auto cursor-pointer hover:scale-105 transition-transform" onClick={() => setActiveTab('bots')} />
         </div>
 
@@ -1059,7 +1061,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
               onChange={onUpdateAvailability}
             />
           )}
-          {currentUser?.role === 'admin' && !currentUser?.isImpersonating && onOpenAdminPanel && (
+          {isMobileTopBar && currentUser?.role === 'admin' && !currentUser?.isImpersonating && onOpenAdminPanel && (
             <button
               onClick={onOpenAdminPanel}
               className="flex items-center gap-2 px-4 py-2 bg-blue-100 text-blue-700 rounded-lg font-bold hover:bg-blue-200 transition-colors"
@@ -1106,6 +1108,9 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
         {/* ── Right Sidebar ── */}
         <AppNav
           mode="sidebar"
+          currentUser={currentUser as any}
+          onLogout={onLogout}
+          onOpenAdminPanel={!currentUser?.isImpersonating ? onOpenAdminPanel : undefined}
           activePage={activeTab}
           hideMobileTrigger
           mobileMenuOpen={mobileNavOpen}

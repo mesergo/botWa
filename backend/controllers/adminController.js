@@ -11,9 +11,13 @@ import { normalizeLinkBody, sanitizeNumber, normalizePhone } from './whatsappReg
   
 // Default configuration if DB is empty (used for fallback)
 const DEFAULT_ACCOUNTS_CONFIG = {
-  Trial: { maxBots: 1, maxVersions: 0, versionPrice: 0, botPrice: 0, canPublish: false, trialDays: 30, maxConnectedNumbers: 1 },
-  Basic: { maxBots: 3, maxVersions: 5, versionPrice: 5, botPrice: 30, canPublish: true, maxConnectedNumbers: 1 },
-  Premium: { maxBots: 6, maxVersions: 10, versionPrice: 5, botPrice: 30, canPublish: true, maxConnectedNumbers: 3 }
+  Trial: { maxBots: 1, maxVersions: 0, versionPrice: 0, botPrice: 0, canPublish: false, trialDays: 30, maxConnectedNumbers: 1, maxReps: 0, maxActiveContacts: 50 },
+  Basic: { maxBots: 3, maxVersions: 5, versionPrice: 5, botPrice: 30, canPublish: true, maxConnectedNumbers: 1, maxReps: 1, maxActiveContacts: 200 },
+  Premium: { maxBots: 6, maxVersions: 10, versionPrice: 5, botPrice: 30, canPublish: true, maxConnectedNumbers: 3, maxReps: 3, maxActiveContacts: 500 },
+  Pro: { maxBots: 10, maxVersions: 15, versionPrice: 5, botPrice: 30, canPublish: true, maxConnectedNumbers: 5, maxReps: 5, maxActiveContacts: 1000 },
+  Unlimited: { maxBots: 999, maxVersions: 999, versionPrice: 0, botPrice: 0, canPublish: true, maxConnectedNumbers: 999, maxReps: 999, maxActiveContacts: 999999 },
+  // Global (not per-plan) setting: size of the rolling window used to compute "active contacts".
+  activeContactsWindowDays: 60
 }; 
 
 export const getSystemSettings = async (req, res) => {
@@ -605,6 +609,13 @@ export const getAllUsers = async (req, res) => {
       .select('-password')
       .populate('user_type_id', 'name system_role')
       .sort({ createdAt: -1 });
+
+    // Count reps/sub-users linked to each manager in a single aggregation (avoids N+1 queries)
+    const repsCountAgg = await User.aggregate([
+      { $match: { manager_id: { $ne: null } } },
+      { $group: { _id: '$manager_id', count: { $sum: 1 } } }
+    ]);
+    const repsCountByManagerId = new Map(repsCountAgg.map(r => [String(r._id), r.count]));
     
     // Get additional stats for each user
     const usersWithStats = await Promise.all(users.map(async (user) => {
@@ -634,6 +645,9 @@ export const getAllUsers = async (req, res) => {
         updatedAt: user.updatedAt,
         custom_limits: user.custom_limits,
         limits_in_effect: limits,
+        active_contacts_count: user.active_contacts_count || 0,
+        active_contacts_quota_exceeded: user.active_contacts_quota_exceeded === true,
+        reps_count: repsCountByManagerId.get(userId) || 0,
         stats: {
           bots: botCount,
           flows: sessionCount
@@ -660,6 +674,7 @@ export const getUserDetails = async (req, res) => {
     const bots = await BotFlow.find({ user_id: userId }); // Fixed: BotFlow
     const sessionCount = await BotSession.countDocuments({ user_id: userId });
     const limits = await getUserLimits(user);
+    const repsCount = await User.countDocuments({ manager_id: userId });
     
     res.json({
       user: {
@@ -680,6 +695,9 @@ export const getUserDetails = async (req, res) => {
         facebook_connect_enabled: user.facebook_connect_enabled === true,
         custom_limits: user.custom_limits,
         limits_in_effect: limits,
+        active_contacts_count: user.active_contacts_count || 0,
+        active_contacts_quota_exceeded: user.active_contacts_quota_exceeded === true,
+        reps_count: repsCount,
         createdAt: user.createdAt,
         updatedAt: user.updatedAt,
         connected_numbers_count: (user.connected_numbers || []).length,
@@ -716,7 +734,27 @@ export const updateUser = async (req, res) => {
     if (status) user.status = status;
     if (account_type) user.account_type = account_type;
     if (dialog360_bot_id !== undefined) user.dialog360_bot_id = dialog360_bot_id;
-    if (manager_id !== undefined) user.manager_id = manager_id || null;
+    if (manager_id !== undefined) {
+      const newManagerId = manager_id || null;
+      // Only re-check quota when actually assigning to a *different* manager
+      // (re-saving the same manager, or clearing it, should never be blocked).
+      if (newManagerId && newManagerId !== user.manager_id) {
+        const managerUser = await User.findById(newManagerId);
+        if (!managerUser) return res.status(400).json({ error: 'המנהל שנבחר לא נמצא' });
+        const managerLimits = await getUserLimits(managerUser);
+        const maxReps = managerLimits.maxReps ?? 0;
+        const currentRepsCount = await User.countDocuments({ manager_id: newManagerId });
+        if (currentRepsCount >= maxReps) {
+          return res.status(403).json({
+            error: `המנהל הגיע למכסת הנציגים המקסימלית (${maxReps}). לא ניתן להוסיף נציג נוסף.`,
+            repsQuotaExceeded: true,
+            maxReps,
+            currentRepsCount
+          });
+        }
+      }
+      user.manager_id = newManagerId;
+    }
     if (Array.isArray(allowed_bot_ids)) user.allowed_bot_ids = allowed_bot_ids;
     if (sms_in_enabled !== undefined) user.sms_in_enabled = sms_in_enabled === true;
     if (facebook_connect_enabled !== undefined) user.facebook_connect_enabled = facebook_connect_enabled === true;
@@ -984,6 +1022,24 @@ export const createUser = async (req, res) => {
       if (!userType) return res.status(400).json({ error: 'סוג משתמש לא קיים' });
       role = userType.system_role || 'user';
       resolvedUserTypeId = userType._id;
+    }
+
+    // If this new user is being assigned as a rep under a manager, enforce that
+    // manager's rep quota (plan limit, or custom override) before creating it.
+    if (manager_id) {
+      const managerUser = await User.findById(manager_id);
+      if (!managerUser) return res.status(400).json({ error: 'המנהל שנבחר לא נמצא' });
+      const managerLimits = await getUserLimits(managerUser);
+      const maxReps = managerLimits.maxReps ?? 0;
+      const currentRepsCount = await User.countDocuments({ manager_id });
+      if (currentRepsCount >= maxReps) {
+        return res.status(403).json({
+          error: `המנהל הגיע למכסת הנציגים המקסימלית (${maxReps}). לא ניתן להוסיף נציג נוסף.`,
+          repsQuotaExceeded: true,
+          maxReps,
+          currentRepsCount
+        });
+      }
     }
 
     const publicId = Math.random().toString(36).substring(2, 15);

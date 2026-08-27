@@ -3,10 +3,19 @@ import SystemSetting from '../models/SystemSetting.js';
 
 // Default configuration if DB is empty
 const DEFAULT_CONFIG = {
-  Trial: { maxBots: 1, maxVersions: 0, versionPrice: 0, botPrice: 0, canPublish: false, trialDays: 30, maxConnectedNumbers: 1 },
-  Basic: { maxBots: 3, maxVersions: 5, versionPrice: 5, botPrice: 30, canPublish: true, maxConnectedNumbers: 1 },
-  Premium: { maxBots: 6, maxVersions: 10, versionPrice: 5, botPrice: 30, canPublish: true, maxConnectedNumbers: 5 }
+  Trial: { maxBots: 1, maxVersions: 0, versionPrice: 0, botPrice: 0, canPublish: false, trialDays: 30, maxConnectedNumbers: 1, maxReps: 0, maxActiveContacts: 50 },
+  Basic: { maxBots: 3, maxVersions: 5, versionPrice: 5, botPrice: 30, canPublish: true, maxConnectedNumbers: 1, maxReps: 1, maxActiveContacts: 200 },
+  Premium: { maxBots: 6, maxVersions: 10, versionPrice: 5, botPrice: 30, canPublish: true, maxConnectedNumbers: 5, maxReps: 3, maxActiveContacts: 500 },
+  Pro: { maxBots: 10, maxVersions: 15, versionPrice: 5, botPrice: 30, canPublish: true, maxConnectedNumbers: 5, maxReps: 5, maxActiveContacts: 1000 },
+  Unlimited: { maxBots: 999, maxVersions: 999, versionPrice: 0, botPrice: 0, canPublish: true, maxConnectedNumbers: 999, maxReps: 999, maxActiveContacts: 999999 },
+  // Global (not per-plan) setting: size of the rolling window used to compute "active contacts".
+  activeContactsWindowDays: 60
 };
+
+// Single global (not per-plan) setting, sibling to the per-plan tier objects above.
+// mergedConfig = { ...DEFAULT_CONFIG, ...accountsConfig } is a plain shallow merge, so an
+// admin-saved `activeContactsWindowDays` on accountsConfig overrides this fallback transparently.
+export const getActiveContactsWindowDays = (mergedConfig) => mergedConfig?.activeContactsWindowDays ?? 60;
 
 export const getUserLimits = async (user) => {
   // 1. Get global settings
@@ -43,6 +52,12 @@ export const getUserLimits = async (user) => {
     if (user.custom_limits.bot_price !== null) limits.botPrice = user.custom_limits.bot_price;
     if (user.custom_limits.max_connected_numbers !== null && user.custom_limits.max_connected_numbers !== undefined) {
       limits.maxConnectedNumbers = user.custom_limits.max_connected_numbers;
+    }
+    if (user.custom_limits.max_reps !== null && user.custom_limits.max_reps !== undefined) {
+      limits.maxReps = user.custom_limits.max_reps;
+    }
+    if (user.custom_limits.max_active_contacts !== null && user.custom_limits.max_active_contacts !== undefined) {
+      limits.maxActiveContacts = user.custom_limits.max_active_contacts;
     }
   }
 

@@ -53,8 +53,18 @@ const userSchema = new mongoose.Schema({
     max_versions: { type: Number, default: null },
     version_price: { type: Number, default: null },
     bot_price: { type: Number, default: null },
-    max_connected_numbers: { type: Number, default: null }
+    max_connected_numbers: { type: Number, default: null },
+    max_reps: { type: Number, default: null },
+    max_active_contacts: { type: Number, default: null }
   },
+  // Cached results of the "active contacts" (60-day, per-plan) quota check — computed
+  // periodically by utils/activeContactsTicker.js, not on every request. See plan:
+  // activeContactsQuota.
+  active_contacts_count: { type: Number, default: 0 },
+  active_contacts_computed_at: { type: Date, default: null },
+  active_contacts_quota_exceeded: { type: Boolean, default: false },
+  active_contacts_last_alert_at: { type: Date, default: null },
+  active_contacts_next_check_at: { type: Date, default: null },
   trial_expires_at: { type: Date, default: null },
   rep_group_ids: [{ type: mongoose.Schema.Types.ObjectId, ref: 'RepGroup', default: [] }],
   // Bot restriction for reps: when non-empty, this rep can only see sessions of these bots.

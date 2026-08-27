@@ -17,6 +17,7 @@ import SessionsPage from './components/SessionsPage';
 import GroupsPage from './components/GroupsPage';
 import SmsInPage from './components/SmsInPage';
 import SendMessagesPage from './components/SendMessagesPage';
+import ActiveContactsQuotaToast from './components/ActiveContactsQuotaToast';
 import { StartNode, InputTextNode, InputDateNode, InputFileNode, OutputTextNode, OutputImageNode, OutputLinkNode, OutputMenuNode, ActionWebServiceNode, ActionWaitNode, ActionTimeRoutingNode, ActionAddToGroupNode, ActionRemoveFromGroupNode, ActionTransferToAgentNode, ActionSetParameterNode, FixedProcessNode, AutomaticResponsesNode } from './components/nodes/CustomNodes';
 import ButtonEdge from './components/edges/ButtonEdge';
 import { CloudUpload, RotateCcw, Plus, AlertTriangle, Copy, X, Lock, Wallet, Sliders, Save } from 'lucide-react';
@@ -178,10 +179,16 @@ const FlowBuilder: React.FC = () => {
         const res = await fetch(`${API_BASE}/auth/profile`, { headers: { Authorization: `Bearer ${token}` } });
         if (!res.ok) return;
         const profile = await res.json();
-        if (!profile?.permissions) return;
+        if (!profile) return;
         setCurrentUser(prev => {
           if (!prev) return prev;
-          const updated = { ...prev, permissions: profile.permissions } as User;
+          const updated = {
+            ...prev,
+            ...(profile.permissions ? { permissions: profile.permissions } : {}),
+            active_contacts_count: profile.active_contacts_count,
+            active_contacts_quota_exceeded: profile.active_contacts_quota_exceeded === true,
+            limits_in_effect: profile.limits_in_effect,
+          } as User;
           try {
             const storage = localStorage.getItem('flowbot_token') ? localStorage : sessionStorage;
             storage.setItem('flowbot_user', JSON.stringify(updated));
@@ -195,6 +202,15 @@ const FlowBuilder: React.FC = () => {
   
   const [bots, setBots] = useState<BotFlow[]>([]);
   const [selectedBot, setSelectedBot] = useState<BotFlow | null>(null);
+  // Bumped on every page navigation while the active-contacts quota is exceeded, so the
+  // toast re-shows/restarts its auto-dismiss timer per requirement. See plan: activeContactsQuota.
+  const [contactsQuotaToastKey, setContactsQuotaToastKey] = useState(0);
+  useEffect(() => {
+    if (currentUser?.active_contacts_quota_exceeded) {
+      setContactsQuotaToastKey(k => k + 1);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname]);
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('mode') === 'simulator') return 'simulator-only';
@@ -2563,6 +2579,8 @@ const FlowBuilder: React.FC = () => {
               onGoToChats={() => { setSessionsOwnOnly(true); navigate('/sessions'); }}
               onGoToContacts={() => navigate('/contacts')}
               onGoToSmsIn={can('sms_in.view') ? () => navigate('/sms-in') : undefined}
+              onGoToSendMessages={can('send_messages.view') ? () => navigate('/send-messages') : undefined}
+              onGoToUsers={can('users.view') ? () => navigate('/users') : undefined}
               onGoToSettings={() => navigate('/settings')}
               onOpenAdminPanel={currentUser?.role === 'admin' ? () => navigate('/admin') : undefined}
               onLogout={handleLogout}
@@ -2765,6 +2783,13 @@ const FlowBuilder: React.FC = () => {
           } />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
+        {currentUser?.active_contacts_quota_exceeded && (
+          <ActiveContactsQuotaToast
+            count={currentUser.active_contacts_count ?? 0}
+            limit={currentUser.limits_in_effect?.maxActiveContacts}
+            triggerKey={contactsQuotaToastKey}
+          />
+        )}
       </>
     );
   }

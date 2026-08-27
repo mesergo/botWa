@@ -224,6 +224,9 @@ export interface User {
   impersonatedBy?: string;
   user_type_id?: string | null;
   permissions?: UserTypePermissions;
+  active_contacts_count?: number;
+  active_contacts_quota_exceeded?: boolean;
+  limits_in_effect?: { maxActiveContacts?: number; [k: string]: any };
 }
 
 export interface CarouselItem {

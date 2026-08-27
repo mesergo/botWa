@@ -987,10 +987,13 @@ export const getProfile = async (req, res) => {
         version_price: user.custom_limits?.version_price ?? null,
         bot_price: user.custom_limits?.bot_price ?? null,
         max_connected_numbers: user.custom_limits?.max_connected_numbers ?? null,
+        max_active_contacts: user.custom_limits?.max_active_contacts ?? null,
       },
       limits_in_effect,
       active_bots_count,
       flows_count,
+      active_contacts_count: user.active_contacts_count || 0,
+      active_contacts_quota_exceeded: user.active_contacts_quota_exceeded === true,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1036,8 +1039,11 @@ export const updateProfile = async (req, res) => {
         version_price: user.custom_limits?.version_price ?? null,
         bot_price: user.custom_limits?.bot_price ?? null,
         max_connected_numbers: user.custom_limits?.max_connected_numbers ?? null,
+        max_active_contacts: user.custom_limits?.max_active_contacts ?? null,
       },
       limits_in_effect,
+      active_contacts_count: user.active_contacts_count || 0,
+      active_contacts_quota_exceeded: user.active_contacts_quota_exceeded === true,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

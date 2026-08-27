@@ -1,5 +1,5 @@
 import React from 'react';
-import { Bot, MessageSquare, Users, Settings, LogOut, Shield, ArrowLeft, LayoutDashboard, Inbox } from 'lucide-react';
+import { Bot, MessageSquare, Users, Settings, LogOut, Shield, ArrowLeft, LayoutDashboard, Inbox, Send, UserCog } from 'lucide-react';
 import { User } from '../types';
 import { usePermission } from '../hooks/usePermission';
 import DashboardStats from './DashboardStats';
@@ -11,6 +11,8 @@ interface HomePageProps {
   onGoToChats: () => void;
   onGoToContacts: () => void;
   onGoToSmsIn?: () => void;
+  onGoToSendMessages?: () => void;
+  onGoToUsers?: () => void;
   onGoToSettings: () => void;
   onOpenAdminPanel?: () => void;
   onLogout: () => void;
@@ -20,7 +22,7 @@ interface HomePageProps {
 }
 
 // Sidebar nav items definition
-type NavId = 'home' | 'bots' | 'chats' | 'sms_in' | 'contacts' | 'settings';
+type NavId = 'home' | 'bots' | 'chats' | 'sms_in' | 'contacts' | 'send_messages' | 'users' | 'settings';
 
 interface SideNavItem {
   id: NavId;
@@ -37,6 +39,8 @@ const SIDE_NAV: SideNavItem[] = [
   { id: 'chats',    label: 'שיחות',         Icon: MessageSquare,   color: 'text-emerald-600', permission: 'sessions.view' },
   { id: 'sms_in',   label: 'SMS נכנס',      Icon: Inbox,           color: 'text-sky-600',     permission: 'sms_in.view' },
   { id: 'contacts', label: 'אנשי קשר',     Icon: Users,           color: 'text-violet-600',  permission: 'contacts.view' },
+  { id: 'send_messages', label: 'שליחת הודעות', Icon: Send,       color: 'text-fuchsia-600', permission: 'send_messages.view' },
+  { id: 'users',    label: 'משתמשים',      Icon: UserCog,         color: 'text-cyan-600',    permission: 'users.view' },
   { id: 'settings', label: 'הגדרות',        Icon: Settings,        color: 'text-slate-500',   permission: 'settings.view' },
 ];
 
@@ -83,6 +87,26 @@ const tiles = [
     badge: null,
   },
   {
+    id: 'send_messages' as const,
+    label: 'שליחת הודעות',
+    description: 'שליחת הודעות לאנשי קשר וקבוצות',
+    icon: Send,
+    color: 'text-fuchsia-600',
+    bg: 'bg-fuchsia-50',
+    border: 'hover:border-fuchsia-200',
+    badge: null,
+  },
+  {
+    id: 'users' as const,
+    label: 'משתמשים',
+    description: 'ניהול נציגים ומשתמשי צוות',
+    icon: UserCog,
+    color: 'text-cyan-600',
+    bg: 'bg-cyan-50',
+    border: 'hover:border-cyan-200',
+    badge: null,
+  },
+  {
     id: 'settings' as const,
     label: 'הגדרות',
     description: 'הגדרות חשבון ופרופיל',
@@ -100,6 +124,8 @@ const HomePage: React.FC<HomePageProps> = ({
   onGoToChats,
   onGoToContacts,
   onGoToSmsIn,
+  onGoToSendMessages,
+  onGoToUsers,
   onGoToSettings,
   onOpenAdminPanel,
   onLogout,
@@ -114,6 +140,8 @@ const HomePage: React.FC<HomePageProps> = ({
     if (id === 'chats') return onGoToChats;
     if (id === 'sms_in') return onGoToSmsIn;
     if (id === 'contacts') return onGoToContacts;
+    if (id === 'send_messages') return onGoToSendMessages;
+    if (id === 'users') return onGoToUsers;
     if (id === 'settings') return onGoToSettings;
     return undefined;
   };
@@ -121,6 +149,8 @@ const HomePage: React.FC<HomePageProps> = ({
   const mobileNavItems = SIDE_NAV.filter(({ id, permission }) => {
     if (id === 'home') return false;
     if (id === 'sms_in' && !onGoToSmsIn) return false;
+    if (id === 'send_messages' && !onGoToSendMessages) return false;
+    if (id === 'users' && !onGoToUsers) return false;
     return !permission || can(permission as any);
   });
 
@@ -129,6 +159,8 @@ const HomePage: React.FC<HomePageProps> = ({
     if (id === 'chats')    return can('sessions.view');
     if (id === 'contacts') return can('contacts.view');
     if (id === 'sms_in')   return can('sms_in.view') && !!onGoToSmsIn;
+    if (id === 'send_messages') return can('send_messages.view') && !!onGoToSendMessages;
+    if (id === 'users')   return can('users.view') && !!onGoToUsers;
     if (id === 'settings') return can('settings.view');
     return true;
   });
@@ -138,6 +170,8 @@ const HomePage: React.FC<HomePageProps> = ({
     else if (id === 'chats') onGoToChats();
     else if (id === 'contacts') onGoToContacts();
     else if (id === 'sms_in') onGoToSmsIn?.();
+    else if (id === 'send_messages') onGoToSendMessages?.();
+    else if (id === 'users') onGoToUsers?.();
     else if (id === 'settings') onGoToSettings();
   };
 
@@ -171,7 +205,7 @@ const HomePage: React.FC<HomePageProps> = ({
 
         {/* Profile */}
         <div className="flex flex-col items-center pt-10 px-6 pb-6 border-b border-slate-100">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-2xl shadow-md select-none mb-4">
+          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-2xl shadow-md select-none mb-4">
             {initial}
           </div>
           <p className="text-slate-400 text-[10px] font-semibold uppercase tracking-widest mb-1">ברוך הבא</p>
@@ -197,8 +231,7 @@ const HomePage: React.FC<HomePageProps> = ({
         </div>
 
         {/* Nav items */}
-        <nav className="flex flex-col gap-0.5 px-3 pt-5">
-          <p className="px-3 pb-2 text-[10px] font-semibold text-slate-400 uppercase tracking-widest">תפריט</p>
+        <nav className="flex flex-col gap-0.5 px-3 pt-2">
           {currentUser?.role === 'admin' && onOpenAdminPanel && (
             <button
               onClick={onOpenAdminPanel}

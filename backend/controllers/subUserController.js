@@ -5,6 +5,7 @@ import crypto from 'crypto';
 import { SECRET_KEY } from '../middleware/auth.js';
 import UserType from '../models/UserType.js';
 import { resolvePermissions, hasPermission } from '../middleware/auth.js';
+import { getUserLimits } from '../utils/limits.js';
 
 const INVITE_EXPIRY_DAYS = 7;
 
@@ -114,6 +115,12 @@ export const getSubUsers = async (req, res) => {
     const reps = await User.find({ manager_id: managerId }).select(
       'name email phone role status availability_status createdAt rep_group_ids allowed_bot_ids user_type_id invite_status invite_sent_at registration_completed_at'
     ).sort({ createdAt: -1 });
+
+    // Rep quota info for the company (based on the root manager's account plan / custom limits)
+    const managerForLimits = await User.findById(managerId).select('account_type trial_expires_at custom_limits').lean();
+    const managerLimits = managerForLimits ? await getUserLimits(managerForLimits) : { maxReps: 0 };
+    const repsLimit = { maxReps: managerLimits.maxReps ?? 0, repsCount: reps.length };
+
     res.json({
       users: reps.map(r => {
         const effectiveInviteStatus = getEffectiveInviteStatus(r);
@@ -135,7 +142,8 @@ export const getSubUsers = async (req, res) => {
           allowedBotIds: (r.allowed_bot_ids || []).map(id => id.toString()),
         };
       }),
-      availableUserTypes
+      availableUserTypes,
+      repsLimit
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -191,6 +199,19 @@ export const createSubUser = async (req, res) => {
     const allowedRoles = ['rep', 'rep_manager', 'user'];
     if (!allowedRoles.includes(effectiveRole)) {
       return res.status(400).json({ error: 'סוג המשתמש שנבחר אינו נתמך להוספה במסך זה' });
+    }
+
+    const managerForLimits = await User.findById(managerId).select('account_type trial_expires_at custom_limits').lean();
+    const managerLimits = managerForLimits ? await getUserLimits(managerForLimits) : { maxReps: 0 };
+    const maxReps = managerLimits.maxReps ?? 0;
+    const currentRepsCount = await User.countDocuments({ manager_id: managerId });
+    if (currentRepsCount >= maxReps) {
+      return res.status(403).json({
+        error: `הגעת למכסת הנציגים המקסימלית (${currentRepsCount}/${maxReps}) עבור סוג החשבון שלך. לצורך הוספת נציגים נוספים יש לפנות למשרד.`,
+        repsQuotaExceeded: true,
+        maxReps,
+        currentRepsCount
+      });
     }
 
     const normalizedEmail = email.toLowerCase().trim();

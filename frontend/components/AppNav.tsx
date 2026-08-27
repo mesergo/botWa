@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Bot, List, Users, Settings, UserCog, Home, MessageSquare, Send, Menu, X } from 'lucide-react';
+import { Bot, List, Users, Settings, UserCog, Home, MessageSquare, Send, Menu, X, LogOut, Shield } from 'lucide-react';
 
 export type NavPage = 'bots' | 'sessions' | 'contacts' | 'groups'| 'send_messages' | 'sms_in' | 'settings' | 'users';
 
@@ -14,6 +14,14 @@ const NAV_PATHS: Record<NavPage, string> = {
   sms_in:   '/sms-in',
   users:    '/users',
 };
+
+interface AppNavCurrentUser {
+  name?: string;
+  email?: string;
+  role?: string;
+  account_type?: string;
+  isImpersonating?: boolean;
+}
 
 interface AppNavProps {
   /** Explicit active page override — if omitted, derived from the current URL */
@@ -29,6 +37,10 @@ interface AppNavProps {
   onUsers?: () => void;
   /** Navigate back to the home / dashboard overview page */
   onGoHome?: () => void;
+  /** Shown in the sidebar's profile card (logo/avatar/name/email/account badge), like HomePage's sidebar */
+  currentUser?: AppNavCurrentUser | null;
+  onLogout?: () => void;
+  onOpenAdminPanel?: () => void;
   /** 'sidebar' = vertical panel (right side), 'tabs' = horizontal pill bar in navbar */
   mode?: 'sidebar' | 'tabs';
   /** Controls mobile drawer state externally (recommended with PageTopBar) */
@@ -62,6 +74,9 @@ const AppNav: React.FC<AppNavProps> = ({
   onSettings,
   onUsers,
   onGoHome,
+  currentUser,
+  onLogout,
+  onOpenAdminPanel,
   mode = 'sidebar',
   mobileMenuOpen,
   onMobileMenuOpenChange,
@@ -129,19 +144,76 @@ const AppNav: React.FC<AppNavProps> = ({
     onMobileMenuOpenChange?.(open);
   };
 
+  // Profile card data — mirrors HomePage's sidebar
+  const initial = (currentUser?.name?.charAt(0) || currentUser?.email?.charAt(0) || '?').toUpperCase();
+  const accountLabel = currentUser?.account_type === 'Trial' ? 'ניסיוני' : currentUser?.account_type ?? '';
+
+  const renderProfileSection = () => (
+    <>
+      <div className="flex flex-col items-center pt-8 px-6 pb-6 border-b border-slate-100 flex-shrink-0">
+        <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-xl shadow-md select-none mb-3">
+          {initial}
+        </div>
+        <p className="text-slate-900 font-bold text-sm text-center leading-snug truncate max-w-full">
+          {currentUser?.name ?? 'משתמש'}
+        </p>
+        {currentUser?.email && (
+          <p className="text-slate-400 text-xs mt-1 text-center break-all leading-snug">
+            {currentUser.email}
+          </p>
+        )}
+        {accountLabel && (
+          <span className={`inline-block mt-2 px-2.5 py-1 rounded-full text-[11px] font-semibold border ${
+            currentUser?.account_type === 'Premium'
+              ? 'bg-amber-50 text-amber-600 border-amber-100'
+              : currentUser?.account_type === 'Trial'
+              ? 'bg-orange-50 text-orange-600 border-orange-100'
+              : 'bg-slate-100 text-slate-500 border-slate-200'
+          }`}>
+            חשבון {accountLabel}
+          </span>
+        )}
+      </div>
+    </>
+  );
+
+  const renderAdminButton = () => (
+    currentUser?.role === 'admin' && onOpenAdminPanel ? (
+      <button
+        onClick={onOpenAdminPanel}
+        className="flex items-center gap-3 px-4 py-3.5 text-slate-500 hover:bg-slate-50 hover:text-slate-800 rounded-xl font-bold text-sm transition-all duration-200 w-full group"
+      >
+        <Shield size={20} className="flex-shrink-0 text-slate-400 group-hover:text-slate-600" />
+        <span className="tracking-tight">ניהול מערכת</span>
+      </button>
+    ) : null
+  );
+
+  const renderLogoutButton = () => (
+    onLogout ? (
+      <div className="px-4 pb-6 pt-2 flex-shrink-0">
+        <button
+          onClick={onLogout}
+          className="flex items-center gap-2.5 px-4 py-2.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-colors text-sm font-medium w-full"
+        >
+          <LogOut size={15} />
+          התנתק
+        </button>
+      </div>
+    ) : null
+  );
+
   const renderNavButtons = (iconSize: number, dense: boolean) => (
     <>
+      {renderAdminButton()}
       {onGoHome && (
-        <>
-          <button
-            onClick={onGoHome}
-            className={`flex items-center gap-3 px-4 ${dense ? 'py-3' : 'py-3.5'} rounded-xl font-bold text-sm transition-all duration-200 w-full text-slate-500 hover:bg-slate-50 hover:text-slate-800`}
-          >
-            <Home size={iconSize} className="flex-shrink-0 text-slate-400" />
-            <span className="tracking-tight">דף הבית</span>
-          </button>
-          <div className="my-1 border-t border-slate-100" />
-        </>
+        <button
+          onClick={onGoHome}
+          className={`flex items-center gap-3 px-4 ${dense ? 'py-3' : 'py-3.5'} rounded-xl font-bold text-sm transition-all duration-200 w-full text-slate-500 hover:bg-slate-50 hover:text-slate-800`}
+        >
+          <Home size={iconSize} className="flex-shrink-0 text-slate-400" />
+          <span className="tracking-tight">דף הבית</span>
+        </button>
       )}
 
       {visibleItems.map(({ key, label, Icon }) => {
@@ -215,11 +287,15 @@ const AppNav: React.FC<AppNavProps> = ({
               aria-hidden="true"
             />
             <aside
-              className="fixed right-0 top-20 bottom-0 w-64 bg-white border-l border-slate-100 flex flex-col py-4 px-3 gap-1 z-50 overflow-y-auto"
+              className="fixed right-0 top-20 bottom-0 w-64 bg-white border-l border-slate-100 flex flex-col z-50"
               style={{ boxShadow: '4px 0 24px rgba(0,0,0,0.03)' }}
               dir="rtl"
             >
-              {renderNavButtons(20, false)}
+              {renderProfileSection()}
+              <nav className="flex-1 overflow-y-auto flex flex-col gap-0.5 px-3 pt-3">
+                {renderNavButtons(20, false)}
+              </nav>
+              {renderLogoutButton()}
             </aside>
           </>
         )}
@@ -230,11 +306,15 @@ const AppNav: React.FC<AppNavProps> = ({
   if (mode === 'sidebar') {
     return (
       <aside
-        className="w-64 bg-white border-l border-slate-100 flex flex-col py-4 px-3 gap-1 z-10 overflow-y-auto"
+        className="w-64 bg-white border-l border-slate-100 flex flex-col z-10"
         style={{ boxShadow: '4px 0 24px rgba(0,0,0,0.03)' }}
         dir="rtl"
       >
-        {renderNavButtons(20, false)}
+        {renderProfileSection()}
+        <nav className="flex-1 overflow-y-auto flex flex-col gap-0.5 px-3 pt-3">
+          {renderNavButtons(20, false)}
+        </nav>
+        {renderLogoutButton()}
       </aside>
     );
   }

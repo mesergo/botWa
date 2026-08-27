@@ -35,6 +35,7 @@ import { seedUserTypes } from './scripts/seed-user-types.js';
 import { authenticateToken } from './middleware/auth.js';
 import { setPushNotificationService } from './config/pushNotificationsRuntime.js';
 import { registerExpoPushNotifier } from './utils/expoPushNotifier.js';
+import './utils/activeContactsTicker.js';
  
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
