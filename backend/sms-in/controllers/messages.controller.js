@@ -1,8 +1,16 @@
 import * as smsService from '../services/sms.service.js';
 import { getSmsDbName, getSmsCollectionName } from '../repositories/sms.repository.js';
 import { getAssignedDestsForUser, getSmsOwnerId } from './destSettings.controller.js';
+// Admin panel "הודעות נכנסות" tab now reads from our own internal MongoDB
+// (collection `sms`, same store used by the external-log "maskyoo" copy)
+// instead of the external ilbot SMS DB. See getAdminMessages / getAdminDests below.
+import SmsExternalLog from '../../models/SmsExternalLog.js';
 
-/**
+function escapeRegexAdmin(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** 
  * Regular / user SMS tab — always scoped to the logged-in account's lines
  * (admin user accounts included).
  *
@@ -96,22 +104,64 @@ export async function getAdminMessages(req, res, next) {
       ? Math.floor(requestedPage)
       : 1;
 
-    // Always page through Mongo with skip/limit (no fixed "recent N" cap) so browsing
-    // keeps going past any page and `total` always reflects the true count.
-    const result = await smsService.searchMessages({
-      search,
-      destQuery,
-      // no allowedDests → entire collection
-      page,
-      limit,
-    });
+    // --- Previous implementation: fetched from the external ilbot SMS DB. ---
+    // --- Kept commented (not deleted) per request — do not remove. ---
+    // // Always page through Mongo with skip/limit (no fixed "recent N" cap) so browsing
+    // // keeps going past any page and `total` always reflects the true count.
+    // const result = await smsService.searchMessages({
+    //   search,
+    //   destQuery,
+    //   // no allowedDests → entire collection
+    //   page,
+    //   limit,
+    // });
+    //
+    // res.json({
+    //   source: 'mongodb',
+    //   dbName: getSmsDbName(),
+    //   collection: getSmsCollectionName(),
+    //   messages: result.messages,
+    //   total: result.total,
+    //   page,
+    //   limit,
+    //   scoped: false,
+    // });
+
+    // New implementation: "הודעות נכנסות" tab in the admin panel now reads from our
+    // own internal MongoDB (SmsExternalLog, collection `sms`) instead of the
+    // external ilbot SMS DB.
+    const filter = {};
+    if (search) {
+      const regex = new RegExp(escapeRegexAdmin(search), 'i');
+      filter.$or = [{ phone: regex }, { dest: regex }, { message: regex }, { appName: regex }];
+    }
+    if (destQuery) {
+      filter.dest = new RegExp(escapeRegexAdmin(destQuery), 'i');
+    }
+
+    const [docs, total] = await Promise.all([
+      SmsExternalLog.find(filter)
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .lean(),
+      SmsExternalLog.countDocuments(filter),
+    ]);
+
+    const messages = docs.map((doc) => ({
+      id_: String(doc._id),
+      dest: doc.dest || '',
+      phone: doc.phone || '',
+      date: doc.date || (doc.createdAt ? new Date(doc.createdAt).toLocaleString('he-IL') : ''),
+      message: doc.message || '',
+    }));
 
     res.json({
       source: 'mongodb',
-      dbName: getSmsDbName(),
-      collection: getSmsCollectionName(),
-      messages: result.messages,
-      total: result.total,
+      dbName: 'internal',
+      collection: 'sms',
+      messages,
+      total,
       page,
       limit,
       scoped: false,
@@ -157,7 +207,18 @@ export async function getDests(req, res, next) {
  */
 export async function getAdminDests(req, res, next) {
   try {
-    const dests = await smsService.getDistinctDests();
+    // --- Previous implementation: fetched from the external ilbot SMS DB. ---
+    // --- Kept commented (not deleted) per request — do not remove. ---
+    // const dests = await smsService.getDistinctDests();
+    // res.json({ dests });
+
+    // New implementation: "הודעות נכנסות" tab in the admin panel now reads dest
+    // numbers from our own internal MongoDB (SmsExternalLog, collection `sms`)
+    // instead of the external ilbot SMS DB.
+    const rawDests = await SmsExternalLog.distinct('dest');
+    const dests = Array.from(
+      new Set(rawDests.map((d) => String(d || '').trim()).filter(Boolean))
+    ).sort();
     res.json({ dests });
   } catch (err) {
     if (err.message === 'Database not configured') {

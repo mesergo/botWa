@@ -24,7 +24,9 @@ import {
   updateConnectedNumberPaymentCountries,
   linkNumberForCustomer,
   linkDialog360NumberForCustomer,
-  getUserBots 
+  getUserBots,
+  previewRestoreConversations,
+  restoreConversations
 } from '../controllers/adminController.js';
 import { 
   listUserTypes,
@@ -80,11 +82,11 @@ router.patch('/users/:userId/connected-numbers/:phoneNumberId/payment-countries'
 // Admin-only: link a new/already-activated Facebook WhatsApp number directly to a customer's account
 router.post('/users/:userId/connected-numbers/link-facebook', requireAdmin, linkNumberForCustomer);
 
-// Admin-only: link a new/already-activated Dialog360 WhatsApp number directly to a customer's account
-router.post('/users/:userId/connected-numbers/link-dialog360', requireAdmin, linkDialog360NumberForCustomer);
-
 // Per-customer bot list (lightweight id/name, used for the Sessions tab's advanced bot search)
 router.get('/users/:userId/bots', requireAdmin, getUserBots);
+
+router.get('/users/:userId/restore-conversations', requireAdmin, previewRestoreConversations);
+router.post('/users/:userId/restore-conversations', requireAdmin, restoreConversations);
 
 // All connected WhatsApp numbers across every customer (global admin view)
 router.get('/connected-numbers', requireAdmin, getAllConnectedNumbers);

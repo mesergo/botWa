@@ -1122,3 +1122,43 @@ export const createUser = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
+
+export const previewRestoreConversations = async (req, res) => {
+  try {
+    const user = await User.findById(req.params.userId).select('phone connected_numbers').lean();
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    const { previewLegacyCollections } = await import('../utils/legacyConversationRestore.js');
+    const preview = await previewLegacyCollections(user);
+    res.json({ success: true, ...preview });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+export const restoreConversations = async (req, res) => {
+  try {
+    req.setTimeout?.(10 * 60 * 1000);
+    const { untilDate, months, collection } = req.body || {};
+    const user = await User.findById(req.params.userId);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const { restoreLegacyConversations } = await import('../utils/legacyConversationRestore.js');
+    const result = await restoreLegacyConversations({
+      user,
+      untilDate,
+      months,
+      collectionName: collection || ''
+    });
+
+    await logAdminAction(req.userId, req.user?.email, 'RESTORE_CONVERSATIONS', req.params.userId, 'User', result);
+    res.json({ success: true, ...result });
+  } catch (err) {
+    const status = err.status || (err.message === 'invalid_until_date' ? 400 : 500);
+    const messages = {
+      legacy_db_unavailable: 'אין חיבור למסד הנתונים הישן של השיחות',
+      legacy_collection_not_found: 'לא נמצאה טבלת היסטוריה (fbiz) למספר של הלקוח',
+      invalid_until_date: 'תאריך סיום לא תקין'
+    };
+    res.status(status).json({ error: messages[err.message] || err.message });
+  }
+};
