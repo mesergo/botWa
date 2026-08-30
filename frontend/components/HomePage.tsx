@@ -34,7 +34,7 @@ interface SideNavItem {
 }
 
 const SIDE_NAV: SideNavItem[] = [
-  { id: 'home',     label: 'סקירה כללית',  Icon: LayoutDashboard, color: 'text-blue-600' },
+  { id: 'home',     label: 'דף הבית',  Icon: LayoutDashboard, color: 'text-blue-600' },
   { id: 'bots',     label: 'הבוטים שלי',   Icon: Bot,             color: 'text-blue-600',    permission: 'bots.view_tab' },
   { id: 'chats',    label: 'שיחות',         Icon: MessageSquare,   color: 'text-emerald-600', permission: 'sessions.view' },
   { id: 'sms_in',   label: 'SMS נכנס',      Icon: Inbox,           color: 'text-sky-600',     permission: 'sms_in.view' },
