@@ -104,6 +104,44 @@ export const normalizePhone = (phone) => {
 };
 
 /**
+ * DEBUG helper — verifies that a media URL (image/video/document) we are about
+ * to send/save is actually a well-formed, publicly reachable link, and prints
+ * the result to the console. This exists purely to diagnose reports of
+ * "the image doesn't display" — it logs exactly which URL was used and why
+ * it might be broken (relative path, unreachable host, wrong content-type,
+ * 404, etc). Never throws — failures are only logged.
+ *
+ * @param {string} tag - short label identifying the call-site, e.g. "[360-TEMPLATE]"
+ * @param {string} url - the media URL to check
+ */
+export const debugCheckMediaUrl = async (tag, url) => {
+  if (!url) {
+    console.log(`${tag} 🖼️ MEDIA-URL-CHECK ⚠️ no URL provided — nothing will be shown to the recipient/agent`);
+    return;
+  }
+  console.log(`${tag} 🖼️ MEDIA-URL-CHECK → url="${url}"`);
+  if (!/^https?:\/\//i.test(url)) {
+    console.warn(`${tag} 🖼️ MEDIA-URL-CHECK ❌ URL is NOT absolute (missing http/https scheme) — WhatsApp and/or the chat UI cannot load a relative path. This is very likely why the image is not displayed.`);
+    return;
+  }
+  try {
+    const res = await fetch(url, { method: 'HEAD' });
+    const contentType = res.headers.get('content-type') || '(none)';
+    const contentLength = res.headers.get('content-length') || '(none)';
+    if (res.ok) {
+      console.log(`${tag} 🖼️ MEDIA-URL-CHECK ✅ reachable | status=${res.status} | content-type=${contentType} | content-length=${contentLength}`);
+      if (!contentType.startsWith('image/') && !contentType.startsWith('video/') && contentType !== '(none)') {
+        console.warn(`${tag} 🖼️ MEDIA-URL-CHECK ⚠️ content-type "${contentType}" doesn't look like image/video — file may not render correctly`);
+      }
+    } else {
+      console.warn(`${tag} 🖼️ MEDIA-URL-CHECK ❌ URL responded with HTTP ${res.status} — the file is not accessible at this address, which is likely why it's not displayed`);
+    }
+  } catch (err) {
+    console.warn(`${tag} 🖼️ MEDIA-URL-CHECK ❌ fetch failed: ${err.message} — host unreachable / DNS / TLS issue, which would explain why the image doesn't load`);
+  }
+};
+
+/**
  * Send an array of bot/agent messages to WhatsApp via wa.message.co.il.
  * Handles: Text, Options, Image, Video, Document, URL, SendItem.
  *

@@ -2072,7 +2072,13 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
                                   )}
                                   {item.type === 'Image' && item.url && (
                                     <>
-                                      <img src={item.url} alt="תמונה" className="rounded-xl max-w-[160px] h-auto mb-2" />
+                                      <img
+                                        src={item.url}
+                                        alt="תמונה"
+                                        className="rounded-xl max-w-[160px] h-auto mb-2"
+                                        onLoad={() => console.log('[AdminPanel][Image] ✅ loaded:', item.url)}
+                                        onError={() => console.error('[AdminPanel][Image] ❌ FAILED to load image. url=', item.url, '| full item=', item)}
+                                      />
                                       {text && <p className="whitespace-pre-wrap leading-relaxed">{text}</p>}
                                     </>
                                   )}
