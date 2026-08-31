@@ -12,6 +12,45 @@ import { NodeType } from '../../types';
 import { useContactFields } from '../../context/ContactFieldsContext';
 import ApiNodeSettingsModal from '../ApiNodeSettingsModal';
 
+const UPLOAD_API_BASE = window.location.hostname === 'localhost'
+  ? 'http://localhost:3001/api'
+  : `${window.location.origin}/api`;
+
+// Origin (scheme + host, no /api suffix) where our own uploaded files are served from,
+// e.g. "http://localhost:3001" locally or "https://app.message.co.il" in production.
+const UPLOAD_ORIGIN = UPLOAD_API_BASE.replace(/\/api\/?$/, '');
+
+// Uploads a file to the server (instead of embedding it as base64 in node data,
+// which can bloat a bot's flow document past MongoDB's 16MB document limit)
+// and returns the public URL to store in node data.
+async function uploadNodeFile(file: File, token?: string | null): Promise<string> {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const response = await fetch(`${UPLOAD_API_BASE}/upload`, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    body: formData,
+  });
+
+  if (!response.ok) {
+    let errorMessage = 'העלאה נכשלה';
+    try {
+      const contentType = response.headers.get('content-type');
+      if (contentType && contentType.includes('application/json')) {
+        const errorData = await response.json();
+        errorMessage = errorData.error || errorMessage;
+      } else {
+        errorMessage = `שגיאת שרת: ${response.status}`;
+      }
+    } catch { /* ignore parse errors */ }
+    throw new Error(errorMessage);
+  }
+
+  const data = await response.json();
+  return data.url as string;
+}
+
 const HighlightedText = ({ text, highlight, isCurrent }: { text: string; highlight: string; isCurrent: boolean }) => {
   if (!highlight.trim()) return <>{text}</>;
   const parts = text.split(new RegExp(`(${highlight})`, 'gi'));
@@ -856,16 +895,29 @@ export const OutputTextNode = (props: any) => (
 
 export const OutputImageNode = (props: any) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [uploadMode, setUploadMode] = useState<'file' | 'url'>(props.data.url && !props.data.url.startsWith('data:') ? 'url' : 'file');
+  // Files uploaded via the "העלאת קובץ" tab are stored on our own server under {UPLOAD_ORIGIN}/uploads/
+  // (or, for legacy data, as base64 data: URLs) — only treat other URLs as "הוספת קישור" (an
+  // external URL that merely contains "/uploads/" in its path must NOT be misidentified as ours).
+  const isOwnUploadUrl = (u?: string) => !!u && (u.startsWith('data:') || u.startsWith(`${UPLOAD_ORIGIN}/uploads/`));
+  const [uploadMode, setUploadMode] = useState<'file' | 'url'>(props.data.url && !isOwnUploadUrl(props.data.url) ? 'url' : 'file');
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
  
   const mediaType = props.data.mediaType || 'image';
  
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => props.data.onChange({ url: reader.result as string });
-      reader.readAsDataURL(file);
+    if (!file) return;
+    event.target.value = ''; // allow re-selecting the same file later
+    setIsUploading(true);
+    setUploadError(null);
+    try {
+      const url = await uploadNodeFile(file, props.data.token);
+      props.data.onChange({ url });
+    } catch (err: any) {
+      setUploadError(err?.message || 'העלאת הקובץ נכשלה');
+    } finally {
+      setIsUploading(false);
     }
   };
  
@@ -970,33 +1022,53 @@ export const OutputImageNode = (props: any) => {
                 <div className="absolute inset-0 bg-slate-900/60 opacity-0 group-hover:opacity-100 transition-all flex items-center justify-center gap-2 backdrop-blur-[2px]">
                   <button
                     type="button"
+                    disabled={isUploading}
                     onClick={(e) => { e.preventDefault(); e.stopPropagation(); fileInputRef.current?.click(); }}
-                    className="p-2.5 bg-white text-slate-900 rounded-lg shadow-xl hover:bg-slate-100 transition-all outline-none"
+                    className="p-2.5 bg-white text-slate-900 rounded-lg shadow-xl hover:bg-slate-100 transition-all outline-none disabled:opacity-50"
                   >
                     <Upload size={18} />
                   </button>
                   <button
                     type="button"
+                    disabled={isUploading}
                     onClick={(e) => { e.preventDefault(); e.stopPropagation(); props.data.onChange({ url: '' }); }}
-                    className="p-2.5 bg-red-500 text-white rounded-lg shadow-xl hover:bg-red-600 transition-all outline-none"
+                    className="p-2.5 bg-red-500 text-white rounded-lg shadow-xl hover:bg-red-600 transition-all outline-none disabled:opacity-50"
                   >
                     <X size={18} />
                   </button>
                 </div>
+                {isUploading && (
+                  <div className="absolute inset-0 bg-white/70 flex items-center justify-center">
+                    <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                  </div>
+                )}
               </div>
             ) : (
               <button
                 type="button"
+                disabled={isUploading}
                 onClick={(e) => { e.preventDefault(); e.stopPropagation(); fileInputRef.current?.click(); }}
-                className="w-full h-40 border-2 border-dashed border-slate-300 rounded-xl flex flex-col items-center justify-center gap-3 text-slate-400 hover:border-blue-400 hover:text-blue-500 hover:bg-blue-50/30 transition-all nodrag outline-none"
+                className="w-full h-40 border-2 border-dashed border-slate-300 rounded-xl flex flex-col items-center justify-center gap-3 text-slate-400 hover:border-blue-400 hover:text-blue-500 hover:bg-blue-50/30 transition-all nodrag outline-none disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                <Upload size={28} strokeWidth={1.5} />
-                <span className="text-xs font-semibold uppercase tracking-wider">העלה {mediaType === 'image' ? 'תמונה' : mediaType === 'video' ? 'וידאו' : 'PDF'}</span>
+                {isUploading ? (
+                  <>
+                    <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                    <span className="text-xs font-semibold">מעלה...</span>
+                  </>
+                ) : (
+                  <>
+                    <Upload size={28} strokeWidth={1.5} />
+                    <span className="text-xs font-semibold uppercase tracking-wider">העלה {mediaType === 'image' ? 'תמונה' : mediaType === 'video' ? 'וידאו' : 'PDF'}</span>
+                  </>
+                )}
               </button>
+            )}
+            {uploadError && (
+              <div className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded-lg">{uploadError}</div>
             )}
           </div>
         )}
-        <input type="file" ref={fileInputRef} className="hidden" accept={getAcceptTypes()} onChange={handleFileUpload} />
+        <input type="file" ref={fileInputRef} className="hidden" accept={getAcceptTypes()} onChange={handleFileUpload} disabled={isUploading} />
       </InputFieldWrapper>
      
       <InputFieldWrapper label="טקסט (אופציונלי)">
@@ -1033,6 +1105,8 @@ export const OutputMenuNode = (props: any) => {
   const options = props.data.options || [''];
   const optionImages = props.data.optionImages || [];
   const fileInputRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const [uploadingIndex, setUploadingIndex] = useState<number | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   const updateOption = (index: number, value: string) => {
     const newOptions = [...options];
@@ -1040,16 +1114,21 @@ export const OutputMenuNode = (props: any) => {
     props.data.onChange({ options: newOptions });
   };
 
-  const handleOptionImageUpload = (index: number, event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleOptionImageUpload = async (index: number, event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const newImages = [...(props.data.optionImages || Array(options.length).fill(''))];
-        newImages[index] = reader.result as string;
-        props.data.onChange({ optionImages: newImages });
-      };
-      reader.readAsDataURL(file);
+    if (!file) return;
+    event.target.value = ''; // allow re-selecting the same file later
+    setUploadingIndex(index);
+    setUploadError(null);
+    try {
+      const url = await uploadNodeFile(file, props.data.token);
+      const newImages = [...(props.data.optionImages || Array(options.length).fill(''))];
+      newImages[index] = url;
+      props.data.onChange({ optionImages: newImages });
+    } catch (err: any) {
+      setUploadError(err?.message || 'העלאת התמונה נכשלה');
+    } finally {
+      setUploadingIndex(null);
     }
   };
 
@@ -1118,11 +1197,16 @@ export const OutputMenuNode = (props: any) => {
                 </div>
               ) : (
                 <button
+                  disabled={uploadingIndex === i}
                   onClick={() => fileInputRefs.current[i]?.click()}
-                  className="w-12 h-12 rounded-lg bg-white border border-slate-100 flex items-center justify-center text-slate-300 hover:text-blue-500 hover:border-blue-200 transition-all flex-shrink-0"
+                  className="w-12 h-12 rounded-lg bg-white border border-slate-100 flex items-center justify-center text-slate-300 hover:text-blue-500 hover:border-blue-200 transition-all flex-shrink-0 disabled:opacity-50"
                   title="הוסף תמונה"
                 >
-                  <ImageIcon size={20} />
+                  {uploadingIndex === i ? (
+                    <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <ImageIcon size={20} />
+                  )}
                 </button>
               )}
             </div>
@@ -1132,9 +1216,13 @@ export const OutputMenuNode = (props: any) => {
               ref={el => { fileInputRefs.current[i] = el; }}
               accept="image/*"
               onChange={(e) => handleOptionImageUpload(i, e)}
+              disabled={uploadingIndex === i}
             />
           </div>
         ))}
+        {uploadError && (
+          <div className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded-lg">{uploadError}</div>
+        )}
         <button onClick={addOption} className="w-full mt-2 py-4 text-[13px] font-bold bg-white text-blue-600 rounded-2xl border-2 border-dashed border-blue-100 hover:bg-blue-50 hover:border-blue-400 flex items-center justify-center gap-2 transition-all nodrag uppercase tracking-wider">
           <Plus size={18} /> הוסף אפשרות חדשה
         </button>

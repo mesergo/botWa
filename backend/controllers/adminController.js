@@ -34,7 +34,8 @@ export const getSystemSettings = async (req, res) => {
 
 export const updateSystemSettings = async (req, res) => {
   const { config } = req.body;
-  const adminId = req.user.id;
+  const adminId = req.userId;
+  const adminEmail = req.user?.email;
 
   try {
     // Upsert the settings
@@ -44,8 +45,32 @@ export const updateSystemSettings = async (req, res) => {
       { upsert: true, new: true }
     );
 
+    // Re-evaluate the active-contacts quota flag for every top-level account against its
+    // already-cached count. A plan-level maxActiveContacts change here affects everyone on
+    // that plan (not just a single user edited via updateUser), so it must be handled here
+    // too — otherwise accounts keep showing a stale exceeded/not-exceeded flag until the
+    // next scheduled activeContactsTicker.js run (up to 24h later). No BotSession
+    // aggregation re-run — the ticker still owns recomputing the actual counts.
+    const mergedConfig = { ...DEFAULT_ACCOUNTS_CONFIG, ...config };
+    const topLevelUsers = await User.find({ manager_id: null });
+    for (const user of topLevelUsers) {
+      const accountType = user.account_type || 'Basic';
+      const planLimits = mergedConfig[accountType] || mergedConfig['Basic'];
+      let freshLimit = planLimits?.maxActiveContacts ?? 0;
+      if (user.custom_limits?.max_active_contacts !== null && user.custom_limits?.max_active_contacts !== undefined) {
+        freshLimit = user.custom_limits.max_active_contacts;
+      }
+      const stillExceeded = freshLimit > 0 && (user.active_contacts_count || 0) > freshLimit;
+      if (stillExceeded !== (user.active_contacts_quota_exceeded === true)) {
+        user.active_contacts_quota_exceeded = stillExceeded;
+        if (!stillExceeded) user.active_contacts_last_alert_at = null;
+        // eslint-disable-next-line no-await-in-loop
+        await user.save();
+      }
+    }
+
     // Log the action
-    await logAdminAction(adminId, 'UPDATE_SYSTEM_SETTINGS', 'System', { config });
+    await logAdminAction(adminId, adminEmail, 'UPDATE_SYSTEM_SETTINGS', 'System', 'System', { config });
 
     res.json({ message: 'System settings updated successfully', config });
   } catch (error) {
@@ -873,6 +898,18 @@ export const updateUser = async (req, res) => {
         ...user.custom_limits,
         ...custom_limits
       };
+    }
+
+    // Re-evaluate the active-contacts quota flag immediately against the already-cached
+    // count, whenever the effective limit may have changed (plan change or custom override).
+    // This avoids waiting up to 24h for activeContactsTicker.js's next scheduled recheck,
+    // without re-running the expensive BotSession aggregation here.
+    if (custom_limits || account_type) {
+      const freshLimits = await getUserLimits(user);
+      const freshLimit = freshLimits.maxActiveContacts ?? 0;
+      const stillExceeded = freshLimit > 0 && (user.active_contacts_count || 0) > freshLimit;
+      user.active_contacts_quota_exceeded = stillExceeded;
+      if (!stillExceeded) user.active_contacts_last_alert_at = null;
     }
     
     await user.save();

@@ -95,6 +95,8 @@ export interface NodeData {
   apiHeaders?: Array<{ key: string; value: string }>;
   /** For action_web_service: raw JSON body string; if empty, standard bot payload is used */
   apiBody?: string;
+  /** Auth token injected by App.tsx so node components can call authenticated APIs (e.g. file upload) */
+  token?: string | null;
 }
 
 export interface BotFlow {

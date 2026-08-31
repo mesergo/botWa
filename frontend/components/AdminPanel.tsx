@@ -1690,7 +1690,7 @@ const openRestoreConversations = async () => {
               { id: 'user-types', label: 'סוגי משתמשים', icon: Shield },
               { id: 'connected-numbers', label: 'מספרים מחוברים', icon: Phone },
               { id: 'sms-in', label: 'הודעות SMS', icon: Inbox },
-              { id: 'sms-external-log', label: 'SMS פנימי', icon: MessageSquare },
+              // { id: 'sms-external-log', label: 'SMS פנימי', icon: MessageSquare },
               { id: 'templates', label: 'מאגר תבניות בוט', icon: FileText },
               { id: 'settings', label: 'הגדרות מערכת', icon: Settings },
             ].map(item => (
