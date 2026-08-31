@@ -31,6 +31,13 @@ interface User {
   user_type_id?: { _id: string; name: string; system_role: string } | null;
   sms_in_enabled?: boolean;
   facebook_connect_enabled?: boolean;
+  tab_overrides?: {
+    bots?: boolean | null;
+    sessions?: boolean | null;
+    contacts?: boolean | null;
+    send_messages?: boolean | null;
+    sms_in?: boolean | null;
+  };
   connected_numbers_count?: number;
   createdAt: string;
   updatedAt: string;
@@ -114,7 +121,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
   const [users, setUsers] = useState<User[]>([]);
   const [stats, setStats] = useState<SystemStats | null>(null);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
-  const [userDetailTab, setUserDetailTab] = useState<'profile' | 'removal-log' | 'cust-templates' | 'cust-connections' | 'cust-sessions'>('profile');
+  const [userDetailTab, setUserDetailTab] = useState<'profile' | 'removal-log' | 'cust-templates' | 'cust-connections' | 'cust-sessions' | 'tab-management'>('profile');
   const [showRestoreModal, setShowRestoreModal] = useState(false);
   const [restoreUntilDate, setRestoreUntilDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [restoreMonths, setRestoreMonths] = useState(3);
@@ -137,11 +144,21 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
   const [restoreNonce, setRestoreNonce] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Per-customer "ניהול לשוניות" tab-visibility overrides (tri-state: true/false/null).
+  // See plan: perCustomerTabManagementOverride.
+  type TabOverrideKey = 'bots' | 'sessions' | 'contacts' | 'send_messages' | 'sms_in';
+  const [tabOverridesDraft, setTabOverridesDraft] = useState<Record<TabOverrideKey, boolean | null>>({
+    bots: null, sessions: null, contacts: null, send_messages: null, sms_in: null
+  });
+  const [savingTabOverrides, setSavingTabOverrides] = useState(false);
+  const [tabOverridesSaved, setTabOverridesSaved] = useState(false);
   
   // New State for Templates & Settings
   const [templates, setTemplates] = useState<Template[]>([]);
   const [systemConfig, setSystemConfig] = useState<any>(null);
   const [loadingConfig, setLoadingConfig] = useState(false);
+
 
   // Global default config for the auto-removal-from-group feature
   interface RemovalConfigShape { enabled: boolean; keywords_he: string[]; message_he: string; keywords_en: string[]; message_en: string; }
@@ -336,6 +353,23 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
   useEffect(() => {
     if (activeTab === 'users' && userDetailTab === 'cust-connections' && selectedUser?.id) {
       fetchCustomerConnectedNumbers(selectedUser.id);
+    }
+  }, [activeTab, userDetailTab, selectedUser?.id]);
+
+  // Seed the tab-visibility overrides draft from the selected customer whenever their
+  // "ניהול לשוניות" tab is opened (or a different customer is selected while it's open).
+  // See plan: perCustomerTabManagementOverride.
+  useEffect(() => {
+    if (activeTab === 'users' && userDetailTab === 'tab-management') {
+      const ov = selectedUser?.tab_overrides || {};
+      setTabOverridesDraft({
+        bots: ov.bots ?? null,
+        sessions: ov.sessions ?? null,
+        contacts: ov.contacts ?? null,
+        send_messages: ov.send_messages ?? null,
+        sms_in: ov.sms_in ?? null
+      });
+      setTabOverridesSaved(false);
     }
   }, [activeTab, userDetailTab, selectedUser?.id]);
 
@@ -940,9 +974,41 @@ const openRestoreConversations = async () => {
     }
   };
 
+  // Save this customer's "ניהול לשוניות" tab-visibility overrides. See plan:
+  // perCustomerTabManagementOverride.
+  const saveTabOverrides = async () => {
+    if (!selectedUser) return;
+    setSavingTabOverrides(true);
+    setTabOverridesSaved(false);
+    try {
+      const response = await fetch(`${API_BASE}/admin/users/${selectedUser.id}`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ tab_overrides: tabOverridesDraft })
+      });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        throw new Error(errorData.error || 'Update failed');
+      }
+      const data = await response.json();
+      setSelectedUser(data.user);
+      fetchAllUsers(); // Refresh list
+      setTabOverridesSaved(true);
+      setTimeout(() => setTabOverridesSaved(false), 2500);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Update failed');
+    } finally {
+      setSavingTabOverrides(false);
+    }
+  };
+
   const handleDeleteUser = (userId: string) => {
     setDeleteConfirmUserId(userId);
   };
+
 
   const confirmDeleteUser = async () => {
     if (!deleteConfirmUserId) return;
@@ -2780,6 +2846,7 @@ const openRestoreConversations = async () => {
                         ] : []),
                         { id: 'cust-connections' as const, label: 'חיבורים', icon: Phone },
                         { id: 'cust-sessions' as const, label: 'סשנים', icon: List },
+                        { id: 'tab-management' as const, label: 'ניהול לשוניות', icon: Layers },
                       ].map(t => (
                         <button
                           key={t.id}
@@ -3562,6 +3629,98 @@ const openRestoreConversations = async () => {
                         <CustomerSessionsPanel key={`${selectedUser.id}-${restoreNonce}`} token={token} apiBase={API_BASE} userId={selectedUser.id} />
                       </div>
                     )}
+
+                    {userDetailTab === 'tab-management' && (() => {
+                      const triState = (key: TabOverrideKey, label: string) => {
+                        const value = tabOverridesDraft[key];
+                        return (
+                          <div key={key} className="flex items-center justify-between gap-3 py-3 border-b border-slate-100 last:border-b-0">
+                            <span className="font-bold text-slate-700 text-sm">{label}</span>
+                            <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl p-1">
+                              <button
+                                type="button"
+                                onClick={() => setTabOverridesDraft(prev => ({ ...prev, [key]: true }))}
+                                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${value === true ? 'bg-emerald-500 text-white shadow-sm' : 'text-slate-400 hover:text-emerald-600'}`}
+                              >
+                                מוצג
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setTabOverridesDraft(prev => ({ ...prev, [key]: false }))}
+                                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${value === false ? 'bg-rose-500 text-white shadow-sm' : 'text-slate-400 hover:text-rose-600'}`}
+                              >
+                                מוסתר
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setTabOverridesDraft(prev => ({ ...prev, [key]: null }))}
+                                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${value === null || value === undefined ? 'bg-slate-400 text-white shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                              >
+                                ברירת מחדל
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      };
+                      const whatsappKeys: TabOverrideKey[] = ['bots', 'sessions', 'contacts', 'send_messages'];
+                      return (
+                        <div className="flex-1 overflow-y-auto p-4 sm:p-8 space-y-6">
+                          <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm">
+                            <h3 className="text-sm font-black text-slate-800 mb-1 flex items-center gap-2"><Inbox size={16} className="text-sky-500" /> SMS נכנס</h3>
+                            <p className="text-xs text-slate-400 font-medium mb-2">שולט על הצגת/הסתרת הלשונית עבור הלקוח, במקום או בנוסף להגדרה הרגילה.</p>
+                            {triState('sms_in', 'SMS נכנס')}
+                          </div>
+
+                          <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm">
+                            <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+                              <h3 className="text-sm font-black text-slate-800 flex items-center gap-2"><Bot size={16} className="text-sky-500" /> וואטסאפ</h3>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => setTabOverridesDraft(prev => ({ ...prev, bots: true, sessions: true, contacts: true, send_messages: true }))}
+                                  className="px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-50 text-emerald-600 hover:bg-emerald-100"
+                                >
+                                  הצג הכל
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setTabOverridesDraft(prev => ({ ...prev, bots: false, sessions: false, contacts: false, send_messages: false }))}
+                                  className="px-3 py-1.5 rounded-lg text-xs font-bold bg-rose-50 text-rose-600 hover:bg-rose-100"
+                                >
+                                  הסתר הכל
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setTabOverridesDraft(prev => ({ ...prev, bots: null, sessions: null, contacts: null, send_messages: null }))}
+                                  className="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-100 text-slate-500 hover:bg-slate-200"
+                                >
+                                  ברירת מחדל להכל
+                                </button>
+                              </div>
+                            </div>
+                            <p className="text-xs text-slate-400 font-medium mb-2">שולט על הצגת/הסתרת הלשוניות הבאות עבור הלקוח, במקום או בנוסף להרשאות סוג המשתמש שלו.</p>
+                            {triState('bots', 'הבוטים שלי')}
+                            {triState('sessions', 'שיחות')}
+                            {triState('contacts', 'אנשי קשר')}
+                            {triState('send_messages', 'שליחת הודעות')}
+                          </div>
+
+                          <div className="flex items-center gap-3">
+                            <button
+                              type="button"
+                              onClick={saveTabOverrides}
+                              disabled={savingTabOverrides}
+                              className="bg-emerald-500 hover:bg-emerald-600 disabled:opacity-60 text-white px-5 py-2.5 rounded-xl text-sm font-bold transition-all shadow-md shadow-emerald-100 flex items-center gap-2"
+                            >
+                              <Save size={16} /> {savingTabOverrides ? 'שומר...' : 'שמור'}
+                            </button>
+                            {tabOverridesSaved && (
+                              <span className="text-emerald-600 text-sm font-bold flex items-center gap-1"><CheckCircle size={16} /> נשמר בהצלחה</span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })()}
 
                     {showRestoreModal && (
                       <div className="absolute inset-0 z-40 bg-slate-900/40 flex items-center justify-center p-4" dir="rtl">
