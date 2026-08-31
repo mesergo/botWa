@@ -813,6 +813,7 @@ export const getUserDetails = async (req, res) => {
         allowed_bot_ids: (user.allowed_bot_ids || []).map(id => id.toString()),
         sms_in_enabled: user.sms_in_enabled === true,
         facebook_connect_enabled: user.facebook_connect_enabled === true,
+        tab_overrides: user.tab_overrides || {},
         custom_limits: user.custom_limits,
         limits_in_effect: limits,
         active_contacts_count: user.active_contacts_count || 0,
@@ -837,7 +838,7 @@ export const getUserDetails = async (req, res) => {
 export const updateUser = async (req, res) => {
   try {
     const { userId } = req.params;
-    const { name, email, phone, password, status, account_type, custom_limits, dialog360_bot_id, user_type_id, manager_id, allowed_bot_ids, sms_in_enabled, facebook_connect_enabled } = req.body;
+    const { name, email, phone, password, status, account_type, custom_limits, dialog360_bot_id, user_type_id, manager_id, allowed_bot_ids, sms_in_enabled, facebook_connect_enabled, tab_overrides } = req.body;
     
     console.log('[Admin] Updating user:', userId, 'with data:', { ...req.body, password: password ? '***' : undefined });
     
@@ -878,6 +879,21 @@ export const updateUser = async (req, res) => {
     if (Array.isArray(allowed_bot_ids)) user.allowed_bot_ids = allowed_bot_ids;
     if (sms_in_enabled !== undefined) user.sms_in_enabled = sms_in_enabled === true;
     if (facebook_connect_enabled !== undefined) user.facebook_connect_enabled = facebook_connect_enabled === true;
+
+    // Per-customer tab visibility overrides (tri-state: true/false/null). See plan:
+    // perCustomerTabManagementOverride. Only whitelisted keys are accepted, each coerced
+    // to true/false/null (any other value is treated as null/inherit).
+    if (tab_overrides && typeof tab_overrides === 'object') {
+      const coerce = (v) => (v === true ? true : v === false ? false : null);
+      const allowedKeys = ['bots', 'sessions', 'contacts', 'send_messages', 'sms_in'];
+      const merged = { ...(user.tab_overrides || {}) };
+      for (const key of allowedKeys) {
+        if (Object.prototype.hasOwnProperty.call(tab_overrides, key)) {
+          merged[key] = coerce(tab_overrides[key]);
+        }
+      }
+      user.tab_overrides = merged;
+    }
     
     // Update user type / permissions
     if (user_type_id !== undefined) {
@@ -945,6 +961,7 @@ export const updateUser = async (req, res) => {
         allowed_bot_ids: (user.allowed_bot_ids || []).map(id => id.toString()),
         sms_in_enabled: user.sms_in_enabled === true,
         facebook_connect_enabled: user.facebook_connect_enabled === true,
+        tab_overrides: user.tab_overrides || {},
         custom_limits: user.custom_limits,
         limits_in_effect: limits,
         createdAt: user.createdAt,

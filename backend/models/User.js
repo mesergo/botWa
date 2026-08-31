@@ -96,6 +96,16 @@ const userSchema = new mongoose.Schema({
   sms_in_enabled: { type: Boolean, default: false },
   // Per-client toggle (set by admin): allow the "חבר לפייסבוק" button in bot settings. Admins always see it.
   facebook_connect_enabled: { type: Boolean, default: false },
+  // Per-user tab visibility overrides (set by admin), applied on top of the user's UserType
+  // permissions in resolvePermissions(). Tri-state: true = force show, false = force hide,
+  // null = inherit from UserType/role (default). See plan: perCustomerTabManagementOverride.
+  tab_overrides: {
+    bots: { type: Boolean, default: null },
+    sessions: { type: Boolean, default: null },
+    contacts: { type: Boolean, default: null },
+    send_messages: { type: Boolean, default: null },
+    sms_in: { type: Boolean, default: null }
+  },
   // Invite-only onboarding fields for sub-users (reps/rep_managers).
   invite_token_hash: { type: String, default: null },
   invite_token_expires_at: { type: Date, default: null },

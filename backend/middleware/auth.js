@@ -171,8 +171,33 @@ export const resolvePermissions = async (user) => {
   // Per-user gate for the "חבר לפייסבוק" button in bot settings: admins always see it,
   // other users only when the admin enabled it on their account (User.facebook_connect_enabled).
   const facebookConnectView = user?.role === 'admin' ? true : user?.facebook_connect_enabled === true;
-  return { ...base, sms_in: { view: smsInView }, facebook_connect: { view: facebookConnectView } };
+  const result = { ...base, sms_in: { view: smsInView }, facebook_connect: { view: facebookConnectView } };
+
+  // Final layer: per-customer tab visibility overrides (tri-state), set by admin on
+  // User.tab_overrides. Only applied when explicitly true/false (null/undefined = inherit).
+  // See plan: perCustomerTabManagementOverride.
+  const ov = user?.tab_overrides;
+  if (ov) {
+    if (ov.bots === true || ov.bots === false) {
+      result.bots = { ...result.bots, view_tab: ov.bots };
+    }
+    if (ov.sessions === true || ov.sessions === false) {
+      result.sessions = { ...result.sessions, view: ov.sessions };
+    }
+    if (ov.contacts === true || ov.contacts === false) {
+      result.contacts = { ...result.contacts, view: ov.contacts };
+    }
+    if (ov.send_messages === true || ov.send_messages === false) {
+      result.send_messages = { ...result.send_messages, view: ov.send_messages };
+    }
+    if (ov.sms_in === true || ov.sms_in === false) {
+      result.sms_in = { ...result.sms_in, view: ov.sms_in };
+    }
+  }
+
+  return result;
 };
+
 
 async function resolveBasePermissions(user) {
   if (user.user_type_id) {
