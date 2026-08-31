@@ -4,6 +4,16 @@ import Version from '../models/Version.js';
 
 import { getUserLimits } from '../utils/limits.js';
 
+// MongoDB's hard document size limit is 16MB (16777216 bytes). Leave headroom because the
+// BSON serializer used by the driver throws a low-level, unfriendly
+// "The value of \"offset\" is out of range" RangeError instead of a clean error when a document
+// gets close to/over that boundary. We reject early with a clear message instead.
+const MAX_VERSION_DATA_BYTES = 14 * 1024 * 1024; // 14MB safety margin
+
+function isDocumentTooLargeError(err) {
+  return err instanceof RangeError && /offset/i.test(err.message);
+}
+
 export const publishVersion = async (req, res) => {
   const userId = req.user.id;
   const { name, nodes, edges, flow_id, standard_process_id = null } = req.body;
@@ -12,6 +22,14 @@ export const publishVersion = async (req, res) => {
     const user = await User.findById(userId);
     const limits = await getUserLimits(user);
     const normalizedProcessId = (standard_process_id === "null" || !standard_process_id) ? null : standard_process_id;
+
+    const dataSize = Buffer.byteLength(JSON.stringify({ nodes, edges }));
+    if (dataSize > MAX_VERSION_DATA_BYTES) {
+      return res.status(413).json({
+        error: 'FLOW_TOO_LARGE',
+        message: `הבוט גדול מדי לשמירה (${(dataSize / 1024 / 1024).toFixed(1)}MB). יש להקטין את מספר הצמתים/התוכן (למשל תמונות מוטבעות או טקסטים ארוכים) ולנסות שוב.`
+      });
+    }
 
     // Block Trial accounts from publishing versions
     if (limits.canPublish === false) {
@@ -63,6 +81,12 @@ export const publishVersion = async (req, res) => {
     
     res.json({ id: version._id.toString(), name, created_at: new Date().toISOString(), isLocked: false });
   } catch (err) {
+    if (isDocumentTooLargeError(err)) {
+      return res.status(413).json({
+        error: 'FLOW_TOO_LARGE',
+        message: 'הבוט גדול מדי לשמירה. יש להקטין את מספר הצמתים/התוכן ולנסות שוב.'
+      });
+    }
     res.status(500).json({ error: err.message });
   }
 };
@@ -75,6 +99,14 @@ export const publishPaidVersion = async (req, res) => {
     const user = await User.findById(userId);
     const limits = await getUserLimits(user);
     const normalizedProcessId = (standard_process_id === "null" || !standard_process_id) ? null : standard_process_id;
+
+    const dataSize = Buffer.byteLength(JSON.stringify({ nodes, edges }));
+    if (dataSize > MAX_VERSION_DATA_BYTES) {
+      return res.status(413).json({
+        error: 'FLOW_TOO_LARGE',
+        message: `הבוט גדול מדי לשמירה (${(dataSize / 1024 / 1024).toFixed(1)}MB). יש להקטין את מספר הצמתים/התוכן (למשל תמונות מוטבעות או טקסטים ארוכים) ולנסות שוב.`
+      });
+    }
 
     // Note: Payment will be handled externally via payment gateway
     // This endpoint confirms the publish after payment is verified
@@ -101,6 +133,12 @@ export const publishPaidVersion = async (req, res) => {
       }
     });
   } catch (err) {
+    if (isDocumentTooLargeError(err)) {
+      return res.status(413).json({
+        error: 'FLOW_TOO_LARGE',
+        message: 'הבוט גדול מדי לשמירה. יש להקטין את מספר הצמתים/התוכן ולנסות שוב.'
+      });
+    }
     res.status(500).json({ error: err.message });
   }
 };

@@ -663,8 +663,9 @@ const FlowBuilder: React.FC = () => {
       onChange: (data: Partial<NodeData>) => onNodeDataChange(node.id, data), 
       onDelete: () => onDeleteNode(node.id),
       onRemoveOption: (optionIndex: number) => onRemoveOption(node.id, optionIndex),
+      token,
     }
-  }), [onNodeDataChange, onDeleteNode, onRemoveOption]);
+  }), [onNodeDataChange, onDeleteNode, onRemoveOption, token]);
 
   // Centralized session-expiry handler — called from any place that gets 401/403
   const handleSessionExpired = useCallback(() => {

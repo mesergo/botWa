@@ -17,7 +17,8 @@ const BATCH_LIMIT = 200; // cap per tick so a large backlog doesn't block the ev
 const INITIAL_RUN_DELAY_MS = 60 * 1000; // let the DB connection settle on startup
 
 const sendOfficeQuotaAlertEmail = async (user, count, limit) => {
-  const officeEmail = process.env.OFFICE_ALERT_EMAIL || 'go@mesergo.co.il';
+  // const officeEmail = process.env.OFFICE_ALERT_EMAIL || 'go@mesergo.co.il';
+  const officeEmail = process.env.OFFICE_ALERT_EMAIL || 'margalitw@mesergo.co.il';
 
   const emailUsername = process.env.MESERGO_EMAIL_USERNAME || 'admin@chatgo.live';
   const emailToken = process.env.MESERGO_EMAIL_TOKEN || '1aa14226-ceae-4104-ba86-899eca88631d';

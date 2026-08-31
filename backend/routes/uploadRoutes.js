@@ -39,7 +39,7 @@ router.post('/upload', authenticateToken, upload.single('file'), (req, res) => {
     }
 
 const host = req.get('host');
-const url = `https://${host}/uploads/${req.file.filename}`;
+const url = `${req.protocol}://${host}/uploads/${req.file.filename}`;
 
     console.log(`[Upload] File uploaded successfully | user=${req.user.id} | filename=${req.file.filename} | size=${req.file.size}`);
 
@@ -99,7 +99,7 @@ router.post('/upload-image', uploadImageMulter.single('file'), (req, res) => {
     }
 
 const host = req.get('host');
-const url = `https://${host}/uploads/${req.file.filename}`;
+const url = `${req.protocol}://${host}/uploads/${req.file.filename}`;
 
     console.log(`[UploadImage] ✅ File saved`);
     console.log(`[UploadImage]    original name: ${req.file.originalname}`);
