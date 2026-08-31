@@ -82,7 +82,7 @@ const ProfileMenuContent: React.FC<ProfileMenuContentProps> = ({ token, currentU
   const avatarInitial = (displayName || displayEmail || '?').charAt(0).toUpperCase();
 
   return (
-    <div dir="rtl">
+    <div>
       <div className="flex justify-center pt-2 pb-3">
         <div className="w-11 h-11 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-sm shadow-md select-none ring-2 ring-blue-100">
           {avatarInitial}

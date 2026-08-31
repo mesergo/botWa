@@ -44,6 +44,8 @@ const API_BASE = window.location.hostname === 'localhost'
 
 export default function SmsExternalLogTab({ token }: SmsExternalLogTabProps) {
   const { t, i18n } = useTranslation('smsIn');
+  // Pagination chevrons point along the reading direction, so they follow the page dir.
+  const isRtl = i18n.dir() === 'rtl';
   const [logs, setLogs] = useState<ExternalLogEntry[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -286,7 +288,7 @@ export default function SmsExternalLogTab({ token }: SmsExternalLogTabProps) {
               onClick={() => setPage(p => p - 1)}
               className="flex items-center gap-1.5 px-4 py-2 rounded-2xl text-sm font-bold border border-slate-200 bg-white text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
             >
-              <ChevronRight size={14} />
+              {isRtl ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
               <span>{t('externalLog.pagination.previous')}</span>
             </button>
 
@@ -301,7 +303,7 @@ export default function SmsExternalLogTab({ token }: SmsExternalLogTabProps) {
               className="flex items-center gap-1.5 px-4 py-2 rounded-2xl text-sm font-bold border border-slate-200 bg-white text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
             >
               <span>{t('externalLog.pagination.next')}</span>
-              <ChevronLeft size={14} />
+              {isRtl ? <ChevronLeft size={14} /> : <ChevronRight size={14} />}
             </button>
           </div>
         )}

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Plus, Bot, ArrowLeft, Trash2, Calendar, LogOut, Shield, UserCog, Users, List, Settings, Save, User as UserIcon, Phone, Mail, Star, Copy, Check, Wifi, Gauge, MessageSquare, MessageCircle, Globe, Layers, CheckCircle, Eye, EyeOff, X, Menu, Image as ImageIcon, FileText, Link as LinkIcon, Unlink, UserMinus, AlertTriangle, RefreshCcw, ToggleLeft, ToggleRight, Zap, GitFork, Edit2 } from 'lucide-react';
+import { Plus, Bot, ArrowLeft, ArrowRight, Trash2, Calendar, LogOut, Shield, UserCog, Users, List, Settings, Save, User as UserIcon, Phone, Mail, Star, Copy, Check, Wifi, Gauge, MessageSquare, MessageCircle, Globe, Layers, CheckCircle, Eye, EyeOff, X, Menu, Image as ImageIcon, FileText, Link as LinkIcon, Unlink, UserMinus, AlertTriangle, RefreshCcw, ToggleLeft, ToggleRight, Zap, GitFork, Edit2 } from 'lucide-react';
 import ImpersonationBanner from './ImpersonationBanner';
 import { BotFlow, User } from '../types';
 import SubUsersTab from './SubUsersTab';
@@ -112,7 +112,7 @@ const AvailabilityBadge: React.FC<{
   status: AvailabilityStatus;
   onChange: (s: AvailabilityStatus) => void | Promise<void>;
 }> = ({ status, onChange }) => {
-  const { t } = useTranslation('dashboard');
+  const { t, i18n } = useTranslation('dashboard');
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -138,8 +138,9 @@ const AvailabilityBadge: React.FC<{
     }
   };
 
+  // Rendered inside the fixed `dir="ltr"` top bar, so the page direction is stated explicitly.
   return (
-    <div ref={wrapperRef} className="relative" dir="rtl">
+    <div ref={wrapperRef} className="relative" dir={i18n.dir()}>
       <button
         type="button"
         onClick={() => setOpen(v => !v)}
@@ -156,14 +157,14 @@ const AvailabilityBadge: React.FC<{
         <span>{t(AVAILABILITY_LABEL_KEYS[current.value])}</span>
       </button>
       {open && (
-        <div className="absolute mt-2 right-0 w-44 bg-white rounded-2xl shadow-xl border border-slate-100 py-2 z-50">
+        <div className="absolute mt-2 start-0 w-44 bg-white rounded-2xl shadow-xl border border-slate-100 py-2 z-50">
           {AVAILABILITY_OPTIONS.map(opt => {
             const isActive = opt.value === status;
             return (
               <button
                 key={opt.value}
                 onClick={() => handleSelect(opt.value)}
-                className={`w-full flex items-center gap-2 px-4 py-2 text-sm font-bold text-right hover:bg-slate-50 transition-colors ${isActive ? 'bg-slate-50' : ''}`}
+                className={`w-full flex items-center gap-2 px-4 py-2 text-sm font-bold text-start hover:bg-slate-50 transition-colors ${isActive ? 'bg-slate-50' : ''}`}
               >
                 <span className={`inline-block h-2.5 w-2.5 rounded-full ${opt.dot}`}></span>
                 <span className="flex-1 text-slate-700">{t(AVAILABILITY_LABEL_KEYS[opt.value])}</span>
@@ -178,7 +179,9 @@ const AvailabilityBadge: React.FC<{
 };
 
 const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, onDeleteBot, onSetDefaultBot, onLogout, currentUser, onOpenAdminPanel, onStopImpersonation, onSwitchAccount, onOpenContacts, onOpenSessions, onOpenGroups, onOpenSendMessages, onConnectFacebook, onUpdateBotPublicId, onUpdateBotEndpoint, onUpdateBotRestartKeyword, onUpdateAvailability, onGoHome,onOpenSmsIn, token, initialTab }) => {
-  const { t } = useTranslation('dashboard');
+  const { t, i18n } = useTranslation('dashboard');
+  // "Enter / edit" affordance points along the reading direction: left in Hebrew, right in English.
+  const ForwardArrow = i18n.dir() === 'rtl' ? ArrowLeft : ArrowRight;
   const can = usePermission(currentUser as User | null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newBotName, setNewBotName] = useState('');
@@ -1050,7 +1053,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
   };
 
   return (
-    <div className="h-screen w-screen bg-[#f8fafc] flex flex-col font-medium text-right overflow-hidden">
+    <div className="h-screen w-screen bg-[#f8fafc] flex flex-col font-medium text-start overflow-hidden">
       {/* Impersonation Banner */}
       <ImpersonationBanner currentUser={currentUser} onStopImpersonation={onStopImpersonation} token={token} onSwitchAccount={onSwitchAccount} />
       
@@ -1138,10 +1141,10 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
 
       {/* ── Settings Tab ── */}
       {activeTab === 'settings' && (
-        <div className="flex-1 flex flex-col md:flex-row overflow-hidden" dir="rtl">
+        <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
 
           {/* ── Inner settings sidebar ── */}
-          <aside className="w-full md:w-56 bg-white border-b md:border-b-0 md:border-l border-slate-100 py-3 md:py-6 px-3 flex-shrink-0 overflow-x-auto md:overflow-y-auto">
+          <aside className="w-full md:w-56 bg-white border-b md:border-b-0 md:border-e border-slate-100 py-3 md:py-6 px-3 flex-shrink-0 overflow-x-auto md:overflow-y-auto">
             <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider px-1 md:px-3 mb-2">{t('settingsNav.sectionTitle')}</p>
             <div className="flex md:flex-col gap-2 md:gap-1 min-w-max md:min-w-0">
             {([
@@ -1157,7 +1160,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
               <button
                 key={key}
                 onClick={() => setSettingsSection(key)}
-                className={`flex items-center gap-3 px-4 py-3 rounded-2xl font-bold text-sm transition-all w-auto md:w-full text-right whitespace-nowrap ${
+                className={`flex items-center gap-3 px-4 py-3 rounded-2xl font-bold text-sm transition-all w-auto md:w-full text-start whitespace-nowrap ${
                   settingsSection === key
                     ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20'
                     : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700'
@@ -1207,7 +1210,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                     <div>
                       <label className="block text-xs font-bold text-slate-400 mb-2">{t('settings.profile.fullName')}</label>
                       <input
-                        className="w-full px-5 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600 transition-all text-right disabled:opacity-60 disabled:cursor-not-allowed"
+                        className="w-full px-5 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600 transition-all text-start disabled:opacity-60 disabled:cursor-not-allowed"
                         value={editName}
                         onChange={e => setEditName(e.target.value)}
                         disabled={!can('settings.edit_profile')}
@@ -1217,7 +1220,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                       <label className="block text-xs font-bold text-slate-400 mb-2">{t('settings.profile.email')}</label>
                       <input
                         type="email"
-                        className="w-full px-5 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600 transition-all text-right disabled:opacity-60 disabled:cursor-not-allowed"
+                        className="w-full px-5 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600 transition-all text-start disabled:opacity-60 disabled:cursor-not-allowed"
                         value={editEmail}
                         onChange={e => setEditEmail(e.target.value)}
                         dir="ltr"
@@ -1228,7 +1231,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                       <label className="block text-xs font-bold text-slate-400 mb-2">{t('settings.profile.phone')}</label>
                       <input
                         type="tel"
-                        className="w-full px-5 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600 transition-all text-right disabled:opacity-60 disabled:cursor-not-allowed"
+                        className="w-full px-5 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600 transition-all text-start disabled:opacity-60 disabled:cursor-not-allowed"
                         value={editPhone}
                         onChange={e => setEditPhone(e.target.value)}
                         placeholder={t('settings.profile.phonePlaceholder')}
@@ -1237,10 +1240,10 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                     </div>
                   </div>
                   {profileError && (
-                    <div className="mt-4 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-red-600 text-sm font-bold text-right">{profileError}</div>
+                    <div className="mt-4 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-red-600 text-sm font-bold text-start">{profileError}</div>
                   )}
                   {profileSuccess && (
-                    <div className="mt-4 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 text-emerald-600 text-sm font-bold text-right flex items-center gap-2">
+                    <div className="mt-4 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 text-emerald-600 text-sm font-bold text-start flex items-center gap-2">
                       <Check size={16} /> {t('settings.profile.saveSuccess')}
                     </div>
                   )}
@@ -1371,7 +1374,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                     const maxNums = profile?.limits_in_effect?.maxConnectedNumbers ?? 1;
                     const atQuota = connectedNumbers.length >= maxNums;
                     return atQuota ? (
-                      <div className="flex items-center gap-2 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-2xl text-amber-800 text-xs font-bold max-w-xs text-right">
+                      <div className="flex items-center gap-2 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-2xl text-amber-800 text-xs font-bold max-w-xs text-start">
                         <AlertTriangle size={14} className="shrink-0 text-amber-500" />
                         {t('settings.numbers.quotaReached', { count: connectedNumbers.length, max: maxNums })}
                       </div>
@@ -2330,8 +2333,9 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
       {activeTab === 'bots' && can('bots.view_tab') && (
       <div className="flex-1 overflow-y-auto px-4 py-6 sm:px-6 sm:py-8 lg:px-10 lg:py-10 xl:px-12">
         <div className="max-w-6xl mx-auto">
-          <div className="flex flex-col-reverse sm:flex-row-reverse sm:items-center sm:justify-between gap-4 mb-6 sm:mb-8 lg:mb-10">
-            <h1 className="text-2xl sm:text-3xl font-black text-slate-900 text-right">{t('bots.title')}</h1>
+          {/* DOM order swapped (button before title) instead of flex-col-reverse/flex-row-reverse,
+              so the create button stays first (inline-start / top) and the title second in both languages. */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6 sm:mb-8 lg:mb-10">
             {can('bots.create') && (
               <button
                 onClick={() => setIsModalOpen(true)}
@@ -2340,6 +2344,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                 <Plus size={20} /> {t('bots.createNew')}
               </button>
             )}
+            <h1 className="text-2xl sm:text-3xl font-black text-slate-900 text-start">{t('bots.title')}</h1>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5 lg:gap-6">
@@ -2350,13 +2355,12 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                 onClick={() => can('bots.edit') && onEnterBot(bot)}
               >
                 <div>
-                  <div className="flex items-center justify-between mb-4 sm:mb-6 flex-row-reverse">
-                    <div className="p-3 sm:p-4 bg-blue-50 text-blue-600 rounded-2xl group-hover:bg-blue-600 group-hover:text-white transition-colors">
-                      <Bot size={28} />
-                    </div>
+                  {/* DOM order swapped (buttons before the icon) instead of flex-row-reverse, so the
+                      buttons stay at the inline-start and the icon at the inline-end in both languages. */}
+                  <div className="flex items-center justify-between mb-4 sm:mb-6">
                     <div className="flex items-center gap-2">
                       {can('bots.delete') && (
-                        <button 
+                        <button
                           onClick={(e) => { e.stopPropagation(); onDeleteBot(bot.id); }}
                           className="p-2 text-slate-200 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
                         >
@@ -2372,6 +2376,9 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                           <Settings size={18} />
                         </button>
                       )}
+                    </div>
+                    <div className="p-3 sm:p-4 bg-blue-50 text-blue-600 rounded-2xl group-hover:bg-blue-600 group-hover:text-white transition-colors">
+                      <Bot size={28} />
                     </div>
                   </div>
                   <h3 className="text-xl sm:text-2xl font-black text-slate-900 mb-2 truncate">{bot.name}</h3>
@@ -2397,7 +2404,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                   {can('bots.edit') && (
                   <div className="flex items-center gap-2 text-blue-600 font-black text-sm group-hover:gap-4 transition-all">
                     <span>{t('bots.enterEdit')}</span>
-                    <ArrowLeft size={18} />
+                    <ForwardArrow size={18} />
                   </div>
                   )}
                 </div>
@@ -2428,8 +2435,8 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
       </div>{/* end main layout */}
 
       {facebookConfirmBot && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[100] p-6 text-right">
-          <div className="bg-white w-full max-w-sm rounded-[2.5rem] shadow-2xl p-10 border border-slate-100" dir="rtl">
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[100] p-6 text-start">
+          <div className="bg-white w-full max-w-sm rounded-[2.5rem] shadow-2xl p-10 border border-slate-100">
             <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-3xl flex items-center justify-center mb-6">
               <FacebookIcon size={32} />
             </div>
@@ -2511,14 +2518,14 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
       )}
 
       {isModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[100] p-6 text-right">
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[100] p-6 text-start">
           <div className="bg-white w-full max-w-sm rounded-[2.5rem] shadow-2xl p-10 animate-in zoom-in duration-200 border border-slate-100">
             <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-3xl flex items-center justify-center mb-6 mr-0"><Plus size={32} /></div>
-            <h3 className="text-2xl font-bold text-slate-900 mb-2 text-right">{t('bots.newBotTitle')}</h3>
-            <p className="text-slate-400 text-sm mb-8 font-medium leading-relaxed text-right">{t('bots.newBotDescription')}</p>
+            <h3 className="text-2xl font-bold text-slate-900 mb-2 text-start">{t('bots.newBotTitle')}</h3>
+            <p className="text-slate-400 text-sm mb-8 font-medium leading-relaxed text-start">{t('bots.newBotDescription')}</p>
             <div className="space-y-6">
               <input
-                className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-blue-600/10 focus:border-blue-600 transition-all text-sm font-bold text-right"
+                className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-blue-600/10 focus:border-blue-600 transition-all text-sm font-bold text-start"
                 placeholder={t('bots.newBotPlaceholder')}
                 value={newBotName}
                 onChange={e => setNewBotName(e.target.value)}
@@ -2535,7 +2542,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
 
       {/* ── Internal Template Create/Edit Modal ── */}
       {showInternalTemplateModal && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4" dir="rtl">
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white p-8 rounded-3xl w-full max-w-xl shadow-2xl max-h-[90vh] flex flex-col overflow-y-auto">
             <div className="flex justify-between items-center mb-6 flex-shrink-0">
               <h3 className="text-xl font-black text-slate-800">{editingInternalTemplate ? t('templatesModal.editTitle') : t('templatesModal.newTitle')}</h3>
@@ -2552,7 +2559,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                   value={internalTemplateForm.name}
                   onChange={e => setInternalTemplateForm(f => ({ ...f, name: e.target.value }))}
                   placeholder={t('templatesModal.namePlaceholder')}
-                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-right outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-start outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                 />
               </div>
 
@@ -2563,7 +2570,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                   onChange={e => setInternalTemplateForm(f => ({ ...f, body: e.target.value }))}
                   rows={5}
                   placeholder={t('templatesModal.bodyPlaceholder', { p1: '{{1}}' })}
-                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-right outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all resize-none"
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-start outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all resize-none"
                 />
                 <p className="text-[11px] text-slate-400 mt-1.5 font-medium">
                   {t('templatesModal.paramsHintPrefix')} <span className="font-mono font-black bg-slate-100 px-1 rounded">{'{{1}}'}</span>, <span className="font-mono font-black bg-slate-100 px-1 rounded">{'{{2}}'}</span> {t('templatesModal.paramsHintSuffix')}
@@ -2744,13 +2751,13 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
 
       {/* ── Legal warning: disabling auto-removal ── */}
       {removalDisableConfirmOpen && removalDraft && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center p-6" dir="rtl">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center p-6">
           <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl border border-slate-100 p-8">
             <div className="flex items-start gap-4 mb-6">
               <div className="w-12 h-12 bg-red-50 text-red-600 rounded-2xl flex items-center justify-center flex-shrink-0 shrink-0">
                 <AlertTriangle size={24} />
               </div>
-              <div className="text-right">
+              <div className="text-start">
                 <h4 className="text-lg font-black text-slate-900 mb-2">{t('settings.removal.disableWarningTitle')}</h4>
                 <p className="text-sm text-slate-700 font-bold leading-relaxed mb-2">
                   {t('settings.removal.disableWarningLine1')}
@@ -2760,7 +2767,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                 </p>
               </div>
             </div>
-            <div className="bg-red-50 border border-red-200 rounded-2xl px-4 py-3 mb-6 text-right">
+            <div className="bg-red-50 border border-red-200 rounded-2xl px-4 py-3 mb-6 text-start">
               <p className="text-red-700 text-xs font-bold leading-relaxed">
                 {t('settings.removal.disableWarningAck')}
               </p>
@@ -2788,13 +2795,13 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
 
       {/* ── Confirm removal-config change ── */}
       {removalConfirmOpen && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[200] flex items-center justify-center p-6" dir="rtl">
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[200] flex items-center justify-center p-6">
           <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl border border-slate-100 p-8">
             <div className="flex items-start gap-4 mb-6">
               <div className="w-12 h-12 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center flex-shrink-0">
                 <AlertTriangle size={22} />
               </div>
-              <div className="text-right">
+              <div className="text-start">
                 <h4 className="text-lg font-black text-slate-900 mb-1">
                   {removalConfirmOpen === 'save' ? t('settings.removal.confirmSaveTitle') : t('settings.removal.confirmRevertTitle')}
                 </h4>

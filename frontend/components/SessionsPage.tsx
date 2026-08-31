@@ -1,6 +1,6 @@
 ﻿import React, { useState, useEffect, useRef } from 'react';
 import { WhatsAppText } from '../utils/whatsappFormat';
-import { Clock, MessageSquare, Search, Bot, User, Phone, List, Users, ExternalLink, X, Headphones, RefreshCw, Settings, UserCog, Layers, Plus, UserPlus, Check, Paperclip, ChevronRight, Bell, MoreVertical, Ban, Megaphone, Repeat } from 'lucide-react';
+import { Clock, MessageSquare, Search, Bot, User, Phone, List, Users, ExternalLink, X, Headphones, RefreshCw, Settings, UserCog, Layers, Plus, UserPlus, Check, Paperclip, ChevronRight, ChevronLeft, Bell, MoreVertical, Ban, Megaphone, Repeat } from 'lucide-react';
 import ImpersonationBanner, { SiblingAccount } from './ImpersonationBanner';
 import { TemplateHeaderMediaField } from './TemplateHeaderMediaField';
 import QuickInsertMenu from './shared/QuickInsertMenu';
@@ -11,6 +11,7 @@ import AnchoredDropdown from './AnchoredDropdown';
 import AppNav from './AppNav';
 import { useContactFields } from '../context/ContactFieldsContext';
 import RepPushNotifications from './RepPushNotifications';
+import { useTranslation } from 'react-i18next';
  
 interface Session {  
   id: string;
@@ -83,6 +84,10 @@ const WhatsAppIcon = ({ size = 12, className = '' }: { size?: number; className?
 );
 
 const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack, onLogout, onOpenContacts, onOpenGroups, onOpenSendMessages, onOpenAdminPanel,onOpenSmsIn, onOpenSettings, onOpenSubUsers, onStopImpersonation, onSwitchAccount, onUpdateAvailability, onGoHome, initialPhone, initialBotPhone }) => {
+  // UI direction follows the active language (he -> rtl, en -> ltr).
+  const { i18n } = useTranslation();
+  const isRtl = i18n.dir() === 'rtl';
+
   // Contacts panel state
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [contactsLoading, setContactsLoading] = useState(true);
@@ -1947,7 +1952,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 )}
               </div>
               <div className="flex flex-col gap-0.5 items-end">
-                <div className="px-3 py-1.5 rounded-2xl text-sm font-semibold shadow-sm text-right bg-purple-50 border border-purple-200 text-purple-900 rounded-tr-none">
+                <div className="px-3 py-1.5 rounded-2xl text-sm font-semibold shadow-sm text-start bg-purple-50 border border-purple-200 text-purple-900 rounded-ss-none">
                   {item.type === 'Image' && item.url && (
                     <img src={item.url} alt="תמונה" className="rounded-xl max-w-[200px] h-auto mb-2" />
                   )} 
@@ -1984,7 +1989,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                   )}
                 </div>
                 {item.wa_sent === false && (
-                  <div className="flex items-center gap-1.5 px-1 flex-wrap" dir="rtl">
+                  <div className="flex items-center gap-1.5 px-1 flex-wrap">
                     <span className="text-[9px] text-red-500 font-black">⚠️ לא נשלח ללקוח</span>
                     {item.wa_error && (
                       <span className="text-[9px] text-red-400">
@@ -2019,7 +2024,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 {msgDate && <span className="text-[9px] text-slate-400 font-semibold">{msgDate}</span>}
               </div>
               <div className="flex flex-col gap-0.5 items-end">
-                <div className="px-3 py-1.5 rounded-2xl text-sm font-semibold shadow-sm text-right bg-amber-50 border border-amber-200 text-amber-900 rounded-tr-none">
+                <div className="px-3 py-1.5 rounded-2xl text-sm font-semibold shadow-sm text-start bg-amber-50 border border-amber-200 text-amber-900 rounded-ss-none">
                   <p className="text-[9px] text-amber-500 font-black mb-0.5 uppercase tracking-widest">📢 שידור: {item.broadcast_group || item.name || 'רשימת תפוצה'}</p>
                   {item.template_name && (
                     <p className="text-[9px] text-amber-400 font-bold mb-1">תבנית: {item.template_name}</p>
@@ -2082,10 +2087,10 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
               )}
             </div>
             <div className={`flex flex-col gap-0.5 ${isBot ? 'items-end' : 'items-start'}`}>
-              <div className={`px-3 py-1.5 rounded-2xl text-sm font-semibold shadow-sm text-right
+              <div className={`px-3 py-1.5 rounded-2xl text-sm font-semibold shadow-sm text-start
                 ${isBot
-                  ? 'bg-white border border-slate-100 text-slate-900 rounded-tr-none'
-                  : 'bg-sky-500 text-white rounded-tl-none'}`}
+                  ? 'bg-white border border-slate-100 text-slate-900 rounded-ss-none'
+                  : 'bg-sky-500 text-white rounded-se-none'}`}
               >
                 {(item.type === 'Text' || item.type === 'UserInput' || !item.type || item.type.startsWith('input_')) && text && !isAudioUrl && (
                   <WhatsAppText text={text} className="leading-snug" />
@@ -2180,7 +2185,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
   };
 
   return (
-    <div className="h-[100dvh] w-full bg-[#f8fafc] flex flex-col font-medium text-right overflow-hidden" dir="rtl">
+    <div className="h-[100dvh] w-full bg-[#f8fafc] flex flex-col font-medium text-start overflow-hidden">
       {/* Impersonation Banner */}
       <ImpersonationBanner
         currentUser={currentUser}
@@ -2207,7 +2212,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 <RepPushNotifications token={token} />
               ) : null}
               {showAvailability ? (
-                <div ref={availabilityWrapperRef} className="relative" dir="rtl">
+                <div ref={availabilityWrapperRef} className="relative" dir={i18n.dir()}>
                   <button
                     type="button"
                     onClick={() => setAvailabilityOpen(v => !v)}
@@ -2231,7 +2236,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                           <button
                             key={opt.value}
                             onClick={() => handleAvailabilitySelect(opt.value)}
-                            className={`w-full flex items-center gap-2 px-4 py-2 text-sm font-bold text-right hover:bg-slate-50 transition-colors ${isActive ? 'bg-slate-50' : ''}`}
+                            className={`w-full flex items-center gap-2 px-4 py-2 text-sm font-bold text-start hover:bg-slate-50 transition-colors ${isActive ? 'bg-slate-50' : ''}`}
                           >
                             <span className={`inline-block h-2.5 w-2.5 rounded-full ${opt.dot}`}></span>
                             <span className="flex-1 text-slate-700">{opt.label}</span>
@@ -2347,7 +2352,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
         )}
 
         {/* ── Contacts panel (right side in RTL, ~25%) ── */}
-        <div className={`bg-white border-slate-100 flex-col overflow-hidden ${isCompactLayout ? 'w-full' : 'w-[25%] flex-shrink-0 border-l'} ${isCompactLayout && selectedPhone ? 'hidden' : 'flex'}`}>
+        <div className={`bg-white border-slate-100 flex-col overflow-hidden ${isCompactLayout ? 'w-full' : 'w-[25%] flex-shrink-0 border-e'} ${isCompactLayout && selectedPhone ? 'hidden' : 'flex'}`}>
           {/* Header */}
           <div className="flex-shrink-0 px-4 lg:px-5 py-3 lg:py-4 border-b border-slate-100">
             {/* Bot filter breadcrumb — only shown when there are multiple bots */}
@@ -2356,7 +2361,8 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 onClick={() => { setActiveBotFilter(null); setShowBotPicker(true); setSelectedPhone(null); }}
                 className="flex items-center gap-1.5 text-xs font-bold text-indigo-500 hover:text-indigo-700 mb-3 transition-colors"
               >
-                <ChevronRight size={14} />
+                {/* "back to the bot picker" — points along the reading direction */}
+                {isRtl ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
                 <span className="truncate">{activeBotFilter.display_phone_number || activeBotFilter.name}</span>
               </button>
             )}
@@ -2390,7 +2396,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                                       key={acc.id}
                                       type="button"
                                       onClick={() => { setProfileMenuOpen(false); onSwitchAccount(acc.id); }}
-                                      className="w-full flex items-center gap-2 px-4 py-2 text-sm font-bold text-slate-600 hover:bg-slate-50 transition-colors text-right"
+                                      className="w-full flex items-center gap-2 px-4 py-2 text-sm font-bold text-slate-600 hover:bg-slate-50 transition-colors text-start"
                                     >
                                       <Repeat size={16} className="flex-shrink-0" />
                                       <span className="truncate">{acc.name}</span>
@@ -2402,7 +2408,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                           </AnchoredDropdown>
                         )}
                       </div>
-                      <div ref={availabilityWrapperRef} className="relative flex-shrink-0 w-[92px]" dir="rtl">
+                      <div ref={availabilityWrapperRef} className="relative flex-shrink-0 w-[92px]">
                         <button
                           type="button"
                           onClick={() => setAvailabilityOpen(v => !v)}
@@ -2419,14 +2425,14 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                           <span className="truncate">{currentAvailability.label}</span>
                         </button>
                         {availabilityOpen && (
-                          <div className="absolute mt-2 right-0 w-44 bg-white rounded-2xl shadow-xl border border-slate-100 py-2 z-50">
+                          <div className="absolute mt-2 start-0 w-44 bg-white rounded-2xl shadow-xl border border-slate-100 py-2 z-50">
                             {AVAILABILITY_OPTIONS.map(opt => {
                               const isActive = opt.value === (currentUser?.availability_status || 'available');
                               return (
                                 <button
                                   key={opt.value}
                                   onClick={() => handleAvailabilitySelect(opt.value)}
-                                  className={`w-full flex items-center gap-2 px-4 py-2 text-sm font-bold text-right hover:bg-slate-50 transition-colors ${isActive ? 'bg-slate-50' : ''}`}
+                                  className={`w-full flex items-center gap-2 px-4 py-2 text-sm font-bold text-start hover:bg-slate-50 transition-colors ${isActive ? 'bg-slate-50' : ''}`}
                                 >
                                   <span className={`inline-block h-2.5 w-2.5 rounded-full ${opt.dot}`}></span>
                                   <span className="flex-1 text-slate-700">{opt.label}</span>
@@ -2462,9 +2468,9 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
               )}
             </div>
             <div className="relative">
-              <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-300" size={15} />
+              <Search className="absolute start-3 top-1/2 -translate-y-1/2 text-slate-300" size={15} />
               <input
-                className="w-full pr-9 pl-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-400 transition-all text-right font-medium"
+                className="w-full ps-9 pe-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-400 transition-all text-start font-medium"
                 placeholder="חיפוש איש קשר..."
                 value={contactSearch}
                 onChange={e => setContactSearch(e.target.value)}
@@ -2535,11 +2541,11 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                     <button
                       key={contact.phone}
                       onClick={() => setSelectedPhone(contact.phone)}
-                      className={`w-full px-3 py-2 flex items-center gap-2.5 text-right transition-colors border-b border-slate-50 relative
+                      className={`w-full px-3 py-2 flex items-center gap-2.5 text-start transition-colors border-b border-slate-50 relative
                         ${isSelected ? 'bg-sky-50' : 'hover:bg-slate-50'}`}
                     >
                       {isSelected && (
-                        <span className="absolute right-0 top-0 bottom-0 w-1 bg-sky-500 rounded-l-full" />
+                        <span className="absolute start-0 top-0 bottom-0 w-1 bg-sky-500 rounded-e-full" />
                       )}
                       <div className={`w-8 h-8 rounded-xl flex-shrink-0 flex items-center justify-center text-xs font-black
                         ${isSelected ? 'bg-sky-500 text-white' : sim ? 'bg-blue-50 text-blue-400' : 'bg-slate-100 text-slate-500'}`}>
@@ -2550,12 +2556,12 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                           <p className={`text-xs font-black truncate flex items-center gap-1 ${isSelected ? 'text-sky-700' : 'text-slate-800'}`}>
                             {sim ? 'סימולטור' : contact.phone}
                             {!sim && !contact.full_name && contact.whatsapp_name && (
-                              <span className={`text-xs font-semibold flex items-center gap-0.5 mr-1 ${isSelected ? 'text-sky-600' : 'text-slate-500'}`}>
+                              <span className={`text-xs font-semibold flex items-center gap-0.5 ms-1 ${isSelected ? 'text-sky-600' : 'text-slate-500'}`}>
                                 · <WhatsAppIcon size={10} className="text-slate-400" /> {contact.whatsapp_name}
                               </span>
                             )}
                             {!sim && contact.full_name && (
-                              <span className={`text-xs font-semibold flex items-center gap-0.5 mr-1 ${isSelected ? 'text-sky-600' : 'text-slate-500'}`}>
+                              <span className={`text-xs font-semibold flex items-center gap-0.5 ms-1 ${isSelected ? 'text-sky-600' : 'text-slate-500'}`}>
                                 · {contact.full_name}
                               </span>
                             )}
@@ -2653,11 +2659,11 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                               <button
                                 key={`content-${cr.phone}`}
                                 onClick={() => setSelectedPhone(cr.phone)}
-                                className={`w-full px-4 py-3 flex items-center gap-3 text-right transition-colors border-b border-slate-50 relative
+                                className={`w-full px-4 py-3 flex items-center gap-3 text-start transition-colors border-b border-slate-50 relative
                                   ${isSelected ? 'bg-sky-50' : 'hover:bg-amber-50/60'}`}
                               >
                                 {isSelected && (
-                                  <span className="absolute right-0 top-0 bottom-0 w-1 bg-sky-500 rounded-l-full" />
+                                  <span className="absolute start-0 top-0 bottom-0 w-1 bg-sky-500 rounded-e-full" />
                                 )}
                                 <div className={`w-9 h-9 rounded-2xl flex-shrink-0 flex items-center justify-center text-sm font-black
                                   ${isSelected ? 'bg-sky-500 text-white' : 'bg-amber-100 text-amber-600'}`}>
@@ -2667,7 +2673,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                                   <p className={`text-sm font-black truncate ${isSelected ? 'text-sky-700' : 'text-slate-800'}`}>
                                     {cr.phone}
                                     {cr.whatsapp_name && (
-                                      <span className={`text-sm font-semibold mr-1.5 ${isSelected ? 'text-sky-600' : 'text-slate-500'}`}>
+                                      <span className={`text-sm font-semibold ms-1.5 ${isSelected ? 'text-sky-600' : 'text-slate-500'}`}>
                                         · {cr.whatsapp_name}
                                       </span>
                                     )}
@@ -2792,11 +2798,11 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                       <MoreVertical size={18} />
                     </button>
                     {showActionsMenu && (
-                      <div className="absolute top-full mt-1 left-0 bg-white rounded-2xl shadow-xl border border-slate-100 py-1.5 z-50 min-w-[200px]">
+                      <div className="absolute top-full mt-1 end-0 bg-white rounded-2xl shadow-xl border border-slate-100 py-1.5 z-50 min-w-[200px]">
                         {!isSimulator(selectedPhone!) && (currentStatus === 'bot' || currentStatus === 'waiting' || currentStatus === 'handling') && (
                           <button
                             onClick={() => { setShowActionsMenu(false); markResolved(); }}
-                            className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-emerald-50 hover:text-emerald-700 transition-colors text-right"
+                            className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-emerald-50 hover:text-emerald-700 transition-colors text-start"
                             title="סמן כטופל — השיחה תיפתח מחדש אם הלקוח יכתוב"
                           >
                             <Check size={15} />
@@ -2806,7 +2812,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                         {!isSimulator(selectedPhone!) && isAgentMode && (
                           <button
                             onClick={() => { setShowActionsMenu(false); deactivateAgent(); }}
-                            className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-emerald-50 hover:text-emerald-700 transition-colors text-right"
+                            className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-emerald-50 hover:text-emerald-700 transition-colors text-start"
                           >
                             <RefreshCw size={15} />
                             החזרת השיחה לבוט
@@ -2815,7 +2821,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                         {!isSimulator(selectedPhone!) && (currentStatus === 'waiting' || currentStatus === 'handling' || currentStatus === 'resolved') && (
                           <button
                             onClick={() => { setShowActionsMenu(false); closeConversation(); }}
-                            className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-100 hover:text-slate-800 transition-colors text-right"
+                            className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-100 hover:text-slate-800 transition-colors text-start"
                             title="סמן שיחה כסיומה"
                           >
                             <X size={15} />
@@ -2824,7 +2830,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                         )}
                         <button
                           onClick={() => { setShowActionsMenu(false); openTransferModal(); }}
-                          className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 transition-colors text-right"
+                          className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 transition-colors text-start"
                         >
                           <Headphones size={15} />
                           העברת שיחה{isSimulator(selectedPhone!) ? ' (סימולטור)' : ''}
@@ -2833,7 +2839,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                           <button
                             onClick={addContactToBlocklist}
                             disabled={addingToBlocklist}
-                            className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-red-50 hover:text-red-600 transition-colors text-right disabled:opacity-60"
+                            className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-red-50 hover:text-red-600 transition-colors text-start disabled:opacity-60"
                           >
                             <Ban size={15} />
                             {addingToBlocklist ? 'מוסיף...' : 'הוספה לרשימת הסרה'}
@@ -2868,7 +2874,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
 
               {/* Agent mode banner */}
               {isAgentMode && (
-                <div className="flex-shrink-0 px-6 py-2.5 bg-amber-50 border-b border-amber-200 flex items-center gap-3" dir="rtl">
+                <div className="flex-shrink-0 px-6 py-2.5 bg-amber-50 border-b border-amber-200 flex items-center gap-3">
                   <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse flex-shrink-0" />
                   <p className="text-xs font-black text-amber-800 flex-1">
                     מצב נציג פעיל — הבוט מושהה. הודעות מהלקוח לא יקבלו מענה אוטומטי.
@@ -2883,13 +2889,13 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
 
               {/* WhatsApp send failure banner */}
               {agentWaFailed && (
-                <div className="flex-shrink-0 px-6 py-2.5 bg-red-50 border-b border-red-200 flex items-center gap-3" dir="rtl">
+                <div className="flex-shrink-0 px-6 py-2.5 bg-red-50 border-b border-red-200 flex items-center gap-3">
                   <div className="w-2 h-2 rounded-full bg-red-500 flex-shrink-0" />
                   <p className="text-xs font-black text-red-700 flex-1">
                     ⚠️ ההודעה נשמרה בהיסטוריה אך <strong>לא נשלחה ללקוח</strong>
                     {agentWaRetryable
                       ? <span className="font-normal text-red-600"> — שגיאת שער (502): השרת עמוס זמנית. <span className="underline cursor-pointer" onClick={() => { setAgentWaFailed(false); setAgentWaError(null); setAgentWaRetryable(false); sendAgentMsg(); }}>נסה שוב</span></span>
-                      : <span className="font-normal text-red-500 mr-1"> — {agentWaError ? (agentWaError.length > 100 ? agentWaError.slice(0, 100) + '…' : agentWaError) : 'בעיה ב-WhatsApp API'}</span>
+                      : <span className="font-normal text-red-500 ms-1"> — {agentWaError ? (agentWaError.length > 100 ? agentWaError.slice(0, 100) + '…' : agentWaError) : 'בעיה ב-WhatsApp API'}</span>
                     }
                   </p>
                   <button onClick={() => { setAgentWaFailed(false); setAgentWaError(null); setAgentWaRetryable(false); }} className="text-red-400 hover:text-red-600">
@@ -2911,7 +2917,6 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 <div
                   ref={chatScrollRef}
                   className="flex-1 overflow-y-auto p-2 sm:p-3"
-                  dir="rtl"
                   onScroll={() => {
                     const el = chatScrollRef.current;
                     if (!el || loadingMoreMsgs) return;
@@ -2965,7 +2970,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
 
               {/* Message input bar */}
               {!phoneSessionsLoading && (
-                <div className="flex-shrink-0 bg-white border-t border-slate-100 px-2 sm:px-3 lg:px-4 py-2.5 lg:py-3" dir="rtl">
+                <div className="flex-shrink-0 bg-white border-t border-slate-100 px-2 sm:px-3 lg:px-4 py-2.5 lg:py-3">
                   {phoneSessions.length === 0 && (
                     <div className="flex items-center gap-2 mb-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-700 font-semibold">
                       <span className="text-base">⚠️</span>
@@ -3029,7 +3034,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                                     <button
                                       key={idx}
                                       onClick={() => handleTemplateSelect(template)}
-                                      className="w-full text-right px-3 py-2 hover:bg-sky-50 rounded-lg transition-colors"
+                                      className="w-full text-start px-3 py-2 hover:bg-sky-50 rounded-lg transition-colors"
                                     >
                                       <div className="flex items-center justify-between mb-1">
                                         <span className="font-medium text-slate-800 text-sm">/{name}</span>
@@ -3069,7 +3074,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                                       <button
                                         key={template._id}
                                         onClick={() => handleInternalTemplateSelect(template)}
-                                        className="w-full text-right px-3 py-2 hover:bg-indigo-50 rounded-lg transition-colors"
+                                        className="w-full text-start px-3 py-2 hover:bg-indigo-50 rounded-lg transition-colors"
                                       >
                                         <div className="flex items-center justify-between mb-1">
                                           <span className="font-medium text-slate-800 text-sm">/{template.name}</span>
@@ -3139,7 +3144,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                           <div className="relative inline-block">
                             <button
                               onClick={() => setAttachedFile(null)}
-                              className="absolute -top-1.5 -left-1.5 z-10 w-5 h-5 bg-slate-600/80 text-white rounded-full flex items-center justify-center hover:bg-red-500 transition-colors shadow"
+                              className="absolute -top-1.5 -end-1.5 z-10 w-5 h-5 bg-slate-600/80 text-white rounded-full flex items-center justify-center hover:bg-red-500 transition-colors shadow"
                             >
                               <X size={9} />
                             </button>
@@ -3179,7 +3184,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                         }}
                         placeholder={attachedFile ? 'כיתוב (אופציונלי)...' : (phoneSessions.length === 0 ? 'הקש / לבחירת תבנית לשליחה ללקוח חדש...' : 'כתוב הודעה ללקוח... (/ לטמפלייטים)')}
                         rows={1}
-                        className='w-full bg-transparent px-4 py-2.5 text-sm text-right font-medium outline-none text-slate-800 placeholder:text-slate-400 resize-none max-h-40 overflow-y-auto leading-normal'
+                        className='w-full bg-transparent px-4 py-2.5 text-sm text-start font-medium outline-none text-slate-800 placeholder:text-slate-400 resize-none max-h-40 overflow-y-auto leading-normal'
                       />
                     </div>
                     {fileUploadError && (
@@ -3202,7 +3207,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
 
       {/* Advanced message search modal */}
       {showAdvancedSearch && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" dir="rtl">
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-3xl shadow-2xl max-w-xl w-full flex flex-col max-h-[88vh] overflow-hidden">
             {/* Header */}
             <div className="px-6 pt-6 pb-4 border-b border-slate-100 flex items-center justify-between">
@@ -3223,10 +3228,10 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
             {/* Search controls */}
             <div className="px-6 py-4 border-b border-slate-100 space-y-3">
               <div className="relative">
-                <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-300" size={15} />
+                <Search className="absolute start-3 top-1/2 -translate-y-1/2 text-slate-300" size={15} />
                 <input
                   type="text"
-                  className="w-full pr-9 pl-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all text-right font-medium"
+                  className="w-full ps-9 pe-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all text-start font-medium"
                   placeholder="חיפוש בתוכן הודעות..."
                   value={advancedQuery}
                   onChange={e => { setAdvancedQuery(e.target.value); setAdvancedSearchError(null); }}
@@ -3288,15 +3293,15 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                     return (
                       <button key={cr.phone}
                         onClick={() => { setSelectedPhone(cr.phone); setShowAdvancedSearch(false); }}
-                        className={`w-full px-4 py-3.5 flex items-center gap-3 text-right transition-colors border-b border-slate-50 relative ${isSel ? 'bg-indigo-50' : 'hover:bg-slate-50'}`}>
-                        {isSel && <span className="absolute right-0 top-0 bottom-0 w-1 bg-indigo-500 rounded-l-full" />}
+                        className={`w-full px-4 py-3.5 flex items-center gap-3 text-start transition-colors border-b border-slate-50 relative ${isSel ? 'bg-indigo-50' : 'hover:bg-slate-50'}`}>
+                        {isSel && <span className="absolute start-0 top-0 bottom-0 w-1 bg-indigo-500 rounded-e-full" />}
                         <div className={`w-10 h-10 rounded-2xl flex-shrink-0 flex items-center justify-center text-sm font-black ${isSel ? 'bg-indigo-500 text-white' : 'bg-indigo-100 text-indigo-600'}`}>
                           {display.charAt(0).toUpperCase()}
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 justify-between">
                             <p className={`text-sm font-black truncate ${isSel ? 'text-indigo-700' : 'text-slate-800'}`}>
-                              {cr.phone}{cr.whatsapp_name && <span className="font-semibold text-slate-500 mr-1.5"> · {cr.whatsapp_name}</span>}
+                              {cr.phone}{cr.whatsapp_name && <span className="font-semibold text-slate-500 ms-1.5"> · {cr.whatsapp_name}</span>}
                             </p>
                             {cr.matchCount > 1 && (
                               <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-600 flex-shrink-0">{cr.matchCount} התאמות</span>
@@ -3318,7 +3323,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
 
       {/* New conversation modal */}
       {showNewConvModal && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" dir="rtl">
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white rounded-3xl shadow-2xl max-w-sm w-full mx-4 overflow-hidden">
             <div className="px-6 pt-6 pb-4">
               <div className="flex items-center gap-3 mb-3">
@@ -3371,7 +3376,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
 
       {/* Agent confirmation dialog */}
       {showAgentConfirm && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" dir="rtl">
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white rounded-3xl shadow-2xl max-w-sm w-full mx-4 overflow-hidden">
             <div className="px-6 pt-6 pb-4">
               <div className="flex items-center gap-3 mb-3">
@@ -3405,7 +3410,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
 
       {/* Template parameters modal */}
       {showTemplateParamsModal && selectedTemplate && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" dir="rtl">
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-3xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
             {/* Header */}
             <div className="px-6 pt-6 pb-4 border-b border-slate-100">
@@ -3426,7 +3431,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
             {/* Body - Two columns: Form on right, Preview on left */}
             <div className="flex-1 overflow-hidden flex flex-col lg:flex-row">
               {/* Right Side - Form */}
-              <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4 border-l border-slate-100">
+              <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4 border-e border-slate-100">
               {selectedTemplate.components && selectedTemplate.components.map((comp: any, idx: number) => {
                 // Header with media
                 if (comp.type === 'HEADER' && ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(comp.format)) {
@@ -3502,13 +3507,12 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
 
                           return (
                             <div key={varIdx}>
-                              <label className="block text-xs font-semibold text-slate-600 mb-1 text-right">
+                              <label className="block text-xs font-semibold text-slate-600 mb-1 text-start">
                                 {match} - משתנה מספר {varNum}
                               </label>
                               <div className="flex items-center border border-slate-200 rounded-xl overflow-hidden focus-within:ring-2 focus-within:ring-sky-500/20 focus-within:border-sky-400 transition-all bg-white">
                                 <input
                                   type="text"
-                                  dir="rtl"
                                   value={templateParams.body?.[varIdx] || ''}
                                   onChange={(e) => {
                                     const newBody = [...(templateParams.body || [])];
@@ -3521,8 +3525,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                                 {hasContactFields && (
                                   <div className="relative flex-shrink-0">
                                     <select
-                                      dir="rtl"
-                                      className="appearance-none h-full px-2 py-2 bg-slate-50 border-r border-slate-200 text-slate-400 text-xs cursor-pointer hover:bg-indigo-50 hover:text-indigo-600 transition-colors outline-none pr-6 pl-1"
+                                      className="appearance-none h-full px-2 py-2 bg-slate-50 border-s border-slate-200 text-slate-400 text-xs cursor-pointer hover:bg-indigo-50 hover:text-indigo-600 transition-colors outline-none ps-6 pe-1"
                                       value=""
                                       onChange={(e) => {
                                         if (!e.target.value) return;
@@ -3736,7 +3739,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
 
       {/* Assign reps modal */}
       {showAssignModal && assignModalPhone && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" dir="rtl">
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 p-6">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-base font-black text-slate-900">שיוך נציגים</h3>
@@ -3802,7 +3805,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
 
       {/* Transfer conversation modal */}
       {showTransferModal && selectedPhone && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" dir="rtl">
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 p-6">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-base font-black text-slate-900">העברת שיחה</h3>
@@ -3922,8 +3925,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
       {/* ── Transfer notifications toast stack ─────────────────────────────── */}
       {pendingNotifications.length > 0 && (
         <div
-          className="fixed bottom-5 left-5 z-[100] flex flex-col gap-2 max-w-xs w-full"
-          dir="rtl"
+          className="fixed bottom-5 end-5 z-[100] flex flex-col gap-2 max-w-xs w-full"
           style={{ maxHeight: '80vh', overflowY: 'auto' }}
         >
           {/* Dismiss-all button when more than one */}

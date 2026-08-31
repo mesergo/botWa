@@ -177,5 +177,180 @@
       "page": "עמוד",
       "next": "הבא"
     }
+  },
+  "app": {
+    "errors": {
+      "loadClients": "לא ניתן לטעון לקוחות מ-MongoDB",
+      "selectDestBeforeExport": "יש לבחור נתב / קו נמען (dest) לפני ייצוא",
+      "exportLoadFailed": "שגיאה בטעינת ההודעות לייצוא",
+      "selectValidDate": "נא לבחור תאריך תקין",
+      "noMessagesForDate": "לא נמצאו הודעות המתאימות לתאריך {{date}}",
+      "noSettingsForDest": "לא נמצאו הגדרות שיוך למספר נמען {{dest}}",
+      "noWebhookConfigured": "לא הוגדרה כתובת Google Sheets או Webhook עבור מספר זה. אנא הגדר בהגדרות החיבור"
+    },
+    "toasts": {
+      "logoutSuccess": "התנתקת מהמערכת בהצלחה",
+      "messageDeleted": "ההודעה נמחקה בהצלחה",
+      "idCopied": "מזהה ObjectID הועתק ללוח",
+      "noExportMatches": "אין הודעות לייצוא בהתאם למסננים שנבחרו",
+      "exportSuccess": "ייצוא של {{count}} הודעות בוצע בהצלחה!",
+      "exportCapped": "יוצאו {{sent}} מתוך {{total}} הודעות התואמות למסננים — הקובץ אינו כולל את כל הרשומות",
+      "exportCappedByDate": "יוצאו {{sent}} מתוך {{total}} הודעות התואמות למסננים — ייתכן שהתאריך שנבחר אינו כולל את כל הרשומות",
+      "webhookResent": "בקשת ניתוב חוזרת נשלחה לכתובת הווב-הוק של {{dest}}",
+      "clientAdded": "הלקוח \"{{name}}\" התווסף בהצלחה למאגר",
+      "clientDeleted": "הלקוח נמחק בהצלחה ועודכנו שיוכי קווים פעילים",
+      "clientUpdated": "פרטי הלקוח עודכנו בהצלחה",
+      "saveLocalOnly": "ההגדרות נשמרו מקומית בלבד — שמירה לשרת נכשלה",
+      "savingAndSyncing": "שומר הגדרות ומסנכרן היסטוריית הודעות לגוגל שיטס...",
+      "lineSavedWithSync": "הגדרות קו {{dest}} נשמרו! {{sent}} הודעות היסטוריות נשלחו לגוגל שיטס (מתוך {{total}})",
+      "lineSaved": "הגדרות קו {{dest}} עודכנו בהצלחה!",
+      "bulkAssignSuccess": "שויכו {{count}} מספרים ל-{{client}}",
+      "bulkAssignFailed": "שיוך המספרים נכשל",
+      "filtersCleared": "המסננים נוקו בהצלחה",
+      "historySyncAll": "{{count}} הודעות היסטוריות נשלחו לגוגל שיטס",
+      "historySyncPartial": "{{sent}} מתוך {{total}} הודעות נשלחו לגוגל שיטס"
+    },
+    "webhookLog": {
+      "corsSuccess": "200 OK — בקשת POST נשלחה בהצלחה במצב מעקף CORS",
+      "connectionError": "שגיאה בחיבור: {{error}}"
+    },
+    "dbNotice": {
+      "connectionFailed": {
+        "title": "לא ניתן להתחבר לשרת",
+        "detail": "בקשת ההודעות נכשלה. בדוק שהשרת (backend) פועל ושהכתובת נגישה מהדפדפן."
+      },
+      "notConfigured": {
+        "title": "מסד ה-SMS אינו מוגדר",
+        "detail": "חסר SMS_MONGODB_URI בהגדרות השרת (backend/.env) — לכן אין מאיפה לטעון הודעות."
+      },
+      "disconnected": {
+        "title": "אין חיבור למסד ה-SMS",
+        "detail": "השרת לא הצליח להתחבר למסד ה-SMS החיצוני. ההודעות אינן נטענות עד שהחיבור יחזור."
+      }
+    },
+    "login": {
+      "errors": {
+        "missingCredentials": "אנא הזן דוא\"ל וסיסמה תקינים",
+        "invalidPassword": "סיסמה שגויה או קצרה מדי (מינימום 4 תווים)"
+      },
+      "toasts": {
+        "loginSuccess": "התחברת למערכת בהצלחה אדמין מסרגו"
+      },
+      "tagline": "המערכת המרכזית לניהול, ניתוב ווב-הוק ושליית הודעות נכנסות",
+      "emailLabel": "כתובת אימייל מורשת",
+      "passwordLabel": "סיסמת מנהל (אדמין)",
+      "passwordPlaceholder": "הזן סיסמה...",
+      "demoPasswordLabel": "סיסמת הדגמה ברירת מחדל:",
+      "rememberMe": "זכור אותי במחשב זה",
+      "forgotPassword": "שכחת סיסמה?",
+      "submitButton": "כניסה מאובטחת לאדמין",
+      "footer": "מערכת ניהול מבית מסרגו פתרונות תקשורת בע\"מ (2026)"
+    },
+    "sidebar": {
+      "roleLabel": "אדמין ראשי מורשה",
+      "logout": "התנתקות"
+    },
+    "tabs": {
+      "smsIn": "הודעות נכנסות",
+      "routing": "שיוך קווים",
+      "clients": "ניהול לקוחות",
+      "integrations": "ווב-הוקס",
+      "dashboard": "סטטיסטיקה"
+    },
+    "pageTitles": {
+      "smsIn": { "title": "הודעות SMS נכנסות", "subtitle": "צפייה, סינון וייצוא של הודעות SMS שנכנסו למערכת" },
+      "routing": { "title": "שיוך וניתוב קווים", "subtitle": "שיוך קווי destination ללקוחות קצה" },
+      "clients": { "title": "ניהול לקוחות", "subtitle": "ניהול לקוחות הקצה במערכת" },
+      "integrations": { "title": "ווב-הוקס וחיבורים", "subtitle": "חיבור ל-Google Sheets ו-Webhook" },
+      "dashboard": { "title": "סקירה וסטטיסטיקה", "subtitle": "תמונת מצב כללית של הניתוב וההודעות" }
+    },
+    "stats": {
+      "totalSms": { "label": "סך כל ה-SMS", "suffix": "הודעות רשומות" },
+      "filtered": { "label": "מסוננות בטבלה" },
+      "activeRoutes": { "label": "קווים מנותבים פעילים", "suffix": "במסגרת" },
+      "totalClients": { "label": "מאגר לקוחות קצה", "suffix": "חברות שונות" }
+    },
+    "filters": {
+      "title": "מסננים וחיפוש",
+      "searchLabel": "חפש לפי מספר שולח / תוכן הודעה / מזהה",
+      "searchPlaceholder": "סינון חופשי לפי מספר או טקסט...",
+      "destLabel": "נתב / קו נמען (dest)",
+      "destPlaceholder": "חפש מספר נמען...",
+      "clearDestAria": "נקה בחירת נתב",
+      "allNumbers": "כל המספרים",
+      "noMatchingNumbers": "לא נמצאו מספרים תואמים",
+      "clientLabel": "לקוח משויך לקו",
+      "allClientsPlaceholder": "כל הלקוחות",
+      "clearClientAria": "נקה בחירת לקוח",
+      "allClientsOption": "כל הלקוחות",
+      "noMatchingClients": "לא נמצאו לקוחות תואמים",
+      "fromDate": "מתאריך",
+      "toDate": "עד תאריך",
+      "selectDestHint": "יש לבחור נתב / קו נמען (dest) כדי לאפשר ייצוא",
+      "clearActive": "נקה מסננים פעילים"
+    },
+    "export": {
+      "exporting": "מייצא...",
+      "exportAllCsv": "יצא הכל ל-CSV ({{count}})",
+      "exportByDate": "יצא לפי תאריך ספציפי",
+      "noAssignment": "ללא שיוך"
+    },
+    "table": {
+      "filteredFrom": "סוננו מ-{{total}}",
+      "emptyTitle": "לא נמצאו הודעות SMS תואמות",
+      "emptyDbNotice": "ההודעות אינן נטענות כרגע — ראה את ההודעה בראש המסך.",
+      "emptyNoAssignedLine": "עדיין לא שויך אליך קו SMS. פנה למנהל המערכת לשיוך קו."
+    },
+    "routing": {
+      "infoBanner": "קווים מוצגים אוטומטית מתוך מספרי הנמען (dest) שנכנסו להודעות ממסד הנתונים. לחץ על שורה לעריכת שיוך לקוח, Google Sheets ו-Webhook.",
+      "bulkAssignButton": "שיוך מספרים מרוכז",
+      "searchLabel": "חפש קו נמען",
+      "searchPlaceholder": "חפש לפי מספר נמען / לקוח / הערה...",
+      "showingCount": "מציג {{shown}} מתוך {{total}} קווים",
+      "columns": {
+        "dest": "קו נמען (dest)",
+        "status": "סטטוס",
+        "client": "לקוח משויך",
+        "notes": "הערות",
+        "actions": "פעולות"
+      },
+      "noSearchResults": "לא נמצאו קווים תואמים לחיפוש",
+      "emptyLines": "אין קווים להצגה — טען הודעות ממסד הנתונים או המתן להודעות נכנסות",
+      "statusDisabled": "מנוטרל",
+      "unassigned": "לא משויך",
+      "editButton": "עריכה"
+    },
+    "autoNotes": "נוסף אוטומטית מהודעות נכנסות",
+    "dashboard": {
+      "overviewTitle": "סקירת מערכת ניתוב SMS",
+      "overviewDescription": "מערכת זו מאפשרת לקבל הודעות נכנסות ממכשירי הקצה של לקוחותינו ולנתב אותם בזמן אמת אל קובצי Google Sheets וניהול לקוחות מרובים במקביל בצורה מאובטחת.",
+      "linePopularityTitle": "פופולריות קווים (סך הודעות נכנסות לקו)",
+      "smsCountPercent": "{{count}} SMS ({{percent}}%)",
+      "toolsTitle": "מדריכים וכלים חיצוניים",
+      "openAppsScriptConsole": "פתח את Google Apps Script Console",
+      "webhookTipTitle": "עצה לפריסת Webhook מנצחת:",
+      "webhookTipDescription": "במידה ומשתמשים בקוד ה-Apps Script, מומלץ תמיד לקבוע הרשאת ריצה של \"Everyone - כולל כולם\" כדי לאפשר לנתב מסרגו לקשר את הודעות ה-SMS בצורה חופשית ללא הפרעה."
+    },
+    "footer": {
+      "copyright": "כל הזכויות שמורות למנהל אדמין Mesergo Solutions. מחובר כעת: {{email}}"
+    },
+    "bulkAssignModal": {
+      "title": "שיוך מספרים מרוכז",
+      "numbersLabel": "מספרי קו נמען",
+      "numbersPlaceholder": "הדבק מספרים, שורה/פסיק/רווח לכל מספר",
+      "clientLabel": "שיוך ללקוח",
+      "selectClientOption": "בחר לקוח...",
+      "cancel": "ביטול",
+      "assigning": "משייך...",
+      "assignButton": "שייך"
+    },
+    "exportDateModal": {
+      "title": "ייצוא הודעות SMS לפי תאריך",
+      "dateLabel": "בחר תאריך יעד לייצוא",
+      "description": "כל הודעות ה-SMS אשר הגיעו למערכת בתאריך נבחר זה יסוננו וייוצאו כקובץ CSV.",
+      "cancel": "ביטול",
+      "exporting": "מייצא...",
+      "exportButton": "ייצא והורד"
+    }
   }
 }

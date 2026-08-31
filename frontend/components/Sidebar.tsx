@@ -272,7 +272,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                   key={v.id}
                   className={`px-2 py-2 bg-white border rounded-2xl transition-all group relative overflow-hidden ${v.isLocked ? 'border-amber-200 bg-amber-50/30' : 'border-slate-100 hover:border-indigo-400'}`}
                 >
-                  <div className="flex items-start justify-between flex-row-reverse">
+                  <div className="flex items-start justify-between">
                     <div className="text-start flex-1 min-w-0 ps-1">
                       <div className="flex items-center justify-end gap-1 mb-0.5">
                         {v.isLocked && <Lock size={10} className="text-amber-500" />}
@@ -342,7 +342,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                       key={v.id}
                       className="px-2 py-2 bg-white border border-slate-100 rounded-2xl transition-all hover:border-slate-300 group"
                     >
-                      <div className="flex items-start justify-between flex-row-reverse">
+                      <div className="flex items-start justify-between">
                         <div className="text-start flex-1 min-w-0 ps-1">
                           <span className="block text-[11px] font-bold text-slate-700 truncate leading-tight">{v.name}</span>
                           <span className="block text-[9px] text-slate-400 font-medium">{formatDate(v.created_at)}</span>

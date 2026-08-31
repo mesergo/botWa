@@ -21,8 +21,9 @@ const TemplateForm: React.FC<TemplateFormProps> = ({ template, onSubmit, onBack 
   };
 
   return (
-    <div className="h-screen w-screen bg-[#f8fafc] flex flex-col font-medium text-right overflow-y-auto">
-      <nav className="h-20 bg-white border-b border-slate-100 flex items-center justify-between px-10 flex-row-reverse">
+    <div className="h-screen w-screen bg-[#f8fafc] flex flex-col font-medium text-start overflow-y-auto">
+      {/* Fixed physical layout regardless of page language, matching AppNavbar.tsx/PageTopBar.tsx's <nav dir="ltr"> convention. */}
+      <nav className="h-20 bg-white border-b border-slate-100 flex items-center justify-between px-10" dir="ltr">
         <h2 className="text-xl font-black text-slate-900">התאמת תבנית: {template.name}</h2>
         <button onClick={onBack} className="p-3 text-slate-400 hover:text-blue-600 transition-all"><ArrowLeft size={22} /></button>
       </nav>
@@ -41,14 +42,14 @@ const TemplateForm: React.FC<TemplateFormProps> = ({ template, onSubmit, onBack 
           <form onSubmit={handleSubmit} className="space-y-8">
             {template.fields.map((field) => (
               <div key={field.id} className="space-y-3">
-                <label className="block text-sm font-black text-slate-900 mr-1">{field.label}</label>
-                <input 
+                <label className="block text-sm font-black text-slate-900 ms-1">{field.label}</label>
+                <input
                   required
                   type={field.type}
                   value={values[field.id] || ''}
                   onChange={(e) => handleChange(field.id, e.target.value)}
                   placeholder={field.placeholder || `הזן ${field.label.toLowerCase()}...`}
-                  className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-blue-600/10 focus:border-blue-600 transition-all font-bold text-right"
+                  className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-blue-600/10 focus:border-blue-600 transition-all font-bold text-start"
                 />
               </div>
             ))}

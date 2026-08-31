@@ -2453,7 +2453,7 @@ const FlowBuilder: React.FC = () => {
 
         {/* Template Params Modal - accessible from within editor */}
         {isTemplateParamsModalOpen && (
-          <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-md z-[300] flex items-center justify-center p-6" dir="rtl">
+          <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-md z-[300] flex items-center justify-center p-6">
             <div className="bg-white p-8 rounded-[2.5rem] w-full max-w-xl shadow-2xl border border-white/50 max-h-[90vh] flex flex-col">
               {/* Header */}
               <div className="flex justify-between items-center mb-6 flex-shrink-0">

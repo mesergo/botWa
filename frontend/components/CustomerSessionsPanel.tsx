@@ -147,7 +147,7 @@ const CustomerSessionsPanel: React.FC<CustomerSessionsPanelProps> = ({ token, ap
 
       {/* LEFT: Sessions list (flex-1, scrollable) */}
       <div className="flex-1 overflow-y-auto p-4 sm:p-8">
-        <div className="space-y-4 animate-fade-in-up" dir="rtl">
+        <div className="space-y-4 animate-fade-in-up">
           {/* Counter + Search bar side by side */}
           <div className="flex items-center justify-between gap-4 flex-wrap mb-3">
             {!sessionsLoading && sessions.length > 0 ? (
@@ -156,21 +156,20 @@ const CustomerSessionsPanel: React.FC<CustomerSessionsPanelProps> = ({ token, ap
               </p>
             ) : <span />}
             <div className="relative max-w-md w-full sm:w-auto sm:flex-1" ref={searchBoxRef}>
-              <Search size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-300" />
+              <Search size={16} className="absolute start-4 top-1/2 -translate-y-1/2 text-slate-300" />
               <input
                 type="text"
                 value={sessionsSearchInput}
                 onChange={e => setSessionsSearchInput(e.target.value)}
                 onFocus={() => setShowBotDropdown(true)}
                 placeholder="חיפוש לפי טלפון או בוט..."
-                className="w-full pr-10 pl-4 py-3 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700 placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all shadow-sm"
-                dir="rtl"
+                className="w-full ps-10 pe-4 py-3 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700 placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all shadow-sm"
               />
               {sessionsSearchInput && (
                 <button
                   type="button"
                   onClick={() => { setSessionsSearchInput(''); setShowBotDropdown(false); }}
-                  className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300 hover:text-slate-500"
+                  className="absolute end-3 top-1/2 -translate-y-1/2 text-slate-300 hover:text-slate-500"
                   title="נקה חיפוש"
                 >
                   <X size={14} />
@@ -184,7 +183,6 @@ const CustomerSessionsPanel: React.FC<CustomerSessionsPanelProps> = ({ token, ap
               {showBotDropdown && filteredBots.length > 0 && (
                 <div
                   className="absolute z-20 top-full mt-1.5 w-full bg-white border border-slate-200 rounded-xl shadow-lg max-h-56 overflow-y-auto"
-                  dir="rtl"
                 >
                   <p className="px-3 pt-2.5 pb-1 text-[10px] font-black text-slate-300 uppercase tracking-widest">
                     בחר בוט מהרשימה
@@ -200,7 +198,7 @@ const CustomerSessionsPanel: React.FC<CustomerSessionsPanelProps> = ({ token, ap
                         fetchSessions(1, b.name);
                         setShowBotDropdown(false);
                       }}
-                      className="w-full flex items-center gap-2 px-3 py-2 text-sm font-bold text-slate-600 hover:bg-slate-50 hover:text-blue-600 transition-colors text-right"
+                      className="w-full flex items-center gap-2 px-3 py-2 text-sm font-bold text-slate-600 hover:bg-slate-50 hover:text-blue-600 transition-colors text-start"
                     >
                       <Bot size={14} className="text-blue-400 flex-shrink-0" />
                       <span className="truncate">{b.name}</span>
@@ -213,7 +211,7 @@ const CustomerSessionsPanel: React.FC<CustomerSessionsPanelProps> = ({ token, ap
 
           {sessionsLoading ? (
             <div className="flex items-center justify-center py-24 text-slate-400 font-bold">
-              <div className="animate-spin rounded-full h-8 w-8 border-2 border-blue-500 border-t-transparent ml-3" />
+              <div className="animate-spin rounded-full h-8 w-8 border-2 border-blue-500 border-t-transparent me-3" />
               טוען סשנים...
             </div>
           ) : sessions.length === 0 ? (
@@ -225,14 +223,14 @@ const CustomerSessionsPanel: React.FC<CustomerSessionsPanelProps> = ({ token, ap
             <>
               {/* Table */}
               <div className="bg-white border border-slate-200 rounded-2xl overflow-x-auto shadow-sm">
-                <table className="w-full min-w-[680px] text-sm" dir="rtl">
+                <table className="w-full min-w-[680px] text-sm">
                   <thead>
                     <tr className="border-b border-slate-100 bg-slate-50/80">
-                      <th className="text-right px-4 py-3 text-xs font-black text-slate-400 uppercase tracking-widest">טלפון</th>
-                      <th className="text-right px-4 py-3 text-xs font-black text-slate-400 uppercase tracking-widest">בוט</th>
-                      <th className="text-right px-4 py-3 text-xs font-black text-slate-400 uppercase tracking-widest">תאריך</th>
-                      <th className="text-right px-4 py-3 text-xs font-black text-slate-400 uppercase tracking-widest">סטטוס</th>
-                      <th className="text-right px-4 py-3 text-xs font-black text-slate-400 uppercase tracking-widest">פעולות</th>
+                      <th className="text-start px-4 py-3 text-xs font-black text-slate-400 uppercase tracking-widest">טלפון</th>
+                      <th className="text-start px-4 py-3 text-xs font-black text-slate-400 uppercase tracking-widest">בוט</th>
+                      <th className="text-start px-4 py-3 text-xs font-black text-slate-400 uppercase tracking-widest">תאריך</th>
+                      <th className="text-start px-4 py-3 text-xs font-black text-slate-400 uppercase tracking-widest">סטטוס</th>
+                      <th className="text-start px-4 py-3 text-xs font-black text-slate-400 uppercase tracking-widest">פעולות</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -400,7 +398,7 @@ const CustomerSessionsPanel: React.FC<CustomerSessionsPanelProps> = ({ token, ap
       {historyOpenId && activeSession && (() => {
         const session = activeSession;
         return (
-          <div className="w-full xl:w-[55%] 2xl:w-1/2 flex-shrink-0 border-t xl:border-t-0 xl:border-l border-slate-200 flex flex-col overflow-hidden bg-white shadow-lg h-[80vh] xl:h-full">
+          <div className="w-full xl:w-[55%] 2xl:w-1/2 flex-shrink-0 border-t xl:border-t-0 xl:border-e border-slate-200 flex flex-col overflow-hidden bg-white shadow-lg h-[80vh] xl:h-full">
             {/* Panel header */}
             <div className="flex-shrink-0 px-4 py-3.5 bg-slate-900 text-white flex items-center justify-between">
               <div className="flex items-center gap-2.5">
@@ -424,7 +422,6 @@ const CustomerSessionsPanel: React.FC<CustomerSessionsPanelProps> = ({ token, ap
             <div
               ref={historyScrollRef}
               className="flex-1 overflow-y-auto p-3 space-y-4 bg-[#fcfcfc]"
-              dir="rtl"
             >
               {session.process_history.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full gap-3 text-slate-300">
@@ -465,10 +462,10 @@ const CustomerSessionsPanel: React.FC<CustomerSessionsPanelProps> = ({ token, ap
                         {isBot ? <Bot size={13} /> : <UserIcon size={13} />}
                       </div>
                       <div className={`flex flex-col gap-0.5 ${isBot ? 'items-end' : 'items-start'}`}>
-                        <div className={`px-3 py-2 rounded-2xl text-xs font-semibold shadow-sm text-right ${
+                        <div className={`px-3 py-2 rounded-2xl text-xs font-semibold shadow-sm text-start ${
                           isBot
-                            ? 'bg-white border border-slate-100 text-slate-900 rounded-tr-none'
-                            : 'bg-sky-500 text-white rounded-tl-none'
+                            ? 'bg-white border border-slate-100 text-slate-900 rounded-ss-none'
+                            : 'bg-sky-500 text-white rounded-se-none'
                         }`}>
                           {(item.type === 'Text' || item.type === 'UserInput' || !item.type || item.type.startsWith('input_')) && text && !isAudioUrl && (
                             <p className="whitespace-pre-wrap leading-relaxed">{text}</p>

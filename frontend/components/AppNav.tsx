@@ -69,7 +69,7 @@ const AppNav: React.FC<AppNavProps> = ({
   hideMobileTrigger = false,
   mobileBreakpoint = 900,
 }) => {
-  const { t } = useTranslation('nav');
+  const { t, i18n } = useTranslation('nav');
   const navigate = useNavigate();
   const location = useLocation();
   const [isMobileNav, setIsMobileNav] = useState<boolean>(() => window.innerWidth <= mobileBreakpoint);
@@ -239,9 +239,10 @@ const AppNav: React.FC<AppNavProps> = ({
     );
   }
 
-  // tabs mode — horizontal pill bar
+  // tabs mode — horizontal pill bar. The surrounding top bar keeps a fixed `dir="ltr"` arrangement,
+  // so the tab strip cannot inherit the page direction and states it explicitly instead.
   return (
-    <div className="flex items-center gap-1 bg-slate-100 rounded-2xl p-1" dir="rtl">
+    <div className="flex items-center gap-1 bg-slate-100 rounded-2xl p-1" dir={i18n.dir()}>
       {onGoHome && (
         <button
           onClick={onGoHome}

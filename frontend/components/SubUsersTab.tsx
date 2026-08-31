@@ -489,7 +489,7 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
   };
 
   return (
-    <div dir="rtl">
+    <div>
       {/* Title — fixed position, not affected by which tab is active */}
       <h1 className="text-3xl font-black text-slate-900 mb-6">{t('subUsers.title')}</h1>
 
@@ -1295,7 +1295,7 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
       {/* Delete group confirmation dialog */}
       {deletingGroupId && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[100] p-6">
-          <div className="bg-white w-full max-w-sm rounded-[2rem] shadow-2xl p-10 border border-slate-100 text-right" dir="rtl">
+          <div className="bg-white w-full max-w-sm rounded-[2rem] shadow-2xl p-10 border border-slate-100 text-start">
             <div className="w-14 h-14 bg-red-100 text-red-600 rounded-2xl flex items-center justify-center mb-6">
               <Trash2 size={28} />
             </div>

@@ -833,7 +833,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
   // ── Render ─────────────────────────────────────────────────────────────
 
   return (
-    <div className={embedded ? "h-full w-full flex flex-col font-medium text-right overflow-hidden" : "h-screen w-screen bg-[#f8fafc] flex flex-col font-medium text-right overflow-hidden"} dir="rtl">
+    <div className={embedded ? "h-full w-full flex flex-col font-medium text-start overflow-hidden" : "h-screen w-screen bg-[#f8fafc] flex flex-col font-medium text-start overflow-hidden"}>
       {!embedded && <ImpersonationBanner currentUser={currentUser} onStopImpersonation={onStopImpersonation} token={token} onSwitchAccount={onSwitchAccount} />}
 
       {/* Navbar */}
@@ -871,7 +871,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
         />
         )}
         {/* Sidebar — list of groups */}
-        <aside className="w-72 border-l border-slate-100 bg-white flex flex-col flex-shrink-0">
+        <aside className="w-72 border-e border-slate-100 bg-white flex flex-col flex-shrink-0">
           <div className="p-6 border-b border-slate-100">
             <div className="flex items-center gap-3 mb-4">
               <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center">
@@ -927,7 +927,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                       <div className="w-9 h-9 rounded-xl bg-red-100 text-red-600 flex items-center justify-center flex-shrink-0">
                         <Ban size={17} />
                       </div>
-                      <div className="text-right min-w-0">
+                      <div className="text-start min-w-0">
                         <p className="text-sm font-black text-slate-900 truncate">{blocklist.name}</p>
                         <p className="text-xs font-semibold text-red-500">לא מקבלים הודעות מאף קבוצה</p>
                       </div>
@@ -956,7 +956,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                         <div className="w-9 h-9 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center flex-shrink-0">
                           <Users size={17} />
                         </div>
-                        <div className="text-right min-w-0 flex-1">
+                        <div className="text-start min-w-0 flex-1">
                           {renamingId === g._id ? (
                             <input
                               value={renameValue}
@@ -978,7 +978,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                         </div>
                       </div>
 
-                      <div className="absolute left-2 bottom-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
+                      <div className="absolute end-2 bottom-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
                         {renamingId === g._id ? (
                           <>
                             <button onClick={saveRename} className="p-1.5 text-green-600 hover:bg-green-50 rounded-lg"><Check size={14} /></button>
@@ -1217,37 +1217,37 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                 </div>
                 {activeTab === 'members' && (
                   <div className="relative w-64">
-                    <Search size={15} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                    <Search size={15} className="absolute start-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                     <input
                       type="text"
                       placeholder="חיפוש לפי טלפון, שם או מייל..."
                       value={memberSearch}
                       onChange={e => setMemberSearch(e.target.value)}
-                      className="w-full pr-9 pl-4 py-2 bg-white border border-slate-200 rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-300"
+                      className="w-full ps-9 pe-4 py-2 bg-white border border-slate-200 rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-300"
                     />
                   </div>
                 )}
                 {activeTab === 'history' && (
                   <div className="relative w-64">
-                    <Search size={15} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                    <Search size={15} className="absolute start-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                     <input
                       type="text"
                       placeholder="חיפוש לפי תוכן, תבנית או ID..."
                       value={historySearch}
                       onChange={e => setHistorySearch(e.target.value)}
-                      className="w-full pr-9 pl-4 py-2 bg-white border border-slate-200 rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-300"
+                      className="w-full ps-9 pe-4 py-2 bg-white border border-slate-200 rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-300"
                     />
                   </div>
                 )}
                 {activeTab === 'removals' && (
                   <div className="relative w-64">
-                    <Search size={15} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                    <Search size={15} className="absolute start-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                     <input
                       type="text"
                       placeholder="חיפוש לפי טלפון, שם או סיבה..."
                       value={removalsSearch}
                       onChange={e => setRemovalsSearch(e.target.value)}
-                      className="w-full pr-9 pl-4 py-2 bg-white border border-slate-200 rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-300"
+                      className="w-full ps-9 pe-4 py-2 bg-white border border-slate-200 rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-300"
                     />
                   </div>
                 )}
@@ -1537,7 +1537,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
       {/* Add Members modal */}
       {addModalOpen && selectedGroup && (
         <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col" dir="rtl">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col">
             <div className="flex items-center justify-between p-6 border-b border-slate-100">
               <h2 className="text-xl font-black text-slate-900">הוסף אנשי קשר ל-{selectedGroup.name}</h2>
               <div className="flex items-center gap-2">
@@ -1558,12 +1558,12 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
             <div className="p-6 flex-1 overflow-y-auto">
               {/* Search existing contacts */}
               <div className="relative mb-4">
-                <Search className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-300" size={16} />
+                <Search className="absolute start-4 top-1/2 -translate-y-1/2 text-slate-300" size={16} />
                 <input
                   value={contactSearch}
                   onChange={e => setContactSearch(e.target.value)}
                   placeholder="חפש איש קשר קיים..."
-                  className="w-full pr-11 pl-4 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl text-sm outline-none focus:ring-4 focus:ring-blue-600/10 focus:border-blue-600"
+                  className="w-full ps-11 pe-4 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl text-sm outline-none focus:ring-4 focus:ring-blue-600/10 focus:border-blue-600"
                 />
               </div>
 
@@ -1632,7 +1632,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
       {/* Send broadcast modal */}
       {sendOpen && selectedGroup && (
         <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col" dir="rtl">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
             <div className="flex items-center justify-between p-6 border-b border-slate-100">
               <h2 className="text-xl font-black text-slate-900">שלח הודעה ל-{selectedGroup.name}</h2>
               <button onClick={() => setSendOpen(false)} className="p-2 text-slate-300 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-colors">
@@ -1922,7 +1922,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
       {/* Recipients preview modal */}
       {recipientsPreviewOpen && selectedGroup && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[80] flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col" dir="rtl">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col">
             <div className="flex items-center justify-between p-6 border-b border-slate-100">
               <div>
                 <h2 className="text-xl font-black text-slate-900 flex items-center gap-2">
@@ -1961,11 +1961,11 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                   <table className="w-full text-sm">
                     <thead className="bg-slate-50 border-b border-slate-100 sticky top-0">
                       <tr>
-                        <th className="px-5 py-3 text-right text-xs font-bold text-slate-400 uppercase tracking-wide">#</th>
-                        <th className="px-5 py-3 text-right text-xs font-bold text-slate-400 uppercase tracking-wide">טלפון</th>
-                        <th className="px-5 py-3 text-right text-xs font-bold text-slate-400 uppercase tracking-wide">שם מלא</th>
-                        <th className="px-5 py-3 text-right text-xs font-bold text-slate-400 uppercase tracking-wide">שם וואטסאפ</th>
-                        <th className="px-5 py-3 text-right text-xs font-bold text-slate-400 uppercase tracking-wide">מייל</th>
+                        <th className="px-5 py-3 text-start text-xs font-bold text-slate-400 uppercase tracking-wide">#</th>
+                        <th className="px-5 py-3 text-start text-xs font-bold text-slate-400 uppercase tracking-wide">טלפון</th>
+                        <th className="px-5 py-3 text-start text-xs font-bold text-slate-400 uppercase tracking-wide">שם מלא</th>
+                        <th className="px-5 py-3 text-start text-xs font-bold text-slate-400 uppercase tracking-wide">שם וואטסאפ</th>
+                        <th className="px-5 py-3 text-start text-xs font-bold text-slate-400 uppercase tracking-wide">מייל</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -2021,7 +2021,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
       {/* Schedule dialog */}
       {scheduleDialogOpen && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[70] flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm" dir="rtl">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm">
             <div className="flex items-center justify-between p-6 border-b border-slate-100">
               <h2 className="text-lg font-black text-slate-900 flex items-center gap-2"><Calendar size={18} /> שלח בתזמון</h2>
               <button onClick={() => setScheduleDialogOpen(false)} className="p-2 text-slate-300 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-colors">
@@ -2076,7 +2076,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
       {/* Template picker modal */}
       {showTemplatePicker && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col" dir="rtl">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col">
             <div className="flex items-center justify-between p-6 border-b border-slate-100">
               <h2 className="text-xl font-black text-slate-900">בחר תבנית</h2>
               <button onClick={() => setShowTemplatePicker(false)} className="p-2 text-slate-300 hover:text-slate-600 hover:bg-slate-100 rounded-xl">
@@ -2085,12 +2085,12 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
             </div>
             <div className="p-6 flex-1 overflow-y-auto">
               <div className="relative mb-4">
-                <Search className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-300" size={16} />
+                <Search className="absolute start-4 top-1/2 -translate-y-1/2 text-slate-300" size={16} />
                 <input
                   value={templateSearch}
                   onChange={e => setTemplateSearch(e.target.value)}
                   placeholder="חפש תבנית..."
-                  className="w-full pr-11 pl-4 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl text-sm outline-none focus:ring-4 focus:ring-purple-600/10 focus:border-purple-600"
+                  className="w-full ps-11 pe-4 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl text-sm outline-none focus:ring-4 focus:ring-purple-600/10 focus:border-purple-600"
                 />
               </div>
 
@@ -2116,7 +2116,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                         <button
                           key={`${name}-${i}`}
                           onClick={() => pickTemplate(t)}
-                          className="w-full text-right p-4 bg-slate-50 hover:bg-purple-50 border border-slate-200 hover:border-purple-300 rounded-2xl transition-colors"
+                          className="w-full text-start p-4 bg-slate-50 hover:bg-purple-50 border border-slate-200 hover:border-purple-300 rounded-2xl transition-colors"
                         >
                           <div className="flex items-center gap-2 mb-1">
                             <FileText size={14} className="text-purple-500" />
@@ -2144,7 +2144,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
       {/* Broadcast detail modal */}
       {selectedBroadcast && (
         <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col" dir="rtl">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col">
             <div className="flex items-center justify-between p-6 border-b border-slate-100">
               <div>
                 <h2 className="text-xl font-black text-slate-900">פרטי שליחה</h2>
@@ -2191,7 +2191,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                     {selectedBroadcast.template_data?.params?.body?.length > 0 && (
                       <div className="text-xs text-slate-600">
                         <p className="font-bold mb-1">פרמטרים:</p>
-                        <ul className="list-disc pr-4">
+                        <ul className="list-disc ps-4">
                           {selectedBroadcast.template_data.params.body.map((p: string, i: number) => (
                             <li key={i}>{`{{${i + 1}}}: ${p || '—'}`}</li>
                           ))}
@@ -2243,7 +2243,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
       {/* Remove member confirmation */}
       {removeTarget && selectedGroup && (
         <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md" dir="rtl">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md">
             <div className="p-6 border-b border-slate-100">
               <div className="flex items-start gap-3">
                 <div className="w-12 h-12 rounded-2xl bg-red-100 text-red-600 flex items-center justify-center flex-shrink-0">
@@ -2304,9 +2304,8 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
       {activeBroadcasts.filter(b => b.status !== 'completed' && b.status !== 'failed').map((b, idx) => (
         <div
           key={b.id}
-          className="fixed left-6 z-[70] bg-white border border-slate-200 shadow-2xl rounded-2xl p-4 w-80"
+          className="fixed end-6 z-[70] bg-white border border-slate-200 shadow-2xl rounded-2xl p-4 w-80"
           style={{ bottom: `${1.5 + idx * 9}rem` }}
-          dir="rtl"
         >
           <div className="flex items-center gap-3 mb-3">
             <div className="w-10 h-10 rounded-2xl bg-blue-100 text-blue-600 flex items-center justify-center flex-shrink-0">
@@ -2342,9 +2341,8 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
       {completionToasts.map((ct, idx) => (
         <div
           key={ct.id}
-          className="fixed left-6 z-[70] bg-white border border-green-200 shadow-2xl rounded-2xl p-4 w-80"
+          className="fixed end-6 z-[70] bg-white border border-green-200 shadow-2xl rounded-2xl p-4 w-80"
           style={{ bottom: `${1.5 + idx * 9}rem` }}
-          dir="rtl"
         >
           <div className="flex items-start gap-3">
             <div className="w-10 h-10 rounded-2xl bg-green-100 text-green-600 flex items-center justify-center flex-shrink-0">

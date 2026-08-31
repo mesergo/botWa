@@ -30,7 +30,7 @@ const AppNavbar: React.FC<AppNavbarProps> = ({
   onOpenAdminPanel,
   onLogoClick,
 }) => {
-  const { t } = useTranslation('nav');
+  const { t, i18n } = useTranslation('nav');
   const isRep = currentUser?.role === 'rep';
   const firstName = (currentUser?.name?.charAt(0) || currentUser?.email?.charAt(0) || '?').toUpperCase();
 
@@ -68,7 +68,8 @@ const AppNavbar: React.FC<AppNavbarProps> = ({
 
       {/* Navigation tabs — hidden for pure rep users */}
       {!isRep && (
-        <div className="flex items-center gap-1 bg-slate-100 rounded-2xl p-1" dir="rtl">
+        {/* The nav keeps a fixed `dir="ltr"` arrangement, so the tab strip states the page direction explicitly. */}
+        <div className="flex items-center gap-1 bg-slate-100 rounded-2xl p-1" dir={i18n.dir()}>
           {tabBtn('bots', <Bot size={16} />, t('pages.bots'), onNavigateBots)}
           {showSessions && tabBtn('sessions', <List size={16} />, t('pages.sessions'), onNavigateSessions)}
           {showContacts && tabBtn('contacts', <Users size={16} />, t('pages.contacts'), onNavigateContacts)}

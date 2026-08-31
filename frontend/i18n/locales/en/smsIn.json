@@ -177,5 +177,180 @@
       "page": "Page",
       "next": "Next"
     }
+  },
+  "app": {
+    "errors": {
+      "loadClients": "Could not load clients from MongoDB",
+      "selectDestBeforeExport": "Please choose a destination / line (dest) before exporting",
+      "exportLoadFailed": "Failed to load the messages for export",
+      "selectValidDate": "Please choose a valid date",
+      "noMessagesForDate": "No messages found matching the date {{date}}",
+      "noSettingsForDest": "No assignment settings found for destination number {{dest}}",
+      "noWebhookConfigured": "No Google Sheets or webhook URL is configured for this number. Please set one up in the connection settings"
+    },
+    "toasts": {
+      "logoutSuccess": "You have logged out successfully",
+      "messageDeleted": "The message was deleted successfully",
+      "idCopied": "ObjectID copied to clipboard",
+      "noExportMatches": "There are no messages to export matching the selected filters",
+      "exportSuccess": "{{count}} messages exported successfully!",
+      "exportCapped": "Exported {{sent}} of {{total}} messages matching the filters — the file does not include every record",
+      "exportCappedByDate": "Exported {{sent}} of {{total}} messages matching the filters — the selected date may not include every record",
+      "webhookResent": "The routing request was resent to the webhook address for {{dest}}",
+      "clientAdded": "Client \"{{name}}\" was added to the directory successfully",
+      "clientDeleted": "The client was deleted successfully and active line assignments were updated",
+      "clientUpdated": "The client details were updated successfully",
+      "saveLocalOnly": "The settings were saved locally only — saving to the server failed",
+      "savingAndSyncing": "Saving settings and syncing message history to Google Sheets...",
+      "lineSavedWithSync": "Line {{dest}} settings saved! {{sent}} historical messages were sent to Google Sheets (out of {{total}})",
+      "lineSaved": "Line {{dest}} settings updated successfully!",
+      "bulkAssignSuccess": "{{count}} numbers were assigned to {{client}}",
+      "bulkAssignFailed": "Failed to assign the numbers",
+      "filtersCleared": "Filters cleared successfully",
+      "historySyncAll": "{{count}} historical messages were sent to Google Sheets",
+      "historySyncPartial": "{{sent}} of {{total}} messages were sent to Google Sheets"
+    },
+    "webhookLog": {
+      "corsSuccess": "200 OK — POST request sent successfully in CORS no-cors mode",
+      "connectionError": "Connection error: {{error}}"
+    },
+    "dbNotice": {
+      "connectionFailed": {
+        "title": "Could not connect to the server",
+        "detail": "The messages request failed. Check that the backend server is running and the address is reachable from the browser."
+      },
+      "notConfigured": {
+        "title": "The SMS database is not configured",
+        "detail": "SMS_MONGODB_URI is missing from the server settings (backend/.env) — so there is nowhere to load messages from."
+      },
+      "disconnected": {
+        "title": "No connection to the SMS database",
+        "detail": "The server could not connect to the external SMS database. Messages will not load until the connection is restored."
+      }
+    },
+    "login": {
+      "errors": {
+        "missingCredentials": "Please enter a valid email and password",
+        "invalidPassword": "Incorrect or too short password (minimum 4 characters)"
+      },
+      "toasts": {
+        "loginSuccess": "Logged in to the Mesergo admin system successfully"
+      },
+      "tagline": "The central system for managing, routing, and receiving inbound messages via webhook",
+      "emailLabel": "Authorized email address",
+      "passwordLabel": "Admin password",
+      "passwordPlaceholder": "Enter password...",
+      "demoPasswordLabel": "Default demo password:",
+      "rememberMe": "Remember me on this computer",
+      "forgotPassword": "Forgot password?",
+      "submitButton": "Secure admin sign-in",
+      "footer": "Management system by Mesergo Communication Solutions Ltd. (2026)"
+    },
+    "sidebar": {
+      "roleLabel": "Authorized primary admin",
+      "logout": "Log out"
+    },
+    "tabs": {
+      "smsIn": "Inbound messages",
+      "routing": "Line assignment",
+      "clients": "Manage clients",
+      "integrations": "Webhooks",
+      "dashboard": "Statistics"
+    },
+    "pageTitles": {
+      "smsIn": { "title": "Inbound SMS messages", "subtitle": "View, filter and export SMS messages received by the system" },
+      "routing": { "title": "Line assignment and routing", "subtitle": "Assign destination lines to end clients" },
+      "clients": { "title": "Manage clients", "subtitle": "Manage the system's end clients" },
+      "integrations": { "title": "Webhooks and integrations", "subtitle": "Connect to Google Sheets and webhooks" },
+      "dashboard": { "title": "Overview and statistics", "subtitle": "A general snapshot of routing and messages" }
+    },
+    "stats": {
+      "totalSms": { "label": "Total SMS", "suffix": "messages logged" },
+      "filtered": { "label": "Filtered in table" },
+      "activeRoutes": { "label": "Active routed lines", "suffix": "in scope" },
+      "totalClients": { "label": "End-client directory", "suffix": "different companies" }
+    },
+    "filters": {
+      "title": "Filters and search",
+      "searchLabel": "Search by sender number / message content / ID",
+      "searchPlaceholder": "Free filter by number or text...",
+      "destLabel": "Destination / line (dest)",
+      "destPlaceholder": "Search destination number...",
+      "clearDestAria": "Clear destination selection",
+      "allNumbers": "All numbers",
+      "noMatchingNumbers": "No matching numbers found",
+      "clientLabel": "Client assigned to line",
+      "allClientsPlaceholder": "All clients",
+      "clearClientAria": "Clear client selection",
+      "allClientsOption": "All clients",
+      "noMatchingClients": "No matching clients found",
+      "fromDate": "From date",
+      "toDate": "To date",
+      "selectDestHint": "Choose a destination / line (dest) to enable export",
+      "clearActive": "Clear active filters"
+    },
+    "export": {
+      "exporting": "Exporting...",
+      "exportAllCsv": "Export all to CSV ({{count}})",
+      "exportByDate": "Export by specific date",
+      "noAssignment": "Unassigned"
+    },
+    "table": {
+      "filteredFrom": "filtered from {{total}}",
+      "emptyTitle": "No matching SMS messages found",
+      "emptyDbNotice": "Messages are not loading right now — see the notice at the top of the screen.",
+      "emptyNoAssignedLine": "No SMS line has been assigned to you yet. Contact the system administrator to have a line assigned."
+    },
+    "routing": {
+      "infoBanner": "Lines are shown automatically from the destination numbers (dest) that appeared on inbound messages in the database. Click a row to edit its client, Google Sheets and webhook assignment.",
+      "bulkAssignButton": "Bulk-assign numbers",
+      "searchLabel": "Search destination line",
+      "searchPlaceholder": "Search by number / client / note...",
+      "showingCount": "Showing {{shown}} of {{total}} lines",
+      "columns": {
+        "dest": "Destination line (dest)",
+        "status": "Status",
+        "client": "Assigned client",
+        "notes": "Notes",
+        "actions": "Actions"
+      },
+      "noSearchResults": "No lines found matching the search",
+      "emptyLines": "No lines to display — load messages from the database or wait for inbound messages",
+      "statusDisabled": "Disabled",
+      "unassigned": "Unassigned",
+      "editButton": "Edit"
+    },
+    "autoNotes": "Added automatically from inbound messages",
+    "dashboard": {
+      "overviewTitle": "SMS routing system overview",
+      "overviewDescription": "This system receives inbound messages from our clients' end devices and routes them in real time to Google Sheets files, managing multiple clients at once in a secure way.",
+      "linePopularityTitle": "Line popularity (total inbound messages per line)",
+      "smsCountPercent": "{{count}} SMS ({{percent}}%)",
+      "toolsTitle": "Guides and external tools",
+      "openAppsScriptConsole": "Open the Google Apps Script Console",
+      "webhookTipTitle": "Tip for a winning webhook setup:",
+      "webhookTipDescription": "If you're using the Apps Script code, it's always recommended to set the execution permission to \"Everyone\" so that the Mesergo router can deliver SMS messages freely without interruption."
+    },
+    "footer": {
+      "copyright": "All rights reserved to the Mesergo Solutions admin manager. Currently logged in: {{email}}"
+    },
+    "bulkAssignModal": {
+      "title": "Bulk-assign numbers",
+      "numbersLabel": "Destination line numbers",
+      "numbersPlaceholder": "Paste numbers, one per line/comma/space",
+      "clientLabel": "Assign to client",
+      "selectClientOption": "Choose a client...",
+      "cancel": "Cancel",
+      "assigning": "Assigning...",
+      "assignButton": "Assign"
+    },
+    "exportDateModal": {
+      "title": "Export SMS messages by date",
+      "dateLabel": "Choose the target date to export",
+      "description": "All SMS messages that arrived in the system on the selected date will be filtered and exported as a CSV file.",
+      "cancel": "Cancel",
+      "exporting": "Exporting...",
+      "exportButton": "Export and download"
+    }
   }
 }

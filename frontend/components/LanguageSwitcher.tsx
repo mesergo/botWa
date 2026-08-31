@@ -65,9 +65,12 @@ const LanguageSwitcher: React.FC<LanguageSwitcherProps> = ({ variant = 'floating
     );
   }
 
+  // Floating variant (pre-login auth screens). `end-4` keeps this pinned to the visual top-left in
+  // Hebrew (inline-end === left under RTL, identical to the previous `left-4`) and mirrors it to the
+  // top-right in English.
   return (
     <div
-      className="fixed top-4 left-4 z-[100] flex items-center gap-1 rounded-xl border border-slate-200 bg-white/95 p-1 shadow-lg backdrop-blur"
+      className="fixed top-4 end-4 z-[100] flex items-center gap-1 rounded-xl border border-slate-200 bg-white/95 p-1 shadow-lg backdrop-blur"
       role="group"
       aria-label={t('language.label')}
     >

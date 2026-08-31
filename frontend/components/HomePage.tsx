@@ -1,6 +1,6 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { Bot, MessageSquare, Users, Settings, LogOut, Shield, ArrowLeft, LayoutDashboard, Inbox } from 'lucide-react';
+import { Bot, MessageSquare, Users, Settings, LogOut, Shield, ArrowLeft, ArrowRight, LayoutDashboard, Inbox } from 'lucide-react';
 import { User } from '../types';
 import { usePermission } from '../hooks/usePermission';
 import { getFormatLocale } from '../i18n';
@@ -107,6 +107,9 @@ const HomePage: React.FC<HomePageProps> = ({
 }) => {
   const { t, i18n } = useTranslation('nav');
   const can = usePermission(currentUser);
+  const isRtl = i18n.dir() === 'rtl';
+  // Tile "enter" affordance points along the reading direction: left in Hebrew, right in English.
+  const TileArrow = isRtl ? ArrowLeft : ArrowRight;
 
   const getNavHandler = (id: NavId) => {
     if (id === 'bots') return onGoToBots;
@@ -351,7 +354,7 @@ const HomePage: React.FC<HomePageProps> = ({
                   <p className="font-bold text-slate-900 text-base sm:text-lg leading-snug">{t(`home.tiles.${tileKey}.label`)}</p>
                   <p className="text-slate-400 text-sm font-medium mt-1 leading-snug">{t(`home.tiles.${tileKey}.description`)}</p>
                 </div>
-                <ArrowLeft size={18} className="hidden sm:block text-slate-300 flex-shrink-0 opacity-0 group-hover:opacity-100 -translate-x-1 group-hover:translate-x-0 transition-all duration-200" />
+                <TileArrow size={18} className={`hidden sm:block text-slate-300 flex-shrink-0 opacity-0 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-200 ${isRtl ? '-translate-x-1' : 'translate-x-1'}`} />
               </button>
             ))}
           </div>

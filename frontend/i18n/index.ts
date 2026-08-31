@@ -37,8 +37,10 @@ export const getFormatLocale = (language = i18n.resolvedLanguage): 'he-IL' | 'en
 const applyDocumentLanguage = (language?: string | null) => {
   const normalizedLanguage = normalizeLanguage(language);
   document.documentElement.lang = normalizedLanguage;
-  // Layout stays RTL in both languages so tabs, menus and buttons never swap sides.
-  document.documentElement.dir = 'rtl';
+  // Layout direction follows the selected language: tabs/menus/sidebars mirror to the
+  // left in English. Content that must stay Latin-oriented regardless of page language
+  // (phone numbers, emails, URLs) sets its own dir="ltr" locally and is unaffected.
+  document.documentElement.dir = normalizedLanguage === 'en' ? 'ltr' : 'rtl';
 };
 
 const initialLanguage = normalizeLanguage(localStorage.getItem(LANGUAGE_STORAGE_KEY));
