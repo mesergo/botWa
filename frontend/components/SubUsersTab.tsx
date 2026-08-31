@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { UserCog, Users, Plus, Trash2, Edit2, Check, X, Settings, Clock, MessageSquare, Copy, Send, Link as LinkIcon } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { usePermission } from '../hooks/usePermission';
 import { User } from '../types';
 
@@ -27,7 +28,7 @@ interface RepGroup {
   workingHours?: WorkingHours;
 }
 
-const DAY_LABELS = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
+const DAY_KEYS = ['0', '1', '2', '3', '4', '5', '6'] as const;
 
 const emptyWorkingHours = (): WorkingHours => ({
   enabled: false,
@@ -78,23 +79,24 @@ interface SubUsersTabProps {
   currentUser?: User | null;
 }
 
-const ROLE_LABELS: Record<string, string> = {
-  rep_manager: 'מנהל משמרת',
-  rep: 'נציג',
-  user: 'משתמש'
-};
-
-const AVAILABILITY_LABELS: Record<string, { label: string; dot: string; text: string; bg: string }> = {
-  available:   { label: 'זמין',    dot: 'bg-emerald-500', text: 'text-emerald-700', bg: 'bg-emerald-50' },
-  on_break:    { label: 'בהפסקה',  dot: 'bg-amber-500',   text: 'text-amber-700',   bg: 'bg-amber-50' },
-  unavailable: { label: 'לא זמין', dot: 'bg-slate-400',   text: 'text-slate-600',   bg: 'bg-slate-100' },
+const AVAILABILITY_STYLES: Record<string, { dot: string; text: string; bg: string }> = {
+  available:   { dot: 'bg-emerald-500', text: 'text-emerald-700', bg: 'bg-emerald-50' },
+  on_break:    { dot: 'bg-amber-500',   text: 'text-amber-700',   bg: 'bg-amber-50' },
+  unavailable: { dot: 'bg-slate-400',   text: 'text-slate-600',   bg: 'bg-slate-100' },
 };
 
   // Reps state 
 const emptyForm = { name: '', email: '', role: 'rep' as 'rep' | 'rep_manager' | 'user', user_type_id: '', repGroupIds: [] as string[], allowedBotIds: [] as string[] };
 
 const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
+  const { t } = useTranslation('users');
   const can = usePermission(currentUser ?? null);
+
+  const displayRole = (role: string) => {
+    const key = `roles.${role}`;
+    const translated = t(key);
+    return translated === key ? role : translated;
+  };
   // Reps state
   const [users, setUsers] = useState<SubUser[]>([]);
   const [loading, setLoading] = useState(false);
@@ -161,13 +163,13 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
     setError(null);
     try {
       const res = await fetch(`${API_BASE}/sub-users`, { headers });
-      if (!res.ok) throw new Error('שגיאה בטעינת הנציגים');
+      if (!res.ok) throw new Error(t('errors.loadReps'));
       const data = await res.json();
       const list = Array.isArray(data) ? data : (data.users || []);
       setUsers(list);
       setAvailableUserTypes(data.availableUserTypes || []);
     } catch (e: any) {
-      setError(e.message || 'שגיאה לא צפויה');
+      setError(e.message || t('errors.unexpected'));
     } finally {
       setLoading(false);
     }
@@ -177,7 +179,7 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
     setGroupsLoading(true);
     try {
       const res = await fetch(`${API_BASE}/rep-groups`, { headers });
-      if (!res.ok) throw new Error('שגיאה בטעינת הקבוצות');
+      if (!res.ok) throw new Error(t('errors.loadGroups'));
       const data = await res.json();
       setGroups(data);
     } catch {
@@ -287,8 +289,8 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
       body: JSON.stringify({ sendEmail }),
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'שגיאה ביצירת קישור הזמנה');
-    if (!data.inviteLink) throw new Error('לא התקבל קישור הזמנה מהשרת');
+    if (!res.ok) throw new Error(data.error || t('errors.createInviteLink'));
+    if (!data.inviteLink) throw new Error(t('errors.noInviteLink'));
     await loadUsers();
     return data.inviteLink;
   };
@@ -298,9 +300,9 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
     setInviteRowLoading(u.id, true);
     try {
       await getInviteLinkForUser(u.id, true);
-      setInviteActionMessage(`הזמנה נשלחה מחדש ל־${u.email}`);
+      setInviteActionMessage(t('subUsers.inviteResent', { email: u.email }));
     } catch (e: any) {
-      setError(e.message || 'שגיאה בשליחה מחדש של ההזמנה');
+      setError(e.message || t('errors.resendInvite'));
     } finally {
       setInviteRowLoading(u.id, false);
     }
@@ -312,9 +314,9 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
     try {
       const inviteLink = await getInviteLinkForUser(u.id, false);
       await navigator.clipboard.writeText(inviteLink);
-      setInviteActionMessage(`קישור ההזמנה הועתק עבור ${u.email}`);
+      setInviteActionMessage(t('subUsers.inviteCopied', { email: u.email }));
     } catch (e: any) {
-      setError(e.message || 'שגיאה בהעתקת קישור ההזמנה');
+      setError(e.message || t('errors.copyInviteLink'));
     } finally {
       setInviteRowLoading(u.id, false);
     }
@@ -322,7 +324,7 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
 
   const handleSave = async (allowDuplicateEmail: boolean = false) => {
     if (!form.name.trim() || !form.email.trim() || !form.user_type_id) {
-      setFormError('שם, אימייל וסוג משתמש הם שדות חובה');
+      setFormError(t('errors.requiredRepFields'));
       return;
     }
     if (!allowDuplicateEmail) setDuplicateEmailInfo(null);
@@ -347,7 +349,7 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
         setDuplicateEmailInfo({ count: data.count, accounts: data.accounts || [] });
         return;
       }
-      if (!res.ok) throw new Error(data.error || 'שגיאה בשמירה');
+      if (!res.ok) throw new Error(data.error || t('errors.save'));
       await loadUsers();
       if (!editingId && data.inviteLink) {
         setInviteSuccessLink(data.inviteLink);
@@ -355,7 +357,7 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
       }
       closeForm();
     } catch (e: any) {
-      setFormError(e.message || 'שגיאה לא צפויה');
+      setFormError(e.message || t('errors.unexpected'));
     } finally {
       setFormSaving(false);
     }
@@ -367,7 +369,7 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
       const res = await fetch(`${API_BASE}/sub-users/${id}`, { method: 'DELETE', headers });
       if (!res.ok) {
         const data = await res.json();
-        throw new Error(data.error || 'שגיאה במחיקה');
+        throw new Error(data.error || t('errors.delete'));
       }
       setDeletingId(null);
       await loadUsers();
@@ -380,7 +382,7 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
 
   const handleAddGroup = async () => {
     if (!newGroupName.trim()) {
-      setGroupFormError('שם הקבוצה הוא שדה חובה');
+      setGroupFormError(t('errors.groupNameRequired'));
       return;
     }
     setGroupSaving(true);
@@ -392,12 +394,12 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
         body: JSON.stringify({ name: newGroupName.trim() }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'שגיאה ביצירת הקבוצה');
+      if (!res.ok) throw new Error(data.error || t('errors.createGroup'));
       setNewGroupName('');
       setShowGroupModal(false);
       await loadGroups();
     } catch (e: any) {
-      setGroupFormError(e.message || 'שגיאה לא צפויה');
+      setGroupFormError(e.message || t('errors.unexpected'));
     } finally {
       setGroupSaving(false);
     }
@@ -409,7 +411,7 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
       const res = await fetch(`${API_BASE}/rep-groups/${id}`, { method: 'DELETE', headers });
       if (!res.ok) {
         const data = await res.json();
-        throw new Error(data.error || 'שגיאה במחיקת הקבוצה');
+        throw new Error(data.error || t('errors.deleteGroup'));
       }
       setDeletingGroupId(null);
       // Refresh both since deleting a group removes it from assigned reps too
@@ -458,7 +460,7 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
   const handleSaveSettings = async () => {
     if (!settingsGroup) return;
     if (!settingsGroup.name.trim()) {
-      setSettingsError('שם הקבוצה הוא שדה חובה');
+      setSettingsError(t('errors.groupNameRequired'));
       return;
     }
     setSettingsSaving(true);
@@ -476,11 +478,11 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
         }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'שגיאה בשמירת ההגדרות');
+      if (!res.ok) throw new Error(data.error || t('errors.saveSettings'));
       setSettingsGroup(null);
       await loadGroups();
     } catch (e: any) {
-      setSettingsError(e.message || 'שגיאה לא צפויה');
+      setSettingsError(e.message || t('errors.unexpected'));
     } finally {
       setSettingsSaving(false);
     }
@@ -489,7 +491,7 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
   return (
     <div dir="rtl">
       {/* Title — fixed position, not affected by which tab is active */}
-      <h1 className="text-3xl font-black text-slate-900 mb-6">ניהול נציגים</h1>
+      <h1 className="text-3xl font-black text-slate-900 mb-6">{t('subUsers.title')}</h1>
 
       {/* Tab bar + action button */}
       <div className="flex items-center justify-between border-b border-slate-200 mb-8">
@@ -502,7 +504,7 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
                 : 'text-slate-500 border-transparent hover:text-slate-700'
             }`}
           >
-            נציגים
+            {t('subUsers.tabs.reps')}
           </button>
           {can('rep_groups.view') && (
           <button
@@ -513,7 +515,7 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
                 : 'text-slate-500 border-transparent hover:text-slate-700'
             }`}
           >
-            קבוצות נציגים
+            {t('subUsers.tabs.groups')}
           </button>
           )}
         </div>
@@ -523,7 +525,7 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
             onClick={openCreate}
             className="flex items-center gap-2 px-5 py-2 mb-3 bg-blue-600 text-white rounded-xl font-bold shadow-sm shadow-blue-600/20 hover:bg-blue-700 transition-all"
           >
-            <Plus size={16} /> הוסף נציג
+            <Plus size={16} /> {t('subUsers.addRep')}
           </button>
           )
         ) : (
@@ -532,7 +534,7 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
             onClick={() => { setGroupFormError(null); setNewGroupName(''); setShowGroupModal(true); }}
             className="flex items-center gap-2 px-5 py-2 mb-3 bg-blue-600 text-white rounded-xl font-bold shadow-sm shadow-blue-600/20 hover:bg-blue-700 transition-all"
           >
-            <Plus size={16} /> הוסף קבוצה
+            <Plus size={16} /> {t('subUsers.addGroup')}
           </button>
           )
         )}
@@ -551,26 +553,26 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
         <>
           {/* Users table */}
           {loading ? (
-            <div className="text-center text-slate-400 py-20 font-bold">טוען נציגים...</div>
+            <div className="text-center text-slate-400 py-20 font-bold">{t('subUsers.loadingReps')}</div>
           ) : users.length === 0 ? (
             <div className="bg-white border-2 border-dashed border-slate-200 rounded-[2rem] py-20 flex flex-col items-center justify-center gap-4 text-slate-300">
               <UserCog size={64} strokeWidth={1} />
-              <p className="text-xl font-bold">אין נציגים עדיין. הוסף את הראשון!</p>
+              <p className="text-xl font-bold">{t('subUsers.emptyReps')}</p>
             </div>
           ) : (
             <div className="bg-white border border-slate-100 rounded-[2rem] shadow-sm overflow-x-auto">
               <table className="w-full text-sm min-w-[980px]">
                 <thead>
                   <tr className="border-b border-slate-100 bg-slate-50 text-slate-500 font-bold">
-                    <th className="px-6 py-4 text-right">שם</th>
-                    <th className="px-6 py-4 text-right">אימייל</th>
-                    <th className="px-6 py-4 text-right">טלפון</th>
-                    <th className="px-6 py-4 text-right">סוג</th>
-                    <th className="px-6 py-4 text-right">סטטוס הרשמה</th>
-                    <th className="px-6 py-4 text-right">קבוצות</th>
-                    <th className="px-6 py-4 text-right">מספרים מורשים</th>
-                    <th className="px-6 py-4 text-right">זמינות</th>
-                    <th className="px-6 py-4 text-right">פעולות</th>
+                    <th className="px-6 py-4 text-start">{t('subUsers.table.name')}</th>
+                    <th className="px-6 py-4 text-start">{t('subUsers.table.email')}</th>
+                    <th className="px-6 py-4 text-start">{t('subUsers.table.phone')}</th>
+                    <th className="px-6 py-4 text-start">{t('subUsers.table.type')}</th>
+                    <th className="px-6 py-4 text-start">{t('subUsers.table.registrationStatus')}</th>
+                    <th className="px-6 py-4 text-start">{t('subUsers.table.groups')}</th>
+                    <th className="px-6 py-4 text-start">{t('subUsers.table.allowedNumbers')}</th>
+                    <th className="px-6 py-4 text-start">{t('subUsers.table.availability')}</th>
+                    <th className="px-6 py-4 text-start">{t('subUsers.table.actions')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -581,8 +583,8 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
                       <td className="px-6 py-4 text-slate-600 font-bold" dir="ltr">{u.phone || '—'}</td>
                       <td className="px-6 py-4">
                         {(() => {
-                          const typeName = availableUserTypes.find(t => t._id === u.user_type_id)?.name;
-                          const label = typeName || ROLE_LABELS[u.role] || u.role;
+                          const typeName = availableUserTypes.find(ut => ut._id === u.user_type_id)?.name;
+                          const label = typeName || displayRole(u.role);
                           return (
                             <span className={`px-3 py-1 rounded-full text-xs font-black ${
                               u.role === 'rep_manager'
@@ -601,14 +603,14 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
                             return (
                               <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-black bg-emerald-50 text-emerald-700">
                                 <span className="inline-block h-2 w-2 rounded-full bg-emerald-500"></span>
-                                פעיל
+                                {t('subUsers.registration.active')}
                               </span>
                             );
                           }
                           return (
                             <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-black bg-amber-50 text-amber-700">
                               <span className="inline-block h-2 w-2 rounded-full bg-amber-500"></span>
-                              ממתין לאישור
+                              {t('subUsers.registration.pending')}
                             </span>
                           );
                         })()}
@@ -631,7 +633,7 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
                                   title={hidden.map(g => g.name).join('، ')}
                                 >
                                   +{hidden.length}
-                                  <span className="absolute bottom-full right-0 mb-2 hidden group-hover:flex flex-col gap-1 bg-white border border-slate-200 rounded-xl shadow-lg p-2 z-50 min-w-max">
+                                  <span className="absolute bottom-full start-0 mb-2 hidden group-hover:flex flex-col gap-1 bg-white border border-slate-200 rounded-xl shadow-lg p-2 z-50 min-w-max">
                                     {hidden.map(g => (
                                       <span key={g.id} className="px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded-full text-xs font-bold whitespace-nowrap">{g.name}</span>
                                     ))}
@@ -645,7 +647,7 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
                       <td className="px-6 py-4">
                         {(() => {
                           const resolved = (u.allowedBotIds || []).map(bid => availableBots.find(b => b.id === bid)).filter(Boolean) as BotOption[];
-                          if (resolved.length === 0) return <span className="text-slate-400 text-xs">כל המספרים</span>;
+                          if (resolved.length === 0) return <span className="text-slate-400 text-xs">{t('subUsers.allNumbers')}</span>;
                           return (
                             <div className="flex flex-wrap items-center gap-1">
                               {resolved.map(b => (
@@ -659,11 +661,11 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
                       </td>
                       <td className="px-6 py-4">
                         {(() => {
-                          const meta = AVAILABILITY_LABELS[u.availability_status || 'available'];
+                          const meta = AVAILABILITY_STYLES[u.availability_status || 'available'] || AVAILABILITY_STYLES.available;
                           return (
                             <span className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-black ${meta.bg} ${meta.text}`}>
                               <span className={`inline-block h-2 w-2 rounded-full ${meta.dot}`}></span>
-                              {meta.label}
+                              {t(`availability.${u.availability_status || 'available'}`, { defaultValue: u.availability_status || 'available' })}
                             </span>
                           );
                         })()}
@@ -676,7 +678,7 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
                                 onClick={() => handleResendInvite(u)}
                                 disabled={!!inviteActionLoadingByUserId[u.id]}
                                 className="p-2 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-xl transition-all disabled:opacity-40"
-                                title="שלח שוב הזמנה במייל"
+                                title={t('subUsers.titles.resendInvite')}
                               >
                                 <Send size={16} />
                               </button>
@@ -684,7 +686,7 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
                                 onClick={() => handleCopyInviteLink(u)}
                                 disabled={!!inviteActionLoadingByUserId[u.id]}
                                 className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-xl transition-all disabled:opacity-40"
-                                title="העתק קישור הזמנה"
+                                title={t('subUsers.titles.copyInviteLink')}
                               >
                                 <LinkIcon size={16} />
                               </button>
@@ -694,7 +696,7 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
                           <button
                             onClick={() => openEdit(u)}
                             className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all"
-                            title="עריכה"
+                            title={t('subUsers.titles.edit')}
                           >
                             <Edit2 size={16} />
                           </button>
@@ -703,7 +705,7 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
                           <button
                             onClick={() => setDeletingId(u.id)}
                             className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
-                            title="מחיקה"
+                            title={t('subUsers.titles.delete')}
                           >
                             <Trash2 size={16} />
                           </button>
@@ -724,11 +726,11 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
         <>
           {/* Groups list */}
           {groupsLoading ? (
-            <div className="text-center text-slate-400 py-20 font-bold">טוען קבוצות...</div>
+            <div className="text-center text-slate-400 py-20 font-bold">{t('subUsers.loadingGroups')}</div>
           ) : groups.length === 0 ? (
             <div className="bg-white border-2 border-dashed border-slate-200 rounded-[2rem] py-20 flex flex-col items-center justify-center gap-4 text-slate-300">
               <Users size={64} strokeWidth={1} />
-              <p className="text-xl font-bold">אין קבוצות נציגים עדיין. צור את הראשונה!</p>
+              <p className="text-xl font-bold">{t('subUsers.emptyGroups')}</p>
             </div>
           ) : (
             <div className="bg-white border border-slate-100 rounded-[2rem] shadow-sm overflow-hidden">
@@ -750,12 +752,12 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
                       </div>
                       <div className="flex flex-wrap gap-1 mt-2">
                         {groupReps.length === 0 ? (
-                          <span className="text-xs text-slate-400">אין נציגים משויכים</span>
+                          <span className="text-xs text-slate-400">{t('subUsers.noAssignedReps')}</span>
                         ) : (
                           <>
                             {(expandedGroups.has(g.id) ? groupReps : groupReps.slice(0, REPS_PREVIEW)).map(u => (
                               <span key={u.id} className="inline-flex items-center gap-1 px-2 py-0.5 bg-slate-100 text-slate-600 rounded-full text-xs font-bold">
-                                <span className={`inline-block h-1.5 w-1.5 rounded-full ${AVAILABILITY_LABELS[u.availability_status || 'available'].dot}`}></span>
+                                <span className={`inline-block h-1.5 w-1.5 rounded-full ${(AVAILABILITY_STYLES[u.availability_status || 'available'] || AVAILABILITY_STYLES.available).dot}`}></span>
                                 {u.name}
                               </span>
                             ))}
@@ -764,18 +766,18 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
                                 onClick={() => toggleGroupExpanded(g.id)}
                                 className="px-2 py-0.5 bg-blue-50 text-blue-600 rounded-full text-xs font-bold hover:bg-blue-100 transition-colors"
                               >
-                                {expandedGroups.has(g.id) ? 'הצג פחות ↑' : `+ ${groupReps.length - REPS_PREVIEW} נוספים`}
+                                {expandedGroups.has(g.id) ? t('subUsers.showLess') : t('subUsers.moreReps', { count: groupReps.length - REPS_PREVIEW })}
                               </button>
                             )}
                           </>
                         )}
                       </div>
                     </div>
-                    <div className="flex items-center gap-1 shrink-0 mr-4">
+                    <div className="flex items-center gap-1 shrink-0 ms-4">
                       <button
                         onClick={() => openGroupSettings(g)}
                         className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all"
-                        title="הגדרות כלליות"
+                        title={t('subUsers.titles.groupSettings')}
                       >
                         <Settings size={16} />
                       </button>
@@ -783,7 +785,7 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
                       <button
                         onClick={() => setDeletingGroupId(g.id)}
                         className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
-                        title="מחיקת קבוצה"
+                        title={t('subUsers.titles.deleteGroup')}
                       >
                         <Trash2 size={16} />
                       </button>
@@ -800,10 +802,10 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
       {/* ── REP MODAL (Add / Edit) ────────────────────────────────────── */}
       {showRepModal && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[100] p-6">
-          <div className="bg-white w-full max-w-xl rounded-[2rem] shadow-2xl p-8 border border-slate-100" dir="rtl">
+          <div className="bg-white w-full max-w-xl rounded-[2rem] shadow-2xl p-8 border border-slate-100">
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-xl font-black text-slate-900">
-                {editingId ? 'עריכת נציג' : 'הוספת נציג חדש'}
+                {editingId ? t('subUsers.modal.editRep') : t('subUsers.modal.addRep')}
               </h2>
               <button
                 onClick={closeForm}
@@ -814,24 +816,24 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
             </div>
             {availableUserTypes.length === 0 && (
               <div className="mb-4 p-3 bg-amber-50 text-amber-700 rounded-xl text-sm font-bold">
-                לא הוגדרו סוגי משתמשים. יש להגדיר לפחות סוג משתמש אחד לפני הוספת נציגים.
+                {t('subUsers.modal.noUserTypes')}
               </div>
             )}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               {/* Name */}
               <div>
-                <label className="block text-sm font-bold text-slate-600 mb-1">שם מלא *</label>
+                <label className="block text-sm font-bold text-slate-600 mb-1">{t('subUsers.modal.fullName')}</label>
                 <input
                   type="text"
                   value={form.name}
                   onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
                   className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:border-blue-500"
-                  placeholder="ישראל ישראלי"
+                  placeholder={t('subUsers.modal.fullNamePlaceholder')}
                 />
               </div>
               {/* Email */}
               <div>
-                <label className="block text-sm font-bold text-slate-600 mb-1">אימייל *</label>
+                <label className="block text-sm font-bold text-slate-600 mb-1">{t('subUsers.modal.email')}</label>
                 <input
                   type="email"
                   value={form.email}
@@ -843,7 +845,7 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
               </div>
               {/* Role */}
               <div className="md:col-span-2">
-                <label className="block text-sm font-bold text-slate-600 mb-1">סוג משתמש *</label>
+                <label className="block text-sm font-bold text-slate-600 mb-1">{t('subUsers.modal.userType')}</label>
                 <select
                   value={form.user_type_id}
                   onChange={e => {
@@ -867,7 +869,7 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
               {/* Group assignment chips (rep only) */}
               {form.role === 'rep' && groups.length > 0 && (
                 <div className="md:col-span-2">
-                  <label className="block text-sm font-bold text-slate-600 mb-2">שיוך לקבוצות נציגים</label>
+                  <label className="block text-sm font-bold text-slate-600 mb-2">{t('subUsers.modal.assignGroups')}</label>
                   <div className="flex flex-wrap gap-2">
                     {groups.map(g => {
                       const selected = form.repGroupIds.includes(g.id);
@@ -899,8 +901,8 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
               {/* Bot restriction chips (rep only) — show by phone number, only connected bots */}
               {form.role === 'rep' && availableBots.filter(b => b.display_phone_number).length > 0 && (
                 <div className="md:col-span-2">
-                  <label className="block text-sm font-bold text-slate-600 mb-1">הגבלת מספרים לצפייה</label>
-                  <p className="text-xs text-slate-400 mb-2">בחר מספרים מחוברים שהנציג יוכל לצפות בשיחותיהם. ללא בחירה — הנציג יצפה בכל המספרים.</p>
+                  <label className="block text-sm font-bold text-slate-600 mb-1">{t('subUsers.modal.restrictNumbers')}</label>
+                  <p className="text-xs text-slate-400 mb-2">{t('subUsers.modal.restrictNumbersHint')}</p>
                   <div className="flex flex-wrap gap-2">
                     {availableBots.filter(b => b.display_phone_number).map(b => {
                       const selected = form.allowedBotIds.includes(b.id);
@@ -938,9 +940,12 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
             )}
 
             {duplicateEmailInfo && (
-              <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-xl text-right space-y-3">
+              <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-xl text-start space-y-3">
                 <p className="text-sm font-bold text-amber-800">
-                  כתובת אימייל זו כבר קיימת במערכת ({duplicateEmailInfo.count} חשבונות) — {editingId ? 'לשמור בכל זאת?' : 'ליצור בכל זאת?'}
+                  {t('subUsers.duplicateEmail.message', {
+                    count: duplicateEmailInfo.count,
+                    question: editingId ? t('subUsers.duplicateEmail.saveQuestion') : t('subUsers.duplicateEmail.createQuestion'),
+                  })}
                 </p>
                 <div className="flex flex-wrap gap-3">
                   <button
@@ -949,14 +954,14 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
                     disabled={formSaving}
                     className="text-sm font-bold bg-amber-600 text-white px-4 py-2 rounded-lg hover:bg-amber-700 disabled:opacity-50 transition-colors"
                   >
-                    {editingId ? 'שמור בכל זאת' : 'צור בכל זאת'}
+                    {editingId ? t('subUsers.duplicateEmail.saveAnyway') : t('subUsers.duplicateEmail.createAnyway')}
                   </button>
                   <button
                     type="button"
                     onClick={() => setDuplicateEmailInfo(null)}
                     className="text-sm font-bold bg-white border border-amber-300 text-amber-700 px-4 py-2 rounded-lg hover:bg-amber-50 transition-colors"
                   >
-                    ביטול
+                    {t('subUsers.modal.cancel')}
                   </button>
                 </div>
               </div>
@@ -968,13 +973,13 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
                 disabled={formSaving}
                 className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-all disabled:opacity-60"
               >
-                <Check size={16} /> {formSaving ? (editingId ? 'שומר...' : 'שולח הזמנה...') : (editingId ? 'שמור' : 'שליחת הזמנה')}
+                <Check size={16} /> {formSaving ? (editingId ? t('subUsers.modal.saving') : t('subUsers.modal.sendingInvite')) : (editingId ? t('subUsers.modal.save') : t('subUsers.modal.sendInvite'))}
               </button>
               <button
                 onClick={closeForm}
                 className="flex items-center gap-2 px-6 py-3 bg-slate-100 text-slate-700 rounded-xl font-bold hover:bg-slate-200 transition-all"
               >
-                <X size={16} /> ביטול
+                <X size={16} /> {t('subUsers.modal.cancel')}
               </button>
             </div>
           </div>
@@ -984,24 +989,24 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
       {/* Invite success modal */}
       {inviteSuccessLink && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[110] p-6">
-          <div className="bg-white w-full max-w-2xl rounded-[2rem] shadow-2xl border border-slate-100 overflow-hidden" dir="rtl">
+          <div className="bg-white w-full max-w-2xl rounded-[2rem] shadow-2xl border border-slate-100 overflow-hidden">
             <div className="px-8 py-6 bg-gradient-to-l from-blue-50 via-white to-blue-50 border-b border-slate-100">
-              <h3 className="text-2xl font-black text-slate-900 mb-1">ההזמנה נשלחה בהצלחה</h3>
+              <h3 className="text-2xl font-black text-slate-900 mb-1">{t('subUsers.inviteSuccess.title')}</h3>
             </div>
 
             <div className="px-8 py-6">
               <div className="mb-4 p-4 bg-blue-50 border border-blue-100 rounded-xl text-sm text-blue-800 font-bold leading-6">
-                זהו קישור הרשמה אישי לנציג החדש. הקישור מאפשר לנציג לאשר את החשבון ולהגדיר סיסמה בפעם הראשונה.
+                {t('subUsers.inviteSuccess.body')}
               </div>
-              <p className="text-sm text-slate-600 font-bold mb-2">קישור הרשמה:</p>
+              <p className="text-sm text-slate-600 font-bold mb-2">{t('subUsers.inviteSuccess.linkLabel')}</p>
               <div className="relative" dir="ltr">
                 <div className="bg-slate-50 border border-slate-200 rounded-xl px-4 pr-12 py-3 text-xs text-slate-700 break-all leading-6">
                   {inviteSuccessLink}
                 </div>
                 <button
                   type="button"
-                  aria-label="העתק קישור"
-                  title="העתק קישור"
+                  aria-label={t('subUsers.inviteSuccess.copyAria')}
+                  title={t('subUsers.inviteSuccess.copyTitle')}
                   onClick={async () => {
                     try {
                       await navigator.clipboard.writeText(inviteSuccessLink);
@@ -1037,7 +1042,7 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
                 }}
                 className="flex items-center gap-2 px-5 py-2.5 bg-slate-100 text-slate-700 rounded-xl font-bold hover:bg-slate-200 transition-all"
               >
-                סגור
+                {t('subUsers.inviteSuccess.close')}
               </button>
             </div>
           </div>
@@ -1047,9 +1052,9 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
       {/* ── GROUP MODAL (Add) ─────────────────────────────────────────────── */}
       {showGroupModal && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[100] p-6">
-          <div className="bg-white w-full max-w-sm rounded-[2rem] shadow-2xl p-8 border border-slate-100" dir="rtl">
+          <div className="bg-white w-full max-w-sm rounded-[2rem] shadow-2xl p-8 border border-slate-100">
             <div className="flex items-center justify-between mb-6">
-              <h2 className="text-xl font-black text-slate-900">הוספת קבוצה חדשה</h2>
+              <h2 className="text-xl font-black text-slate-900">{t('subUsers.groupModal.title')}</h2>
               <button
                 onClick={() => setShowGroupModal(false)}
                 className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-all"
@@ -1058,14 +1063,14 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
               </button>
             </div>
             <div>
-              <label className="block text-sm font-bold text-slate-600 mb-1">שם הקבוצה *</label>
+              <label className="block text-sm font-bold text-slate-600 mb-1">{t('subUsers.groupModal.name')}</label>
               <input
                 type="text"
                 value={newGroupName}
                 onChange={e => { setNewGroupName(e.target.value); setGroupFormError(null); }}
                 onKeyDown={e => e.key === 'Enter' && handleAddGroup()}
                 className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:border-blue-500"
-                placeholder="לדוגמה: צוות בוקר"
+                placeholder={t('subUsers.groupModal.namePlaceholder')}
                 autoFocus
               />
             </div>
@@ -1078,13 +1083,13 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
                 disabled={groupSaving}
                 className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-all disabled:opacity-60"
               >
-                <Check size={16} /> {groupSaving ? 'שומר...' : 'הוסף'}
+                <Check size={16} /> {groupSaving ? t('subUsers.modal.saving') : t('subUsers.groupModal.add')}
               </button>
               <button
                 onClick={() => setShowGroupModal(false)}
                 className="flex items-center gap-2 px-6 py-3 bg-slate-100 text-slate-700 rounded-xl font-bold hover:bg-slate-200 transition-all"
               >
-                <X size={16} /> ביטול
+                <X size={16} /> {t('subUsers.modal.cancel')}
               </button>
             </div>
           </div>
@@ -1094,13 +1099,13 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
       {/* Delete rep confirmation dialog */}
       {deletingId && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[100] p-6">
-          <div className="bg-white w-full max-w-sm rounded-[2rem] shadow-2xl p-10 border border-slate-100 text-right" dir="rtl">
+          <div className="bg-white w-full max-w-sm rounded-[2rem] shadow-2xl p-10 border border-slate-100 text-start">
             <div className="w-14 h-14 bg-red-100 text-red-600 rounded-2xl flex items-center justify-center mb-6">
               <Trash2 size={28} />
             </div>
-            <h3 className="text-xl font-black text-slate-900 mb-2">מחיקת נציג</h3>
+            <h3 className="text-xl font-black text-slate-900 mb-2">{t('subUsers.deleteRep.title')}</h3>
             <p className="text-slate-500 text-sm mb-8 font-medium">
-              האם אתה בטוח? פעולה זו לא ניתנת לביטול. הנציג לא יוכל עוד להתחבר למערכת.
+              {t('subUsers.deleteRep.body')}
             </p>
             <div className="flex items-center gap-3 flex-row-reverse">
               <button
@@ -1108,13 +1113,13 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
                 disabled={deleteLoading}
                 className="flex-1 py-3 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 transition-all disabled:opacity-60"
               >
-                {deleteLoading ? 'מוחק...' : 'מחק'}
+                {deleteLoading ? t('subUsers.deleteRep.deleting') : t('subUsers.deleteRep.delete')}
               </button>
               <button
                 onClick={() => setDeletingId(null)}
                 className="flex-1 py-3 bg-slate-100 text-slate-700 rounded-xl font-bold hover:bg-slate-200 transition-all"
               >
-                ביטול
+                {t('subUsers.modal.cancel')}
               </button>
             </div>
           </div>
@@ -1124,14 +1129,14 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
       {/* ── GROUP SETTINGS MODAL ───────────────────────────────────────── */}
       {settingsGroup && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[100] p-6">
-          <div className="bg-white w-full max-w-2xl rounded-[2rem] shadow-2xl border border-slate-100 max-h-[90vh] overflow-y-auto" dir="rtl">
+          <div className="bg-white w-full max-w-2xl rounded-[2rem] shadow-2xl border border-slate-100 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between p-8 pb-4 sticky top-0 bg-white border-b border-slate-100 rounded-t-[2rem]">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 bg-blue-100 text-blue-600 rounded-2xl flex items-center justify-center">
                   <Settings size={20} />
                 </div>
                 <div>
-                  <h2 className="text-xl font-black text-slate-900">הגדרות כלליות</h2>
+                  <h2 className="text-xl font-black text-slate-900">{t('subUsers.settings.title')}</h2>
                   <p className="text-xs font-bold text-slate-500 mt-0.5">{settingsGroup.name}</p>
                 </div>
               </div>
@@ -1146,7 +1151,7 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
             <div className="p-8 space-y-6">
               {/* Group name */}
               <div>
-                <label className="block text-sm font-bold text-slate-600 mb-1">שם הקבוצה *</label>
+                <label className="block text-sm font-bold text-slate-600 mb-1">{t('subUsers.settings.groupName')}</label>
                 <input
                   type="text"
                   value={settingsGroup.name}
@@ -1158,45 +1163,45 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
               {/* Opening message */}
               <div>
                 <label className="flex items-center gap-2 text-sm font-bold text-slate-600 mb-1">
-                  <MessageSquare size={14} /> הודעת פתיחה
+                  <MessageSquare size={14} /> {t('subUsers.settings.openingMessage')}
                 </label>
-                <p className="text-xs text-slate-400 mb-2">תישלח ללקוח כשהשיחה מועברת לנציג מהקבוצה.</p>
+                <p className="text-xs text-slate-400 mb-2">{t('subUsers.settings.openingHint')}</p>
                 <textarea
                   value={settingsGroup.openingMessage || ''}
                   onChange={e => updateSettings({ openingMessage: e.target.value })}
                   rows={3}
                   className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:border-blue-500 resize-none"
-                  placeholder="לדוגמה: שלום, פנייתך התקבלה — נציג יחזור אליך בקרוב."
+                  placeholder={t('subUsers.settings.openingPlaceholder')}
                 />
               </div>
 
               {/* Closing message */}
               <div>
                 <label className="flex items-center gap-2 text-sm font-bold text-slate-600 mb-1">
-                  <MessageSquare size={14} /> הודעת סיום
+                  <MessageSquare size={14} /> {t('subUsers.settings.closingMessage')}
                 </label>
-                <p className="text-xs text-slate-400 mb-2">תישלח ללקוח כשהנציג מסיים את השיחה.</p>
+                <p className="text-xs text-slate-400 mb-2">{t('subUsers.settings.closingHint')}</p>
                 <textarea
                   value={settingsGroup.closingMessage || ''}
                   onChange={e => updateSettings({ closingMessage: e.target.value })}
                   rows={3}
                   className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:border-blue-500 resize-none"
-                  placeholder="לדוגמה: תודה שפנית אלינו. נשמח לעמוד לרשותך גם בעתיד."
+                  placeholder={t('subUsers.settings.closingPlaceholder')}
                 />
               </div>
 
               {/* Unavailable message */}
               <div>
                 <label className="flex items-center gap-2 text-sm font-bold text-slate-600 mb-1">
-                  <MessageSquare size={14} /> הודעה כשאף נציג לא זמין
+                  <MessageSquare size={14} /> {t('subUsers.settings.unavailableMessage')}
                 </label>
-                <p className="text-xs text-slate-400 mb-2">תישלח ללקוח אם השיחה הגיעה מחוץ לשעות העבודה, או כשאין נציג זמין מהקבוצה.</p>
+                <p className="text-xs text-slate-400 mb-2">{t('subUsers.settings.unavailableHint')}</p>
                 <textarea
                   value={settingsGroup.unavailableMessage || ''}
                   onChange={e => updateSettings({ unavailableMessage: e.target.value })}
                   rows={3}
                   className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:border-blue-500 resize-none"
-                  placeholder="לדוגמה: כרגע אין נציג זמין. נחזור אליך בשעות הפעילות."
+                  placeholder={t('subUsers.settings.unavailablePlaceholder')}
                 />
               </div>
 
@@ -1204,11 +1209,11 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
               <div>
                 <div className="flex items-center justify-between mb-3">
                   <label className="flex items-center gap-2 text-sm font-bold text-slate-600">
-                    <Clock size={14} /> שעות עבודה
+                    <Clock size={14} /> {t('subUsers.settings.workingHours')}
                   </label>
                   <label className="flex items-center gap-2 cursor-pointer select-none">
                     <span className="text-xs font-bold text-slate-500">
-                      {settingsGroup.workingHours?.enabled ? 'פעיל' : 'כבוי'}
+                      {settingsGroup.workingHours?.enabled ? t('subUsers.settings.enabled') : t('subUsers.settings.disabled')}
                     </span>
                     <input
                       type="checkbox"
@@ -1221,10 +1226,10 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
                         },
                       })}
                     />
-                    <span className="w-10 h-6 bg-slate-200 rounded-full relative transition-colors peer-checked:bg-blue-600 after:content-[''] after:absolute after:top-0.5 after:right-0.5 after:w-5 after:h-5 after:bg-white after:rounded-full after:transition-all peer-checked:after:right-[1.125rem]"></span>
+                    <span className="w-10 h-6 bg-slate-200 rounded-full relative transition-colors peer-checked:bg-blue-600 after:content-[''] after:absolute after:top-0.5 after:start-0.5 after:w-5 after:h-5 after:bg-white after:rounded-full after:transition-all peer-checked:after:start-[1.125rem]"></span>
                   </label>
                 </div>
-                <p className="text-xs text-slate-400 mb-3">כאשר השעות פעילות — שיחות שמגיעות מחוץ לשעות יזכו בהודעת "כשאין נציג זמין".</p>
+                <p className="text-xs text-slate-400 mb-3">{t('subUsers.settings.workingHoursHint')}</p>
 
                 <div className={`border border-slate-200 rounded-2xl divide-y divide-slate-100 ${settingsGroup.workingHours?.enabled ? '' : 'opacity-50 pointer-events-none'}`}>
                   {(settingsGroup.workingHours?.days || emptyWorkingHours().days).map((d, i) => (
@@ -1236,10 +1241,10 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
                           onChange={e => updateWorkingDay(i, { enabled: e.target.checked })}
                           className="w-4 h-4 accent-blue-600"
                         />
-                        <span className="text-sm font-bold text-slate-700">{DAY_LABELS[i]}</span>
+                        <span className="text-sm font-bold text-slate-700">{t(`subUsers.days.${i}`)}</span>
                       </label>
                       <div className={`flex items-center gap-2 flex-1 ${d.enabled ? '' : 'opacity-40'}`}>
-                        <span className="text-xs font-bold text-slate-400">מ-</span>
+                        <span className="text-xs font-bold text-slate-400">{t('subUsers.settings.from')}</span>
                         <input
                           type="time"
                           value={d.from}
@@ -1248,7 +1253,7 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
                           className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm font-bold outline-none focus:border-blue-500"
                           dir="ltr"
                         />
-                        <span className="text-xs font-bold text-slate-400">עד</span>
+                        <span className="text-xs font-bold text-slate-400">{t('subUsers.settings.until')}</span>
                         <input
                           type="time"
                           value={d.to}

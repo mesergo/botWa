@@ -19,6 +19,8 @@
 
 import React, { useEffect, useState } from 'react';
 import { Search, Filter, MessageSquare, AlertCircle, ChevronRight, ChevronLeft, X } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { getFormatLocale } from '../../i18n';
 
 const PAGE_SIZE = 50;
 
@@ -41,6 +43,7 @@ const API_BASE = window.location.hostname === 'localhost'
   : `${window.location.origin}/api/sms-in`;
 
 export default function SmsExternalLogTab({ token }: SmsExternalLogTabProps) {
+  const { t, i18n } = useTranslation('smsIn');
   const [logs, setLogs] = useState<ExternalLogEntry[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -82,7 +85,7 @@ export default function SmsExternalLogTab({ token }: SmsExternalLogTabProps) {
         const data = await res.json().catch(() => ({}));
         if (cancelled) return;
         if (!res.ok) {
-          setError(data?.error || 'שגיאה בטעינת ההודעות');
+          setError(data?.error || t('externalLog.loadError'));
           setLogs([]);
           setTotal(0);
           return;
@@ -92,7 +95,7 @@ export default function SmsExternalLogTab({ token }: SmsExternalLogTabProps) {
       } catch (e) {
         if (!cancelled) {
           console.error('Error loading external SMS log:', e);
-          setError('שגיאה בטעינת ההודעות');
+          setError(t('externalLog.loadError'));
           setLogs([]);
           setTotal(0);
         }
@@ -102,7 +105,7 @@ export default function SmsExternalLogTab({ token }: SmsExternalLogTabProps) {
     };
     fetchLogs();
     return () => { cancelled = true; };
-  }, [token, page, debouncedSearch, debouncedDest, dateStart, dateEnd]);
+  }, [token, page, debouncedSearch, debouncedDest, dateStart, dateEnd, t]);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const pageStart = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
@@ -117,58 +120,58 @@ export default function SmsExternalLogTab({ token }: SmsExternalLogTabProps) {
   };
 
   return (
-    <div className="space-y-4" dir="rtl">
+    <div className="space-y-4">
       {/* FILTER BAR */}
       <div className="bg-white shadow-sm rounded-2xl border border-slate-100 p-5 space-y-4">
         <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
           <Filter size={16} className="text-sky-600" />
-          <h3 className="font-black text-slate-900 text-sm">מסננים וחיפוש</h3>
+          <h3 className="font-black text-slate-900 text-sm">{t('externalLog.filters.title')}</h3>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           <div className="lg:col-span-2 relative min-w-0">
-            <label className="block text-xs font-bold text-slate-500 mb-1.5">חפש לפי מספר שולח / תוכן הודעה / אפליקציה</label>
+            <label className="block text-xs font-bold text-slate-500 mb-1.5">{t('externalLog.filters.searchLabel')}</label>
             <div className="relative">
               <input
                 type="text"
                 value={searchText}
                 onChange={(e) => setSearchText(e.target.value)}
-                placeholder="סינון חופשי לפי מספר או טקסט..."
-                className="w-full text-sm pr-9 pl-3 py-2.5 border border-slate-200 rounded-2xl bg-slate-50 focus:bg-white focus:outline-none focus:ring-4 focus:ring-sky-600/10 focus:border-sky-600 transition-all font-medium"
+                placeholder={t('externalLog.filters.searchPlaceholder')}
+                className="w-full text-sm ps-9 pe-3 py-2.5 border border-slate-200 rounded-2xl bg-slate-50 focus:bg-white focus:outline-none focus:ring-4 focus:ring-sky-600/10 focus:border-sky-600 transition-all font-medium"
               />
-              <Search size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <Search size={14} className="absolute start-3 top-1/2 -translate-y-1/2 text-slate-400" />
             </div>
           </div>
 
           <div className="min-w-0">
-            <label className="block text-xs font-bold text-slate-500 mb-1.5">נמען (dest)</label>
+            <label className="block text-xs font-bold text-slate-500 mb-1.5">{t('externalLog.filters.dest')}</label>
             <input
               type="text"
               value={filterDest}
               onChange={(e) => setFilterDest(e.target.value)}
-              placeholder="כל הנמענים"
+              placeholder={t('externalLog.filters.allDestinations')}
               dir="ltr"
-              className="w-full text-sm px-3 py-2.5 border border-slate-200 rounded-2xl bg-slate-50 focus:bg-white focus:outline-none focus:ring-4 focus:ring-sky-600/10 focus:border-sky-600 transition-all font-medium text-left"
+              className="w-full text-sm px-3 py-2.5 border border-slate-200 rounded-2xl bg-slate-50 focus:bg-white focus:outline-none focus:ring-4 focus:ring-sky-600/10 focus:border-sky-600 transition-all font-medium text-end"
             />
           </div>
 
           <div className="grid grid-cols-2 gap-3 min-w-0">
             <div className="min-w-0">
-              <label className="block text-xs font-bold text-slate-500 mb-1.5">מתאריך</label>
+              <label className="block text-xs font-bold text-slate-500 mb-1.5">{t('externalLog.filters.fromDate')}</label>
               <input
                 type="date"
                 value={dateStart}
                 onChange={(e) => setDateStart(e.target.value)}
-                className="w-full min-w-0 text-sm border border-slate-200 rounded-2xl px-3 py-2.5 bg-white text-left font-medium focus:outline-none focus:ring-4 focus:ring-sky-600/10 focus:border-sky-600"
+                className="w-full min-w-0 text-sm border border-slate-200 rounded-2xl px-3 py-2.5 bg-white text-end font-medium focus:outline-none focus:ring-4 focus:ring-sky-600/10 focus:border-sky-600"
               />
             </div>
             <div className="min-w-0">
-              <label className="block text-xs font-bold text-slate-500 mb-1.5">עד תאריך</label>
+              <label className="block text-xs font-bold text-slate-500 mb-1.5">{t('externalLog.filters.toDate')}</label>
               <input
                 type="date"
                 value={dateEnd}
                 onChange={(e) => setDateEnd(e.target.value)}
-                className="w-full min-w-0 text-sm border border-slate-200 rounded-2xl px-3 py-2.5 bg-white text-left font-medium focus:outline-none focus:ring-4 focus:ring-sky-600/10 focus:border-sky-600"
+                className="w-full min-w-0 text-sm border border-slate-200 rounded-2xl px-3 py-2.5 bg-white text-end font-medium focus:outline-none focus:ring-4 focus:ring-sky-600/10 focus:border-sky-600"
               />
             </div>
           </div>
@@ -178,7 +181,7 @@ export default function SmsExternalLogTab({ token }: SmsExternalLogTabProps) {
           <div className="flex justify-end pt-3 border-t border-slate-100">
             <button onClick={clearFilters} className="text-sm text-sky-600 hover:text-sky-700 font-bold flex items-center gap-1">
               <X size={14} />
-              נקה מסננים פעילים
+              {t('externalLog.filters.clear')}
             </button>
           </div>
         )}
@@ -196,14 +199,14 @@ export default function SmsExternalLogTab({ token }: SmsExternalLogTabProps) {
         <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex flex-wrap justify-between items-center gap-2">
           <span className="text-sm text-slate-500 font-bold">
             {loading ? (
-              <>טוען...</>
+              <>{t('externalLog.loading')}</>
             ) : total > 0 ? (
               <>
-                מציג <span className="text-sky-600 font-black">{pageStart}-{pageEnd}</span> מתוך{' '}
-                <span className="font-black text-slate-800">{total}</span> הודעות
+                {t('externalLog.showingPrefix')} <span className="text-sky-600 font-black">{pageStart}-{pageEnd}</span> {t('externalLog.outOf')}{' '}
+                <span className="font-black text-slate-800">{total}</span> {t('externalLog.messages')}
               </>
             ) : (
-              <>אין הודעות תואמות</>
+              <>{t('externalLog.noMatching')}</>
             )}
           </span>
         </div>
@@ -211,8 +214,8 @@ export default function SmsExternalLogTab({ token }: SmsExternalLogTabProps) {
         {!loading && logs.length === 0 ? (
           <div className="py-16 sm:py-20 flex flex-col items-center justify-center gap-3 text-slate-300 px-4">
             <AlertCircle size={48} strokeWidth={1} />
-            <p className="text-lg font-bold text-center text-slate-700">לא נמצאו הודעות תואמות</p>
-            <p className="text-sm text-slate-400 font-semibold text-center">נסה לשנות את פרמטרי החיפוש או לבטל מסננים קיימים.</p>
+            <p className="text-lg font-bold text-center text-slate-700">{t('externalLog.empty.title')}</p>
+            <p className="text-sm text-slate-400 font-semibold text-center">{t('externalLog.empty.description')}</p>
           </div>
         ) : (
           <>
@@ -226,12 +229,12 @@ export default function SmsExternalLogTab({ token }: SmsExternalLogTabProps) {
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-bold text-slate-900 truncate">{log.phone}</p>
-                      <p className="text-xs text-slate-500 font-semibold truncate mt-0.5">אל {log.dest}{log.appName ? ` · ${log.appName}` : ''}</p>
+                      <p className="text-xs text-slate-500 font-semibold truncate mt-0.5">{t('externalLog.to')} {log.dest}{log.appName ? ` · ${log.appName}` : ''}</p>
                     </div>
-                    <span className="text-xs text-slate-400 font-medium whitespace-nowrap">{log.date || new Date(log.createdAt).toLocaleString('he-IL')}</span>
+                    <span className="text-xs text-slate-400 font-medium whitespace-nowrap">{log.date || new Date(log.createdAt).toLocaleString(getFormatLocale(i18n.resolvedLanguage))}</span>
                   </div>
                   <div className="mt-3 bg-slate-50 rounded-xl px-3 py-2.5 border border-slate-100">
-                    <p className="text-xs text-slate-400 font-bold mb-1">תוכן ההודעה</p>
+                    <p className="text-xs text-slate-400 font-bold mb-1">{t('externalLog.messageContent')}</p>
                     <p className="text-sm font-semibold text-slate-700 whitespace-pre-wrap break-words">{log.message}</p>
                   </div>
                 </div>
@@ -245,10 +248,10 @@ export default function SmsExternalLogTab({ token }: SmsExternalLogTabProps) {
                   className="grid gap-3 px-6 py-3 bg-slate-50 border-b border-slate-100 text-xs font-bold text-slate-400 uppercase tracking-wide"
                   style={{ gridTemplateColumns: '1.1fr 1.2fr 1fr 2.5fr' }}
                 >
-                  <span>נמען</span>
-                  <span>מי שלח</span>
-                  <span>תאריך</span>
-                  <span>תוכן ההודעה</span>
+                  <span>{t('externalLog.columns.destination')}</span>
+                  <span>{t('externalLog.columns.sender')}</span>
+                  <span>{t('externalLog.columns.date')}</span>
+                  <span>{t('externalLog.columns.message')}</span>
                 </div>
 
                 {logs.map((log, idx) => (
@@ -266,7 +269,7 @@ export default function SmsExternalLogTab({ token }: SmsExternalLogTabProps) {
                       <span className="text-sm font-bold text-slate-900 truncate">{log.dest}</span>
                     </div>
                     <div className="text-sm font-semibold text-slate-700 truncate">{log.phone}</div>
-                    <div className="text-sm text-slate-400 font-medium whitespace-nowrap">{log.date || new Date(log.createdAt).toLocaleString('he-IL')}</div>
+                    <div className="text-sm text-slate-400 font-medium whitespace-nowrap">{log.date || new Date(log.createdAt).toLocaleString(getFormatLocale(i18n.resolvedLanguage))}</div>
                     <div className="text-sm font-semibold text-slate-700 whitespace-pre-wrap break-words">{log.message}</div>
                   </div>
                 ))}
@@ -284,11 +287,11 @@ export default function SmsExternalLogTab({ token }: SmsExternalLogTabProps) {
               className="flex items-center gap-1.5 px-4 py-2 rounded-2xl text-sm font-bold border border-slate-200 bg-white text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
             >
               <ChevronRight size={14} />
-              <span>הקודם</span>
+              <span>{t('externalLog.pagination.previous')}</span>
             </button>
 
             <span className="text-sm text-slate-500 font-bold">
-              עמוד <span className="text-sky-600">{page}</span> מתוך {totalPages}
+              {t('externalLog.pagination.page')} <span className="text-sky-600">{page}</span> {t('externalLog.outOf')} {totalPages}
             </span>
 
             <button
@@ -297,7 +300,7 @@ export default function SmsExternalLogTab({ token }: SmsExternalLogTabProps) {
               onClick={() => setPage(p => p + 1)}
               className="flex items-center gap-1.5 px-4 py-2 rounded-2xl text-sm font-bold border border-slate-200 bg-white text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
             >
-              <span>הבא</span>
+              <span>{t('externalLog.pagination.next')}</span>
               <ChevronLeft size={14} />
             </button>
           </div>

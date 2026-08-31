@@ -1,6 +1,8 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import LanguageSwitcher from './LanguageSwitcher';
 
 const GOOGLE_CLIENT_ID = '266548688904-n1qrelk64op0usdbf52ae2gupcjld0vv.apps.googleusercontent.com';
 const API_BASE = window.location.hostname === 'localhost'
@@ -39,6 +41,7 @@ interface AuthScreenProps {
 }
 
 const AuthScreen: React.FC<AuthScreenProps> = ({ form, errors, onFormChange, onAuth, onGoogleLogin, pendingAccounts, pendingAccountsSource, onConfirmGoogleAccount }) => {
+  const { t, i18n } = useTranslation(['auth', 'common']);
   const [showPassword, setShowPassword] = useState(false);
   const [accountsForEmail, setAccountsForEmail] = useState<AccountOption[]>([]);
   const [loadingAccounts, setLoadingAccounts] = useState(false);
@@ -107,23 +110,30 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ form, errors, onFormChange, onA
     }
   };
 
+  // Google Identity Services warns if initialize() runs more than once, so it is kept
+  // out of the locale-dependent re-render — only renderButton needs to re-run.
+  const googleInitializedRef = useRef(false);
   useEffect(() => {
     if (!GOOGLE_CLIENT_ID || !onGoogleLoginRef.current) return;
     let cancelled = false;
 
     const init = () => {
       if (cancelled || !window.google || !onGoogleLoginRef.current) return;
-      window.google.accounts.id.initialize({
-        client_id: GOOGLE_CLIENT_ID,
-        callback: (response: { credential: string }) => onGoogleLoginRef.current!(response.credential, selectedAccountIdRef.current),
-      });
+      if (!googleInitializedRef.current) {
+        window.google.accounts.id.initialize({
+          client_id: GOOGLE_CLIENT_ID,
+          callback: (response: { credential: string }) => onGoogleLoginRef.current!(response.credential, selectedAccountIdRef.current),
+        });
+        googleInitializedRef.current = true;
+      }
       const btn = document.getElementById('google-login-btn');
       if (btn) {
+        btn.innerHTML = '';
         window.google.accounts.id.renderButton(btn, {
           theme: 'outline',
           size: 'large',
           width: 320,
-          locale: 'he',
+          locale: i18n.resolvedLanguage === 'en' ? 'en' : 'he',
         });
       }
     };
@@ -140,42 +150,43 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ form, errors, onFormChange, onA
       const scriptEl = document.querySelector<HTMLScriptElement>('script[src*="accounts.google.com/gsi"]');
       if (scriptEl) scriptEl.removeEventListener('load', init);
     };
-  }, []);
+  }, [i18n.resolvedLanguage]);
 
   return (
-    <div className="h-screen w-screen bg-[#0f172a] flex items-center justify-center p-6 text-right">
+    <div className="h-screen w-screen bg-[#0f172a] flex items-center justify-center p-6 text-start">
+      <LanguageSwitcher />
       <div className="bg-white p-12 rounded-[2.5rem] shadow-2xl w-full max-w-md border border-slate-100">
         {invitedByName && (
           <div className="mb-6 px-5 py-4 bg-blue-50 border border-blue-200 rounded-2xl text-center">
             <p className="text-blue-700 font-bold text-base">
-              הוזמנת לחברת &ldquo;{invitedByName}&rdquo;
+              {t('login.invitedCompany', { name: invitedByName, ns: 'auth' })}
             </p>
           </div>
         )}
         <div className="flex justify-center mb-10">
           <img src="/images/mesergo-logo.png" alt="Logo" className="h-24 w-auto transition-transform duration-300 hover:scale-105" />
         </div>
-        <div className="space-y-4 text-right">
+        <div className="space-y-4 text-start">
           <div className="w-full">
             <input 
-              className={`w-full px-6 py-4 bg-slate-50 border ${errors.email || errors.general ? 'border-red-500 bg-red-50/30' : 'border-slate-200'} rounded-2xl outline-none focus:ring-4 focus:ring-blue-600/10 focus:border-blue-600 text-right transition-all font-medium`} 
-              placeholder="אימייל" 
+              className={`w-full px-6 py-4 bg-slate-50 border ${errors.email || errors.general ? 'border-red-500 bg-red-50/30' : 'border-slate-200'} rounded-2xl outline-none focus:ring-4 focus:ring-blue-600/10 focus:border-blue-600 text-start transition-all font-medium`}
+              placeholder={t('login.emailPlaceholder', { ns: 'auth' })}
               value={form.email} 
               onChange={e => onFormChange({...form, email: e.target.value})} 
               onBlur={handleEmailBlur}
             />
-            {errors.email && <p className="text-red-500 text-[11px] mt-1 mr-2 text-right font-bold">{errors.email}</p>}
+            {errors.email && <p className="text-red-500 text-[11px] mt-1 ms-2 text-start font-bold">{errors.email}</p>}
             {displayAccounts.length > 1 && (
               <button
                 type="button"
                 onClick={() => setPickerDismissed(false)}
-                className="mt-2 w-full flex items-center justify-between gap-2 bg-blue-50 border border-blue-200 rounded-2xl px-4 py-3 text-right hover:bg-blue-100 transition-colors"
+                className="mt-2 w-full flex items-center justify-between gap-2 bg-blue-50 border border-blue-200 rounded-2xl px-4 py-3 text-start hover:bg-blue-100 transition-colors"
               >
-                <span className="text-blue-600 text-xs font-bold underline">שינוי</span>
+                <span className="text-blue-600 text-xs font-bold underline">{t('actions.change', { ns: 'common' })}</span>
                 <span className="text-blue-700 text-sm font-bold">
                   {form.accountId
-                    ? `חשבון נבחר: ${displayAccounts.find(a => a.id === form.accountId)?.name || ''}`
-                    : 'למייל זה משויכים מספר חשבונות - יש לבחור חשבון'}
+                    ? t('login.selectedAccount', { name: displayAccounts.find(a => a.id === form.accountId)?.name || '', ns: 'auth' })
+                    : t('login.selectAccountPrompt', { ns: 'auth' })}
                 </span>
               </button>
             )}
@@ -184,29 +195,29 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ form, errors, onFormChange, onA
             <div className="relative">
               <input 
                 type={showPassword ? 'text' : 'password'}
-                className={`w-full px-6 py-4 bg-slate-50 border ${errors.password || errors.general ? 'border-red-500 bg-red-50/30' : 'border-slate-200'} rounded-2xl outline-none focus:ring-4 focus:ring-blue-600/10 focus:border-blue-600 text-right transition-all font-medium pr-6 pl-12`} 
-                placeholder="סיסמה" 
+                className={`w-full py-4 bg-slate-50 border ${errors.password || errors.general ? 'border-red-500 bg-red-50/30' : 'border-slate-200'} rounded-2xl outline-none focus:ring-4 focus:ring-blue-600/10 focus:border-blue-600 text-start transition-all font-medium ps-6 pe-12`}
+                placeholder={t('login.passwordPlaceholder', { ns: 'auth' })}
                 value={form.password} 
                 onChange={e => onFormChange({...form, password: e.target.value})} 
               />
               <button
                 type="button"
                 onClick={() => setShowPassword(v => !v)}
-                className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
+                className="absolute end-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
                 tabIndex={-1}
               >
                 {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
               </button>
             </div>
-            {errors.password && <p className="text-red-500 text-[11px] mt-1 mr-2 text-right font-bold">{errors.password}</p>}
+            {errors.password && <p className="text-red-500 text-[11px] mt-1 ms-2 text-start font-bold">{errors.password}</p>}
           </div>
           {errors.general && (
-            <div className="w-full bg-red-50 border border-red-300 rounded-2xl px-5 py-3 text-right">
+            <div className="w-full bg-red-50 border border-red-300 rounded-2xl px-5 py-3 text-start">
               <p className="text-red-600 text-sm font-bold">{errors.general}</p>
             </div>
           )}
           <label className="flex items-center gap-2 cursor-pointer select-none justify-end">
-            <span className="text-sm text-slate-500">זכור אותי במחשב זה</span>
+            <span className="text-sm text-slate-500">{t('login.rememberMe', { ns: 'auth' })}</span>
             <input
               type="checkbox"
               checked={!!form.rememberMe}
@@ -217,21 +228,21 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ form, errors, onFormChange, onA
           <button
             onClick={onAuth}
             disabled={regularLoginDisabled}
-            title={regularLoginDisabled ? 'יש לבחור חשבון ולאשר בחלונית שנפתחה' : undefined}
+            title={regularLoginDisabled ? t('login.selectAccountTitle', { ns: 'auth' }) : undefined}
             className={`w-full py-5 rounded-2xl font-bold shadow-lg uppercase tracking-widest transition-all ${
               regularLoginDisabled
                 ? 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
                 : 'bg-blue-600 text-white shadow-blue-600/20 hover:bg-blue-700'
             }`}
           >
-            כניסה
+            {t('login.submit', { ns: 'auth' })}
           </button>
 
           {onGoogleLogin && (
             <>
               <div className="flex items-center gap-3 mt-2">
                 <div className="flex-1 h-px bg-slate-200" />
-                <span className="text-xs text-slate-400">או</span>
+                <span className="text-xs text-slate-400">{t('login.or', { ns: 'auth' })}</span>
                 <div className="flex-1 h-px bg-slate-200" />
               </div>
               <div id="google-login-btn" className="flex justify-center mt-2" />
@@ -239,12 +250,12 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ form, errors, onFormChange, onA
           )}
 
           <p className="text-center text-sm text-slate-500 mt-2">
-            אין לך חשבון?{' '}
+            {t('login.noAccount', { ns: 'auth' })}{' '}
             <a
               href="?register=1"
               className="text-blue-600 font-bold hover:underline"
             >
-              הירשם כאן
+              {t('login.registerHere', { ns: 'auth' })}
             </a>
           </p>
         </div>
@@ -252,12 +263,12 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ form, errors, onFormChange, onA
 
       {showAccountModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6">
-          <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-sm p-8 text-right">
-            <p className="text-slate-800 font-bold text-lg mb-1">למייל זה משויכים מספר חשבונות</p>
+          <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-sm p-8 text-start">
+            <p className="text-slate-800 font-bold text-lg mb-1">{t('login.accountPicker.title', { ns: 'auth' })}</p>
             <p className="text-slate-500 text-sm mb-4">
               {regularLoginDisabled
-                ? 'יש לבחור חשבון וללחוץ על אישור כדי להיכנס.'
-                : 'יש לבחור חשבון ולאחר מכן לנסות שוב להתחבר.'}
+                ? t('login.accountPicker.googleInstructions', { ns: 'auth' })
+                : t('login.accountPicker.passwordInstructions', { ns: 'auth' })}
             </p>
             <div className="border border-slate-200 rounded-2xl overflow-hidden divide-y divide-slate-100 mb-5 max-h-80 overflow-y-auto">
               {displayAccounts.map(acc => (
@@ -272,9 +283,9 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ form, errors, onFormChange, onA
                     checked={form.accountId === acc.id}
                     onChange={() => onFormChange({ ...form, accountId: acc.id })}
                   />
-                  <div className="flex-1 text-right">
+                  <div className="flex-1 text-start">
                     <span className="font-bold text-slate-700 text-sm">{acc.name}</span>
-                    <span className="text-xs text-slate-400 mr-2">({acc.role})</span>
+                    <span className="text-xs text-slate-400 ms-2">({acc.role})</span>
                   </div>
                 </label>
               ))}
@@ -298,7 +309,9 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ form, errors, onFormChange, onA
               disabled={!form.accountId || confirmingAccount}
               className="w-full py-3 rounded-xl bg-blue-600 text-white font-bold uppercase tracking-widest hover:bg-blue-700 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed transition-colors"
             >
-              {confirmingAccount ? 'מתחבר...' : 'אישור'}
+              {confirmingAccount
+                ? t('login.accountPicker.connecting', { ns: 'auth' })
+                : t('actions.confirm', { ns: 'common' })}
             </button>
           </div>
         </div>

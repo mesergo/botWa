@@ -7,6 +7,7 @@ import React, { useState } from 'react';
 import { WebhookLog } from '../types';
 import { Copy, Check, Terminal, ExternalLink, HelpCircle, ArrowLeft, Trash2, Send } from 'lucide-react';
 import { GOOGLE_SHEETS_APPS_SCRIPT } from '../googleSheetsScript';
+import { Trans, useTranslation } from 'react-i18next';
 
 interface WebhookSimulatorProps {
   logs: WebhookLog[];
@@ -15,6 +16,7 @@ interface WebhookSimulatorProps {
 }
 
 export default function WebhookSimulator({ logs, onClearLogs, defaultWebhookUrl }: WebhookSimulatorProps) {
+  const { t } = useTranslation('smsIn');
   const [copied, setCopied] = useState(false);
 
   const handleCopyCode = () => {
@@ -24,11 +26,11 @@ export default function WebhookSimulator({ logs, onClearLogs, defaultWebhookUrl 
   };
 
   return (
-    <div className="space-y-6 text-right">
+    <div className="space-y-6 text-start">
       {/* Title */}
       <div>
-        <h2 className="text-xl font-black text-slate-900">מדריך וסימולטור חיבור ל-Google Sheets Webhook</h2>
-        <p className="text-sm text-slate-400 font-semibold mt-0.5">חיבור מהיר של מערכת SMS מסרגו לטבלאות גוגל עם תמיכה בריבוי משתמשים ולקוחות.</p>
+        <h2 className="text-xl font-black text-slate-900">{t('webhook.title')}</h2>
+        <p className="text-sm text-slate-400 font-semibold mt-0.5">{t('webhook.subtitle')}</p>
       </div>
 
       {/* Grid Guide & Code */}
@@ -40,47 +42,47 @@ export default function WebhookSimulator({ logs, onClearLogs, defaultWebhookUrl 
             <div className="p-1.5 bg-sky-50 text-sky-600 rounded-xl">
               <HelpCircle size={18} />
             </div>
-            <h3 className="font-black text-slate-900 text-base">הוראות שלב אחר שלב</h3>
+            <h3 className="font-black text-slate-900 text-base">{t('webhook.instructions')}</h3>
           </div>
 
           <div className="space-y-3.5 text-sm text-slate-600 leading-relaxed font-medium">
             <div className="flex gap-2.5 items-start">
               <span className="flex items-center justify-center font-bold bg-sky-100 text-sky-800 rounded-lg w-5 h-5 text-xs shrink-0 mt-0.5">1</span>
               <div>
-                <p className="font-bold text-slate-800">צור גיליון גוגל חדש</p>
-                <p className="mt-0.5">פתח את <a href="https://sheets.new" target="_blank" rel="noreferrer" className="text-sky-600 hover:underline inline-flex items-center gap-0.5">Google Sheets<ExternalLink size={10} /></a> וצור גיליון חדש שבו תעדיף לרכז את הודעות ה-SMS הנכנסות.</p>
+                <p className="font-bold text-slate-800">{t('webhook.steps.one.title')}</p>
+                <p className="mt-0.5"><Trans ns="smsIn" i18nKey="webhook.steps.one.description" components={[<a href="https://sheets.new" target="_blank" rel="noreferrer" className="text-sky-600 hover:underline inline-flex items-center gap-0.5" />, <ExternalLink size={10} />]} /></p>
               </div>
             </div>
 
             <div className="flex gap-2.5 items-start">
               <span className="flex items-center justify-center font-bold bg-sky-100 text-sky-800 rounded-lg w-5 h-5 text-xs shrink-0 mt-0.5">2</span>
               <div>
-                <p className="font-bold text-slate-800">פתח את עורך ה-Apps Script</p>
-                <p className="mt-0.5">בתפריט העליון לחץ על <b>"Extensions" (תוספים)</b> &larr; <b>"Apps Script"</b>.</p>
+                <p className="font-bold text-slate-800">{t('webhook.steps.two.title')}</p>
+                <p className="mt-0.5"><Trans ns="smsIn" i18nKey="webhook.steps.two.description" components={[<b />, <b />]} /></p>
               </div>
             </div>
 
             <div className="flex gap-2.5 items-start">
               <span className="flex items-center justify-center font-bold bg-sky-100 text-sky-800 rounded-lg w-5 h-5 text-xs shrink-0 mt-0.5">3</span>
               <div>
-                <p className="font-bold text-slate-800">הדבק ושמור את הקוד</p>
-                <p className="mt-0.5">מחק את כל הקוד הקיים בעורך, העתק את הקוד מפה משמאל והדבק במקום, ואז לחץ על סמל הדיסקט (<kbd className="bg-slate-100 px-1 rounded font-mono">Ctrl+S</kbd> / <kbd className="bg-slate-100 px-1 rounded font-mono">⌘+S</kbd>) לשמירה.</p>
+                <p className="font-bold text-slate-800">{t('webhook.steps.three.title')}</p>
+                <p className="mt-0.5"><Trans ns="smsIn" i18nKey="webhook.steps.three.description" components={[<kbd className="bg-slate-100 px-1 rounded font-mono" />, <kbd className="bg-slate-100 px-1 rounded font-mono" />]} /></p>
               </div>
             </div>
 
             <div className="flex gap-2.5 items-start">
               <span className="flex items-center justify-center font-bold bg-sky-100 text-sky-800 rounded-lg w-5 h-5 text-xs shrink-0 mt-0.5">4</span>
               <div>
-                <p className="font-bold text-slate-800">פרוס את ה-Script</p>
-                <p className="mt-0.5">לחץ על כפתור <b>"Deploy" (פריסה) &larr; "New deployment" (פריסה חדשה)</b>. <br />בחר סוג: <b>"Web app" (יישום אינטרנט)</b>. <br />הגדר: <br />- <i>Execute as:</i> <b>"Me" (אני)</b> <br />- <i>Who has access:</i> <b>"Anyone" (כולל כולם) <span className="text-red-500 font-bold">*קריטי*</span></b>. לחץ על Deploy ואשר גישה לחשבונך במידה וגוגל שואל.</p>
+                <p className="font-bold text-slate-800">{t('webhook.steps.four.title')}</p>
+                <p className="mt-0.5"><Trans ns="smsIn" i18nKey="webhook.steps.four.description" components={[<b />, <br />, <b />, <br />, <br />, <i />, <b />, <br />, <i />, <b />, <span className="text-red-500 font-bold" />]} /></p>
               </div>
             </div>
 
             <div className="flex gap-2.5 items-start">
               <span className="flex items-center justify-center font-bold bg-sky-100 text-sky-800 rounded-lg w-5 h-5 text-xs shrink-0 mt-0.5">5</span>
               <div>
-                <p className="font-bold text-slate-800">צמד את קישור הפריסה במסרגו</p>
-                <p className="mt-0.5">העתק את קישור ה-URL שיתקבל (הנקרא <b>Web app URL</b>), וערוך את הגדרות הניתוב למספר המבוקש במערכת על ידי הדבקת הלינק שם ומזל טוב!</p>
+                <p className="font-bold text-slate-800">{t('webhook.steps.five.title')}</p>
+                <p className="mt-0.5"><Trans ns="smsIn" i18nKey="webhook.steps.five.description" components={[<b />]} /></p>
               </div>
             </div>
           </div>
@@ -121,7 +123,7 @@ export default function WebhookSimulator({ logs, onClearLogs, defaultWebhookUrl 
         <div className="p-4 border-b border-slate-100 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></div>
-            <h3 className="font-bold text-slate-900 text-sm">ניטור בקשות והדמיות (לוג ווב-הוקס חי)</h3>
+            <h3 className="font-bold text-slate-900 text-sm">{t('webhook.logs.title')}</h3>
           </div>
           {logs.length > 0 && (
             <button
@@ -129,7 +131,7 @@ export default function WebhookSimulator({ logs, onClearLogs, defaultWebhookUrl 
               className="text-xs text-rose-600 hover:text-rose-700 font-semibold flex items-center gap-1 cursor-pointer hover:bg-rose-50 px-2 py-1 rounded"
             >
               <Trash2 size={13} />
-              נקה לוגים
+              {t('webhook.logs.clear')}
             </button>
           )}
         </div>
@@ -146,12 +148,12 @@ export default function WebhookSimulator({ logs, onClearLogs, defaultWebhookUrl 
                       ? 'bg-rose-50 text-rose-700 border border-rose-100'
                       : 'bg-amber-50 text-amber-700 border border-amber-100'
                   }`}>
-                    {log.status === 'success' ? '200 OK' : log.status === 'failed' ? 'נכשל' : 'ממתין'}
+                    {log.status === 'success' ? '200 OK' : log.status === 'failed' ? t('webhook.logs.failed') : t('webhook.logs.pending')}
                   </span>
                   <span className="font-medium text-slate-400">{log.timestamp}</span>
                 </div>
                 <div className="text-slate-500">
-                  נמען: <span className="font-mono bg-slate-100 px-1.5 py-0.5 rounded font-bold text-slate-700">{log.dest}</span>
+                  {t('webhook.logs.destination')}: <span className="font-mono bg-slate-100 px-1.5 py-0.5 rounded font-bold text-slate-700">{log.dest}</span>
                 </div>
               </div>
 
@@ -162,7 +164,7 @@ export default function WebhookSimulator({ logs, onClearLogs, defaultWebhookUrl 
                     {JSON.stringify(log.payload, null, 2)}
                   </pre>
                 </div>
-                <div className="bg-slate-50 p-2.5 rounded border border-slate-100 text-[10px] font-mono text-slate-600 text-left">
+                <div className="bg-slate-50 p-2.5 rounded border border-slate-100 text-[10px] font-mono text-slate-600 text-end">
                   <span className="text-[9px] font-bold text-slate-400 block mb-1">RESPONSE:</span>
                   <p className="whitespace-pre-line text-slate-700 mt-1">
                     {log.response || '(No response received - trigger executed in bypass)'}
@@ -174,8 +176,8 @@ export default function WebhookSimulator({ logs, onClearLogs, defaultWebhookUrl 
 
           {logs.length === 0 && (
             <div className="p-10 text-center text-slate-400">
-              <p className="text-sm font-medium">לא נמצאו בקשות Webhook אחרונות.</p>
-              <p className="text-xs text-slate-400 mt-0.5">נסה להוסיף SMS חדש או ללחוץ על "שליחה חוזרת של וובהוק" בטבלה כדי לעקוב אחר הבקשה שיוצאת.</p>
+              <p className="text-sm font-medium">{t('webhook.logs.emptyTitle')}</p>
+              <p className="text-xs text-slate-400 mt-0.5">{t('webhook.logs.emptyDescription')}</p>
             </div>
           )}
         </div>

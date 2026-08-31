@@ -1,5 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { Upload, X, Image as ImageIcon } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 interface FileUploaderProps {
   value?: string; // Current file URL
@@ -20,12 +21,14 @@ export const FileUploader: React.FC<FileUploaderProps> = ({
   value,
   onChange,
   accept = '*/*',
-  label = 'קובץ',
+  label,
   mediaType = 'image',
   token,
   apiBase = API_BASE,
   sampleUrl
 }) => {
+  const { t } = useTranslation('builder');
+  const resolvedLabel = label || t('upload.file');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -53,7 +56,7 @@ export const FileUploader: React.FC<FileUploaderProps> = ({
 
       if (!response.ok) {
         // Try to parse as JSON, fallback to text if HTML
-        let errorMessage = 'העלאה נכשלה';
+        let errorMessage = t('upload.failed');
         try {
           const contentType = response.headers.get('content-type');
           if (contentType && contentType.includes('application/json')) {
@@ -61,7 +64,7 @@ export const FileUploader: React.FC<FileUploaderProps> = ({
             errorMessage = errorData.error || errorMessage;
           } else {
             const text = await response.text();
-            errorMessage = `שגיאת שרת: ${response.status}`;
+            errorMessage = t('upload.serverError', { status: response.status });
             console.error('[FileUploader] Server returned HTML:', text.substring(0, 200));
           }
         } catch (parseErr) {
@@ -74,7 +77,7 @@ export const FileUploader: React.FC<FileUploaderProps> = ({
       onChange(data.url);
     } catch (err: any) {
       console.error('[FileUploader] Error:', err);
-      setError(err.message || 'העלאת הקובץ נכשלה');
+      setError(err.message || t('upload.fileFailed'));
     } finally {
       setUploading(false);
     }
@@ -91,7 +94,7 @@ export const FileUploader: React.FC<FileUploaderProps> = ({
       return (
         <div className="flex flex-col items-center justify-center gap-2 text-slate-600">
           <Upload size={40} />
-          <span className="text-sm">קובץ הועלה</span>
+          <span className="text-sm">{t('upload.uploaded')}</span>
         </div>
       );
     }
@@ -143,12 +146,12 @@ export const FileUploader: React.FC<FileUploaderProps> = ({
             {uploading ? (
               <>
                 <div className="w-6 h-6 border-2 border-sky-600 border-t-transparent rounded-full animate-spin" />
-                <span className="text-xs font-semibold">מעלה...</span>
+                <span className="text-xs font-semibold">{t('upload.uploading')}</span>
               </>
             ) : (
               <>
                 <Upload size={28} strokeWidth={1.5} />
-                <span className="text-xs font-semibold uppercase tracking-wider">העלה {label}</span>
+                <span className="text-xs font-semibold uppercase tracking-wider">{t('upload.uploadLabel', { label: resolvedLabel })}</span>
               </>
             )}
           </button>
@@ -167,7 +170,7 @@ export const FileUploader: React.FC<FileUploaderProps> = ({
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-sky-50 text-sky-700 border border-sky-200 text-xs font-semibold hover:bg-sky-100 transition-colors"
                 >
                   <ImageIcon size={14} />
-                  השתמש בקובץ לדוגמה
+                  {t('upload.useSample')}
                 </button>
               )}
               <button
@@ -179,7 +182,7 @@ export const FileUploader: React.FC<FileUploaderProps> = ({
                 }}
                 className="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 border border-slate-200 text-xs font-semibold hover:bg-slate-200 transition-colors"
               >
-                {showUrlInput ? 'בטל' : 'הזן קישור (URL)'}
+                {showUrlInput ? t('upload.cancel') : t('upload.enterUrl')}
               </button>
             </div>
           )}
@@ -207,7 +210,7 @@ export const FileUploader: React.FC<FileUploaderProps> = ({
                 disabled={!urlInputValue.trim()}
                 className="px-4 py-2 rounded-lg bg-sky-500 text-white text-sm font-bold hover:bg-sky-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                השתמש
+                {t('upload.use')}
               </button>
             </div>
           )}

@@ -1,0 +1,125 @@
+{
+  "tabs": {
+    "contacts": "Contacts",
+    "lists": "Distribution lists"
+  },
+  "page": {
+    "title": "Contacts",
+    "contactCount_one": "{{count}} contact",
+    "contactCount_other": "{{count}} contacts",
+    "searchPlaceholder": "Search by phone, name, email...",
+    "import": "Import from Excel",
+    "importing": "Importing...",
+    "importTitle": "Import contacts from Excel / CSV",
+    "add": "Add contact",
+    "empty": "No contacts yet",
+    "noResults": "No results found",
+    "addFirst": "Add your first contact"
+  },
+  "table": {
+    "phone": "Phone",
+    "fullName": "Full name",
+    "whatsappName": "WhatsApp name",
+    "email": "Email address",
+    "chattedWith": "Chatted with",
+    "lists": "Distribution lists",
+    "sessions": "Conversations",
+    "lastActive": "Last active",
+    "customFields": "Custom fields",
+    "manageFields": "Manage fields",
+    "simulator": "Simulator",
+    "tests": "Tests"
+  },
+  "actions": {
+    "goToSessions": "Go to conversations",
+    "edit": "Edit",
+    "confirmDelete": "Confirm deletion",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "save": "Save",
+    "saving": "Saving...",
+    "close": "Close",
+    "previous": "Previous",
+    "next": "Next"
+  },
+  "pagination": {
+    "desktop": "Page {{page}} of {{totalPages}} \u00a0·\u00a0 {{count}} contacts",
+    "mobile": "Page {{page}} / {{totalPages}}"
+  },
+  "modal": {
+    "editTitle": "Edit contact",
+    "addTitle": "Add contact",
+    "phonePlaceholder": "Phone number *",
+    "fullNamePlaceholder": "Full name",
+    "whatsappNamePlaceholder": "WhatsApp name",
+    "emailPlaceholder": "Email address",
+    "lists": "Distribution lists",
+    "noLists": "No distribution lists. Create a group first."
+  },
+  "detail": {
+    "sessions": "Conversations",
+    "lastActive": "Last active",
+    "basicDetails": "Basic details",
+    "fullName": "Full name",
+    "whatsappName": "WhatsApp name",
+    "email": "Email address",
+    "botPhones": "Phone numbers that have messaged this contact",
+    "savedFromChats": "Details saved from conversations",
+    "noSavedDetails": "No details saved from conversations yet",
+    "savedDetailsHint": "Details will appear here after conversations that use a “Save to contact details” node",
+    "edit": "Edit"
+  },
+  "fields": {
+    "title": "Manage fields",
+    "baseTitle": "Base fields (fixed)",
+    "fixed": "Fixed",
+    "customTitle": "Custom fields",
+    "empty": "No custom fields yet",
+    "emptyHint": "Click “{{action}}” to get started",
+    "addField": "Add field",
+    "add": "Add",
+    "newPlaceholder": "Field name (e.g. customer type)",
+    "deleteConfirm": "Delete “{{label}}”?",
+    "labelRequired": "Field name is required"
+  },
+  "baseFields": {
+    "phone": "Phone",
+    "fullName": "Full name",
+    "whatsappName": "WhatsApp name",
+    "email": "Email address"
+  },
+  "errors": {
+    "phoneRequired": "Phone number is required",
+    "saveFailed": "Error saving",
+    "network": "Network error",
+    "generic": "Error"
+  },
+  "import": {
+    "title": "Import contacts",
+    "sampleTitle": "Want to see an example?",
+    "sampleHint": "Download a sample file to see the required data format",
+    "downloadSample": "Download sample file",
+    "assignToList": "Assign to a distribution list",
+    "noLists": "No distribution lists. Create a group first.",
+    "chooseFile": "Choose an Excel / CSV file to import",
+    "selectAtLeastOne": "Select at least one distribution list",
+    "cancel": "Cancel",
+    "resultTitle": "Import results",
+    "imported": "Successfully imported: <0>{{count}}</0> contacts",
+    "skipped": "Skipped (no phone): <0>{{count}}</0>",
+    "errors": "Errors ({{count}}):",
+    "close": "Close",
+    "importFailed": "Import failed",
+    "unknownError": "Unknown error",
+    "csv": {
+      "phone": "Phone",
+      "fullName": "Full Name",
+      "whatsappName": "WhatsApp Name",
+      "email": "Email",
+      "sample1Name": "Israel Israeli",
+      "sample1Whatsapp": "Israel",
+      "sample2Name": "Sarah Cohen",
+      "sample2Whatsapp": "Sarah' Cohen"
+    }
+  }
+}

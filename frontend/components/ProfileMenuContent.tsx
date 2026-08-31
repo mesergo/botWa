@@ -1,5 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Edit2, LogOut, User as UserIcon, Mail, Phone, Star } from 'lucide-react';
+import LanguageSwitcher from './LanguageSwitcher';
 
 const API_BASE = window.location.hostname === 'localhost'
   ? 'http://localhost:3001/api'
@@ -20,16 +22,10 @@ interface ProfileMenuContentProps {
   children?: React.ReactNode;
 }
 
-const accountTypeLabel = (type?: string) => {
-  if (type === 'Trial') return 'ניסיוני';
-  if (type === 'Premium') return 'פרימיום';
-  if (type === 'Basic') return 'בסיסי';
-  return type || '-';
-};
-
 /** Shared content for the profile dropdown: full name, email, phone (editable) and subscription type,
  *  followed by optional extra content (e.g. account switcher) and a logout button. */
 const ProfileMenuContent: React.FC<ProfileMenuContentProps> = ({ token, currentUser, onLogout, children }) => {
+  const { t } = useTranslation('nav');
   const [profile, setProfile] = useState<ProfileDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [editingPhone, setEditingPhone] = useState(false);
@@ -37,6 +33,13 @@ const ProfileMenuContent: React.FC<ProfileMenuContentProps> = ({ token, currentU
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const cancellingRef = useRef(false);
+
+  const accountTypeLabel = (type?: string) => {
+    if (type === 'Trial' || type === 'Premium' || type === 'Basic') {
+      return t(`profile.accountType.${type}`);
+    }
+    return type || '-';
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -64,11 +67,11 @@ const ProfileMenuContent: React.FC<ProfileMenuContentProps> = ({ token, currentU
         body: JSON.stringify({ phone: phoneValue }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'שגיאה בשמירת הטלפון');
+      if (!res.ok) throw new Error(data.error || t('profile.savePhoneError'));
       setProfile(prev => (prev ? { ...prev, phone: data.phone || '' } : prev));
       setEditingPhone(false);
     } catch (e: any) {
-      setError(e.message || 'שגיאה בשמירת הטלפון');
+      setError(e.message || t('profile.savePhoneError'));
     } finally {
       setSaving(false);
     }
@@ -87,23 +90,23 @@ const ProfileMenuContent: React.FC<ProfileMenuContentProps> = ({ token, currentU
       </div>
       <div className="px-4 py-2 space-y-2.5">
         <div className="flex items-center justify-between gap-3">
-          <span title="שם מלא" className="text-slate-400 flex-shrink-0"><UserIcon size={14} /></span>
+          <span title={t('profile.fullName')} className="text-slate-400 flex-shrink-0"><UserIcon size={14} /></span>
           <span className="text-xs font-bold text-slate-700 truncate">{displayName}</span>
         </div>
         <div className="flex items-center justify-between gap-3">
-          <span title="אימייל" className="text-slate-400 flex-shrink-0"><Mail size={14} /></span>
+          <span title={t('profile.email')} className="text-slate-400 flex-shrink-0"><Mail size={14} /></span>
           <span className="text-xs font-bold text-slate-700 truncate" dir="ltr">{displayEmail}</span>
         </div>
         <div className="flex items-center justify-between gap-3">
-          <span title="טלפון" className="text-slate-400 flex-shrink-0"><Phone size={14} /></span>
+          <span title={t('profile.phone')} className="text-slate-400 flex-shrink-0"><Phone size={14} /></span>
           {!editingPhone ? (
             <div className="flex items-center gap-1.5 min-w-0" dir="ltr">
-              <span className="text-xs font-bold text-slate-700 truncate">{loading ? '...' : (profile?.phone || 'לא הוגדר')}</span>
+              <span className="text-xs font-bold text-slate-700 truncate">{loading ? '...' : (profile?.phone || t('profile.notSet'))}</span>
               <button
                 type="button"
                 onClick={() => { setPhoneValue(profile?.phone || ''); setEditingPhone(true); setError(null); }}
                 className="p-1 text-slate-400 hover:text-blue-600 transition-colors flex-shrink-0"
-                title="עדכון מספר טלפון"
+                title={t('profile.editPhone')}
               >
                 <Edit2 size={13} />
               </button>
@@ -128,20 +131,22 @@ const ProfileMenuContent: React.FC<ProfileMenuContentProps> = ({ token, currentU
           )}
         </div>
         <div className="flex items-center justify-between gap-3">
-          <span title="סוג מנוי" className="text-slate-400 flex-shrink-0"><Star size={14} /></span>
+          <span title={t('profile.subscription')} className="text-slate-400 flex-shrink-0"><Star size={14} /></span>
           <span className="text-xs font-bold text-slate-700 truncate">{loading ? '...' : accountTypeLabel(profile?.account_type)}</span>
         </div>
-        {error && <p className="text-[11px] font-bold text-red-500 text-right">{error}</p>}
+        {error && <p className="text-[11px] font-bold text-red-500 text-start">{error}</p>}
       </div>
       {children}
+      <div className="my-1 border-t border-slate-100" />
+      <LanguageSwitcher variant="menu" />
       <div className="my-1 border-t border-slate-100" />
       <button
         type="button"
         onClick={onLogout}
-        className="w-full flex items-center gap-2 px-4 py-2 text-sm font-bold text-red-500 hover:bg-red-50 transition-colors text-right"
+        className="w-full flex items-center gap-2 px-4 py-2 text-sm font-bold text-red-500 hover:bg-red-50 transition-colors text-start"
       >
         <LogOut size={16} />
-        <span>יציאה</span>
+        <span>{t('profile.logout')}</span>
       </button>
     </div>
   );

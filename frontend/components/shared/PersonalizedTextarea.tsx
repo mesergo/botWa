@@ -2,6 +2,7 @@ import React, { useLayoutEffect, useMemo, useRef, useState, useEffect } from 're
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { STD_FIELDS } from '../TemplateBodyParamsEditor';
+import { useTranslation } from 'react-i18next';
 
 interface ContactField {
   _id: string;
@@ -42,6 +43,7 @@ const buildTokenDefs = (contactFields: ContactField[]): TokenDef[] => [
 const PersonalizedTextarea: React.FC<PersonalizedTextareaProps> = ({
   value, onChange, contactFields, rows = 6, placeholder, className,
 }) => {
+  const { t } = useTranslation('builder');
   const [menuOpen, setMenuOpen] = useState(false);
   const [position, setPosition] = useState<{ top: number; left: number } | null>(null);
   const hashPosRef = useRef<number | null>(null);
@@ -124,7 +126,7 @@ const PersonalizedTextarea: React.FC<PersonalizedTextareaProps> = ({
       />
       <div className="flex items-center justify-between gap-2 mt-1.5 flex-wrap">
         <p className="text-[11px] text-slate-400 font-semibold">
-          הקלד # כדי להוסיף פרמטר אישי (שם, מייל, טלפון ועוד) שיוחלף אוטומטית לכל נמען — ניתן להוסיף כמה פרמטרים שונים באותה הודעה
+          {t('personalizedTextarea.hint')}
         </p>
         {usedTokens.length > 0 && (
           <div className="flex items-center gap-1.5 flex-wrap">
@@ -134,7 +136,7 @@ const PersonalizedTextarea: React.FC<PersonalizedTextareaProps> = ({
                 type="button"
                 onClick={() => removeToken(t.token)}
                 className="flex items-center gap-1 px-2 py-1 bg-indigo-50 text-indigo-700 rounded-lg text-[11px] font-bold hover:bg-indigo-100 transition-colors flex-shrink-0"
-                title="הסר פרמטר זה"
+                title={t('personalizedTextarea.removeParameter')}
               >
                 {t.label} <X size={11} />
               </button>
@@ -148,26 +150,26 @@ const PersonalizedTextarea: React.FC<PersonalizedTextareaProps> = ({
           style={{ position: 'fixed', top: position.top, left: position.left }}
           className="bg-white rounded-xl shadow-xl border border-slate-100 py-1 z-50 min-w-[180px] max-h-64 overflow-y-auto"
         >
-          <div className="px-3 py-1.5 text-[11px] font-black text-slate-400">בחר פרמטר להוספה:</div>
+          <div className="px-3 py-1.5 text-[11px] font-black text-slate-400">{t('personalizedTextarea.chooseParameter')}</div>
           {STD_FIELDS.map(f => (
             <button
               key={f.token}
               type="button"
               onClick={() => insertToken(f.token)}
-              className="w-full text-right px-3 py-2 text-xs font-bold text-slate-700 hover:bg-indigo-50 hover:text-indigo-600 transition-colors"
+              className="w-full text-start px-3 py-2 text-xs font-bold text-slate-700 hover:bg-indigo-50 hover:text-indigo-600 transition-colors"
             >
               {f.label}
             </button>
           ))}
           {contactFields.length > 0 && (
             <>
-              <div className="px-3 py-1.5 mt-1 border-t border-slate-100 text-[11px] font-black text-slate-400">שדות מותאמים אישית:</div>
+              <div className="px-3 py-1.5 mt-1 border-t border-slate-100 text-[11px] font-black text-slate-400">{t('personalizedTextarea.customFields')}</div>
               {contactFields.map(f => (
                 <button
                   key={f._id}
                   type="button"
                   onClick={() => insertToken(`field_${f._id}`)}
-                  className="w-full text-right px-3 py-2 text-xs font-bold text-slate-700 hover:bg-indigo-50 hover:text-indigo-600 transition-colors"
+                  className="w-full text-start px-3 py-2 text-xs font-bold text-slate-700 hover:bg-indigo-50 hover:text-indigo-600 transition-colors"
                 >
                   {f.label}
                 </button>

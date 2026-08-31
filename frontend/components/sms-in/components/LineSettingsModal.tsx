@@ -7,6 +7,7 @@ import React, { useState } from 'react';
 import { DestSetting, Client } from '../types';
 import { X, Check, Globe, HelpCircle, Loader2, Send, Link2, Copy, Terminal, History } from 'lucide-react';
 import { GOOGLE_SHEETS_APPS_SCRIPT } from '../googleSheetsScript';
+import { Trans, useTranslation } from 'react-i18next';
 
 interface LineSettingsModalProps {
   setting: DestSetting;
@@ -27,6 +28,7 @@ export default function LineSettingsModal({
   onClose,
   onSave,
 }: LineSettingsModalProps) {
+  const { t } = useTranslation('smsIn');
   const [googleSheetsUrl, setGoogleSheetsUrl] = useState(setting.googleSheetsUrl);
   const [webhookUrl, setWebhookUrl] = useState(setting.webhookUrl);
   const [selectedClient, setSelectedClient] = useState<string>(setting.assignedClients[0] ?? '');
@@ -62,11 +64,11 @@ export default function LineSettingsModal({
 
   const handleSyncHistory = async () => {
     if (!googleSheetsUrl) {
-      setHistorySyncResult('יש להזין כתובת Google Sheets לפני סנכרון היסטוריה');
+      setHistorySyncResult(t('lines.history.enterSheetsUrl'));
       return;
     }
     if (historyMessageCount === 0) {
-      setHistorySyncResult('אין הודעות היסטוריות לקו זה');
+      setHistorySyncResult(t('lines.history.noMessages'));
       return;
     }
 
@@ -74,9 +76,9 @@ export default function LineSettingsModal({
     setHistorySyncResult('');
     try {
       const { sent, total } = await onSyncHistory(buildDraftSetting());
-      setHistorySyncResult(`${sent} מתוך ${total} הודעות נשלחו לגוגל שיטס (כפילויות מדולגות אוטומטית)`);
+      setHistorySyncResult(t('lines.history.sent', { sent, total }));
     } catch {
-      setHistorySyncResult('שגיאה בסנכרון ההיסטוריה — ודא שהכתובת תקינה');
+      setHistorySyncResult(t('lines.history.error'));
     } finally {
       setIsSyncingHistory(false);
     }
@@ -95,7 +97,7 @@ export default function LineSettingsModal({
     if (!url) {
       setTestTarget(target);
       setTestStatus('failed');
-      setTestMessage(`אנא הזן כתובת ${label} תקינה לפני בדיקת החיבור`);
+      setTestMessage(t('lines.test.enterUrl', { label }));
       return;
     }
 
@@ -130,12 +132,12 @@ export default function LineSettingsModal({
 
       setTimeout(() => {
         setTestStatus('success');
-        setTestMessage(`בקשת הבדיקה ל-${label} נשלחה בהצלחה! אם היעד מוגדר כראוי, הנתונים התקבלו.`);
+        setTestMessage(t('lines.test.success', { label }));
       }, 1200);
 
     } catch (err: any) {
       setTestStatus('failed');
-      setTestMessage(`שגיאה בשליחת הבקשה: ${err.message || err}. ודא שכתובת ה-URL פתוחה לקבלת בקשות חיצוניות.`);
+      setTestMessage(t('lines.test.error', { error: err.message || err }));
     }
   };
 
@@ -161,9 +163,9 @@ export default function LineSettingsModal({
         {/* Header */}
         <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50 rounded-t-xl">
           <div>
-            <span className="text-xs font-semibold text-sky-600 bg-sky-50 px-2.5 py-1 rounded-full uppercase tracking-wider">הגדרות קו</span>
+            <span className="text-xs font-semibold text-sky-600 bg-sky-50 px-2.5 py-1 rounded-full uppercase tracking-wider">{t('lines.title')}</span>
             <h3 className="text-xl font-bold text-slate-900 mt-1.5 flex items-center gap-2">
-              קו נמען: <span className="font-mono text-sky-700 font-semibold">{setting.dest}</span>
+              {t('lines.destinationLine')}: <span className="font-mono text-sky-700 font-semibold">{setting.dest}</span>
             </h3>
           </div>
           <button 
@@ -175,12 +177,12 @@ export default function LineSettingsModal({
         </div>
 
         {/* Content */}
-        <div className="p-6 space-y-6 flex-1 text-right">
+        <div className="p-6 space-y-6 flex-1 text-start">
           {/* Status Toggle */}
           <div className="flex items-center justify-between p-4 bg-slate-50 rounded-lg border border-slate-100">
             <div>
-              <h4 className="font-bold text-slate-900 text-sm">סטטוס קו פעיל</h4>
-              <p className="text-xs text-slate-500 mt-0.5">כאשר כבוי, הודעות נכנסות לקו זה אינן מנותבות ונשמרות בלוג בלבד</p>
+              <h4 className="font-bold text-slate-900 text-sm">{t('lines.activeStatus')}</h4>
+              <p className="text-xs text-slate-500 mt-0.5">{t('lines.activeDescription')}</p>
             </div>
             <label className="relative inline-flex items-center cursor-pointer">
               <input 
@@ -197,9 +199,9 @@ export default function LineSettingsModal({
           <div>
             <div className="flex justify-between items-center mb-2">
               <label className="block text-sm font-bold text-slate-900">
-                שיוך לקוח קצה לקו זה <span className="text-red-500">*</span>
+                {t('lines.assignClient')} <span className="text-red-500">*</span>
               </label>
-              <span className="text-xs text-slate-500">לקוח אחד בלבד לכל קו</span>
+              <span className="text-xs text-slate-500">{t('lines.oneClientOnly')}</span>
             </div>
             <div className="border border-slate-200 rounded-lg p-3 space-y-2 max-h-44 overflow-y-auto bg-slate-50">
               {allClients.map((client) => {
@@ -225,7 +227,7 @@ export default function LineSettingsModal({
               })}
               {allClients.length === 0 && (
                 <div className="text-center p-4 text-slate-400 text-sm">
-                  אין לקוחות קיימים. אנא הוסף לקוחות בלשונית "ניהול לקוחות".
+                  {t('lines.noClients')}
                 </div>
               )}
             </div>
@@ -236,12 +238,11 @@ export default function LineSettingsModal({
             <div className="flex items-center gap-1.5 mb-1.5">
               <Globe size={16} className="text-sky-600" />
               <label className="block text-sm font-bold text-slate-900">
-                Google Sheets — כתובת Apps Script
+                {t('lines.sheets.title')}
               </label>
             </div>
             <p className="text-xs text-slate-500 mb-2 leading-relaxed">
-              כל הודעה שנכנסת לקו זה — <b>כולל היסטוריה</b> — תישלח לגוגל שיטס. בעת שמירה, כל ההודעות הקיימות מסונכרנות אוטומטית.
-              הודעות חדשות ימשיכו להישלח בזמן אמת.
+              <Trans ns="smsIn" i18nKey="lines.sheets.description" components={[<b />]} />
             </p>
             <div className="flex gap-2">
               <input 
@@ -263,7 +264,7 @@ export default function LineSettingsModal({
                 ) : (
                   <Send size={13} />
                 )}
-                <span>בדיקה</span>
+                <span>{t('lines.test.button')}</span>
               </button>
             </div>
             {renderTestResult('googleSheets')}
@@ -283,8 +284,8 @@ export default function LineSettingsModal({
                   )}
                   <span>
                     {isSyncingHistory
-                      ? `מסנכרן ${historyMessageCount} הודעות...`
-                      : `סנכרון היסטוריה (${historyMessageCount} הודעות)`}
+                      ? t('lines.history.syncing', { count: historyMessageCount })
+                      : t('lines.history.sync', { count: historyMessageCount })}
                   </span>
                 </button>
                 {historySyncResult && (
@@ -299,11 +300,11 @@ export default function LineSettingsModal({
             <div className="flex items-center gap-1.5 mb-1.5">
               <Link2 size={16} className="text-indigo-600" />
               <label className="block text-sm font-bold text-slate-900">
-                Webhook רגיל (אופציונלי)
+                {t('lines.webhook.title')}
               </label>
             </div>
             <p className="text-xs text-slate-500 mb-2 leading-relaxed">
-              כתובת Webhook נפרדת — יכולה להיות כל שירות חיצוני, כולל גיליון Google Sheets נוסף.
+              {t('lines.webhook.description')}
             </p>
             <div className="flex gap-2">
               <input 
@@ -325,7 +326,7 @@ export default function LineSettingsModal({
                 ) : (
                   <Send size={13} />
                 )}
-                <span>בדיקה</span>
+                <span>{t('lines.test.button')}</span>
               </button>
             </div>
             {renderTestResult('webhook')}
@@ -333,9 +334,9 @@ export default function LineSettingsModal({
 
           {/* Notes description */}
           <div>
-            <label className="block text-sm font-bold text-slate-900 mb-1.5">הערות פנימיות</label>
+            <label className="block text-sm font-bold text-slate-900 mb-1.5">{t('lines.notes')}</label>
             <textarea
-              placeholder="רשום הערות כגון מיקום הגיליון, ייעוד וכד'..."
+              placeholder={t('lines.notesPlaceholder')}
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               rows={2}
@@ -346,20 +347,20 @@ export default function LineSettingsModal({
           {/* Google Sheets Steps Guide Help */}
           <div className="p-3.5 bg-sky-50/50 rounded-lg border border-sky-100 text-xs text-sky-900 space-y-3">
             <span className="font-bold flex items-center gap-1 text-sky-900">
-              <HelpCircle size={13} /> איך מחברים לגוגל שיטס?
+              <HelpCircle size={13} /> {t('lines.guide.title')}
             </span>
-            <ol className="list-decimal list-inside space-y-1.5 pr-1 font-medium text-sky-800">
-              <li>פתח <a href="https://sheets.new" target="_blank" rel="noreferrer" className="text-sky-700 underline">גיליון Google Sheets חדש</a>.</li>
-              <li>בתפריט: <b>תוספים (Extensions)</b> → <b>Apps Script</b>.</li>
-              <li>מחק את הקוד הקיים בעורך, והדבק את הקוד למטה (כפתור "העתק קוד"). שמור עם Ctrl+S.</li>
-              <li><b>פריסה (Deploy)</b> → <b>פריסה חדשה (Web app)</b> → גישה: <b>Anyone / כולם</b> — קריטי!</li>
-              <li>העתק את ה-Web app URL שהתקבל והדבק בשדה Google Sheets למעלה.</li>
+            <ol className="list-decimal list-inside space-y-1.5 ps-1 font-medium text-sky-800">
+              <li><Trans ns="smsIn" i18nKey="lines.guide.step1" components={[<a href="https://sheets.new" target="_blank" rel="noreferrer" className="text-sky-700 underline" />]} /></li>
+              <li><Trans ns="smsIn" i18nKey="lines.guide.step2" components={[<b />, <b />]} /></li>
+              <li>{t('lines.guide.step3')}</li>
+              <li><Trans ns="smsIn" i18nKey="lines.guide.step4" components={[<b />, <b />, <b />]} /></li>
+              <li>{t('lines.guide.step5')}</li>
             </ol>
 
             <div className="bg-slate-900 rounded-lg border border-slate-800 overflow-hidden" dir="ltr">
               <div className="flex items-center justify-between px-3 py-2 border-b border-slate-800">
                 <span className="text-[10px] font-mono text-slate-400 flex items-center gap-1">
-                  <Terminal size={12} className="text-sky-400" /> Code.gs — הדבק ב-Apps Script
+                  <Terminal size={12} className="text-sky-400" /> {t('lines.guide.codeTitle')}
                 </span>
                 <button
                   type="button"
@@ -369,12 +370,12 @@ export default function LineSettingsModal({
                   {codeCopied ? (
                     <>
                       <Check size={11} className="text-emerald-400" />
-                      הועתק!
+                      {t('lines.guide.copied')}
                     </>
                   ) : (
                     <>
                       <Copy size={11} />
-                      העתק קוד
+                      {t('lines.guide.copyCode')}
                     </>
                   )}
                 </button>
@@ -393,7 +394,7 @@ export default function LineSettingsModal({
             onClick={onClose}
             className="px-4 py-2 text-xs font-semibold bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-all cursor-pointer"
           >
-            ביטול
+            {t('lines.cancel')}
           </button>
           <button
             type="button"
@@ -401,7 +402,7 @@ export default function LineSettingsModal({
             className="px-5 py-2 text-xs font-semibold bg-sky-600 hover:bg-sky-500 text-white rounded-lg shadow-xs hover:shadow-md transition-all cursor-pointer flex items-center gap-1"
           >
             <Check size={14} />
-            שמור שינויים לנתב
+            {t('lines.save')}
           </button>
         </div>
       </div>

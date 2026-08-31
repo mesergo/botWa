@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { Bot, List, Users, Settings, UserCog, Home, MessageSquare, Send, Menu, X } from 'lucide-react';
 
 export type NavPage = 'bots' | 'sessions' | 'contacts' | 'groups'| 'send_messages' | 'sms_in' | 'settings' | 'users';
@@ -41,14 +42,14 @@ interface AppNavProps {
   mobileBreakpoint?: number;
 }
 
-const NAV_ITEMS: { key: NavPage; label: string; Icon: React.FC<{ size?: number; className?: string }> }[] = [
-  { key: 'bots',     label: 'הבוטים שלי', Icon: Bot },
-  { key: 'sessions', label: 'שיחות',       Icon: List },
-  { key: 'contacts', label: 'אנשי קשר',   Icon: Users },
-  { key: 'send_messages', label: 'שליחת הודעות', Icon: Send },
-  { key: 'sms_in',   label: 'SMS נכנס',      Icon: MessageSquare },
-  { key: 'settings', label: 'הגדרות',      Icon: Settings },
-  { key: 'users',    label: 'משתמשים',     Icon: UserCog },
+const NAV_ITEMS: { key: NavPage; labelKey: string; Icon: React.FC<{ size?: number; className?: string }> }[] = [
+  { key: 'bots',     labelKey: 'pages.bots',         Icon: Bot },
+  { key: 'sessions', labelKey: 'pages.sessions',     Icon: List },
+  { key: 'contacts', labelKey: 'pages.contacts',     Icon: Users },
+  { key: 'send_messages', labelKey: 'pages.sendMessages', Icon: Send },
+  { key: 'sms_in',   labelKey: 'pages.smsIn',        Icon: MessageSquare },
+  { key: 'settings', labelKey: 'pages.settings',     Icon: Settings },
+  { key: 'users',    labelKey: 'pages.users',        Icon: UserCog },
 ];
 
 const AppNav: React.FC<AppNavProps> = ({
@@ -68,6 +69,7 @@ const AppNav: React.FC<AppNavProps> = ({
   hideMobileTrigger = false,
   mobileBreakpoint = 900,
 }) => {
+  const { t } = useTranslation('nav');
   const navigate = useNavigate();
   const location = useLocation();
   const [isMobileNav, setIsMobileNav] = useState<boolean>(() => window.innerWidth <= mobileBreakpoint);
@@ -138,13 +140,13 @@ const AppNav: React.FC<AppNavProps> = ({
             className={`flex items-center gap-3 px-4 ${dense ? 'py-3' : 'py-3.5'} rounded-xl font-bold text-sm transition-all duration-200 w-full text-slate-500 hover:bg-slate-50 hover:text-slate-800`}
           >
             <Home size={iconSize} className="flex-shrink-0 text-slate-400" />
-            <span className="tracking-tight">דף הבית</span>
+            <span className="tracking-tight">{t('pages.home')}</span>
           </button>
           <div className="my-1 border-t border-slate-100" />
         </>
       )}
 
-      {visibleItems.map(({ key, label, Icon }) => {
+      {visibleItems.map(({ key, labelKey, Icon }) => {
         const isActive = key === activePage;
         return (
           <button
@@ -172,7 +174,7 @@ const AppNav: React.FC<AppNavProps> = ({
           >
             {isActive && (
               <span
-                className="absolute right-0 top-2 bottom-2 w-1 rounded-l-full"
+                className="absolute start-0 top-2 bottom-2 w-1 rounded-e-full"
                 style={{ backgroundColor: 'rgb(37 99 235)' }}
               />
             )}
@@ -184,7 +186,7 @@ const AppNav: React.FC<AppNavProps> = ({
                   : 'text-slate-400 group-hover:text-slate-600'
               }`}
             />
-            <span className="tracking-tight">{label}</span>
+            <span className="tracking-tight">{t(labelKey)}</span>
           </button>
         );
       })}
@@ -195,10 +197,10 @@ const AppNav: React.FC<AppNavProps> = ({
     return (
       <>
         {!hideMobileTrigger && (
-          <div className="fixed z-40" style={{ top: '1.15rem', right: '-0.2rem' }} dir="rtl">
+          <div className="fixed z-40" style={{ top: '1.15rem', insetInlineStart: '-0.2rem' }}>
             <button
               onClick={() => setMenuOpen(!menuOpen)}
-              aria-label={menuOpen ? 'סגור תפריט ניווט' : 'פתח תפריט ניווט'}
+              aria-label={menuOpen ? t('mobileMenu.close') : t('mobileMenu.open')}
               aria-expanded={menuOpen}
               className="inline-flex items-center justify-center p-2.5 rounded-xl bg-white text-slate-700 hover:bg-slate-50 transition-colors"
             >
@@ -215,9 +217,8 @@ const AppNav: React.FC<AppNavProps> = ({
               aria-hidden="true"
             />
             <aside
-              className="fixed right-0 top-20 bottom-0 w-64 bg-white border-l border-slate-100 flex flex-col py-4 px-3 gap-1 z-50 overflow-y-auto"
+              className="fixed start-0 top-20 bottom-0 w-64 bg-white border-e border-slate-100 flex flex-col py-4 px-3 gap-1 z-50 overflow-y-auto"
               style={{ boxShadow: '4px 0 24px rgba(0,0,0,0.03)' }}
-              dir="rtl"
             >
               {renderNavButtons(20, false)}
             </aside>
@@ -230,9 +231,8 @@ const AppNav: React.FC<AppNavProps> = ({
   if (mode === 'sidebar') {
     return (
       <aside
-        className="w-64 bg-white border-l border-slate-100 flex flex-col py-4 px-3 gap-1 z-10 overflow-y-auto"
+        className="w-64 bg-white border-e border-slate-100 flex flex-col py-4 px-3 gap-1 z-10 overflow-y-auto"
         style={{ boxShadow: '4px 0 24px rgba(0,0,0,0.03)' }}
-        dir="rtl"
       >
         {renderNavButtons(20, false)}
       </aside>
@@ -248,10 +248,10 @@ const AppNav: React.FC<AppNavProps> = ({
           className="flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm transition-all text-slate-500 hover:text-slate-700"
         >
           <Home size={16} />
-          דף הבית
+          {t('pages.home')}
         </button>
       )}
-      {visibleItems.map(({ key, label, Icon }) => {
+      {visibleItems.map(({ key, labelKey, Icon }) => {
         const isActive = key === activePage;
         return (
           <button
@@ -265,7 +265,7 @@ const AppNav: React.FC<AppNavProps> = ({
             }`}
           >
             <Icon size={16} />
-            {label}
+            {t(labelKey)}
           </button>
         );
       })}

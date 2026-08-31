@@ -1,0 +1,15 @@
+{
+  "language": {
+    "label": "שפה",
+    "hebrew": "עברית",
+    "english": "English"
+  },
+  "actions": {
+    "confirm": "אישור",
+    "change": "שינוי"
+  },
+  "errors": {
+    "network": "אין חיבור לשרת",
+    "networkRetry": "אין חיבור לשרת. אנא נסה שנית מאוחר יותר."
+  }
+}

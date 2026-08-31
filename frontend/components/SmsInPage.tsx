@@ -5,6 +5,7 @@ import AppNav from './AppNav';
 import PageTopBar from './PageTopBar';
 import SmsInApp from './sms-in/SmsInApp';
 import { usePermission } from '../hooks/usePermission';
+import { useTranslation } from 'react-i18next';
 
 interface SmsInPageProps {
   token: string | null;
@@ -43,11 +44,12 @@ const SmsInPage: React.FC<SmsInPageProps> = ({
   onStopImpersonation,
   onSwitchAccount,
 }) => {
+  const { t } = useTranslation('smsIn');
   const can = usePermission(currentUser as any);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   return (
-    <div className="h-screen w-screen bg-[#f8fafc] flex flex-col font-medium text-right overflow-hidden" dir="rtl">
+    <div className="h-screen w-screen bg-[#f8fafc] flex flex-col font-medium text-start overflow-hidden">
       <ImpersonationBanner currentUser={currentUser} onStopImpersonation={onStopImpersonation} token={_token} onSwitchAccount={onSwitchAccount} />
 
       <PageTopBar
@@ -59,7 +61,7 @@ const SmsInPage: React.FC<SmsInPageProps> = ({
         showMobileNavToggle
         mobileNavOpen={mobileNavOpen}
         onMobileNavToggle={() => setMobileNavOpen((prev) => !prev)}
-        badge={{ label: 'SMS נכנס', icon: <MessageSquare size={14} />, className: 'bg-sky-50 text-sky-700' }}
+        badge={{ label: t('page.badge'), icon: <MessageSquare size={14} />, className: 'bg-sky-50 text-sky-700' }}
       />
 
       <div className="flex-1 overflow-hidden flex">

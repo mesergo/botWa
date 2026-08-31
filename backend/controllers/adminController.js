@@ -501,6 +501,100 @@ export const linkNumberForCustomer = async (req, res) => {
   }
 };
 
+// POST /api/admin/users/:userId/connected-numbers/link-dialog360
+// Admin-only: link an already-activated Dialog360 WhatsApp number to a SPECIFIC
+// customer's account (no ownership/self-service token required — admin acts
+// directly on the target user by id). Mirrors the dialog360 branch of the
+// self-service `POST /whatsapp-registration/link-number` endpoint (see
+// `linkNumber` in whatsappRegistrationController.js).
+//
+// Body: { token360, link, display_phone_number? }
+export const linkDialog360NumberForCustomer = async (req, res) => {
+  const { userId } = req.params;
+  const raw = req.body || {};
+  const { token360, link } = raw;
+  const tag = `[ADMIN-LINK-D360 user=${userId} token=${(token360 || '').slice(0, 8)}...]`;
+
+  console.log(`${tag} ▶️ START`);
+
+  if (!token360) {
+    console.log(`${tag} ❌ missing_token360`);
+    return res.status(400).json({ error: 'missing_token360' });
+  }
+  if (!link) {
+    console.log(`${tag} ❌ missing_link`);
+    return res.status(400).json({ error: 'missing_link' });
+  }
+
+  // token360 is unique per channel; used as the phone_number_id key
+  const phone_number_id = token360;
+
+  try {
+    const user = await User.findById(userId);
+    if (!user) {
+      console.log(`${tag} ❌ User not found`);
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const existing = (user.connected_numbers || []).find(n => n.phone_number_id === phone_number_id);
+
+    if (!existing) {
+      const limits = await getUserLimits(user);
+      const currentCount = (user.connected_numbers || []).length;
+      if (currentCount >= limits.maxConnectedNumbers) {
+        console.log(`${tag} ❌ quota_exceeded current=${currentCount} max=${limits.maxConnectedNumbers}`);
+        return res.status(403).json({
+          error: 'quota_exceeded',
+          message: 'המכסה נגמרה. יש ליצור קשר עם המשרד לתשלום להוספת מספר.',
+          current: currentCount,
+          max: limits.maxConnectedNumbers
+        });
+      }
+    }
+
+    const payload = {
+      phone_number_id,
+      provider: 'dialog360',
+      token360,
+      link,
+      display_phone_number: normalizePhone(raw.display_phone_number ?? existing?.display_phone_number ?? ''),
+      verified_name: raw.verified_name ?? existing?.verified_name ?? '',
+      waba_id: existing?.waba_id || '',
+      quality_rating: existing?.quality_rating || '',
+      whatsapp_status: existing?.whatsapp_status || 'CONNECTED',
+      access_token: '',
+      registered: true,
+      pin: '',
+      assigned_bot_id: existing?.assigned_bot_id || null,
+      connected_at: existing?.connected_at || new Date(),
+      allowedPaymentCountries: existing?.allowedPaymentCountries || '972'
+    };
+
+    if (existing) {
+      Object.assign(existing, payload);
+      user.markModified('connected_numbers');
+      console.log(`${tag} 🔄 updated existing dialog360 entry`);
+    } else {
+      user.connected_numbers.push(payload);
+      console.log(`${tag} ➕ added new dialog360 entry`);
+    }
+
+    await user.save();
+    console.log(`${tag} 🏁 DONE success=true total_connected=${user.connected_numbers.length}`);
+
+    return res.json({
+      success: true,
+      user_id: userId,
+      user_status: user.status,
+      connected_number: sanitizeNumber(payload),
+      total_connected: user.connected_numbers.length
+    });
+  } catch (err) {
+    console.error(`${tag} 💥 EXCEPTION:`, err);
+    return res.status(500).json({ error: err.message });
+  }
+};
+
 // Helper: diff two removal configs and return AuditLog documents to insert
 export const buildRemovalConfigDiff = (previous, next, actorId, actorEmail) => {
   const entries = [];

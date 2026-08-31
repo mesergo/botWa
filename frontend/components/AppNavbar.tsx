@@ -1,5 +1,7 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { Bot, List, Users, Settings, UserCog, Shield, LogOut } from 'lucide-react';
+import LanguageSwitcher from './LanguageSwitcher';
 
 export type NavTab = 'bots' | 'sessions' | 'contacts' | 'settings' | 'users';
 
@@ -28,6 +30,7 @@ const AppNavbar: React.FC<AppNavbarProps> = ({
   onOpenAdminPanel,
   onLogoClick,
 }) => {
+  const { t } = useTranslation('nav');
   const isRep = currentUser?.role === 'rep';
   const firstName = (currentUser?.name?.charAt(0) || currentUser?.email?.charAt(0) || '?').toUpperCase();
 
@@ -66,26 +69,27 @@ const AppNavbar: React.FC<AppNavbarProps> = ({
       {/* Navigation tabs — hidden for pure rep users */}
       {!isRep && (
         <div className="flex items-center gap-1 bg-slate-100 rounded-2xl p-1" dir="rtl">
-          {tabBtn('bots', <Bot size={16} />, 'הבוטים שלי', onNavigateBots)}
-          {showSessions && tabBtn('sessions', <List size={16} />, 'שיחות', onNavigateSessions)}
-          {showContacts && tabBtn('contacts', <Users size={16} />, 'אנשי קשר', onNavigateContacts)}
-          {showSettings && tabBtn('settings', <Settings size={16} />, 'הגדרות', onNavigateSettings)}
-          {showSubUsers && tabBtn('users', <UserCog size={16} />, 'משתמשים', onNavigateSubUsers)}
+          {tabBtn('bots', <Bot size={16} />, t('pages.bots'), onNavigateBots)}
+          {showSessions && tabBtn('sessions', <List size={16} />, t('pages.sessions'), onNavigateSessions)}
+          {showContacts && tabBtn('contacts', <Users size={16} />, t('pages.contacts'), onNavigateContacts)}
+          {showSettings && tabBtn('settings', <Settings size={16} />, t('pages.settings'), onNavigateSettings)}
+          {showSubUsers && tabBtn('users', <UserCog size={16} />, t('pages.users'), onNavigateSubUsers)}
         </div>
       )}
 
       {/* Right side: greeting + admin button + avatar + logout */}
       <div className="flex items-center gap-4">
         {currentUser && (
-          <span className="text-sm font-bold text-slate-600">שלום, {currentUser.name || currentUser.email}</span>
+          <span className="text-sm font-bold text-slate-600">{t('topBar.greeting', { name: currentUser.name || currentUser.email })}</span>
         )}
+        <LanguageSwitcher variant="bar" />
         {currentUser?.role === 'admin' && !currentUser?.isImpersonating && onOpenAdminPanel && (
           <button
             onClick={onOpenAdminPanel}
             className="flex items-center gap-2 px-4 py-2 bg-blue-100 text-blue-700 rounded-lg font-bold hover:bg-blue-200 transition-colors"
           >
             <Shield size={18} />
-            פאנל ניהול
+            {t('pages.adminPanel')}
           </button>
         )}
         <div

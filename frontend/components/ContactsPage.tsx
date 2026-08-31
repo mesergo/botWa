@@ -4,6 +4,7 @@ import {
   Settings, UserCog, ExternalLink, Plus, Edit2, Trash2, Mail, X, Check, Bot,
   Upload, Eye, ChevronRight, ChevronLeft, Layers, Sliders
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import ImpersonationBanner from './ImpersonationBanner';
 import PageTopBar from './PageTopBar';
 import AppNav from './AppNav';
@@ -12,6 +13,7 @@ import ImportContactsModal from './ImportContactsModal';
 import { usePermission } from '../hooks/usePermission';
 import { useContactFields } from '../context/ContactFieldsContext';
 import { ContactFieldDef } from '../types';
+import { getFormatLocale } from '../i18n';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -97,7 +99,7 @@ const GroupNameTags: React.FC<{ groups: { _id: string; name: string }[] }> = ({ 
             +{hidden.length}
           </button>
           {showPopover && (
-            <div className="absolute bottom-full mb-1 right-0 bg-white border border-slate-200 rounded-xl shadow-lg p-2 z-50 flex flex-col gap-1 min-w-[10rem]">
+            <div className="absolute bottom-full mb-1 end-0 bg-white border border-slate-200 rounded-xl shadow-lg p-2 z-50 flex flex-col gap-1 min-w-[10rem]">
               {hidden.map(g => (
                 <span key={g._id} className="text-xs text-slate-700 font-semibold px-2 py-1 bg-slate-50 rounded-lg whitespace-nowrap">
                   {g.name}
@@ -142,7 +144,7 @@ const BotPhonesTags: React.FC<{ phones: string[] }> = ({ phones }) => {
             +{hidden.length}
           </button>
           {showPopover && (
-            <div className="absolute bottom-full mb-1 right-0 bg-white border border-slate-200 rounded-xl shadow-lg p-2 z-50 flex flex-col gap-1 min-w-[10rem]">
+            <div className="absolute bottom-full mb-1 end-0 bg-white border border-slate-200 rounded-xl shadow-lg p-2 z-50 flex flex-col gap-1 min-w-[10rem]">
               {hidden.map(p => (
                 <span key={p} className="text-xs text-slate-700 font-semibold px-2 py-1 bg-slate-50 rounded-lg whitespace-nowrap">
                   {p}
@@ -162,6 +164,7 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
   token, currentUser, onBack, onLogout, onOpenSessions, onOpenGroups, onOpenSendMessages,onOpenSmsIn,
   onOpenAdminPanel, onOpenSettings, onOpenSubUsers, onStopImpersonation, onSwitchAccount, onGoHome, initialPhone,
 }) => {
+  const { t, i18n } = useTranslation('contacts');
   const [contacts, setContacts] = useState<MergedContact[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');

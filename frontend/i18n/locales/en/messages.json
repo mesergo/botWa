@@ -1,0 +1,122 @@
+{
+  "audience": {
+    "title": "Who to send to",
+    "tabs": {
+      "contacts": "Contacts",
+      "groups": "Groups",
+      "phones": "Phone numbers"
+    },
+    "contacts": {
+      "searchPlaceholder": "Search for a contact...",
+      "selectAll": "Select all contacts ({{count}})",
+      "showSelected": "Show selected",
+      "empty": "No contacts found"
+    },
+    "groups": {
+      "searchPlaceholder": "Search for a group...",
+      "selectAll": "Select all groups ({{count}})",
+      "showSelected": "Show selected groups",
+      "empty": "No distribution lists found",
+      "contactCount": "{{count}} contacts"
+    },
+    "phones": {
+      "instructions": "Type or paste phone numbers — you can separate them with commas, semicolons or new lines.",
+      "placeholder": "Copy data and paste it here...",
+      "entered": "{{count}} numbers entered"
+    },
+    "showAll": "Show all",
+    "summary": "{{groups}} groups · {{contacts}} contacts · {{phones}} numbers",
+    "preview": {
+      "calculating": "Calculating unique recipients...",
+      "total": "{{count}} final recipients — duplicates were removed automatically",
+      "prompt": "Select contacts, groups or numbers to see a preview"
+    }
+  },
+  "composer": {
+    "title": "What would you like to write",
+    "bots": {
+      "loading": "Loading connected numbers...",
+      "empty": "⚠️ No connected numbers with a configured endpoint were found.",
+      "sendFrom": "Will send from: {{phone}} ({{name}})",
+      "choose": "Choose the number the message will be sent from:"
+    },
+    "template": {
+      "label": "Template message (optional):",
+      "clear": "Clear template",
+      "choose": "Choose a message template"
+    },
+    "freeText": {
+      "label": "Or type a free-text message:",
+      "mediaCaptionPlaceholder": "Media caption (optional)...",
+      "placeholder": "Type your message here..."
+    },
+    "media": {
+      "label": "Attach media (optional):",
+      "remove": "Remove media"
+    },
+    "actions": {
+      "schedule": "Schedule",
+      "starting": "Starting send...",
+      "sendNow": "Send now"
+    }
+  },
+  "schedule": {
+    "futureValidation": "Please choose a date and time in the future",
+    "title": "Send on a schedule",
+    "label": "Choose the date and time to send:",
+    "willSendAt": "The message will be sent at: {{date}}",
+    "cancel": "Cancel",
+    "confirm": "Confirm — schedule send"
+  },
+  "templatePicker": {
+    "title": "Choose a template",
+    "searchPlaceholder": "Search for a template...",
+    "empty": "No templates found"
+  },
+  "broadcasts": {
+    "title": "Broadcasts",
+    "subtitle": "A list of all sends from every group and of custom deliveries.",
+    "allLists": "All lists",
+    "refresh": "Refresh",
+    "empty": "No broadcasts found",
+    "template": "Template",
+    "columns": {
+      "date": "Date",
+      "content": "Content",
+      "list": "List",
+      "total": "Total",
+      "sent": "Sent",
+      "failed": "Failed",
+      "skipped": "Skipped",
+      "schedule": "Schedule",
+      "status": "Status"
+    },
+    "schedule": {
+      "scheduled": "Scheduled",
+      "immediate": "Immediate"
+    },
+    "status": {
+      "cancelled": "Cancelled",
+      "completed": "Completed",
+      "stopped": "Stopped ({{processed}}/{{total}})",
+      "running": "Running",
+      "queued": "Queued",
+      "failed": "Failed",
+      "waiting": "Waiting"
+    },
+    "details": {
+      "title": "Broadcast details",
+      "custom": "Custom send",
+      "close": "Close",
+      "messageContent": "Message content",
+      "parameters": "Parameters:",
+      "media": "Media:",
+      "recipients": "Recipients ({{count}})"
+    },
+    "recipientReasons": {
+      "blocklist": "On the removal list",
+      "invalidPhone": "Invalid phone number",
+      "error": "Error: {{error}}"
+    }
+  }
+}
