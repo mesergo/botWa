@@ -10,6 +10,9 @@
 // Keeping the field list / history-entry format here avoids the two call sites
 // drifting out of sync.
 
+import User from '../models/User.js';
+import RepGroup from '../models/RepGroup.js';
+
 export const buildConversationClosedHistoryEntry = (now = new Date()) => ({
   type: 'System',
   text: 'השיחה הסתיימה',
@@ -73,4 +76,36 @@ export const applyConversationClosedToDoc = (session, now = new Date()) => {
   session.markModified('process_history');
 
   return historyEntry;
+};
+
+// Resolve the closing message (הודעת סיום שיחה) to send to the customer when a
+// conversation is closed, per the account owner's closing_message_config:
+//   mode 'general'            — always use the account-wide general_message.
+//   mode 'per_group' (default) — use the RepGroup.closingMessage of the group that
+//                                 handled the conversation; falls back to
+//                                 general_message when the group has none configured
+//                                 (or the conversation had no rep group at all).
+// Returns '' when no message should be sent.
+export const resolveClosingMessage = async (ownerId, repGroupId) => {
+  if (!ownerId) return '';
+  try {
+    const owner = await User.findById(ownerId).select('closing_message_config').lean();
+    const cfg = owner?.closing_message_config || {};
+    const generalMessage = String(cfg.general_message || '').trim();
+
+    if (cfg.mode === 'general') {
+      return generalMessage;
+    }
+
+    if (repGroupId) {
+      const group = await RepGroup.findById(repGroupId).select('closingMessage').lean();
+      const groupMessage = String(group?.closingMessage || '').trim();
+      if (groupMessage) return groupMessage;
+    }
+
+    return generalMessage;
+  } catch (err) {
+    console.error('resolveClosingMessage error:', err.message);
+    return '';
+  }
 };

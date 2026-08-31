@@ -4,6 +4,7 @@ import { Clock, MessageSquare, Search, Bot, User, Phone, List, Users, ExternalLi
 import ImpersonationBanner, { SiblingAccount } from './ImpersonationBanner';
 import { TemplateHeaderMediaField } from './TemplateHeaderMediaField';
 import QuickInsertMenu from './shared/QuickInsertMenu';
+import ChatImage from './shared/ChatImage';
 import { usePermission } from '../hooks/usePermission';
 import PageTopBar from './PageTopBar';
 import ProfileMenuContent from './ProfileMenuContent';
@@ -1949,7 +1950,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
               <div className="flex flex-col gap-0.5 items-end">
                 <div className="px-3 py-1.5 rounded-2xl text-sm font-semibold shadow-sm text-right bg-purple-50 border border-purple-200 text-purple-900 rounded-tr-none">
                   {item.type === 'Image' && item.url && (
-                    <img src={item.url} alt="תמונה" className="rounded-xl max-w-[200px] h-auto mb-2" />
+                    <ChatImage src={item.url} alt="תמונה" className="rounded-xl max-w-[200px] h-auto mb-2" />
                   )} 
                   {item.type === 'Video' && item.url && (
                     <video src={item.url} controls className="rounded-xl max-w-[200px] mb-2" />
@@ -2025,7 +2026,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                     <p className="text-[9px] text-amber-400 font-bold mb-1">תבנית: {item.template_name}</p>
                   )}
                   {item.type === 'Image' && item.url && (
-                    <img src={item.url} alt="תמונה" className="rounded-xl max-w-[200px] h-auto mb-2" />
+                    <ChatImage src={item.url} alt="תמונה" className="rounded-xl max-w-[200px] h-auto mb-2" />
                   )}  
                   {item.type === 'Video' && item.url && (
                     <video src={item.url} controls className="rounded-xl max-w-[200px] mb-2" />
@@ -2098,7 +2099,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 )}
                 {item.type === 'Image' && item.url && (
                   <>
-                    <img src={item.url} alt="תמונה" className="rounded-xl max-w-[200px] h-auto mb-1" />
+                    <ChatImage src={item.url} alt="תמונה" className="rounded-xl max-w-[200px] h-auto mb-1" />
                     {text && <WhatsAppText text={text} className="leading-snug" />}
                   </>
                 )}

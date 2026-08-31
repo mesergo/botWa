@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import ChatImage from './shared/ChatImage';
 import {
   Search, List, Phone, Bot, Clock, ToggleLeft, ToggleRight, ChevronDown, ChevronUp,
   MessageSquare, X, User as UserIcon, ExternalLink
@@ -475,7 +476,7 @@ const CustomerSessionsPanel: React.FC<CustomerSessionsPanelProps> = ({ token, ap
                           )}
                           {item.type === 'Image' && item.url && (
                             <>
-                              <img src={item.url} alt="תמונה" className="rounded-xl max-w-[160px] h-auto mb-2" />
+                              <ChatImage src={item.url} alt="תמונה" className="rounded-xl max-w-[160px] h-auto mb-2" />
                               {text && <p className="whitespace-pre-wrap leading-relaxed">{text}</p>}
                             </>
                           )}

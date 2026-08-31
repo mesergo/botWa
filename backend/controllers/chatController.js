@@ -19,7 +19,7 @@ import { normalizePhone } from '../utils/phone.js';
 import { getEffectiveRemovalConfig, matchRemovalKeywordWithLang, DEFAULT_REMOVAL_CONFIG } from '../utils/removalConfig.js';
 import { pushMessagesToWhatsApp } from '../utils/whatsappSender.js';
 import eventBus from '../utils/eventBus.js';
-import { applyConversationClosedToDoc } from '../utils/conversationActions.js';
+import { applyConversationClosedToDoc, resolveClosingMessage } from '../utils/conversationActions.js';
 
 import { notifyWaitingCustomerMessage } from '../config/pushNotificationsRuntime.js';
 import { sendExpoPushToUser } from '../utils/expoPush.js';
@@ -779,9 +779,22 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
 
         if (repActionType === 'close') {
           const now = new Date();
+          const closingMessage = await resolveClosingMessage(session.user_id, session.rep_group_id);
           applyConversationClosedToDoc(session, now);
 
-          console.log(`[BOT] ✅ action_transfer_to_agent(close) | session=${session._id} | conversation closed`);
+          if (closingMessage) {
+            const closingMsgEntry = {
+              type: 'SendItem',
+              text: closingMessage,
+              sender: 'bot',
+              name: 'מערכת',
+              created: new Date().toISOString()
+            };
+            messages.push(closingMsgEntry);
+            addToHistory(session, closingMsgEntry, currentNodeId);
+          }
+
+          console.log(`[BOT] ✅ action_transfer_to_agent(close) | session=${session._id} | conversation closed${closingMessage ? ' | closing message queued' : ''}`);
           return messages;
         }
 

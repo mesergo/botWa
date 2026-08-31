@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import UserTypesManager from './UserTypesManager';
 import { FileUploader } from './FileUploader';
+import ChatImage from './shared/ChatImage';
 import SmsInApp from './sms-in/SmsInApp';
 import SmsExternalLogTab from './sms-in/SmsExternalLogTab';
 import CustomerSessionsPanel from './CustomerSessionsPanel';
@@ -2288,7 +2289,7 @@ const openRestoreConversations = async () => {
                                   )}
                                   {item.type === 'Image' && item.url && (
                                     <>
-                                      <img src={item.url} alt="תמונה" className="rounded-xl max-w-[160px] h-auto mb-2" />
+                                      <ChatImage src={item.url} alt="תמונה" className="rounded-xl max-w-[160px] h-auto mb-2" />
                                       {text && <p className="whitespace-pre-wrap leading-relaxed">{text}</p>}
                                     </>
                                   )}
