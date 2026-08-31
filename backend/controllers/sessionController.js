@@ -10,7 +10,7 @@ import Contact from '../models/Contact.js';
 import Notification from '../models/Notification.js';
 import fetch from 'node-fetch'; 
 import { getEffectiveUserId, resolvePermissions, hasPermission } from '../middleware/auth.js';
-import { pushMessagesToWhatsApp } from '../utils/whatsappSender.js';
+import { pushMessagesToWhatsApp, debugCheckMediaUrl } from '../utils/whatsappSender.js';
 import eventBus from '../utils/eventBus.js';
 import { buildConversationClosedHistoryEntry, buildConversationClosedSetFragment, resolveClosingMessage } from '../utils/conversationActions.js';
 import { normalizePhone } from '../utils/phone.js';
@@ -2595,6 +2595,13 @@ export const sendAgentMessage = async (req, res) => {
           }
         }
       }
+      // DEBUG: verify the header media URL we're about to send is a valid,
+      // publicly reachable link — this is what WhatsApp/the chat UI will try to load.
+      if (waBody.header && waBody.header[0]) {
+        const h = waBody.header[0];
+        const hType = h.type || 'image';
+        await debugCheckMediaUrl('[sendAgentMessage]', h[hType]?.link);
+      }
     }
     // (text and media messages are sent via pushMessagesToWhatsApp below)
 
@@ -2907,6 +2914,14 @@ export const sendTemplateToPhone = async (req, res) => {
       }
     }
 
+    // DEBUG: verify the header media URL we're about to send is a valid,
+    // publicly reachable link — this is what WhatsApp/the chat UI will try to load.
+    if (waBody.header && waBody.header[0]) {
+      const h = waBody.header[0];
+      const hType = h.type || 'image';
+      await debugCheckMediaUrl('[sendTemplateToPhone]', h[hType]?.link);
+    }
+
     let waSent = false;
     let waError = null;
     try {
@@ -3176,6 +3191,13 @@ export const sendAdminMessageToSession = async (req, res) => {
             console.log(`[sendAdminMessageToSession] ⚠️ No header URL in params — using template example: ${exLink}`);
           }
         }
+      }
+      // DEBUG: verify the header media URL we're about to send is a valid,
+      // publicly reachable link — this is what WhatsApp/the chat UI will try to load.
+      if (waBody.header && waBody.header[0]) {
+        const h = waBody.header[0];
+        const hType = h.type || 'image';
+        await debugCheckMediaUrl('[sendAdminMessageToSession]', h[hType]?.link);
       }
     } else {
       // Regular text message

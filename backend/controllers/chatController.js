@@ -17,7 +17,7 @@ import { reconstructTimeRoutingBranches, isTimeRoutingBranchOption, findMatchedB
 import { handleWebService, findMatchingOption } from '../utils/webserviceHandler.js';
 import { normalizePhone } from '../utils/phone.js';
 import { getEffectiveRemovalConfig, matchRemovalKeywordWithLang, DEFAULT_REMOVAL_CONFIG } from '../utils/removalConfig.js';
-import { pushMessagesToWhatsApp } from '../utils/whatsappSender.js';
+import { pushMessagesToWhatsApp, debugCheckMediaUrl } from '../utils/whatsappSender.js';
 import eventBus from '../utils/eventBus.js';
 import { applyConversationClosedToDoc, resolveClosingMessage } from '../utils/conversationActions.js';
 
@@ -80,6 +80,13 @@ const convertBase64ToUrl = (base64Data, req) => {
     const filepath = path.join(uploadDir, filename);
 
     fs.writeFileSync(filepath, buffer);
+    // Ensure the file is world-readable so nginx (which may run as a different
+    // user/group) can serve it from /uploads regardless of the server umask.
+    try {
+      fs.chmodSync(filepath, 0o644);
+    } catch (chmodErr) {
+      console.error('[convertBase64ToUrl] Failed to chmod file:', chmodErr);
+    }
 
     // Return URL
     const protocol = req?.protocol || 'http';
@@ -2529,6 +2536,12 @@ export const sendTemplateExternal = async (req, res) => {
       console.warn(`[360-TEMPLATE]    ⚠️ Unresolved {{n}} placeholder(s) remained after substitution — stripping. text="${displayText.substring(0, 120)}"`);
       displayText = displayText.replace(/\{\{\d+\}\}/g, '').replace(/[ \t]{2,}/g, ' ').trim();
     }
+
+    // DEBUG: verify the header media URL (if any) is a valid, publicly reachable
+    // link — this is exactly what gets forwarded to WhatsApp and later rendered
+    // as an <img>/<video> in the chat UI, so a broken link here explains both
+    // "message not delivered with image" and "image not shown in chat history".
+    await debugCheckMediaUrl('[360-TEMPLATE]', mediaUrl);
 
     // ── Step 5: Forward to wa.message.co.il ─────────────────────────────────
     console.log(`[360-TEMPLATE] 📡 STEP 5 — Forwarding to wa.message.co.il`);
