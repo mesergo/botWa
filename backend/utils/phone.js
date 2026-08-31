@@ -28,6 +28,10 @@ export function normalizePhone(phone) {
   // Israeli local format: starts with 0 → replace with 972
   if (digits.startsWith('0')) {
     digits = '972' + digits.slice(1);
+  } else if (/^5\d{8}$/.test(digits)) {
+    // Israeli mobile number that lost its leading 0 (common when Excel stores
+    // the phone column as a number, e.g. 0501234567 → 501234567)
+    digits = '972' + digits;
   }
 
   return digits;

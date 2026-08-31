@@ -6,8 +6,10 @@ import { useContactFields } from '../context/ContactFieldsContext';
 
 export interface ImportContactsResult {
   imported: number;
-  skipped: number;
-  errors: { phone: string; error: string }[];
+  created: number;
+  updated: number;
+  skipped: { row: number; phone: string; reason: string }[];
+  errors: { row: number; phone: string; error: string }[];
 }
 
 interface ImportContactsModalProps {
@@ -42,6 +44,8 @@ const ImportContactsModal: React.FC<ImportContactsModalProps> = ({
   // 'select' → choosing options / picking a file, 'result' → showing the outcome
   const [stage, setStage] = useState<'select' | 'importing' | 'result'>('select');
   const [importResult, setImportResult] = useState<ImportContactsResult | null>(null);
+  const [showSkippedDetails, setShowSkippedDetails] = useState(false);
+  const [showErrorDetails, setShowErrorDetails] = useState(false);
 
   const [assignToGroups, setAssignToGroups] = useState(initialAssignToGroups);
   const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>(initialSelectedGroupIds);
@@ -95,7 +99,10 @@ const ImportContactsModal: React.FC<ImportContactsModalProps> = ({
       setImportResult(data);
       onImported(data);
     } catch (err: unknown) {
-      setImportResult({ imported: 0, skipped: 0, errors: [{ phone: '', error: err instanceof Error ? err.message : 'שגיאה לא ידועה' }] });
+      setImportResult({
+        imported: 0, created: 0, updated: 0, skipped: [],
+        errors: [{ row: 0, phone: '', error: err instanceof Error ? err.message : 'שגיאה לא ידועה' }],
+      });
     } finally {
       onImportingChange?.(false);
       setStage('result');
@@ -200,7 +207,7 @@ const ImportContactsModal: React.FC<ImportContactsModalProps> = ({
       {/* Result dialog */}
       {stage === 'result' && importResult && (
         <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm p-5 sm:p-8" dir="rtl">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm p-5 sm:p-8 max-h-[85vh] overflow-y-auto" dir="rtl">
             <div className="flex items-center justify-between mb-5">
               <h2 className="text-xl font-black text-slate-900">תוצאות ייבוא</h2>
               <button onClick={onClose} className="p-2 text-slate-300 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-colors">
@@ -210,21 +217,55 @@ const ImportContactsModal: React.FC<ImportContactsModalProps> = ({
             <div className="flex flex-col gap-3">
               <div className="flex items-center gap-3 bg-emerald-50 text-emerald-700 rounded-2xl px-5 py-3">
                 <Check size={18} className="flex-shrink-0" />
-                <span className="font-bold text-sm">יובאו בהצלחה: <span className="text-lg">{importResult.imported}</span> אנשי קשר</span>
+                <span className="font-bold text-sm">
+                  יובאו בהצלחה: <span className="text-lg">{importResult.imported}</span> אנשי קשר
+                  {(importResult.created > 0 || importResult.updated > 0) && (
+                    <span className="block text-xs font-semibold text-emerald-600 mt-0.5">
+                      {importResult.created} חדשים · {importResult.updated} עודכנו (קיימים)
+                    </span>
+                  )}
+                </span>
               </div>
-              {importResult.skipped > 0 && (
-                <div className="flex items-center gap-3 bg-amber-50 text-amber-700 rounded-2xl px-5 py-3">
-                  <span className="font-bold text-sm">דולגו (ללא טלפון): <span className="text-lg">{importResult.skipped}</span></span>
+
+              {importResult.skipped.length > 0 && (
+                <div className="bg-amber-50 rounded-2xl px-5 py-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-bold text-sm text-amber-700">דולגו: <span className="text-lg">{importResult.skipped.length}</span></span>
+                    <button
+                      onClick={() => setShowSkippedDetails(v => !v)}
+                      className="text-xs font-bold text-amber-700 underline hover:text-amber-900 transition-colors"
+                    >
+                      {showSkippedDetails ? 'הסתר פירוט' : 'צפה בסיבה'}
+                    </button>
+                  </div>
+                  {showSkippedDetails && (
+                    <ul className="text-xs text-amber-600 space-y-1 max-h-32 overflow-y-auto mt-2">
+                      {importResult.skipped.map((s, i) => (
+                        <li key={i}>שורה {s.row}{s.phone ? ` (${s.phone})` : ''}: {s.reason}</li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
               )}
+
               {importResult.errors.length > 0 && (
                 <div className="bg-red-50 rounded-2xl px-5 py-3">
-                  <p className="text-red-600 font-bold text-sm mb-2">שגיאות ({importResult.errors.length}):</p>
-                  <ul className="text-xs text-red-500 space-y-1 max-h-32 overflow-y-auto">
-                    {importResult.errors.map((e, i) => (
-                      <li key={i}>{e.phone ? `${e.phone}: ` : ''}{e.error}</li>
-                    ))}
-                  </ul>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-bold text-sm text-red-600">שגיאות: <span className="text-lg">{importResult.errors.length}</span></span>
+                    <button
+                      onClick={() => setShowErrorDetails(v => !v)}
+                      className="text-xs font-bold text-red-600 underline hover:text-red-800 transition-colors"
+                    >
+                      {showErrorDetails ? 'הסתר פירוט' : 'צפה בסיבה'}
+                    </button>
+                  </div>
+                  {showErrorDetails && (
+                    <ul className="text-xs text-red-500 space-y-1 max-h-32 overflow-y-auto mt-2">
+                      {importResult.errors.map((e, i) => (
+                        <li key={i}>{e.row ? `שורה ${e.row}` : ''}{e.phone ? ` (${e.phone})` : ''}: {e.error}</li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
               )}
               <button

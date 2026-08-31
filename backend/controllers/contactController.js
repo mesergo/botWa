@@ -204,33 +204,47 @@ export const importContacts = async (req, res) => {
     const sheetName = workbook.SheetNames[0];
     const rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: '' });
 
-    let imported = 0, skipped = 0;
-    const errors = [];
+    let created = 0, updated = 0;
+    const skipped = []; // { row, phone, reason }
+    const errors = []; // { row, phone, error }
     const importedContactIds = [];
 
-    for (const row of rows) {
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      const rowNumber = i + 2; // +1 for 0-index, +1 for header row
+
+      // Column headers can carry stray leading/trailing whitespace (common in
+      // files exported from other systems) — normalize keys before reading them
+      const cell = {};
+      for (const key of Object.keys(row)) cell[key.trim()] = row[key];
+
       // Accept Hebrew or English column headers
       const rawPhone = String(
-        row['טלפון'] ?? row['phone'] ?? row['Phone'] ?? ''
+        cell['טלפון'] ?? cell['phone'] ?? cell['Phone'] ?? ''
       ).trim();
       const phone = normalizePhone(rawPhone);
 
-      const full_name = String(row['שם מלא'] ?? row['full_name'] ?? row['Full Name'] ?? '').trim();
+      // Full name is optional — a phone number alone is enough to import a contact
+      const full_name = String(cell['שם מלא'] ?? cell['full_name'] ?? cell['Full Name'] ?? '').trim();
 
-      if (!phone || !full_name) { skipped++; continue; }
-      const whatsapp_name = String(row['שם וואטסאפ'] ?? row['whatsapp_name'] ?? row['WhatsApp Name'] ?? '').trim();
-      const email = String(row['מייל'] ?? row['email'] ?? row['Email'] ?? '').trim();
+      if (!phone) {
+        skipped.push({ row: rowNumber, phone: rawPhone, reason: 'מספר טלפון חסר' });
+        continue;
+      }
+      const whatsapp_name = String(cell['שם וואטסאפ'] ?? cell['whatsapp_name'] ?? cell['WhatsApp Name'] ?? '').trim();
+      const email = String(cell['מייל'] ?? cell['email'] ?? cell['Email'] ?? '').trim();
 
       try {
-        const contact = await Contact.findOneAndUpdate(
+        const result = await Contact.findOneAndUpdate(
           { user_id: userId, phone },
           { $set: { full_name, email } },
-          { upsert: true, new: true }
+          { upsert: true, new: true, includeResultMetadata: true }
         );
-        importedContactIds.push(contact._id);
-        imported++;
+        importedContactIds.push(result.value._id);
+        if (result.lastErrorObject?.updatedExisting) updated++;
+        else created++;
       } catch (e) {
-        errors.push({ phone, error: e.message });
+        errors.push({ row: rowNumber, phone, error: e.message });
       }
     }
 
@@ -242,7 +256,13 @@ export const importContacts = async (req, res) => {
       );
     }
 
-    res.json({ imported, skipped, errors });
+    res.json({
+      imported: created + updated,
+      created,
+      updated,
+      skipped,
+      errors,
+    });
   } catch (err) {
     res.status(400).json({ error: 'Failed to parse file: ' + err.message });
   } finally {
