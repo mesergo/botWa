@@ -10,9 +10,9 @@ import Contact from '../models/Contact.js';
 import Notification from '../models/Notification.js';
 import fetch from 'node-fetch'; 
 import { getEffectiveUserId, resolvePermissions, hasPermission } from '../middleware/auth.js';
-import { pushMessagesToWhatsApp } from '../utils/whatsappSender.js';
+import { pushMessagesToWhatsApp, debugCheckMediaUrl } from '../utils/whatsappSender.js';
 import eventBus from '../utils/eventBus.js';
-import { buildConversationClosedHistoryEntry, buildConversationClosedSetFragment } from '../utils/conversationActions.js';
+import { buildConversationClosedHistoryEntry, buildConversationClosedSetFragment, resolveClosingMessage } from '../utils/conversationActions.js';
 import { normalizePhone } from '../utils/phone.js';
 import { resolveTemplatePostSendMode, buildPostSendModeFields } from '../utils/templatePostSendMode.js';
 
@@ -1918,16 +1918,40 @@ export const closeConversation = async (req, res) => {
 
     const now = new Date();
     const historyEntry = buildConversationClosedHistoryEntry(now);
+    const historyEntries = [historyEntry];
+
+    // Send the configured closing message to the customer, if any is set —
+    // per-group (RepGroup.closingMessage) or the account's general message.
+    const ownerId = getEffectiveUserId(req);
+    const phone = session.sender || session.customer_phone;
+    const closingMessage = await resolveClosingMessage(ownerId, session.rep_group_id);
+    let closingMessageSent = false;
+    if (closingMessage && phone) {
+      const user = await User.findById(ownerId).select('dialog360_bot_id').lean();
+      const bot = session.flow_id ? await BotFlow.findById(session.flow_id).select('endpoint').lean() : null;
+      const { anySuccess } = await pushMessagesToWhatsApp(phone, [{ type: 'Text', text: closingMessage }], user, bot);
+      closingMessageSent = anySuccess;
+      historyEntries.push({
+        type: 'Text',
+        text: closingMessage,
+        sender: 'bot',
+        name: 'מערכת',
+        node_id: 'system',
+        event: 'closing_message_sent',
+        wa_sent: anySuccess,
+        created: new Date().toISOString()
+      });
+    }
 
     await collection.updateOne(
       { _id: new mongoose.Types.ObjectId(id) },
       {
         $set: buildConversationClosedSetFragment(now),
-        $push: { process_history: historyEntry }
+        $push: { process_history: { $each: historyEntries } }
       }
     );
     eventBus.emit('session:update', { userId: String(req.userId), phone: String(session.sender || session.customer_phone || '') });
-    res.json({ success: true, status: 'closed', historyEntry });
+    res.json({ success: true, status: 'closed', historyEntry, closingMessageSent });
   } catch (err) {
     console.error('closeConversation error:', err);
     res.status(500).json({ error: err.message });
@@ -2000,6 +2024,39 @@ export const applyCase1ReminderAction = async ({ notificationId, userId, action 
         $push: { process_history: historyEntry }
       }
     );
+
+    // Send the configured closing message to the customer, same as a manual
+    // close-conversation action (see resolveClosingMessage).
+    try {
+      const requester = await User.findById(userId).select('manager_id dialog360_bot_id').lean();
+      const ownerId = requester?.manager_id || userId;
+      const phone = session.sender || session.customer_phone;
+      const closingMessage = await resolveClosingMessage(ownerId, session.rep_group_id);
+      if (closingMessage && phone) {
+        const owner = requester?.manager_id ? await User.findById(ownerId).select('dialog360_bot_id').lean() : requester;
+        const bot = session.flow_id ? await BotFlow.findById(session.flow_id).select('endpoint').lean() : null;
+        const { anySuccess } = await pushMessagesToWhatsApp(phone, [{ type: 'Text', text: closingMessage }], owner, bot);
+        await collection.updateOne(
+          { _id: new mongoose.Types.ObjectId(sessionId) },
+          {
+            $push: {
+              process_history: {
+                type: 'Text',
+                text: closingMessage,
+                sender: 'bot',
+                name: 'מערכת',
+                node_id: 'system',
+                event: 'closing_message_sent',
+                wa_sent: anySuccess,
+                created: new Date().toISOString()
+              }
+            }
+          }
+        );
+      }
+    } catch (closeMsgErr) {
+      console.error('applyCase1ReminderAction: closing message send failed:', closeMsgErr.message);
+    }
   } else {
     const nextDueAt = new Date(now.getTime() + CASE1_REMINDER_MS);
     historyEntry = {
@@ -2538,6 +2595,13 @@ export const sendAgentMessage = async (req, res) => {
           }
         }
       }
+      // DEBUG: verify the header media URL we're about to send is a valid,
+      // publicly reachable link — this is what WhatsApp/the chat UI will try to load.
+      if (waBody.header && waBody.header[0]) {
+        const h = waBody.header[0];
+        const hType = h.type || 'image';
+        await debugCheckMediaUrl('[sendAgentMessage]', h[hType]?.link);
+      }
     }
     // (text and media messages are sent via pushMessagesToWhatsApp below)
 
@@ -2850,6 +2914,14 @@ export const sendTemplateToPhone = async (req, res) => {
       }
     }
 
+    // DEBUG: verify the header media URL we're about to send is a valid,
+    // publicly reachable link — this is what WhatsApp/the chat UI will try to load.
+    if (waBody.header && waBody.header[0]) {
+      const h = waBody.header[0];
+      const hType = h.type || 'image';
+      await debugCheckMediaUrl('[sendTemplateToPhone]', h[hType]?.link);
+    }
+
     let waSent = false;
     let waError = null;
     try {
@@ -3119,6 +3191,13 @@ export const sendAdminMessageToSession = async (req, res) => {
             console.log(`[sendAdminMessageToSession] ⚠️ No header URL in params — using template example: ${exLink}`);
           }
         }
+      }
+      // DEBUG: verify the header media URL we're about to send is a valid,
+      // publicly reachable link — this is what WhatsApp/the chat UI will try to load.
+      if (waBody.header && waBody.header[0]) {
+        const h = waBody.header[0];
+        const hType = h.type || 'image';
+        await debugCheckMediaUrl('[sendAdminMessageToSession]', h[hType]?.link);
       }
     } else {
       // Regular text message

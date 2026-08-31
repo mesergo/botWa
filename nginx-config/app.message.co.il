@@ -25,7 +25,11 @@ server {
     error_log /var/log/nginx/app.message.co.il-error.log;
 
     # ========= Uploads (אם יש העלאות קבצים) =========
-    location /uploads/ {
+    # ^~ is required: without it, nginx lets the regex "cache static files" location
+    # below win for any *.png/*.jpg/etc URI (regex locations take precedence over a
+    # plain prefix match), which serves index.html from frontend/dist instead of the
+    # actual uploaded file — causing all uploaded images to silently 200 as HTML.
+    location ^~ /uploads/ {
         alias /home/message-app/htdocs/app.message.co.il/backend/uploads/;
         try_files $uri =404;
         expires 30d;

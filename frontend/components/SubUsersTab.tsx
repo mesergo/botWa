@@ -147,6 +147,14 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [settingsError, setSettingsError] = useState<string | null>(null);
 
+  // Account-wide closing-message settings (הודעת סיום שיחה) —
+  // either a different message per rep group, or one general message for all.
+  const [closingSettings, setClosingSettings] = useState<{ mode: 'per_group' | 'general'; generalMessage: string }>({ mode: 'per_group', generalMessage: '' });
+  const [closingSettingsLoading, setClosingSettingsLoading] = useState(false);
+  const [closingSettingsSaving, setClosingSettingsSaving] = useState(false);
+  const [closingSettingsError, setClosingSettingsError] = useState<string | null>(null);
+  const [closingSettingsSaved, setClosingSettingsSaved] = useState(false);
+
   // Expanded rep list per group
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const toggleGroupExpanded = (id: string) =>
@@ -192,6 +200,42 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
     }
   };
 
+  const loadClosingSettings = async () => {
+    setClosingSettingsLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/rep-groups/closing-settings`, { headers });
+      if (!res.ok) throw new Error('שגיאה בטעינת הגדרות הודעת הסיום');
+      const data = await res.json();
+      setClosingSettings({ mode: data.mode === 'general' ? 'general' : 'per_group', generalMessage: data.generalMessage || '' });
+    } catch {
+      // Silent failure — secondary setting
+    } finally {
+      setClosingSettingsLoading(false);
+    }
+  };
+
+  const handleSaveClosingSettings = async () => {
+    setClosingSettingsSaving(true);
+    setClosingSettingsError(null);
+    setClosingSettingsSaved(false);
+    try {
+      const res = await fetch(`${API_BASE}/rep-groups/closing-settings`, {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify({ mode: closingSettings.mode, generalMessage: closingSettings.generalMessage }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'שגיאה בשמירת ההגדרות');
+      setClosingSettings({ mode: data.mode === 'general' ? 'general' : 'per_group', generalMessage: data.generalMessage || '' });
+      setClosingSettingsSaved(true);
+      window.setTimeout(() => setClosingSettingsSaved(false), 2500);
+    } catch (e: any) {
+      setClosingSettingsError(e.message || 'שגיאה לא צפויה');
+    } finally {
+      setClosingSettingsSaving(false);
+    }
+  };
+
   // Silent refresh — used for periodic polling so the spinner doesn't flicker.
   const refreshUsersSilently = async () => {
     try {
@@ -220,6 +264,7 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
   useEffect(() => {
     loadUsers();
     loadGroups();
+    loadClosingSettings();
     loadBots();
   }, []);
 
@@ -736,6 +781,72 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
       {/* ── GROUPS TAB ─────────────────────────────────────────────────── */}
       {activeTab === 'groups' && (
         <>
+          {/* Account-wide closing-message settings */}
+          <div className="bg-white border border-slate-100 rounded-[2rem] shadow-sm p-6 mb-6">
+            <div className="flex items-center gap-2 mb-1">
+              <MessageSquare size={16} className="text-slate-500" />
+              <h2 className="text-base font-black text-slate-900">הודעת סיום שיחה ללקוח</h2>
+            </div>
+            <p className="text-xs text-slate-400 mb-4">קובע איזו הודעת סיום שיחה תישלח ללקוח כשפנייתו מסתיימת.</p>
+
+            <div className="flex flex-col gap-2 mb-4">
+              <label className="flex items-start gap-2 cursor-pointer select-none">
+                <input
+                  type="radio"
+                  className="mt-1 w-4 h-4 accent-blue-600"
+                  checked={closingSettings.mode === 'per_group'}
+                  onChange={() => setClosingSettings(prev => ({ ...prev, mode: 'per_group' }))}
+                />
+                <span className="text-sm font-bold text-slate-700">
+                  הודעה שונה לכל קבוצת נציגים
+                  <span className="block text-xs font-semibold text-slate-400 mt-0.5">
+                    כל קבוצה משתמשת ב"הודעת סיום" שהוגדרה עבורה (בהגדרות הקבוצה). אם לקבוצה אין הודעה — תישלח ההודעה הכללית שלמטה.
+                  </span>
+                </span>
+              </label>
+              <label className="flex items-start gap-2 cursor-pointer select-none">
+                <input
+                  type="radio"
+                  className="mt-1 w-4 h-4 accent-blue-600"
+                  checked={closingSettings.mode === 'general'}
+                  onChange={() => setClosingSettings(prev => ({ ...prev, mode: 'general' }))}
+                />
+                <span className="text-sm font-bold text-slate-700">
+                  הודעה כללית אחת לכל השיחות
+                  <span className="block text-xs font-semibold text-slate-400 mt-0.5">
+                    אותה הודעה תישלח בסיום כל שיחה, ללא קשר לקבוצת הנציגים שטיפלה בה.
+                  </span>
+                </span>
+              </label>
+            </div>
+
+            <textarea
+              value={closingSettings.generalMessage}
+              onChange={e => setClosingSettings(prev => ({ ...prev, generalMessage: e.target.value }))}
+              rows={3}
+              disabled={closingSettingsLoading}
+              className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:border-blue-500 resize-none disabled:opacity-50"
+              placeholder="לדוגמה: תודה שפנית אלינו. נשמח לעמוד לרשותך גם בעתיד."
+            />
+
+            {closingSettingsError && (
+              <div className="mt-3 p-3 bg-red-50 text-red-700 rounded-xl text-sm font-bold">{closingSettingsError}</div>
+            )}
+
+            <div className="flex items-center gap-3 mt-4">
+              <button
+                onClick={handleSaveClosingSettings}
+                disabled={closingSettingsSaving || closingSettingsLoading}
+                className="flex items-center gap-2 px-5 py-2 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-all disabled:opacity-60"
+              >
+                <Check size={15} /> {closingSettingsSaving ? 'שומר...' : 'שמור'}
+              </button>
+              {closingSettingsSaved && (
+                <span className="text-xs font-black text-emerald-600">נשמר בהצלחה</span>
+              )}
+            </div>
+          </div>
+
           {/* Groups list */}
           {groupsLoading ? (
             <div className="text-center text-slate-400 py-20 font-bold">טוען קבוצות...</div>
@@ -1209,6 +1320,11 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
                   <MessageSquare size={14} /> הודעת סיום
                 </label>
                 <p className="text-xs text-slate-400 mb-2">תישלח ללקוח כשהנציג מסיים את השיחה.</p>
+                {closingSettings.mode === 'general' && (
+                  <p className="text-xs text-amber-600 font-bold mb-2">
+                    כרגע פעילה "הודעה כללית אחת לכל השיחות" (בראש עמוד הקבוצות) — ההודעה כאן לא תישלח עד שיוחלף המצב ל"הודעה שונה לכל קבוצה".
+                  </p>
+                )}
                 <textarea
                   value={settingsGroup.closingMessage || ''}
                   onChange={e => updateSettings({ closingMessage: e.target.value })}

@@ -1,6 +1,6 @@
 import express from 'express';
 import { authenticateToken, resolvePermissions, hasPermission } from '../middleware/auth.js';
-import { getRepGroups, getRepGroup, createRepGroup, updateRepGroup, deleteRepGroup, getRepsForGroups } from '../controllers/repGroupController.js';
+import { getRepGroups, getRepGroup, createRepGroup, updateRepGroup, deleteRepGroup, getRepsForGroups, getClosingMessageSettings, updateClosingMessageSettings } from '../controllers/repGroupController.js';
 
 const router = express.Router();
 
@@ -22,6 +22,8 @@ router.use(authenticateToken, async (req, res, next) => {
 
 router.get('/', getRepGroups);
 router.get('/reps', getRepsForGroups);
+router.get('/closing-settings', getClosingMessageSettings);
+router.patch('/closing-settings', updateClosingMessageSettings);
 router.get('/:id', getRepGroup);
 router.post('/', createRepGroup);
 router.patch('/:id', updateRepGroup);

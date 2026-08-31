@@ -118,6 +118,53 @@ export const getRepsForGroups = async (req, res) => {
   }
 };
 
+// GET /api/rep-groups/closing-settings — account-wide closing-message config,
+// used to decide whether a closed conversation gets a per-group closing message
+// (RepGroup.closingMessage) or one general message shared by all groups.
+export const getClosingMessageSettings = async (req, res) => {
+  try {
+    const rootId = await getRootManagerId(req.userId);
+    const owner = await User.findById(rootId).select('closing_message_config').lean();
+    const cfg = owner?.closing_message_config || {};
+    res.json({
+      mode: cfg.mode === 'general' ? 'general' : 'per_group',
+      generalMessage: cfg.general_message || ''
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// PATCH /api/rep-groups/closing-settings
+export const updateClosingMessageSettings = async (req, res) => {
+  try {
+    const rootId = await getRootManagerId(req.userId);
+    const { mode, generalMessage } = req.body || {};
+    const update = {};
+    if (mode !== undefined) {
+      if (!['per_group', 'general'].includes(mode)) {
+        return res.status(400).json({ error: 'mode חייב להיות per_group או general' });
+      }
+      update['closing_message_config.mode'] = mode;
+    }
+    if (generalMessage !== undefined) {
+      update['closing_message_config.general_message'] = String(generalMessage || '');
+    }
+    if (Object.keys(update).length === 0) {
+      return res.status(400).json({ error: 'אין שדות לעדכון' });
+    }
+    await User.findByIdAndUpdate(rootId, { $set: update });
+    const owner = await User.findById(rootId).select('closing_message_config').lean();
+    const cfg = owner?.closing_message_config || {};
+    res.json({
+      mode: cfg.mode === 'general' ? 'general' : 'per_group',
+      generalMessage: cfg.general_message || ''
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
 // POST /api/rep-groups
 export const createRepGroup = async (req, res) => {
   try {

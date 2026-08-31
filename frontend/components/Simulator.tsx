@@ -5,6 +5,7 @@ import { findMatchedBranchIndex } from '../utils/timeRouting';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Send, X, RotateCcw, User, Bot, ExternalLink, FileText, ChevronLeft, ChevronRight, Maximize2, Share2, Check, GitBranch, Upload, History, Globe } from 'lucide-react';
 import { ChatMessage, NodeType, FixedProcess, CarouselItem, User as UserType, Version } from '../types';
+import ChatImage from './shared/ChatImage';
 import { ReactFlowInstance } from 'reactflow';
  
 interface SimulatorProps { 
@@ -1167,7 +1168,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
                   {msg.type === 'text' && <div><WhatsAppText text={msg.content || ''} /></div>}
                   {msg.type === 'image' && (
                     <div>
-                      <img src={msg.url} className="rounded-xl w-full h-auto" alt="Bot message" />
+                      <ChatImage src={msg.url || ''} className="rounded-xl w-full h-auto" alt="Bot message" />
                       {msg.content && <div className="mt-2"><WhatsAppText text={msg.content} /></div>}
                     </div>
                   )}

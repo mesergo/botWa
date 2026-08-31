@@ -38,6 +38,14 @@ router.post('/upload', authenticateToken, upload.single('file'), (req, res) => {
       return res.status(400).json({ error: 'No file uploaded' });
     }
 
+    // Ensure the file is world-readable so nginx (which may run as a different
+    // user/group) can serve it from /uploads regardless of the server umask.
+    try {
+      fs.chmodSync(req.file.path, 0o644);
+    } catch (chmodErr) {
+      console.error('[Upload] Failed to chmod uploaded file:', chmodErr);
+    }
+
 const host = req.get('host');
 const url = `${req.protocol}://${host}/uploads/${req.file.filename}`;
 
@@ -96,6 +104,14 @@ router.post('/upload-image', uploadImageMulter.single('file'), (req, res) => {
     if (!req.file) {
       console.error(`[UploadImage] ❌ No file in request`);
       return res.status(400).json({ success: false, message: 'Missing file' });
+    }
+
+    // Ensure the file is world-readable so nginx (which may run as a different
+    // user/group) can serve it from /uploads regardless of the server umask.
+    try {
+      fs.chmodSync(req.file.path, 0o644);
+    } catch (chmodErr) {
+      console.error('[UploadImage] Failed to chmod uploaded file:', chmodErr);
     }
 
 const host = req.get('host');

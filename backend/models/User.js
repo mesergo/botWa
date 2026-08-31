@@ -82,6 +82,16 @@ const userSchema = new mongoose.Schema({
     message_en: { type: String, default: '' }
   },
   user_type_id: { type: mongoose.Schema.Types.ObjectId, ref: 'UserType', default: null },
+  // Closing-message settings ("הודעת סיום שיחה") — controls what message (if any)
+  // is sent automatically to the customer when a conversation is closed (סיום שיחה),
+  // either manually by a rep or via the bot-flow "close" action.
+  //   mode: 'per_group' — use the RepGroup.closingMessage of the group that handled
+  //                       the conversation (falls back to general_message if empty).
+  //         'general'   — always use general_message, regardless of rep group.
+  closing_message_config: {
+    mode: { type: String, enum: ['per_group', 'general'], default: 'per_group' },
+    general_message: { type: String, default: '' }
+  },
   // Per-client toggle (set by admin): show the "SMS נכנס" tab. Admins always see it.
   sms_in_enabled: { type: Boolean, default: false },
   // Per-client toggle (set by admin): allow the "חבר לפייסבוק" button in bot settings. Admins always see it.
