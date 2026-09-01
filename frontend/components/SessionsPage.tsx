@@ -2,6 +2,7 @@
 import { WhatsAppText } from '../utils/whatsappFormat';
 import { Clock, MessageSquare, Search, Bot, User, Phone, List, Users, ExternalLink, X, Headphones, RefreshCw, Settings, UserCog, Layers, Plus, UserPlus, Check, Paperclip, ChevronRight, Bell, MoreVertical, Ban, Megaphone, Repeat } from 'lucide-react';
 import ImpersonationBanner, { SiblingAccount } from './ImpersonationBanner';
+import MigrationNoticeBanner from './MigrationNoticeBanner';
 import { TemplateHeaderMediaField } from './TemplateHeaderMediaField';
 import QuickInsertMenu from './shared/QuickInsertMenu';
 import ChatImage from './shared/ChatImage';
@@ -2209,6 +2210,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
         hideAccountSwitcher={isChatOnlyMode}
         onAccountsChange={setSiblingAccounts}
       />
+      {!isChatOnlyMode && <MigrationNoticeBanner />}
       {/* Navbar — hidden only in chat-only agent mode; profile menu + logout + status move into the contacts panel below */}
       {!isChatOnlyMode && (
         <PageTopBar

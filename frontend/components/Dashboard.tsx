@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Plus, Bot, ArrowLeft, Trash2, Calendar, LogOut, Shield, UserCog, Users, List, Settings, Save, User as UserIcon, Phone, Mail, Star, Copy, Check, Wifi, Gauge, MessageSquare, MessageCircle, Globe, Layers, CheckCircle, Eye, EyeOff, X, Menu, Image as ImageIcon, FileText, Link as LinkIcon, Unlink, UserMinus, AlertTriangle, RefreshCcw, ToggleLeft, ToggleRight, Zap, GitFork, Edit2 } from 'lucide-react';
 import ImpersonationBanner from './ImpersonationBanner';
+import MigrationNoticeBanner from './MigrationNoticeBanner';
 import { BotFlow, User } from '../types';
 import SubUsersTab from './SubUsersTab';
 import BotSettingsModal from './BotSettingsModal';
@@ -1042,6 +1043,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
     <div className="h-screen w-screen bg-[#f8fafc] flex flex-col font-medium text-right overflow-hidden">
       {/* Impersonation Banner */}
       <ImpersonationBanner currentUser={currentUser} onStopImpersonation={onStopImpersonation} token={token} onSwitchAccount={onSwitchAccount} />
+      <MigrationNoticeBanner />
       
       <nav className="h-20 bg-white border-b border-slate-100 flex items-center justify-between px-4 md:px-10 z-20">
         <div className="flex items-center gap-4">

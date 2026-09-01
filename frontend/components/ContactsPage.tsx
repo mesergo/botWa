@@ -5,6 +5,7 @@ import {
   Upload, Eye, ChevronRight, ChevronLeft, Layers, Sliders
 } from 'lucide-react';
 import ImpersonationBanner from './ImpersonationBanner';
+import MigrationNoticeBanner from './MigrationNoticeBanner';
 import PageTopBar from './PageTopBar';
 import AppNav from './AppNav';
 import GroupsPage from './GroupsPage';
@@ -408,6 +409,7 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
   return (
     <div className="h-screen w-screen bg-[#f8fafc] flex flex-col font-medium text-right overflow-hidden" dir="rtl">
       <ImpersonationBanner currentUser={currentUser} onStopImpersonation={onStopImpersonation} token={token} onSwitchAccount={onSwitchAccount} />
+      <MigrationNoticeBanner />
 
       <PageTopBar
         token={token}

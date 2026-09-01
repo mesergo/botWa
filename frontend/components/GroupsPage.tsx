@@ -6,6 +6,7 @@ import {
   Calendar, Eye, AlertTriangle, CheckCircle2, Clock, Paperclip, Image as ImageIcon, Video, File as FileLucide, RotateCcw, Copy, Download, Upload
 } from 'lucide-react';
 import ImpersonationBanner from './ImpersonationBanner';
+import MigrationNoticeBanner from './MigrationNoticeBanner';
 import { FileUploader } from './FileUploader';
 import { TemplateHeaderMediaField } from './TemplateHeaderMediaField';
 import ImportContactsModal from './ImportContactsModal';
@@ -835,6 +836,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
   return (
     <div className={embedded ? "h-full w-full flex flex-col font-medium text-right overflow-hidden" : "h-screen w-screen bg-[#f8fafc] flex flex-col font-medium text-right overflow-hidden"} dir="rtl">
       {!embedded && <ImpersonationBanner currentUser={currentUser} onStopImpersonation={onStopImpersonation} token={token} onSwitchAccount={onSwitchAccount} />}
+      {!embedded && <MigrationNoticeBanner />}
 
       {/* Navbar */}
       {!embedded && (

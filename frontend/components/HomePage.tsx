@@ -4,6 +4,7 @@ import { User } from '../types';
 import { usePermission } from '../hooks/usePermission';
 import DashboardStats from './DashboardStats';
 import ImpersonationBanner from './ImpersonationBanner';
+import MigrationNoticeBanner from './MigrationNoticeBanner';
 
 interface HomePageProps {
   currentUser: User | null;
@@ -187,6 +188,7 @@ const HomePage: React.FC<HomePageProps> = ({
   return (
     <div className="h-screen bg-slate-50 flex flex-col overflow-y-auto lg:overflow-hidden" dir="rtl">
       <ImpersonationBanner currentUser={currentUser} onStopImpersonation={onStopImpersonation} token={token} onSwitchAccount={onSwitchAccount} />
+      <MigrationNoticeBanner />
 
       <div className="flex flex-1 min-h-0 flex-col lg:flex-row lg:overflow-hidden">
 

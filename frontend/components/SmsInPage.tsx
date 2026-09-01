@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { MessageSquare } from 'lucide-react';
 import ImpersonationBanner from './ImpersonationBanner';
+import MigrationNoticeBanner from './MigrationNoticeBanner';
 import AppNav from './AppNav';
 import PageTopBar from './PageTopBar';
 import SmsInApp from './sms-in/SmsInApp';
@@ -49,6 +50,7 @@ const SmsInPage: React.FC<SmsInPageProps> = ({
   return (
     <div className="h-screen w-screen bg-[#f8fafc] flex flex-col font-medium text-right overflow-hidden" dir="rtl">
       <ImpersonationBanner currentUser={currentUser} onStopImpersonation={onStopImpersonation} token={_token} onSwitchAccount={onSwitchAccount} />
+      <MigrationNoticeBanner />
 
       <PageTopBar
         token={_token}
