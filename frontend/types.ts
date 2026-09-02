@@ -25,6 +25,7 @@ export enum NodeType {
   ACTION_TRANSFER_TO_AGENT = 'action_transfer_to_agent',
   // Actions (continued)
   ACTION_SET_PARAMETER = 'action_set_parameter',
+  ACTION_RETURN_TO_MAIN_MENU = 'action_return_to_main_menu',
   // Special
   START = 'start',
   FIXED_PROCESS = 'fixed_process',
@@ -50,6 +51,10 @@ export interface NodeData {
   options?: string[];
   optionOperators?: string[];
   optionImages?: string[];
+  /** Menu conditional-option target values (parallel to menuConditionOperators); unused/empty for 'eq' */
+  menuConditionOptions?: string[];
+  /** Menu conditional-option operators: 'eq' | 'contains' | 'contains_any' | 'contains_all' */
+  menuConditionOperators?: string[];
   dateTimeMode?: 'date' | 'time' | 'datetime';
   timeRoutingBranches?: Array<{ conditions: TimeRoutingCondition[] }>;
   groupId?: string;
@@ -73,6 +78,8 @@ export interface NodeData {
   parameterName?: string;
   /** For action_set_parameter: the value to assign (supports --varName-- syntax) */
   parameterValue?: string;
+  /** For action_return_to_main_menu: phrase matched against the automatic_responses node's options */
+  returnMenuText?: string;
   processId?: string;
   onChange?: (data: Partial<NodeData>) => void;
   onDelete?: () => void;

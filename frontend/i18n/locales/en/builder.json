@@ -18,7 +18,8 @@
       "timeRouting": "Route by time/date/day",
       "groupMembership": "Add/remove from group",
       "agents": "Agents",
-      "setParameter": "Set parameter"
+      "setParameter": "Set parameter",
+      "returnToMainMenu": "Return to main menu"
     }
   },
   "sidebar": {

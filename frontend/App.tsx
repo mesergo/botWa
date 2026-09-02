@@ -19,7 +19,7 @@ import GroupsPage from './components/GroupsPage';
 import SmsInPage from './components/SmsInPage';
 import SendMessagesPage from './components/SendMessagesPage';
 import ActiveContactsQuotaToast from './components/ActiveContactsQuotaToast';
-import { StartNode, InputTextNode, InputDateNode, InputFileNode, OutputTextNode, OutputImageNode, OutputLinkNode, OutputMenuNode, ActionWebServiceNode, ActionWaitNode, ActionTimeRoutingNode, ActionAddToGroupNode, ActionRemoveFromGroupNode, ActionTransferToAgentNode, ActionSetParameterNode, FixedProcessNode, AutomaticResponsesNode } from './components/nodes/CustomNodes';
+import { StartNode, InputTextNode, InputDateNode, InputFileNode, OutputTextNode, OutputImageNode, OutputLinkNode, OutputMenuNode, ActionWebServiceNode, ActionWaitNode, ActionTimeRoutingNode, ActionAddToGroupNode, ActionRemoveFromGroupNode, ActionTransferToAgentNode, ActionSetParameterNode, ActionReturnToMainMenuNode, FixedProcessNode, AutomaticResponsesNode } from './components/nodes/CustomNodes';
 import ButtonEdge from './components/edges/ButtonEdge';
 import { CloudUpload, RotateCcw, Plus, AlertTriangle, Copy, X, Lock, Wallet, Sliders, Save } from 'lucide-react';
 import Simulator from './components/Simulator';
@@ -100,6 +100,7 @@ const nodeTypes = {
   [NodeType.ACTION_REMOVE_FROM_GROUP]: ActionRemoveFromGroupNode,
   [NodeType.ACTION_TRANSFER_TO_AGENT]: ActionTransferToAgentNode,
   [NodeType.ACTION_SET_PARAMETER]: ActionSetParameterNode,
+  [NodeType.ACTION_RETURN_TO_MAIN_MENU]: ActionReturnToMainMenuNode,
   [NodeType.FIXED_PROCESS]: FixedProcessNode,
   [NodeType.AUTOMATIC_RESPONSES]: AutomaticResponsesNode,
 };
@@ -448,6 +449,8 @@ const FlowBuilder: React.FC = () => {
           if (check(d.variableName)) reasons.push(`variableName: "${d.variableName}"`);
           if (Array.isArray(d.options) && d.options.some((opt: string) => check(opt)))
             reasons.push(`options`);
+          if (Array.isArray(d.menuConditionOptions) && d.menuConditionOptions.some((opt: string) => check(opt)))
+            reasons.push(`menuConditionOptions`);
           break;
         case NodeType.ACTION_WEB_SERVICE:
           if (check(d.url)) reasons.push(`url: "${d.url}"`);
@@ -466,6 +469,9 @@ const FlowBuilder: React.FC = () => {
         case NodeType.ACTION_WAIT:
         case NodeType.START:
           // No searchable text fields
+          break;
+        case NodeType.ACTION_RETURN_TO_MAIN_MENU:
+          if (check(d.returnMenuText)) reasons.push(`returnMenuText: "${d.returnMenuText}"`);
           break;
         case NodeType.AUTOMATIC_RESPONSES:
           if (Array.isArray(d.options) && d.options.some((opt: string) => check(opt)))
@@ -608,6 +614,10 @@ const FlowBuilder: React.FC = () => {
               const m = (d.options as string[]).find(opt => check(opt));
               if (m) matchText = m;
             }
+            if (!matchText && Array.isArray(d.menuConditionOptions)) {
+              const m = (d.menuConditionOptions as string[]).find(opt => check(opt));
+              if (m) matchText = m;
+            }
             break;
           case NodeType.ACTION_WEB_SERVICE:
             matchText = check(d.url) ? d.url : '';
@@ -670,6 +680,34 @@ const FlowBuilder: React.FC = () => {
     );
   }, []);
 
+  // Same re-indexing logic as onRemoveOption, but for the menu's conditional-option
+  // handles (option-cond-<index>), which are a separate handle namespace.
+  const onRemoveConditionOption = useCallback((nodeId: string, index: number) => {
+    dirtyRef.current = true;
+    setEdges((eds) =>
+      eds
+        .filter((e) => !(e.source === nodeId && e.sourceHandle === `option-cond-${index}`))
+        .map((e) => {
+          if (e.source !== nodeId) return e;
+          const match = e.sourceHandle?.match(/^option-cond-(\d+)$/);
+          if (!match) return e;
+          const idx = parseInt(match[1], 10);
+          if (idx > index) return { ...e, sourceHandle: `option-cond-${idx - 1}` };
+          return e;
+        })
+    );
+  }, []);
+
+  // Deletes a single edge originating from a specific source handle (used by the
+  // small "X" overlay on connected output handles), without removing the option
+  // row itself. Goes through App-level `setEdges` (not ReactFlow's imperative
+  // `useReactFlow().setEdges()`) so it updates the controlled `edges` state and
+  // marks the flow dirty, ensuring the deletion is included in the next autosave.
+  const onDeleteEdge = useCallback((nodeId: string, handleId: string) => {
+    dirtyRef.current = true;
+    setEdges((eds) => eds.filter((e) => !(e.source === nodeId && e.sourceHandle === handleId)));
+  }, []);
+
   const bindNodeCallbacks = useCallback((node: Node): Node => ({
     ...node,
     data: { 
@@ -677,9 +715,12 @@ const FlowBuilder: React.FC = () => {
       onChange: (data: Partial<NodeData>) => onNodeDataChange(node.id, data), 
       onDelete: () => onDeleteNode(node.id),
       onRemoveOption: (optionIndex: number) => onRemoveOption(node.id, optionIndex),
+      onRemoveConditionOption: (index: number) => onRemoveConditionOption(node.id, index),
+      onDeleteEdge: (handleId: string) => onDeleteEdge(node.id, handleId),
       token,
     }
-  }), [onNodeDataChange, onDeleteNode, onRemoveOption, token]);
+  }), [onNodeDataChange, onDeleteNode, onRemoveOption, onRemoveConditionOption, onDeleteEdge, token]);
+
 
   // Centralized session-expiry handler — called from any place that gets 401/403
   const handleSessionExpired = useCallback(() => {
@@ -1138,6 +1179,7 @@ const FlowBuilder: React.FC = () => {
         case NodeType.OUTPUT_MENU:
           height += 80 + 40; 
           if (node.data.options) height += node.data.options.length * 100; 
+          if (node.data.menuConditionOptions?.length) height += 40 + node.data.menuConditionOptions.length * 100; 
           height += 100; 
           break;
         case NodeType.ACTION_WEB_SERVICE:
@@ -1146,6 +1188,7 @@ const FlowBuilder: React.FC = () => {
           height += 40; 
           break;
         case NodeType.ACTION_WAIT: height += 80; break;
+        case NodeType.ACTION_RETURN_TO_MAIN_MENU: height += 80; break;
         case NodeType.ACTION_TIME_ROUTING: {
           const branches = node.data.timeRoutingBranches || [];
           const conditionCount = branches.reduce((s: number, b: any) => s + (b.conditions?.length || 1), 0);

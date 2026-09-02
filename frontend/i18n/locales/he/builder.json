@@ -18,7 +18,8 @@
       "timeRouting": "ניתוב לפי שעה/תאריך/יום",
       "groupMembership": "הוספה/הסרה מקבוצה",
       "agents": "נציגים",
-      "setParameter": "הגדרת פרמטר"
+      "setParameter": "הגדרת פרמטר",
+      "returnToMainMenu": "חזרה לתפריט ראשי"
     }
   },
   "sidebar": {

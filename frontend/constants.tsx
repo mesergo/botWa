@@ -14,7 +14,8 @@ import {
   Users,
   UserMinus, 
   UserCheck,
-  Zap
+  Zap,
+  CornerUpLeft
 } from 'lucide-react';
 import { NodeType } from './types';
  
@@ -48,6 +49,7 @@ export const COMPONENT_GROUPS = [
       { type: NodeType.ACTION_ADD_TO_GROUP, label: 'הוספה/הסרה מקבוצה', labelKey: 'palette.items.groupMembership', icon: <Users size={18} /> },
       { type: NodeType.ACTION_TRANSFER_TO_AGENT, label: 'נציגים', labelKey: 'palette.items.agents', icon: <UserCheck size={18} /> },
       { type: NodeType.ACTION_SET_PARAMETER, label: 'הגדרת פרמטר', labelKey: 'palette.items.setParameter', icon: <Zap size={18} /> },
+      { type: NodeType.ACTION_RETURN_TO_MAIN_MENU, label: 'חזרה לתפריט ראשי', labelKey: 'palette.items.returnToMainMenu', icon: <CornerUpLeft size={18} /> },
     ]
   }
 ];
