@@ -251,15 +251,24 @@ const getFlowData = async (flowId, processId = null) => {
     // Keep runtime option indices aligned with editor/save logic.
     // - action_web_service: exclude default from conditional options
     // - automatic_responses: exclude system trigger + legacy default from opener options
+    // - output_menu: exclude default AND the silent 'cond:*' conditional-matching options
+    //   (reconstructed separately below into menuConditionOptions/menuConditionOperators)
     const conditionalOptions = w.type === 'action_web_service'
       ? nodeOptions.filter(o => o.operator !== 'default')
       : (w.type === 'automatic_responses'
         ? nodeOptions.filter(o => o.operator !== 'system_trigger' && o.operator !== 'default')
-        : nodeOptions);
+        : (w.type === 'output_menu'
+          ? nodeOptions.filter(o => o.operator !== 'default' && !String(o.operator || '').startsWith('cond:'))
+          : nodeOptions));
 
     const systemTriggerOption = w.type === 'automatic_responses'
       ? nodeOptions.find(o => o.operator === 'system_trigger')
       : null;
+
+    // output_menu's silent conditional-matching options (operator prefixed 'cond:')
+    const menuConditionOpts = w.type === 'output_menu'
+      ? nodeOptions.filter(o => String(o.operator || '').startsWith('cond:'))
+      : [];
 
     return { 
       id: w.id, 
@@ -273,7 +282,10 @@ const getFlowData = async (flowId, processId = null) => {
         options: conditionalOptions.length > 0 ? conditionalOptions.map(o => o.value) : undefined, 
         optionOperators: conditionalOptions.length > 0 ? conditionalOptions.map(o => o.operator || 'eq') : undefined,
         optionImages: conditionalOptions.length > 0 ? conditionalOptions.map(o => o.image_url) : undefined,
+        menuConditionOptions: menuConditionOpts.length > 0 ? menuConditionOpts.map(o => o.value) : undefined,
+        menuConditionOperators: menuConditionOpts.length > 0 ? menuConditionOpts.map(o => String(o.operator || '').slice('cond:'.length) || 'eq') : undefined,
         url: metadata.url,
+
         linkLabel: metadata.linkLabel,
         variableName: metadata.variableName,
         waitTime: metadata.waitTime,
@@ -344,6 +356,28 @@ const getFlowData = async (flowId, processId = null) => {
           edges.push({ id: `e-${w.id}-opt-${i}`, source: w.id, sourceHandle: `option-${i}`, target: o.next });
         }
       });
+    } else if (w.type === 'output_menu') {
+      // Plain options get sequential option-<i> handles (excluding default + silent cond:* options);
+      // conditional-matching options get option-cond-<j> handles; default gets option-default —
+      // mirrors flowController.js's fetchFlowData reconstruction exactly.
+      const defaultOpts = wOptions.filter(o => o.operator === 'default');
+      const menuCondOpts = wOptions.filter(o => String(o.operator || '').startsWith('cond:'));
+      const conditionalOpts = wOptions.filter(o => o.operator !== 'default' && !String(o.operator || '').startsWith('cond:'));
+      conditionalOpts.forEach((o, i) => {
+        if (o.next) {
+          edges.push({ id: `e-${w.id}-opt-${i}`, source: w.id, sourceHandle: `option-${i}`, target: o.next });
+        }
+      });
+      menuCondOpts.forEach((o, j) => {
+        if (o.next) {
+          edges.push({ id: `e-${w.id}-optcond-${j}`, source: w.id, sourceHandle: `option-cond-${j}`, target: o.next });
+        }
+      });
+      defaultOpts.forEach(o => {
+        if (o.next) {
+          edges.push({ id: `e-${w.id}-option-default-${o.next}`, source: w.id, sourceHandle: 'option-default', target: o.next });
+        }
+      });
     } else {
       wOptions.forEach((o, i) => { 
         if (o.next) { 
@@ -380,7 +414,12 @@ const addToHistory = (session, message, nodeId) => {
 };
 
 // Main: Walk through nodes chain
-const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null) => {
+// `ctx` is a plain object shared across the recursive fixed_process calls made
+// while walking ONE incoming message; every external (non-recursive) call site
+// omits it, so it defaults to a fresh {} each time. It is used to signal from a
+// deeply-nested action_return_to_main_menu jump back up through every enclosing
+// fixed_process frame that they must unwind without resuming their own chain.
+const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null, ctx = {}) => {
   const messages = [];
   let currentNodeId = startNodeId;
   let depth = 0;
@@ -564,6 +603,42 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
           console.log(`[BOT] action_set_parameter: ${paramName} = "${resolvedValue}"`);
         }
         currentNodeId = findNextNode(currentNodeId, edges);
+        break;
+      }
+
+      case 'action_return_to_main_menu': {
+        // Always resolve against the MAIN/ROOT flow's automatic_responses node —
+        // `flowId` stays the root flow's id through every level of fixed_process
+        // recursion, so this works correctly even when the node is reached from
+        // deep inside a nested sub-flow.
+        const searchText = String(nodeData.returnMenuText || '').trim();
+        const rootFlow = await getFlowData(flowId);
+        const autoNode = rootFlow.nodes.find(n => n.type === 'automatic_responses');
+        let nextId = null;
+        if (autoNode) {
+          const arOptions = autoNode.data.options || [];
+          const arOperators = autoNode.data.optionOperators || arOptions.map(() => 'eq');
+          let matchedIdx = -1;
+          for (let i = 1; i < arOptions.length; i++) {
+            if (evaluateCondition(arOperators[i], searchText, arOptions[i])) { matchedIdx = i; break; }
+          }
+          const finalIdx = matchedIdx !== -1 ? matchedIdx : 0;
+          nextId = findNextNode(autoNode.id, rootFlow.edges, `option-${finalIdx}`);
+        }
+        if (!nextId) {
+          console.log(`[WALK] ⏹ action_return_to_main_menu: no automatic_responses/edge match in main flow → dead end`);
+          return messages;
+        }
+        // Jump straight into the main flow's graph and abandon any pending
+        // sub-flow resume points — returning to the main menu exits every
+        // nested fixed_process context, however deep.
+        nodes = rootFlow.nodes;
+        edges = rootFlow.edges;
+        session.execution_stack = [];
+        session.markModified('execution_stack');
+        ctx.jumpedToMainMenu = true;
+        console.log(`[WALK] 🔀 action_return_to_main_menu → jumping to main flow node ${nextId} (execution_stack cleared)`);
+        currentNodeId = nextId;
         break;
       }
 
@@ -1053,9 +1128,19 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
             
             // Process subprocess
             console.log(`[SUB-FLOW]   calling walkChain from startNode=${startNode.id}`);
-            const subMessages = await walkChain(startNode.id, subFlow.nodes, subFlow.edges, session, flowId, req);
+            const subMessages = await walkChain(startNode.id, subFlow.nodes, subFlow.edges, session, flowId, req, ctx);
             console.log(`[SUB-FLOW]   walkChain RETURNED | msgs=${subMessages.length} | waiting_text=${session.waiting_text_input} | waiting_ws=${session.waiting_webservice} | current_node=${session.current_node_id}`);
             messages.push(...subMessages);
+
+            // If a nested action_return_to_main_menu jumped straight to the main
+            // flow (possibly several fixed_process levels below this one), every
+            // enclosing frame must unwind immediately without resuming its own
+            // chain — the execution_stack was already cleared at the jump site.
+            if (ctx.jumpedToMainMenu) {
+              console.log(`[SUB-FLOW]   🔀 return-to-main-menu jump in progress — unwinding without resuming`);
+              console.log(`${'─'.repeat(60)}\n`);
+              return messages;
+            }
             
             // If subprocess finished, return to parent.
             // NOTE: output_menu pauses with waiting_text_input=false, so we must
@@ -1809,21 +1894,45 @@ export const respondToMessage = async (req, res) => {
       ];
       for (const menuNode of interruptMenuNodesSorted) {
         const menuOptions = (menuNode.data.options || []).filter(o => o !== 'default');
-        const matchedMenuIdx = menuOptions.findIndex(
-          opt => String(opt).trim().toLowerCase() === text.trim().toLowerCase()
+        const trimmedText = text.trim().toLowerCase();
+
+        // Tier 1: conditional options (silent layer, never shown to the customer),
+        // checked first in declared order — first match with a connected edge wins,
+        // pre-empting the plain-options tier below (even individually-wired ones).
+        const condOpts = menuNode.data.menuConditionOptions || [];
+        const condOps = menuNode.data.menuConditionOperators || [];
+        let condNextId = null;
+        for (let j = 0; j < condOpts.length; j++) {
+          const op = condOps[j] || 'eq';
+          const isCondMatch = op === 'eq'
+            ? menuOptions.some(o => String(o).trim().toLowerCase() === trimmedText)
+            : evaluateCondition(op, text, condOpts[j]);
+          if (isCondMatch) {
+            const nextId = findNextNode(menuNode.id, flowData.edges, `option-cond-${j}`);
+            if (nextId) { condNextId = nextId; break; }
+          }
+        }
+
+        // Tier 2: plain (exact match) options
+        const matchedMenuIdx = condNextId !== null ? -1 : menuOptions.findIndex(
+          opt => String(opt).trim().toLowerCase() === trimmedText
         ); 
 
-        // Determine which edge to follow: matched option or default
+        // Determine which edge to follow: conditional match, matched plain option, or default
         const isCurrentMenuNode = menuNode.id === session.current_node_id;
-        const useDefault = matchedMenuIdx === -1 && isCurrentMenuNode;
-        const edgeHandle = matchedMenuIdx !== -1
-          ? `option-${matchedMenuIdx}`
-          : (useDefault ? 'option-default' : null);
+        const useDefault = condNextId === null && matchedMenuIdx === -1 && isCurrentMenuNode;
+        const edgeHandle = condNextId !== null
+          ? null
+          : (matchedMenuIdx !== -1
+            ? `option-${matchedMenuIdx}`
+            : (useDefault ? 'option-default' : null));
 
-        if (edgeHandle) {
-          const interruptNextId = findNextNode(menuNode.id, flowData.edges, edgeHandle);
+        if (condNextId !== null || edgeHandle) {
+          const interruptNextId = condNextId !== null ? condNextId : findNextNode(menuNode.id, flowData.edges, edgeHandle);
           if (interruptNextId) {
-            if (matchedMenuIdx !== -1) {
+            if (condNextId !== null) {
+              console.log(`[BOT] ⚡ interrupt: output_menu "${menuNode.id}" conditional match`);
+            } else if (matchedMenuIdx !== -1) {
               console.log(`[BOT] ⚡ interrupt: output_menu "${menuNode.id}" option ${matchedMenuIdx}`);
             } else {
               console.log(`[BOT] ⚡ interrupt: output_menu "${menuNode.id}" no match → option-default`);
@@ -1836,7 +1945,7 @@ export const respondToMessage = async (req, res) => {
             // Save the newly selected option to session parameters
             {
               const interruptParams = session.parameters || {};
-              if (menuNode.data.variableName && matchedMenuIdx !== -1) {
+              if (menuNode.data.variableName && (matchedMenuIdx !== -1 || condNextId !== null)) {
                 interruptParams[menuNode.data.variableName] = text.trim();
               }
               setOpeningWord(interruptParams, text.trim());
@@ -1852,6 +1961,7 @@ export const respondToMessage = async (req, res) => {
           }
         }
       }
+
 
       // 2. Check automatic_responses options (only when not already at automatic_responses)
       if (currentNode.type !== 'automatic_responses') {
@@ -2112,10 +2222,30 @@ export const respondToMessage = async (req, res) => {
 
       const selectedValue = text.trim();
       const options = currentNode.data.options || [];
-      const selectedIdx = options.findIndex(opt => opt.trim() === selectedValue);
-      console.log(`[SUB-FLOW]   selectedIdx=${selectedIdx} | edgesFromThisNode: ${menuActiveEdges.filter(e => e.source === currentNode.id).map(e => e.sourceHandle + '->' + e.target).join(', ')}`);
+      const trimmedLower = selectedValue.toLowerCase();
 
-      if (selectedIdx !== -1) {
+      // Tier 1: conditional options (silent layer, never shown to the customer),
+      // checked first in declared order — first match with a connected edge wins,
+      // pre-empting the plain-options tier below (even individually-wired ones).
+      const menuCondOpts = currentNode.data.menuConditionOptions || [];
+      const menuCondOps = currentNode.data.menuConditionOperators || [];
+      let condNextId = null;
+      for (let j = 0; j < menuCondOpts.length; j++) {
+        const op = menuCondOps[j] || 'eq';
+        const isCondMatch = op === 'eq'
+          ? options.some(o => String(o).trim().toLowerCase() === trimmedLower)
+          : evaluateCondition(op, text, menuCondOpts[j]);
+        if (isCondMatch) {
+          const nextId = findNextNode(currentNode.id, menuActiveEdges, `option-cond-${j}`);
+          if (nextId) { condNextId = nextId; break; }
+        }
+      }
+
+      // Tier 2: plain (exact match) options
+      const selectedIdx = condNextId !== null ? -1 : options.findIndex(opt => opt.trim() === selectedValue);
+      console.log(`[SUB-FLOW]   condNextId=${condNextId || '(none)'} | selectedIdx=${selectedIdx} | edgesFromThisNode: ${menuActiveEdges.filter(e => e.source === currentNode.id).map(e => e.sourceHandle + '->' + e.target).join(', ')}`);
+
+      if (condNextId !== null || selectedIdx !== -1) {
         if (currentNode.data.variableName) {
           params[currentNode.data.variableName] = selectedValue;
         }
@@ -2123,13 +2253,17 @@ export const respondToMessage = async (req, res) => {
         session.parameters = params;
         session.markModified('parameters');
 
-        const nextNodeId = findNextNode(currentNode.id, menuActiveEdges, `option-${selectedIdx}`);
-        console.log(`[SUB-FLOW]   matched option-${selectedIdx} → nextNodeId=${nextNodeId || '(none)'}`);
+        const nextNodeId = condNextId !== null ? condNextId : findNextNode(currentNode.id, menuActiveEdges, `option-${selectedIdx}`);
+        console.log(`[SUB-FLOW]   matched ${condNextId !== null ? 'conditional option' : 'option-' + selectedIdx} → nextNodeId=${nextNodeId || '(none)'}`);
         if (nextNodeId) {
-          messages = await walkChain(nextNodeId, menuActiveNodes, menuActiveEdges, session, session.flow_id, req);
+          const menuCtx = {};
+          messages = await walkChain(nextNodeId, menuActiveNodes, menuActiveEdges, session, session.flow_id, req, menuCtx);
           console.log(`[SUB-FLOW]   walkChain after menu: msgs=${messages.length} | waiting_text=${session.waiting_text_input} | waiting_ws=${session.waiting_webservice}`);
-          // If sub-flow finished (not waiting), pop stack and continue in parent
-          if (subFlowContext && !session.waiting_text_input && !session.waiting_webservice) {
+          // If a return-to-main-menu jump happened inside that walk, the execution_stack
+          // was already cleared at the jump site — do not pop/resume this sub-flow's parent.
+          if (menuCtx.jumpedToMainMenu) {
+            console.log(`[SUB-FLOW]   🔀 return-to-main-menu jump — not resuming parent`);
+          } else if (subFlowContext && !session.waiting_text_input && !session.waiting_webservice) {
             const newStack = [...session.execution_stack];
             newStack.pop();
             session.execution_stack = newStack;
@@ -2143,9 +2277,10 @@ export const respondToMessage = async (req, res) => {
             console.log(`[SUB-FLOW]   ⏸ sub-flow menu still waiting — not returning to parent yet`);
           }
         } else {
-          console.warn(`[SUB-FLOW]   ⚠️ no edge found for option-${selectedIdx} from node ${currentNode.id}`);
+          console.warn(`[SUB-FLOW]   ⚠️ no edge found for ${condNextId !== null ? 'conditional option' : 'option-' + selectedIdx} from node ${currentNode.id}`);
         }
       } else {
+
         const defaultNextId = findNextNode(currentNode.id, menuActiveEdges, 'option-default');
         console.log(`[SUB-FLOW]   no match for "${selectedValue}" → defaultNextId=${defaultNextId || '(none)'}`);
         if (defaultNextId) {
@@ -2153,10 +2288,14 @@ export const respondToMessage = async (req, res) => {
           setOpeningWord(params, selectedValue);
           session.parameters = params;
           session.markModified('parameters');
-          messages = await walkChain(defaultNextId, menuActiveNodes, menuActiveEdges, session, session.flow_id, req);
+          const defaultCtx = {};
+          messages = await walkChain(defaultNextId, menuActiveNodes, menuActiveEdges, session, session.flow_id, req, defaultCtx);
           console.log(`[SUB-FLOW]   walkChain after default: msgs=${messages.length} | waiting_text=${session.waiting_text_input} | waiting_ws=${session.waiting_webservice}`);
-          // If sub-flow finished (not waiting), pop stack and continue in parent
-          if (subFlowContext && !session.waiting_text_input && !session.waiting_webservice) {
+          // If a return-to-main-menu jump happened inside that walk, the execution_stack
+          // was already cleared at the jump site — do not pop/resume this sub-flow's parent.
+          if (defaultCtx.jumpedToMainMenu) {
+            console.log(`[SUB-FLOW]   🔀 return-to-main-menu jump — not resuming parent`);
+          } else if (subFlowContext && !session.waiting_text_input && !session.waiting_webservice) {
             const newStack = [...session.execution_stack];
             newStack.pop();
             session.execution_stack = newStack;

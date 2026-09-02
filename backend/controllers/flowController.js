@@ -163,9 +163,11 @@ const fetchFlowData = async (userId, flow_id, standard_process_id = null, versio
       };
     }
     
-    // For action_web_service and output_menu: exclude the 'default' option from the conditional branches data
+    // For action_web_service and output_menu: exclude the 'default' option from the conditional branches data.
+    // For output_menu, also exclude 'cond:*' options (the silent conditional-matching layer,
+    // reconstructed separately below into menuConditionOptions/menuConditionOperators).
     const conditionalOptions = (w.type === 'action_web_service' || w.type === 'output_menu')
-      ? nodeOptions.filter(o => o.operator !== 'default')
+      ? nodeOptions.filter(o => o.operator !== 'default' && !String(o.operator || '').startsWith('cond:'))
       : nodeOptions;
 
     const systemTriggerOption = w.type === 'automatic_responses'
@@ -178,6 +180,11 @@ const fetchFlowData = async (userId, flow_id, standard_process_id = null, versio
       ? nodeOptions.filter(o => o.operator !== 'system_trigger' && o.operator !== 'default')
       : conditionalOptions;
 
+    // output_menu's silent conditional-matching options (operator prefixed 'cond:')
+    const menuConditionOpts = w.type === 'output_menu'
+      ? nodeOptions.filter(o => String(o.operator || '').startsWith('cond:'))
+      : [];
+
     return { 
       id: w.id, 
       type: w.type, 
@@ -189,10 +196,13 @@ const fetchFlowData = async (userId, flow_id, standard_process_id = null, versio
         systemTriggerType: systemTriggerType || undefined,
         options: autoResponseOptions.length > 0 ? autoResponseOptions.map(o => o.value) : undefined, 
         optionOperators: autoResponseOptions.length > 0 ? autoResponseOptions.map(o => o.operator || 'eq') : undefined,
-        optionImages: autoResponseOptions.length > 0 ? autoResponseOptions.map(o => o.image_url) : undefined 
+        optionImages: autoResponseOptions.length > 0 ? autoResponseOptions.map(o => o.image_url) : undefined,
+        menuConditionOptions: menuConditionOpts.length > 0 ? menuConditionOpts.map(o => o.value) : undefined,
+        menuConditionOperators: menuConditionOpts.length > 0 ? menuConditionOpts.map(o => String(o.operator || '').slice('cond:'.length) || 'eq') : undefined
       } 
     };
   });
+
 
   const edges = [];
   widgets.forEach(w => {
@@ -247,14 +257,24 @@ const fetchFlowData = async (userId, flow_id, standard_process_id = null, versio
         }
       }
       const defaultOpts = isDefaultSeparated ? wOptions.filter(o => o.operator === 'default') : [];
+      // output_menu's silent conditional-matching options (operator prefixed 'cond:') get
+      // their own option-cond-<j> handles, separate from the plain option-<i> handles below.
+      const menuCondOpts = w.type === 'output_menu' ? wOptions.filter(o => String(o.operator || '').startsWith('cond:')) : [];
       const conditionalOpts = w.type === 'automatic_responses'
         ? wOptions.filter(o => o.operator !== 'system_trigger' && o.operator !== 'default')
-        : (isDefaultSeparated ? wOptions.filter(o => o.operator !== 'default') : wOptions);
+        : (isDefaultSeparated ? wOptions.filter(o => o.operator !== 'default' && !String(o.operator || '').startsWith('cond:')) : wOptions);
 
       conditionalOpts.forEach((o, i) => { 
         if (o.next) { 
           edges.push({ id: `e-${w.id}-opt-${i}`, source: w.id, sourceHandle: `option-${i}`, target: o.next, type: 'button', style: { stroke: '#3b82f6', strokeWidth: 2, strokeDasharray: '6,4' } }); 
         } 
+      });
+
+      // Reconstruct the 'option-cond-<j>' exit edges for output_menu's conditional options
+      menuCondOpts.forEach((o, j) => {
+        if (o.next) {
+          edges.push({ id: `e-${w.id}-optcond-${j}`, source: w.id, sourceHandle: `option-cond-${j}`, target: o.next, type: 'button', style: { stroke: '#3b82f6', strokeWidth: 2, strokeDasharray: '6,4' } });
+        }
       });
 
       // Reconstruct the 'default' exit edge for action_web_service
@@ -519,6 +539,8 @@ const SHRINK_RATIO = 0.75;  // במקום 0.5
       delete metadataObj.options;
       delete metadataObj.optionOperators;
       delete metadataObj.optionImages;
+      delete metadataObj.menuConditionOptions;
+      delete metadataObj.menuConditionOperators;
 
       const widgetData = {
         id: node.id,
@@ -587,7 +609,37 @@ const SHRINK_RATIO = 0.75;  // במקום 0.5
             operator: node.data.optionOperators?.[i] || 'eq'
           });
         }
+
+        // Save the silent conditional-matching options (never shown to the customer),
+        // stored with operator prefixed 'cond:' to disambiguate from plain options.
+        const menuConditionOptions = node.data.menuConditionOptions || [];
+        const menuConditionOperators = node.data.menuConditionOperators || [];
+        for (let j = 0; j < menuConditionOptions.length; j++) {
+          const condEdge = findLastEdge(e => e.source === node.id && e.sourceHandle === `option-cond-${j}`);
+          await Option.create({
+            widget_id: node.id,
+            value: menuConditionOptions[j],
+            next: condEdge ? condEdge.target : null,
+            image_url: null,
+            operator: 'cond:' + (menuConditionOperators[j] || 'eq')
+          });
+        }
+
+        // Bug fix: persist the 'option-default' (ברירת מחדל) exit edge — previously
+        // this connector had no save branch, so connecting it in the editor had no
+        // effect after save+reload (mirrors the action_web_service default-save pattern).
+        const menuDefaultEdge = findLastEdge(e => e.source === node.id && e.sourceHandle === 'option-default');
+        if (menuDefaultEdge) {
+          await Option.create({
+            widget_id: node.id,
+            value: 'default',
+            next: menuDefaultEdge.target,
+            image_url: null,
+            operator: 'default'
+          });
+        }
       } else if (node.type === 'automatic_responses') {
+
         const autoOptions = node.data.options || [];
         const autoOperators = node.data.optionOperators || [];
         const triggerType = node.data.systemTriggerType || '';

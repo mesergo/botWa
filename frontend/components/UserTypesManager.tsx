@@ -93,6 +93,13 @@ const PERMISSION_GROUPS: Array<{
     ]
   },
   {
+    key: 'facebook_connect',
+    label: 'חיבור לפייסבוק',
+    actions: [
+      { key: 'view', label: 'הצגת לשונית' },
+    ]
+  },
+  {
     key: 'send_messages',
     label: 'שליחת הודעות',
     actions: [
@@ -111,6 +118,7 @@ const emptyPermissions = (): UserTypePermissions => ({
   users:    { view: false, add: false, edit: false, delete: false },
   rep_groups: { view: false, add: false, delete: false },
   sms_in:   { view: false },
+  facebook_connect: { view: false },
   send_messages: { view: false, send: false },
 });
 
@@ -154,7 +162,12 @@ const UserTypesManager: React.FC<Props> = ({ token, apiBase }) => {
           can_add_users: t.can_add_users,
           show_in_users_tab: t.show_in_users_tab !== false,
           allowed_user_type_ids: (t.allowed_user_type_ids || []).map(x => x._id),
-          permissions: { ...emptyPermissions(), ...t.permissions, sms_in: t.permissions?.sms_in ?? { view: false } }
+          permissions: {
+            ...emptyPermissions(),
+            ...t.permissions,
+            sms_in: t.permissions?.sms_in ?? { view: false },
+            facebook_connect: t.permissions?.facebook_connect ?? { view: false }
+          }
         };
       });
       setDrafts(initial);

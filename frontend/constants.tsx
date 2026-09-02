@@ -14,7 +14,8 @@ import {
   Users,
   UserMinus, 
   UserCheck,
-  Zap
+  Zap,
+  CornerUpLeft
 } from 'lucide-react';
 import { NodeType } from './types';
  
@@ -45,6 +46,7 @@ export const COMPONENT_GROUPS = [
       { type: NodeType.ACTION_ADD_TO_GROUP, label: 'הוספה/הסרה מקבוצה', icon: <Users size={18} /> },
       { type: NodeType.ACTION_TRANSFER_TO_AGENT, label: 'נציגים', icon: <UserCheck size={18} /> },
       { type: NodeType.ACTION_SET_PARAMETER, label: 'הגדרת פרמטר', icon: <Zap size={18} /> },
+      { type: NodeType.ACTION_RETURN_TO_MAIN_MENU, label: 'חזרה לתפריט ראשי', icon: <CornerUpLeft size={18} /> },
     ]
   }
 ];

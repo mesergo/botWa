@@ -610,6 +610,36 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
            return processNext(findNextNodeId(nodeId, instance, `option-${finalIdx}`), instance, depth + 1, stack);
         }
         break;
+      case NodeType.ACTION_RETURN_TO_MAIN_MENU: {
+        // Always resolve against the MAIN flow's automatic_responses node — when
+        // currently inside a fixed-process sub-flow, stack[0].instance is always
+        // the main flow's instance (pushed there when the first sub-flow was
+        // entered), so this works correctly however deep the nesting is.
+        const mainInstance = stack.length > 0 ? stack[0].instance : instance;
+        const mainNodesList = mainInstance?.getNodes() || [];
+        const autoNode = mainNodesList.find((n: any) => n.type === NodeType.AUTOMATIC_RESPONSES);
+        if (!autoNode) {
+          // No automatic_responses in the main flow at all → dead end, discard any pending sub-flow stack
+          return processNext(null, mainInstance, depth + 1, []);
+        }
+        const options = autoNode.data.options || [];
+        const operators = autoNode.data.optionOperators || Array(options.length).fill('eq');
+        const searchText = node.data.returnMenuText || '';
+
+        let matchedIdx = -1;
+        // Skip index 0 (כניסה) - it acts as a fallback
+        for (let k = 1; k < options.length; k++) {
+          if (evaluateCondition(operators[k], searchText, options[k])) {
+            matchedIdx = k;
+            break;
+          }
+        }
+
+        const finalIdx = matchedIdx !== -1 ? matchedIdx : 0;
+        // Jump straight into the main flow's graph and abandon any pending sub-flow
+        // stack — returning to the main menu exits every nested fixed_process context.
+        return processNext(findNextNodeId(autoNode.id, mainInstance, `option-${finalIdx}`), mainInstance, depth + 1, []);
+      }
       case NodeType.FIXED_PROCESS:
         console.log('[Simulator] 🔄 FIXED_PROCESS node:', { nodeId, processId: node.data.processId, flowId, hasToken: !!token });
         
@@ -940,11 +970,38 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
     } else if (node.type === NodeType.OUTPUT_MENU) {
       // Find matching option; fall back to option-default if none match
       const menuOpts = (node.data.options || []).filter((o: any) => o !== 'default');
-      const matchedIdx = menuOpts.findIndex((o: any) => String(o).trim().toLowerCase() === text.trim().toLowerCase());
+      const trimmedText = text.trim().toLowerCase();
+
+      // Tier 1: conditional options (silent layer, never shown to the customer),
+      // evaluated in declared order — first one that matches AND has a connected
+      // edge wins, pre-empting the plain-options tier below.
+      const condOpts = node.data.menuConditionOptions || [];
+      const condOps = node.data.menuConditionOperators || [];
+      let condNextId: string | null = null;
+      for (let j = 0; j < condOpts.length; j++) {
+        const op = condOps[j] || 'eq';
+        const isMatch = op === 'eq'
+          ? menuOpts.some((o: any) => String(o).trim().toLowerCase() === trimmedText)
+          : evaluateCondition(op, text, condOpts[j]);
+        if (isMatch) {
+          const nextId = findNextNodeId(currentNodeId, currentInstance, `option-cond-${j}`);
+          if (nextId) { condNextId = nextId; break; }
+        }
+      }
+
+      if (condNextId) {
+        if (node.data.variableName) updateParam(node.data.variableName, text);
+        await processNext(condNextId, currentInstance, 0, executionStack);
+        return;
+      }
+
+      // Tier 2: plain (exact match) options
+      const matchedIdx = menuOpts.findIndex((o: any) => String(o).trim().toLowerCase() === trimmedText);
       if (matchedIdx !== -1) {
         if (node.data.variableName) updateParam(node.data.variableName, text);
         await processNext(findNextNodeId(currentNodeId, currentInstance, `option-${matchedIdx}`), currentInstance, 0, executionStack);
       } else {
+        // Tier 3: option-default fallback
         const defaultNextId = findNextNodeId(currentNodeId, currentInstance, 'option-default');
         if (defaultNextId) {
           await processNext(defaultNextId, currentInstance, 0, executionStack);
@@ -963,6 +1020,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
         }
       }
     } else if (isInputNode && !nextNodeId) {
+
       // Last node in this (sub-)flow is an input — param already saved above.
       // processNext(null) will pop executionStack and continue in parent flow if any,
       // or simply clear the current node if we are at the top-level flow.
@@ -1012,6 +1070,32 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
     await processNext(findNextNodeId(currentNodeId, currentInstance), currentInstance, 0, executionStack);
   };
 
+  // Resolves which handle a menu button click should follow: conditional options
+  // (the silent matching layer) are checked FIRST, in declared order, even for a
+  // direct button click — since the clicked option's text can itself satisfy a
+  // configured condition (e.g. "אחת מהאפשרויות" matches any plain option, or
+  // "מכיל מילה"/"מכיל אחת מהמילים"/"מכיל את כל המילים" against the clicked text).
+  // Only falls back to the plain `option-{index}` handle when no condition matches
+  // (or matches but has no connected edge).
+  const resolveMenuOptionHandle = (menuNode: any, instance: any, nodeId: string, optionText: string, index: number) => {
+    if (menuNode?.type === NodeType.OUTPUT_MENU) {
+      const condOpts = menuNode.data?.menuConditionOptions || [];
+      const condOps = menuNode.data?.menuConditionOperators || [];
+      const menuOpts = menuNode.data?.options || [];
+      const trimmedText = String(optionText).trim().toLowerCase();
+      for (let j = 0; j < condOpts.length; j++) {
+        const op = condOps[j] || 'eq';
+        const isMatch = op === 'eq'
+          ? menuOpts.some((o: any) => String(o).trim().toLowerCase() === trimmedText)
+          : evaluateCondition(op, optionText, condOpts[j]);
+        if (isMatch && findNextNodeId(nodeId, instance, `option-cond-${j}`)) {
+          return `option-cond-${j}`;
+        }
+      }
+    }
+    return `option-${index}`;
+  };
+
   const handleMenuSelect = async (option: string, index: number, optionValue?: string, sourceNodeId?: string) => {
     // ── Flow-interrupt: user clicked a menu button from an earlier point in the chat ──
     if (sourceNodeId && sourceNodeId !== currentNodeId && !isWaitingForWebserviceResponse) {
@@ -1032,7 +1116,8 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
           setSessionParameters({ ...sessionParamsRef.current });
         }
         // Pass empty stack so processNext clears executionStack (sub-flows abandoned)
-        const nextNodeId = findNextNodeId(sourceNodeId, menuInstance, `option-${index}`);
+        const targetHandle = resolveMenuOptionHandle(sourceMenuNode, menuInstance, sourceNodeId, option, index);
+        const nextNodeId = findNextNodeId(sourceNodeId, menuInstance, targetHandle);
         await processNext(nextNodeId, menuInstance, 0, []);
         return;
       }
@@ -1066,7 +1151,8 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
         sessionParamsRef.current = { ...sessionParamsRef.current, [node.data.variableName]: option };
         setSessionParameters({ ...sessionParamsRef.current });
       }
-      await processNext(findNextNodeId(currentNodeId, currentInstance, `option-${index}`), currentInstance, 0, executionStack);
+      const targetHandle = resolveMenuOptionHandle(node, currentInstance, currentNodeId, option, index);
+      await processNext(findNextNodeId(currentNodeId, currentInstance, targetHandle), currentInstance, 0, executionStack);
     }
   };
 
