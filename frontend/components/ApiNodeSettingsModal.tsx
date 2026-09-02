@@ -83,7 +83,6 @@ const ApiNodeSettingsModal: React.FC<ApiNodeSettingsModalProps> = ({
   const modal = (
     <div
       className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center z-[9999] p-8"
-      dir="rtl"
       onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div className="bg-white w-full max-w-4xl rounded-[2.5rem] shadow-2xl border border-slate-100 flex flex-col max-h-[88vh]">
@@ -118,7 +117,7 @@ const ApiNodeSettingsModal: React.FC<ApiNodeSettingsModalProps> = ({
               placeholder="https://api.example.com/endpoint?phone=--phone--&name=--name--"
               dir="ltr"
             />
-            <p className="text-[11px] text-slate-400 mt-2 text-right">
+            <p className="text-[11px] text-slate-400 mt-2 text-start">
               ניתן להשתמש ב-<code className="bg-slate-100 px-1.5 py-0.5 rounded-md">--שם_משתנה--</code> בכתובת
             </p>
           </div>
@@ -221,9 +220,9 @@ const ApiNodeSettingsModal: React.FC<ApiNodeSettingsModalProps> = ({
               dir="ltr"
             />
             {jsonError ? (
-              <p className="text-[12px] text-red-500 mt-2 text-right font-bold">{jsonError}</p>
+              <p className="text-[12px] text-red-500 mt-2 text-start font-bold">{jsonError}</p>
             ) : (
-              <p className="text-[11px] text-slate-400 mt-2 text-right">
+              <p className="text-[11px] text-slate-400 mt-2 text-start">
                 {body.trim()
                   ? 'ה-Body הזה יישלח במקום ה-payload הסטנדרטי'
                   : 'ריק = ישלח payload סטנדרטי של הבוט (ברירת מחדל)'}

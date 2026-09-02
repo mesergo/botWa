@@ -1,5 +1,8 @@
-import React, { useState, useCallback, useEffect, useMemo } from 'react';
+import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { CheckCircle, Mail, Phone, Lock, Eye, EyeOff, AlertCircle, Building2, Clock, ShieldCheck } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import LanguageSwitcher from './LanguageSwitcher';
+import { translateAuthApiError } from '../i18n/authErrors';
 
 declare global {
   interface Window { google: any; }
@@ -46,6 +49,7 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PHONE_REGEX = /^[\d\s\-+()]{7,15}$/;
 
 const RegisterPage: React.FC = () => {
+  const { t, i18n } = useTranslation(['auth', 'common']);
   const inviteToken = useMemo(() => new URLSearchParams(window.location.search).get('inviteToken') || '', []);
   const inviteMode = !!inviteToken;
 
@@ -88,7 +92,7 @@ const RegisterPage: React.FC = () => {
         const res = await fetch(`${API_BASE}/auth/invite/verify?inviteToken=${encodeURIComponent(inviteToken)}`);
         const data = await res.json();
         if (!res.ok) {
-          setErrors({ general: data.error || 'הקישור אינו תקין או שפג תוקפו' });
+          setErrors({ general: translateAuthApiError(data.error, 'errors.invalidInvite') });
           return;
         }
         if (isCancelled) return;
@@ -104,7 +108,7 @@ const RegisterPage: React.FC = () => {
           email: data.email || prev.email,
         }));
       } catch {
-        if (!isCancelled) setErrors({ general: 'אין חיבור לשרת. אנא נסה שנית מאוחר יותר.' });
+        if (!isCancelled) setErrors({ general: t('errors.networkRetry', { ns: 'common' }) });
       } finally {
         if (!isCancelled) setInviteLoading(false);
       }
@@ -112,13 +116,13 @@ const RegisterPage: React.FC = () => {
 
     verifyInvite();
     return () => { isCancelled = true; };
-  }, [inviteMode, inviteToken]);
+  }, [inviteMode, inviteToken, t]);
 
   const handleGoogleSignIn = useCallback(async (credential: string) => {
     if (inviteMode && inviteRequiresLoginConfirmation && !confirmInviteLogin) {
       setErrors((prev) => ({
         ...prev,
-        confirmLogin: 'יש לאשר התחברות לחשבון המוזמן לפני המשך עם Google',
+        confirmLogin: t('validation.confirmGoogleInvite', { ns: 'auth' }),
       }));
       return;
     }
@@ -139,32 +143,42 @@ const RegisterPage: React.FC = () => {
         setRegisteredEmail((data.user?.email || form.email || invitePrefill?.email || '').trim());
         setSubmitted(true);
       } else {
-        setErrors({ general: data.error || 'שגיאה בהתחברות עם גוגל' });
+        setErrors({ general: translateAuthApiError(data.error, 'errors.googleLogin') });
       }
     } catch {
-      setErrors({ general: 'אין חיבור לשרת. אנא נסה שנית מאוחר יותר.' });
+      setErrors({ general: t('errors.networkRetry', { ns: 'common' }) });
     } finally {
       setIsSubmitting(false);
     }
-  }, [inviteMode, inviteToken, form.email, invitePrefill?.email, inviteRequiresLoginConfirmation, confirmInviteLogin]);
+  }, [inviteMode, inviteToken, form.email, invitePrefill?.email, inviteRequiresLoginConfirmation, confirmInviteLogin, t]);
 
+  const handleGoogleSignInRef = useRef(handleGoogleSignIn);
+  useEffect(() => {
+    handleGoogleSignInRef.current = handleGoogleSignIn;
+  }, [handleGoogleSignIn]);
+
+  const googleInitializedRef = useRef(false);
   useEffect(() => {
     if (!GOOGLE_CLIENT_ID) return;
     let cancelled = false;
 
     const init = () => {
       if (cancelled || !window.google) return;
-      window.google.accounts.id.initialize({
-        client_id: GOOGLE_CLIENT_ID,
-        callback: (response: { credential: string }) => handleGoogleSignIn(response.credential),
-      });
+      if (!googleInitializedRef.current) {
+        window.google.accounts.id.initialize({
+          client_id: GOOGLE_CLIENT_ID,
+          callback: (response: { credential: string }) => handleGoogleSignInRef.current(response.credential),
+        });
+        googleInitializedRef.current = true;
+      }
       const btn = document.getElementById('google-signin-btn');
       if (btn) {
+        btn.innerHTML = '';
         window.google.accounts.id.renderButton(btn, {
           theme: 'outline',
           size: 'large',
           width: 320,
-          locale: 'he',
+          locale: i18n.resolvedLanguage === 'en' ? 'en' : 'he',
           text: 'signup_with',
         });
       }
@@ -182,34 +196,34 @@ const RegisterPage: React.FC = () => {
       const scriptEl = document.querySelector<HTMLScriptElement>('script[src*="accounts.google.com/gsi"]');
       if (scriptEl) scriptEl.removeEventListener('load', init);
     };
-  }, [handleGoogleSignIn]);
+  }, [i18n.resolvedLanguage]);
 
   const validateField = useCallback(
     (field: keyof RegisterForm, value: string): string => {
       switch (field) {
         case 'company':
-          if (!value.trim()) return 'שדה חובה';
-          if (value.trim().length < 2) return 'שם חברה חייב להכיל לפחות 2 תווים';
+          if (!value.trim()) return t('validation.required', { ns: 'auth' });
+          if (value.trim().length < 2) return t('validation.companyMinLength', { ns: 'auth' });
           return '';
         case 'phone':
-          if (!value.trim()) return 'שדה חובה';
-          if (!PHONE_REGEX.test(value.trim())) return 'מספר טלפון אינו תקין';
+          if (!value.trim()) return t('validation.required', { ns: 'auth' });
+          if (!PHONE_REGEX.test(value.trim())) return t('validation.invalidPhone', { ns: 'auth' });
           return '';
         case 'email':
-          if (!value.trim()) return 'שדה חובה';
-          if (!EMAIL_REGEX.test(value.trim())) return 'כתובת אימייל אינה תקינה';
+          if (!value.trim()) return t('validation.required', { ns: 'auth' });
+          if (!EMAIL_REGEX.test(value.trim())) return t('validation.invalidEmail', { ns: 'auth' });
           return '';
         case 'password':
-          if (!value) return 'שדה חובה';
-          if (value.length < 6) return 'הסיסמה חייבת להכיל לפחות 6 תווים';
-          if (!/[A-Za-z]/.test(value)) return 'הסיסמה חייבת להכיל לפחות אות אחת';
-          if (!/[0-9]/.test(value)) return 'הסיסמה חייבת להכיל לפחות ספרה אחת';
+          if (!value) return t('validation.required', { ns: 'auth' });
+          if (value.length < 6) return t('validation.passwordMinLength', { ns: 'auth' });
+          if (!/[A-Za-z]/.test(value)) return t('validation.passwordLetter', { ns: 'auth' });
+          if (!/[0-9]/.test(value)) return t('validation.passwordDigit', { ns: 'auth' });
           return '';
         default:
           return '';
       }
     },
-    []
+    [t]
   );
 
   const validateAll = useCallback(
@@ -280,7 +294,7 @@ const RegisterPage: React.FC = () => {
         if (inviteRequiresLoginConfirmation && !confirmInviteLogin) {
           setErrors((prev) => ({
             ...prev,
-            confirmLogin: 'יש לאשר התחברות לחשבון המוזמן לפני השלמת ההרשמה',
+            confirmLogin: t('validation.confirmInvite', { ns: 'auth' }),
           }));
           setIsSubmitting(false);
           return;
@@ -331,10 +345,10 @@ const RegisterPage: React.FC = () => {
         setRegisteredEmail((invitePrefill?.email || form.email).trim());
         setSubmitted(true);
       } else {
-        setErrors({ general: data.error || 'אירעה שגיאה בעת ההרשמה, נסה שנית' });
+        setErrors({ general: translateAuthApiError(data.error, 'errors.registration') });
       }
     } catch {
-      setErrors({ general: 'אין חיבור לשרת. אנא נסה שנית מאוחר יותר.' });
+      setErrors({ general: t('errors.networkRetry', { ns: 'common' }) });
     } finally {
       setIsSubmitting(false);
     }
@@ -343,30 +357,33 @@ const RegisterPage: React.FC = () => {
   // ── Success screen ──────────────────────────────────────────────────────────
   if (submitted) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-6 bg-slate-50" dir="rtl">
+      <div className="min-h-screen flex items-center justify-center p-6 bg-slate-50">
+        <LanguageSwitcher />
         <div className="bg-white rounded-3xl shadow-xl w-full max-w-lg p-12 text-center border border-slate-100">
           <div className="flex justify-center mb-8">
             <div className="w-20 h-20 bg-green-50 rounded-full flex items-center justify-center">
               <CheckCircle className="w-10 h-10 text-green-600" strokeWidth={2} />
             </div>
           </div>
-          <h2 className="text-3xl font-bold text-slate-800 mb-4">{inviteMode ? 'ההרשמה הושלמה בהצלחה!' : 'ההרשמה הושלמה!'}</h2>
+          <h2 className="text-3xl font-bold text-slate-800 mb-4">
+            {t(inviteMode ? 'register.success.inviteTitle' : 'register.success.title', { ns: 'auth' })}
+          </h2>
           <p className="text-slate-500 mb-6">
-            חשבון חדש נוצר עבור
+            {t('register.success.accountCreated', { ns: 'auth' })}
             <br />
             <span className="font-semibold text-slate-900">{registeredEmail}</span>
           </p>
           
           {!inviteMode && (
-          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-8 text-right">
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-8 text-start">
             <div className="flex items-center gap-2 mb-2">
               <Clock className="w-4 h-4 text-amber-600" />
-              <span className="text-xs text-amber-700 uppercase tracking-wider font-black">חשבון ניסיוני</span>
+              <span className="text-xs text-amber-700 uppercase tracking-wider font-black">{t('register.success.trialAccount', { ns: 'auth' })}</span>
             </div>
             <ul className="text-sm text-amber-800 space-y-1 font-medium">
-              <li>• בוט אחד בלבד</li>
-              <li>• תוקף חשבון: 30 יום</li>
-              <li>• גישה לסימולטור בלבד (ללא פרסום)</li>
+              <li>• {t('register.success.oneBot', { ns: 'auth' })}</li>
+              <li>• {t('register.success.validity', { ns: 'auth' })}</li>
+              <li>• {t('register.success.simulatorOnly', { ns: 'auth' })}</li>
             </ul>
           </div>
           )}
@@ -375,7 +392,7 @@ const RegisterPage: React.FC = () => {
             href="/"
             className="block w-full bg-slate-900 text-white py-4 rounded-xl font-medium shadow-lg shadow-slate-900/20 hover:bg-slate-800 transition-all"
           >
-            מעבר ישיר למערכת
+            {t('register.success.enterSystem', { ns: 'auth' })}
           </a>
         </div>
       </div>
@@ -384,9 +401,10 @@ const RegisterPage: React.FC = () => {
 
   if (inviteMode && inviteLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-6 bg-slate-50" dir="rtl">
+      <div className="min-h-screen flex items-center justify-center p-6 bg-slate-50">
+        <LanguageSwitcher />
         <div className="bg-white rounded-3xl shadow-xl w-full max-w-lg p-10 text-center border border-slate-100">
-          <p className="text-slate-700 font-bold">מאמתים את ההזמנה שלך...</p>
+          <p className="text-slate-700 font-bold">{t('register.verifyingInvite', { ns: 'auth' })}</p>
         </div>
       </div>
     );
@@ -394,7 +412,8 @@ const RegisterPage: React.FC = () => {
 
   // ── Registration layout ───────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-white flex flex-col items-center justify-center p-6" dir="rtl">
+    <div className="min-h-screen bg-white flex flex-col items-center justify-center p-6">
+      <LanguageSwitcher />
       
       <div className="w-full max-w-4xl mx-auto space-y-12">
         {/* Header / Logo Section */}
@@ -405,26 +424,31 @@ const RegisterPage: React.FC = () => {
             alt="MeserGo"
           />
           <h2 className="text-4xl font-extrabold text-slate-900 tracking-tight">
-            {inviteMode ? 'השלמת הרשמה' : 'הצטרפות למערכת'}
+            {t(inviteMode ? 'register.inviteHeading' : 'register.heading', { ns: 'auth' })}
           </h2>
           <p className="text-lg text-slate-500 max-w-xl mx-auto">
             {inviteMode
-              ? 'מלא את הפרטים הנותרים כדי להשלים את ההרשמה שלך למערכת.'
-              : 'מלא את הפרטים הבאים כדי לפתוח חשבון חדש ולהתחיל לנהל את הבוטים שלך בצורה חכמה.'}
+              ? t('register.inviteDescription', { ns: 'auth' })
+              : t('register.description', { ns: 'auth' })}
           </p>
           {inviteMode && invitePrefill && (
             <div className="inline-flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-2xl px-6 py-3 mt-2">
               <ShieldCheck className="w-5 h-5 text-blue-600 flex-shrink-0" />
-              <p className="text-sm font-black text-blue-800">הוזמנת על ידי {invitePrefill.inviterName || 'מנהל המערכת'}</p>
+              <p className="text-sm font-black text-blue-800">
+                {t('register.invitedBy', {
+                  name: invitePrefill.inviterName || t('register.systemManager', { ns: 'auth' }),
+                  ns: 'auth',
+                })}
+              </p>
             </div>
           )}
           {/* Trial account notice */}
           {!inviteMode && (
           <div className="inline-flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-2xl px-6 py-3 mt-2">
             <Clock className="w-5 h-5 text-amber-600 flex-shrink-0" />
-            <div className="text-right">
-              <p className="text-sm font-black text-amber-800">חשבון ניסיוני חינמי — 30 יום</p>
-              <p className="text-xs text-amber-600 font-medium">בוט אחד · סימולטור בלבד · ללא פרסום</p>
+            <div className="text-start">
+              <p className="text-sm font-black text-amber-800">{t('register.trialTitle', { ns: 'auth' })}</p>
+              <p className="text-xs text-amber-600 font-medium">{t('register.trialSummary', { ns: 'auth' })}</p>
             </div>
           </div>
           )}
@@ -439,9 +463,11 @@ const RegisterPage: React.FC = () => {
             <div className="space-y-8">
                 {/* Company */}
                 <div className="space-y-2">
-                <label className="text-base font-bold text-slate-900">{inviteMode ? 'שם מלא' : 'שם העסק'}</label>
+                <label className="text-base font-bold text-slate-900">
+                  {t(inviteMode ? 'register.fullName' : 'register.businessName', { ns: 'auth' })}
+                </label>
                 <div className="relative group">
-                  <div className="absolute inset-y-0 right-0 pr-0 flex items-center pointer-events-none">
+                  <div className="absolute inset-y-0 start-0 ps-0 flex items-center pointer-events-none">
                      <Building2 className="h-5 w-5 text-slate-400 group-focus-within:text-blue-600 transition-colors" />
                   </div>
                   <input
@@ -450,12 +476,12 @@ const RegisterPage: React.FC = () => {
                     onBlur={() => handleBlur('company')}
                     onChange={(e) => handleChange('company', e.target.value)}
                     disabled={inviteMode}
-                    className={`block w-full pr-8 pl-0 py-3 bg-transparent border-b-2 outline-none transition-all placeholder:text-slate-300 font-medium text-lg ${
+                    className={`block w-full ps-8 pe-0 py-3 bg-transparent border-b-2 outline-none transition-all placeholder:text-slate-300 font-medium text-lg ${
                       touched.company && errors.company 
                         ? 'border-red-300 focus:border-red-500' 
                         : 'border-slate-200 focus:border-blue-600'
                     }`}
-                    placeholder={inviteMode ? 'שם מלא' : 'שם החברה בע״מ'}
+                    placeholder={t(inviteMode ? 'register.fullName' : 'register.companyPlaceholder', { ns: 'auth' })}
                   />
                   {touched.company && errors.company && (
                     <p className="text-red-500 text-sm mt-1 font-medium">{errors.company}</p>
@@ -465,9 +491,9 @@ const RegisterPage: React.FC = () => {
 
               {/* Email */}
               <div className="space-y-2">
-                <label className="text-base font-bold text-slate-900">כתובת אימייל</label>
+                <label className="text-base font-bold text-slate-900">{t('register.email', { ns: 'auth' })}</label>
                 <div className="relative group">
-                  <div className="absolute inset-y-0 right-0 pr-0 flex items-center pointer-events-none">
+                  <div className="absolute inset-y-0 start-0 ps-0 flex items-center pointer-events-none">
                     <Mail className="h-5 w-5 text-slate-400 group-focus-within:text-blue-600 transition-colors" />
                   </div>
                   <input
@@ -476,14 +502,14 @@ const RegisterPage: React.FC = () => {
                     onBlur={() => handleBlur('email')}
                     onChange={(e) => handleChange('email', e.target.value)}
                     disabled={inviteMode}
-                    className={`block w-full pr-8 pl-8 py-3 bg-transparent border-b-2 outline-none transition-all placeholder:text-slate-300 font-medium text-lg ${
+                    className={`block w-full ps-8 pe-8 py-3 bg-transparent border-b-2 outline-none transition-all placeholder:text-slate-300 font-medium text-lg ${
                       touched.email && errors.email 
                         ? 'border-red-300 focus:border-red-500' 
                         : 'border-slate-200 focus:border-blue-600'
                     }`}
                     placeholder="name@company.com"
                   />
-                  <div className="absolute inset-y-0 left-0 pl-0 flex items-center">
+                  <div className="absolute inset-y-0 end-0 pe-0 flex items-center">
                       {emailChecking ? (
                       <svg className="animate-spin w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24">
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
@@ -498,9 +524,9 @@ const RegisterPage: React.FC = () => {
                   <p className="text-red-500 text-sm mt-1 font-medium">{errors.email}</p>
                 )}
                 {!inviteMode && duplicateEmailChoice && (
-                  <div className="mt-3 bg-amber-50 border border-amber-200 rounded-xl p-4 text-right space-y-3">
+                  <div className="mt-3 bg-amber-50 border border-amber-200 rounded-xl p-4 text-start space-y-3">
                     <p className="text-sm font-bold text-amber-800">
-                      כתובת אימייל זו כבר קיימת במערכת — ליצור חשבון נוסף בכל זאת?
+                      {t('register.duplicateEmailQuestion', { ns: 'auth' })}
                     </p>
                     <div className="flex flex-wrap gap-3">
                       <button
@@ -508,20 +534,20 @@ const RegisterPage: React.FC = () => {
                         onClick={() => { setConfirmedDuplicate(true); setDuplicateEmailChoice(false); }}
                         className="text-sm font-bold bg-amber-600 text-white px-4 py-2 rounded-lg hover:bg-amber-700 transition-colors"
                       >
-                        צור חשבון נוסף עם מייל זה
+                        {t('register.createAnother', { ns: 'auth' })}
                       </button>
                       <a
                         href="/"
                         className="text-sm font-bold bg-white border border-amber-300 text-amber-700 px-4 py-2 rounded-lg hover:bg-amber-50 transition-colors"
                       >
-                        עבור להתחברות
+                        {t('register.goToLogin', { ns: 'auth' })}
                       </a>
                     </div>
                   </div>
                 )}
                 {!inviteMode && confirmedDuplicate && !duplicateEmailChoice && (
                   <p className="text-amber-700 text-sm mt-2 font-bold">
-                    ✓ ייווצר חשבון נוסף עבור כתובת אימייל זו
+                    {t('register.duplicateConfirmed', { ns: 'auth' })}
                   </p>
                 )}
               </div>
@@ -531,9 +557,9 @@ const RegisterPage: React.FC = () => {
             <div className="space-y-8">
               {/* Phone */}
               <div className="space-y-2">
-                <label className="text-base font-bold text-slate-900">טלפון נייד</label>
+                <label className="text-base font-bold text-slate-900">{t('register.mobilePhone', { ns: 'auth' })}</label>
                 <div className="relative group">
-                  <div className="absolute inset-y-0 right-0 pr-0 flex items-center pointer-events-none">
+                  <div className="absolute inset-y-0 start-0 ps-0 flex items-center pointer-events-none">
                     <Phone className="h-5 w-5 text-slate-400 group-focus-within:text-blue-600 transition-colors" />
                   </div>
                   <input
@@ -541,7 +567,7 @@ const RegisterPage: React.FC = () => {
                     value={form.phone}
                     onBlur={() => handleBlur('phone')}
                     onChange={(e) => handleChange('phone', e.target.value)}
-                    className={`block w-full pr-8 pl-0 py-3 bg-transparent border-b-2 outline-none transition-all placeholder:text-slate-300 font-medium text-lg ${
+                    className={`block w-full ps-8 pe-0 py-3 bg-transparent border-b-2 outline-none transition-all placeholder:text-slate-300 font-medium text-lg ${
                       touched.phone && errors.phone 
                         ? 'border-red-300 focus:border-red-500' 
                         : 'border-slate-200 focus:border-blue-600'
@@ -556,9 +582,9 @@ const RegisterPage: React.FC = () => {
 
               {/* Password */}
               <div className="space-y-2">
-                <label className="text-base font-bold text-slate-900">סיסמה</label>
+                <label className="text-base font-bold text-slate-900">{t('register.password', { ns: 'auth' })}</label>
                 <div className="relative group">
-                  <div className="absolute inset-y-0 right-0 pr-0 flex items-center pointer-events-none">
+                  <div className="absolute inset-y-0 start-0 ps-0 flex items-center pointer-events-none">
                     <Lock className="h-5 w-5 text-slate-400 group-focus-within:text-blue-600 transition-colors" />
                   </div>
                   <input
@@ -566,7 +592,7 @@ const RegisterPage: React.FC = () => {
                     value={form.password}
                     onBlur={() => handleBlur('password')}
                     onChange={(e) => handleChange('password', e.target.value)}
-                    className={`block w-full pr-8 pl-10 py-3 bg-transparent border-b-2 outline-none transition-all placeholder:text-slate-300 font-medium text-lg ${
+                    className={`block w-full ps-8 pe-10 py-3 bg-transparent border-b-2 outline-none transition-all placeholder:text-slate-300 font-medium text-lg ${
                       touched.password && errors.password 
                         ? 'border-red-300 focus:border-red-500' 
                         : 'border-slate-200 focus:border-blue-600'
@@ -575,7 +601,7 @@ const RegisterPage: React.FC = () => {
                   />
                   <button
                     type="button"
-                    className="absolute inset-y-0 left-0 pl-0 flex items-center text-slate-400 hover:text-slate-600 transition-colors"
+                    className="absolute inset-y-0 end-0 pe-0 flex items-center text-slate-400 hover:text-slate-600 transition-colors"
                     onClick={() => setShowPassword((v) => !v)}
                     tabIndex={-1}
                   >
@@ -587,9 +613,9 @@ const RegisterPage: React.FC = () => {
                 {form.password && (
                   <div className="flex flex-wrap gap-3 pt-2">
                     {[
-                      { label: '6+ תווים', ok: form.password.length >= 6 },
-                      { label: 'אות באנגלית', ok: /[A-Za-z]/.test(form.password) },
-                      { label: 'ספרה', ok: /[0-9]/.test(form.password) },
+                      { label: t('register.passwordRequirements.length', { ns: 'auth' }), ok: form.password.length >= 6 },
+                      { label: t('register.passwordRequirements.letter', { ns: 'auth' }), ok: /[A-Za-z]/.test(form.password) },
+                      { label: t('register.passwordRequirements.digit', { ns: 'auth' }), ok: /[0-9]/.test(form.password) },
                     ].map(({ label, ok }) => (
                         <span key={label} className={`text-xs font-semibold transition-colors ${
                           ok ? 'text-green-600' : 'text-slate-300'
@@ -616,7 +642,7 @@ const RegisterPage: React.FC = () => {
           )}
 
           {inviteMode && inviteRequiresLoginConfirmation && (
-            <div className="mt-8 max-w-xl mx-auto bg-slate-50 border border-slate-200 rounded-xl p-4 text-right space-y-2">
+            <div className="mt-8 max-w-xl mx-auto bg-slate-50 border border-slate-200 rounded-xl p-4 text-start space-y-2">
               <label className="flex items-start gap-3 cursor-pointer select-none">
                 <input
                   type="checkbox"
@@ -628,7 +654,7 @@ const RegisterPage: React.FC = () => {
                   className="w-4 h-4 mt-0.5 accent-blue-600 cursor-pointer flex-shrink-0"
                 />
                 <span className="text-sm font-bold text-slate-700">
-                  אני מאשר/ת התחברות לחשבון שהוזמנתי אליו
+                  {t('register.confirmInviteLogin', { ns: 'auth' })}
                 </span>
               </label>
               {errors.confirmLogin && (
@@ -644,7 +670,7 @@ const RegisterPage: React.FC = () => {
                 <div id="google-signin-btn" className="flex justify-center" />
                 <div className="flex items-center gap-3">
                   <div className="flex-1 h-px bg-slate-200" />
-                  <span className="text-sm text-slate-400">או הרשמה ידנית</span>
+                  <span className="text-sm text-slate-400">{t('register.manualRegistration', { ns: 'auth' })}</span>
                   <div className="flex-1 h-px bg-slate-200" />
                 </div>
               </>
@@ -664,17 +690,17 @@ const RegisterPage: React.FC = () => {
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
                   </svg>
-                  יוצר חשבון...
+                  {t('register.creating', { ns: 'auth' })}
                 </>
               ) : (
-                inviteMode ? 'השלם הרשמה' : 'צור חשבון חדש'
+                t(inviteMode ? 'register.completeInvite' : 'register.createAccount', { ns: 'auth' })
               )}
             </button>
 
             <p className="text-center mt-6 text-sm text-slate-500">
-              כבר יש לך חשבון?{' '}
+              {t('register.alreadyHaveAccount', { ns: 'auth' })}{' '}
               <a href="/" className="text-blue-600 font-bold hover:text-blue-700 hover:underline transition-colors">
-                התחבר כאן
+                {t('register.loginHere', { ns: 'auth' })}
               </a>
             </p>
           </div>
@@ -683,7 +709,7 @@ const RegisterPage: React.FC = () => {
         {/* Footer info */}
         <div className="pt-8 border-t border-slate-100 text-center">
            <p className="text-slate-400 text-xs">
-            &copy; {new Date().getFullYear()} MeserGo. מערכת מאובטחת ע״י הצפנה מתקדמת.
+            &copy; {new Date().getFullYear()} MeserGo. {t('register.secureFooter', { ns: 'auth' })}
           </p>
         </div>
       </div>

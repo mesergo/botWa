@@ -1,5 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { MessageSquare, Send, Users, Bot } from 'lucide-react';
+import { getFormatLocale } from '../i18n';
 
 const API_BASE = window.location.hostname === 'localhost'
   ? 'http://localhost:3001/api'
@@ -44,9 +46,10 @@ interface StatCardProps {
   iconColor: string;
   loading: boolean;
   animate: boolean;
+  locale: string;
 }
 
-const StatCard: React.FC<StatCardProps> = ({ label, value, sub, icon, iconBg, iconColor, loading, animate }) => {
+const StatCard: React.FC<StatCardProps> = ({ label, value, sub, icon, iconBg, iconColor, loading, animate, locale }) => {
   const displayed = useCountUp(value, 900, animate && !loading);
   return (
     <div className="bg-white border border-slate-100 rounded-2xl p-5 flex flex-col gap-3 shadow-sm">
@@ -57,7 +60,7 @@ const StatCard: React.FC<StatCardProps> = ({ label, value, sub, icon, iconBg, ic
         {loading ? (
           <div className="h-8 w-16 bg-slate-100 rounded-lg animate-pulse mb-1" />
         ) : (
-          <p className="text-3xl font-black text-slate-900 leading-none">{displayed.toLocaleString()}</p>
+          <p className="text-3xl font-black text-slate-900 leading-none">{displayed.toLocaleString(locale)}</p>
         )}
         <p className="text-slate-500 text-sm font-semibold mt-1.5 leading-snug">{label}</p>
         {sub && !loading && (
@@ -69,6 +72,8 @@ const StatCard: React.FC<StatCardProps> = ({ label, value, sub, icon, iconBg, ic
 };
 
 const DashboardStats: React.FC = () => {
+  const { t, i18n } = useTranslation('nav');
+  const locale = getFormatLocale(i18n.resolvedLanguage);
   const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);
   const [animate, setAnimate] = useState(false);
@@ -88,30 +93,30 @@ const DashboardStats: React.FC = () => {
 
   const cards = [
     {
-      label: 'שיחות היום',
+      label: t('stats.sessionsToday'),
       value: stats?.sessions.today ?? 0,
-      sub: `${stats?.sessions.month ?? 0} החודש`,
+      sub: t('stats.sessionsThisMonth', { total: stats?.sessions.month ?? 0 }),
       icon: <MessageSquare size={26} strokeWidth={2} />,
       iconBg: 'bg-emerald-50',
       iconColor: 'text-emerald-600',
     },
     {
-      label: 'הודעות שנשלחו היום',
+      label: t('stats.messagesToday'),
       value: stats?.messages.today ?? 0,
-      sub: `${stats?.messages.week ?? 0} השבוע · ${stats?.messages.month ?? 0} החודש`,
+      sub: t('stats.messagesWeekMonth', { week: stats?.messages.week ?? 0, month: stats?.messages.month ?? 0 }),
       icon: <Send size={26} strokeWidth={2} />,
       iconBg: 'bg-violet-50',
       iconColor: 'text-violet-600',
     },
     {
-      label: 'אנשי קשר',
+      label: t('stats.contacts'),
       value: stats?.contacts ?? 0,
       icon: <Users size={26} strokeWidth={2} />,
       iconBg: 'bg-amber-50',
       iconColor: 'text-amber-600',
     },
     {
-      label: 'בוטים',
+      label: t('stats.bots'),
       value: stats?.bots ?? 0,
       icon: <Bot size={26} strokeWidth={2} />,
       iconBg: 'bg-slate-100',
@@ -121,10 +126,10 @@ const DashboardStats: React.FC = () => {
 
   return (
     <section className="w-full mb-8">
-      <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-widest mb-4">סקירה כללית</p>
+      <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-widest mb-4">{t('stats.title')}</p>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-5">
         {cards.map(card => (
-          <StatCard key={card.label} {...card} loading={loading} animate={animate} />
+          <StatCard key={card.label} {...card} loading={loading} animate={animate} locale={locale} />
         ))}
       </div>
     </section>

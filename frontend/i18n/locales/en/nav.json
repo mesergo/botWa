@@ -1,0 +1,84 @@
+{
+  "pages": {
+    "home": "Home",
+    "overview": "Overview",
+    "bots": "My bots",
+    "sessions": "Conversations",
+    "contacts": "Contacts",
+    "groups": "Groups",
+    "sendMessages": "Send messages",
+    "smsIn": "Inbound SMS",
+    "settings": "Settings",
+    "users": "Users",
+    "adminPanel": "Admin panel",
+    "systemAdmin": "System administration"
+  },
+  "mobileMenu": {
+    "open": "Open navigation menu",
+    "close": "Close navigation menu"
+  },
+  "topBar": {
+    "greeting": "Hello, {{name}}"
+  },
+  "profile": {
+    "fullName": "Full name",
+    "email": "Email",
+    "phone": "Phone",
+    "subscription": "Subscription type",
+    "notSet": "Not set",
+    "editPhone": "Update phone number",
+    "savePhoneError": "Could not save the phone number",
+    "logout": "Sign out",
+    "accountType": {
+      "Trial": "Trial",
+      "Premium": "Premium",
+      "Basic": "Basic"
+    }
+  },
+  "impersonation": {
+    "banner": "Impersonation mode - you are viewing the system as: {{name}}",
+    "exit": "Back to admin mode",
+    "switchAccount": "Switch account",
+    "connectedAs": "Signed in as: {{name}}"
+  },
+  "home": {
+    "welcome": "Welcome",
+    "defaultUser": "User",
+    "accountBadge": "{{type}} account",
+    "menu": "Menu",
+    "logout": "Sign out",
+    "title": "Dashboard",
+    "quickNav": "Quick navigation",
+    "tiles": {
+      "bots": {
+        "label": "My bots",
+        "description": "Manage, edit and create new bots"
+      },
+      "chats": {
+        "label": "My conversations",
+        "description": "View and manage active conversations"
+      },
+      "contacts": {
+        "label": "Contacts",
+        "description": "Manage your contact list"
+      },
+      "smsIn": {
+        "label": "Inbound SMS",
+        "description": "Incoming SMS messages and line routing"
+      },
+      "settings": {
+        "label": "Settings",
+        "description": "Account and profile settings"
+      }
+    }
+  },
+  "stats": {
+    "title": "Overview",
+    "sessionsToday": "Conversations today",
+    "sessionsThisMonth": "{{total}} this month",
+    "messagesToday": "Messages sent today",
+    "messagesWeekMonth": "{{week}} this week · {{month}} this month",
+    "contacts": "Contacts",
+    "bots": "Bots"
+  }
+}

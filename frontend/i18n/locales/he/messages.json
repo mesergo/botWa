@@ -1,0 +1,122 @@
+{
+  "audience": {
+    "title": "למי לשלוח",
+    "tabs": {
+      "contacts": "אנשי קשר",
+      "groups": "קבוצות",
+      "phones": "מספרי טלפון"
+    },
+    "contacts": {
+      "searchPlaceholder": "חפש איש קשר...",
+      "selectAll": "בחר את כל אנשי הקשר ({{count}})",
+      "showSelected": "הצג מסומנים",
+      "empty": "לא נמצאו אנשי קשר"
+    },
+    "groups": {
+      "searchPlaceholder": "חפש קבוצה...",
+      "selectAll": "בחר את כל הקבוצות ({{count}})",
+      "showSelected": "הצג קבוצות מסומנות",
+      "empty": "לא נמצאו רשימות תפוצה",
+      "contactCount": "{{count}} אנשי קשר"
+    },
+    "phones": {
+      "instructions": "הקלד או הדבק מספרי טלפון — אפשר להפריד בפסיקים, נקודה-פסיק או שורות נפרדות.",
+      "placeholder": "העתק נתונים והדבק אותם כאן...",
+      "entered": "{{count}} מספרים הוזנו"
+    },
+    "showAll": "הצג הכל",
+    "summary": "{{groups}} קבוצות · {{contacts}} אנשי קשר · {{phones}} מספרים",
+    "preview": {
+      "calculating": "מחשב נמענים ייחודיים...",
+      "total": "{{count}} נמענים סופיים — כפילויות הוסרו אוטומטית",
+      "prompt": "בחר אנשי קשר, קבוצות או מספרים כדי לראות תצוגה מקדימה"
+    }
+  },
+  "composer": {
+    "title": "מה תרצה לכתוב",
+    "bots": {
+      "loading": "טוען מספרים מחוברים...",
+      "empty": "⚠️ לא נמצאו מספרים מחוברים עם endpoint מוגדר.",
+      "sendFrom": "ישלח מ: {{phone}} ({{name}})",
+      "choose": "בחר מספר שממנו תישלח ההודעה:"
+    },
+    "template": {
+      "label": "הודעת תבנית (אופציונלי):",
+      "clear": "בטל תבנית",
+      "choose": "בחר תבנית הודעה"
+    },
+    "freeText": {
+      "label": "או הקלד הודעת טקסט חופשית:",
+      "mediaCaptionPlaceholder": "כיתוב למדיה (אופציונלי)...",
+      "placeholder": "הקלד את ההודעה כאן..."
+    },
+    "media": {
+      "label": "צירוף מדיה (אופציונלי):",
+      "remove": "הסר מדיה"
+    },
+    "actions": {
+      "schedule": "תזמון קבוע",
+      "starting": "מתחיל שליחה...",
+      "sendNow": "שליחה מיידית"
+    }
+  },
+  "schedule": {
+    "futureValidation": "יש לבחור תאריך ושעה עתידיים",
+    "title": "שלח בתזמון",
+    "label": "בחר תאריך ושעה לשליחה:",
+    "willSendAt": "ההודעה תישלח ב: {{date}}",
+    "cancel": "ביטול",
+    "confirm": "אישור — תזמן שליחה"
+  },
+  "templatePicker": {
+    "title": "בחר תבנית",
+    "searchPlaceholder": "חפש תבנית...",
+    "empty": "לא נמצאו תבניות"
+  },
+  "broadcasts": {
+    "title": "שליחות מרוכזות",
+    "subtitle": "רשימת כל השליחות מכל הקבוצות ומשלוחים מותאמים אישית.",
+    "allLists": "כל הרשימות",
+    "refresh": "רענון",
+    "empty": "לא נמצאו שליחות",
+    "template": "תבנית",
+    "columns": {
+      "date": "תאריך",
+      "content": "תוכן",
+      "list": "רשימה",
+      "total": "סה\"כ",
+      "sent": "נשלחו",
+      "failed": "נכשלו",
+      "skipped": "דולגו",
+      "schedule": "תזמון",
+      "status": "סטטוס"
+    },
+    "schedule": {
+      "scheduled": "מתוזמן",
+      "immediate": "מיידי"
+    },
+    "status": {
+      "cancelled": "בוטל",
+      "completed": "הושלם",
+      "stopped": "הופסק ({{processed}}/{{total}})",
+      "running": "בתהליך",
+      "queued": "בתור",
+      "failed": "נכשל",
+      "waiting": "ממתין"
+    },
+    "details": {
+      "title": "פרטי שליחה",
+      "custom": "שליחה מותאמת אישית",
+      "close": "סגור",
+      "messageContent": "תוכן ההודעה",
+      "parameters": "פרמטרים:",
+      "media": "מדיה:",
+      "recipients": "נמענים ({{count}})"
+    },
+    "recipientReasons": {
+      "blocklist": "ברשימת הסרה",
+      "invalidPhone": "טלפון לא תקין",
+      "error": "שגיאה: {{error}}"
+    }
+  }
+}

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, Bot, ArrowLeft, Trash2, Calendar, LogOut, Shield, UserCog, Users, List, Settings, Save, User as UserIcon, Phone, Mail, Star, Copy, Check, Wifi, Gauge, MessageSquare, MessageCircle, Globe, Layers, CheckCircle, Eye, EyeOff, X, Menu, Image as ImageIcon, FileText, Link as LinkIcon, Unlink, UserMinus, AlertTriangle, RefreshCcw, ToggleLeft, ToggleRight, Zap, GitFork, Edit2 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { Plus, Bot, ArrowLeft, ArrowRight, Trash2, Calendar, LogOut, Shield, UserCog, Users, List, Settings, Save, User as UserIcon, Phone, Mail, Star, Copy, Check, Wifi, Gauge, MessageSquare, MessageCircle, Globe, Layers, CheckCircle, Eye, EyeOff, X, Menu, Image as ImageIcon, FileText, Link as LinkIcon, Unlink, UserMinus, AlertTriangle, RefreshCcw, ToggleLeft, ToggleRight, Zap, GitFork, Edit2 } from 'lucide-react';
 import ImpersonationBanner from './ImpersonationBanner';
 import MigrationNoticeBanner from './MigrationNoticeBanner';
 import { BotFlow, User } from '../types';
@@ -11,6 +12,7 @@ import AppNav from './AppNav';
 import { MobileNavToggle } from './PageTopBar';
 import ProfileMenuContent from './ProfileMenuContent';
 import AnchoredDropdown from './AnchoredDropdown';
+import LanguageSwitcher from './LanguageSwitcher';
 import SmsInApp from './sms-in/SmsInApp';
 
 const API_BASE = window.location.hostname === 'localhost'
@@ -94,16 +96,24 @@ const FacebookIcon: React.FC<{ size?: number; className?: string }> = ({ size = 
 // ── Rep availability status indicator (topbar) ───────────────────────────────
 type AvailabilityStatus = 'available' | 'unavailable' | 'on_break';
 
-const AVAILABILITY_OPTIONS: { value: AvailabilityStatus; label: string; dot: string; text: string; bg: string }[] = [
-  { value: 'available',   label: 'זמין',    dot: 'bg-emerald-500', text: 'text-emerald-700', bg: 'bg-emerald-50' },
-  { value: 'on_break',    label: 'בהפסקה',  dot: 'bg-amber-500',   text: 'text-amber-700',   bg: 'bg-amber-50' },
-  { value: 'unavailable', label: 'לא זמין', dot: 'bg-slate-400',   text: 'text-slate-600',   bg: 'bg-slate-100' },
+const AVAILABILITY_OPTIONS: { value: AvailabilityStatus; dot: string; text: string; bg: string }[] = [
+  { value: 'available',   dot: 'bg-emerald-500', text: 'text-emerald-700', bg: 'bg-emerald-50' },
+  { value: 'on_break',    dot: 'bg-amber-500',   text: 'text-amber-700',   bg: 'bg-amber-50' },
+  { value: 'unavailable', dot: 'bg-slate-400',   text: 'text-slate-600',   bg: 'bg-slate-100' },
 ];
+
+// Maps an availability status value to its dashboard i18n key.
+const AVAILABILITY_LABEL_KEYS: Record<AvailabilityStatus, string> = {
+  available: 'availability.available',
+  on_break: 'availability.onBreak',
+  unavailable: 'availability.unavailable',
+};
 
 const AvailabilityBadge: React.FC<{
   status: AvailabilityStatus;
   onChange: (s: AvailabilityStatus) => void | Promise<void>;
 }> = ({ status, onChange }) => {
+  const { t, i18n } = useTranslation('dashboard');
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -129,13 +139,14 @@ const AvailabilityBadge: React.FC<{
     }
   };
 
+  // Rendered inside the fixed `dir="ltr"` top bar, so the page direction is stated explicitly.
   return (
-    <div ref={wrapperRef} className="relative" dir="rtl">
+    <div ref={wrapperRef} className="relative" dir={i18n.dir()}>
       <button
         type="button"
         onClick={() => setOpen(v => !v)}
         disabled={saving}
-        title="שינוי סטטוס זמינות"
+        title={t('availability.changeStatus')}
         className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-black border border-slate-200 ${current.bg} ${current.text} hover:shadow-sm transition-all disabled:opacity-60`}
       >
         <span className={`relative flex h-2.5 w-2.5`}>
@@ -144,20 +155,20 @@ const AvailabilityBadge: React.FC<{
           )}
           <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${current.dot}`}></span>
         </span>
-        <span>{current.label}</span>
+        <span>{t(AVAILABILITY_LABEL_KEYS[current.value])}</span>
       </button>
       {open && (
-        <div className="absolute mt-2 right-0 w-44 bg-white rounded-2xl shadow-xl border border-slate-100 py-2 z-50">
+        <div className="absolute mt-2 start-0 w-44 bg-white rounded-2xl shadow-xl border border-slate-100 py-2 z-50">
           {AVAILABILITY_OPTIONS.map(opt => {
             const isActive = opt.value === status;
             return (
               <button
                 key={opt.value}
                 onClick={() => handleSelect(opt.value)}
-                className={`w-full flex items-center gap-2 px-4 py-2 text-sm font-bold text-right hover:bg-slate-50 transition-colors ${isActive ? 'bg-slate-50' : ''}`}
+                className={`w-full flex items-center gap-2 px-4 py-2 text-sm font-bold text-start hover:bg-slate-50 transition-colors ${isActive ? 'bg-slate-50' : ''}`}
               >
                 <span className={`inline-block h-2.5 w-2.5 rounded-full ${opt.dot}`}></span>
-                <span className="flex-1 text-slate-700">{opt.label}</span>
+                <span className="flex-1 text-slate-700">{t(AVAILABILITY_LABEL_KEYS[opt.value])}</span>
                 {isActive && <Check size={14} className="text-blue-600" />}
               </button>
             );
@@ -169,6 +180,9 @@ const AvailabilityBadge: React.FC<{
 };
 
 const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, onDeleteBot, onSetDefaultBot, onLogout, currentUser, onOpenAdminPanel, onStopImpersonation, onSwitchAccount, onOpenContacts, onOpenSessions, onOpenGroups, onOpenSendMessages, onConnectFacebook, onUpdateBotPublicId, onUpdateBotEndpoint, onUpdateBotRestartKeyword, onUpdateAvailability, onGoHome,onOpenSmsIn, token, initialTab }) => {
+  const { t, i18n } = useTranslation('dashboard');
+  // "Enter / edit" affordance points along the reading direction: left in Hebrew, right in English.
+  const ForwardArrow = i18n.dir() === 'rtl' ? ArrowLeft : ArrowRight;
   const can = usePermission(currentUser as User | null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newBotName, setNewBotName] = useState('');
@@ -533,11 +547,11 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
         loadInternalTemplates();
       } else {
         const errData = await res.json().catch(() => ({} as any));
-        alert(`שגיאה בשמירת התבנית: ${errData.error || 'Unknown error'}`);
+        alert(t('errors.templateSaveFailedWithReason', { reason: errData.error || t('errors.unknownError') }));
       }
     } catch (err) {
       console.error('Error saving internal template:', err);
-      alert('שגיאה בשמירת התבנית');
+      alert(t('errors.templateSaveFailed'));
     } finally {
       setSavingInternalTemplate(false);
     }
@@ -551,13 +565,13 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.ok) {
-        setInternalTemplates(prev => prev.filter(t => t._id !== id));
+        setInternalTemplates(prev => prev.filter(tpl => tpl._id !== id));
       } else {
-        alert('שגיאה במחיקת התבנית');
+        alert(t('errors.templateDeleteFailed'));
       }
     } catch (err) {
       console.error('Error deleting internal template:', err);
-      alert('שגיאה במחיקת התבנית');
+      alert(t('errors.templateDeleteFailed'));
     } finally {
       setDeleteInternalTemplateConfirmId(null);
     }
@@ -628,7 +642,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
 
   const handleRemoveConnectedNumber = async (phone_number_id: string) => {
     if (!token) return;
-    if (!window.confirm('למחוק מספר מחובר זה לצמיתות?')) return;
+    if (!window.confirm(t('errors.confirmDeleteConnectedNumber'))) return;
     setRemovingPnid(phone_number_id);
     try {
       const res = await fetch(`${API_BASE}/whatsapp-registration/remove-connected-number`, {
@@ -638,9 +652,9 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
       });
       const data = await res.json();
       if (data.success) await loadConnectedNumbers();
-      else alert(`שגיאה: ${data.error || 'לא ידוע'}`);
+      else alert(t('errors.genericErrorWithReason', { reason: data.error || t('errors.unknownReason') }));
     } catch (e: any) {
-      alert(`שגיאת רשת: ${e.message}`);
+      alert(t('errors.networkErrorWithReason', { message: e.message }));
     } finally {
       setRemovingPnid(null);
     }
@@ -664,7 +678,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
     const sel = getPaymentCountriesSelection(n);
     const allowedPaymentCountries = [sel.il && '972', sel.us && '1'].filter(Boolean).join('|');
     if (!allowedPaymentCountries) {
-      alert('יש לבחור לפחות קידומת מדינה אחת');
+      alert(t('errors.selectAtLeastOneCountry'));
       return;
     }
     setSavingPaymentCountriesPnid(n.phone_number_id);
@@ -679,10 +693,10 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
         setPaymentCountriesDraft(prev => { const n2 = { ...prev }; delete n2[n.phone_number_id]; return n2; });
         await loadConnectedNumbers();
       } else {
-        alert(`שגיאה: ${data.error || 'לא ידוע'}`);
+        alert(t('errors.genericErrorWithReason', { reason: data.error || t('errors.unknownReason') }));
       }
     } catch (e: any) {
-      alert(`שגיאת רשת: ${e.message}`);
+      alert(t('errors.networkErrorWithReason', { message: e.message }));
     } finally {
       setSavingPaymentCountriesPnid(null);
     }
@@ -700,7 +714,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
       });
       const data = await res.json();
       if (!res.ok || !data.success) {
-        setD360Error(data.message || data.error || 'שגיאה בשמירת המספר');
+        setD360Error(data.message || data.error || t('errors.numberSaveFailed'));
       } else {
         setD360Token('');
         setD360Link('');
@@ -708,7 +722,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
         await loadConnectedNumbers();
       }
     } catch (e: any) {
-      setD360Error(`שגיאת רשת: ${e.message}`);
+      setD360Error(t('errors.networkErrorWithReason', { message: e.message }));
     } finally {
       setD360Saving(false);
     }
@@ -726,7 +740,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
       console.log(`[FB-OAuth] 🎟 facebook-redirect-state HTTP ${stateRes.status}`);
       if (!stateRes.ok) {
         console.warn('[FB-OAuth] ❌ Failed to get state token');
-        setFbResult({ ok: false, message: 'שגיאה בקבלת קוד אבטחה. נסה שוב.' });
+        setFbResult({ ok: false, message: t('facebook.securityCodeFailed') });
         setFbConnecting(false);
         return;
       }
@@ -737,7 +751,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
       console.log(`[FB-OAuth] 🔗 redirect_uri = ${redirectUri}`);
       openFbOAuthPopup(state, redirectUri);
     } catch (err: any) {
-      setFbResult({ ok: false, message: err.message || 'שגיאה בפתיחת חיבור פייסבוק' });
+      setFbResult({ ok: false, message: err.message || t('facebook.connectOpenFailed') });
       setFbConnecting(false);
     }
   };
@@ -758,7 +772,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
       if (!stateRes.ok) {
         const errBody = await stateRes.json().catch(() => ({}));
         console.warn('[FB-OAuth] ❌ Failed to get free state token', errBody);
-        setFbResult({ ok: false, message: errBody.error || 'שגיאה בקבלת קוד אבטחה. נסה שוב.' });
+        setFbResult({ ok: false, message: errBody.error || t('facebook.securityCodeFailed') });
         setFbConnecting(false);
         return;
       }
@@ -769,7 +783,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
       console.log(`[FB-OAuth] 🔗 redirect_uri = ${redirectUri}`);
       openFbOAuthPopup(state, redirectUri);
     } catch (err: any) {
-      setFbResult({ ok: false, message: err.message || 'שגיאה בפתיחת חיבור פייסבוק' });
+      setFbResult({ ok: false, message: err.message || t('facebook.connectOpenFailed') });
       setFbConnecting(false);
     }
   };
@@ -797,7 +811,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
         `width=${w},height=${h},left=${left},top=${top},resizable=yes,scrollbars=yes,status=yes`);
 
       if (!popup) {
-        setFbResult({ ok: false, message: 'הדפדפן חסם את החלונית הקופצת. אנא אפשר חלונות קופצים ונסה שוב.' });
+        setFbResult({ ok: false, message: t('facebook.popupBlocked') });
         setFbConnecting(false);
         return;
       }
@@ -836,20 +850,20 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
         if (e.data.ok) {
           const num = e.data.display_phone_number || '-';
           const waba = e.data.wabaName ? ` (${e.data.wabaName})` : '';
-          const freeNote = e.data.free_mode ? ' — ניתן לשייך לבוט בהגדרות → מספרים מחוברים' : '';
+          const freeNote = e.data.free_mode ? t('facebook.assignHintFreeMode') : '';
           console.log(`[FB-OAuth] ✅ Success — phone: ${num}${waba}${freeNote}`);
           const { access_token: at, ...rawDisplay } = e.data;
           const alreadyRegistered = e.data.registered === true;
-          setFbResult({ ok: true, message: `החיבור הושלם בהצלחה! מספר: ${num}${waba}${freeNote}`, raw: rawDisplay, accessToken: at });
-          setFbActivateLogs(alreadyRegistered ? ['✅ המספר הופעל בהצלחה במהלך החיבור'] : []);
+          setFbResult({ ok: true, message: t('facebook.connectedSuccessfully', { details: `${num}${waba}${freeNote}` }), raw: rawDisplay, accessToken: at });
+          setFbActivateLogs(alreadyRegistered ? [t('facebook.activatedDuringConnect')] : []);
           setFbActivateDone(alreadyRegistered);
           setFbConnectBot(null);
           loadConnectedNumbers();
         } else {
-          const raw = e.data.register_error || e.data.message || 'שגיאה לא ידועה';
+          const raw = e.data.register_error || e.data.message || t('errors.unknownError');
           const errMsg = typeof raw === 'object' ? JSON.stringify(raw) : String(raw);
           console.warn('[FB-OAuth] ❌ Failed:', errMsg);
-          setFbResult({ ok: false, message: `החיבור נכשל: ${errMsg}`, raw: e.data });
+          setFbResult({ ok: false, message: t('facebook.connectionFailed', { reason: errMsg }), raw: e.data });
         }
         setFbConnecting(false);
       };
@@ -921,7 +935,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
       setRemovalSaved(true);
       setTimeout(() => setRemovalSaved(false), 2500);
     } catch {
-      alert('שגיאה בשמירת הגדרות ההסרה');
+      alert(t('errors.removalSaveFailed'));
     } finally {
       setRemovalSaving(false);
       setRemovalConfirmOpen(null);
@@ -946,7 +960,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
       setRemovalSaved(true);
       setTimeout(() => setRemovalSaved(false), 2500);
     } catch {
-      alert('שגיאה באיפוס ההגדרה');
+      alert(t('errors.removalResetFailed'));
     } finally {
       setRemovalSaving(false);
       setRemovalConfirmOpen(null);
@@ -1002,7 +1016,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
       });
       const data = await res.json();
       if (!res.ok) {
-        setProfileError(data.error || 'שגיאה בשמירת הפרטים');
+        setProfileError(data.error || t('errors.profileSaveFailed'));
       } else {
         setProfile(data);
         setEditName(data.name);
@@ -1012,7 +1026,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
         setTimeout(() => setProfileSuccess(false), 3000);
       }
     } catch {
-      setProfileError('שגיאה בחיבור לשרת');
+      setProfileError(t('errors.serverConnectionFailed'));
     } finally {
       setProfileSaving(false);
     }
@@ -1040,12 +1054,12 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
   };
 
   return (
-    <div className="h-screen w-screen bg-[#f8fafc] flex flex-col font-medium text-right overflow-hidden">
+    <div className="h-screen w-screen bg-[#f8fafc] flex flex-col font-medium text-start overflow-hidden">
       {/* Impersonation Banner */}
       <ImpersonationBanner currentUser={currentUser} onStopImpersonation={onStopImpersonation} token={token} onSwitchAccount={onSwitchAccount} />
       <MigrationNoticeBanner />
       
-      <nav className="h-20 bg-white border-b border-slate-100 flex items-center justify-between px-4 md:px-10 z-20">
+      <nav className="h-20 bg-white border-b border-slate-100 flex items-center justify-between px-4 md:px-10 z-20" dir="ltr">
         <div className="flex items-center gap-4">
           {isMobileTopBar && (
             <button onClick={onLogout} className="p-2.5 text-slate-300 hover:text-red-500 transition-colors rounded-xl hover:bg-red-50"><LogOut size={22} /></button>
@@ -1055,8 +1069,9 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
 
         <div className="flex items-center gap-4">
           {currentUser && (
-            <span className="text-sm font-bold text-slate-600">שלום, {currentUser.name || currentUser.email}</span>
+            <span className="text-sm font-bold text-slate-600">{t('topbar.greeting', { name: currentUser.name || currentUser.email })}</span>
           )}
+          <LanguageSwitcher variant="bar" />
           {(currentUser?.role === 'rep' || currentUser?.role === 'rep_manager') && onUpdateAvailability && (
             <AvailabilityBadge
               status={(currentUser?.availability_status as AvailabilityStatus) || 'available'}
@@ -1069,7 +1084,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
               className="flex items-center gap-2 px-4 py-2 bg-blue-100 text-blue-700 rounded-lg font-bold hover:bg-blue-200 transition-colors"
             >
               <Shield size={18} />
-              פאנל ניהול
+              {t('topbar.adminPanel')}
             </button>
           )}
           <div className="relative" ref={profileWrapperRef}>
@@ -1085,7 +1100,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
               const opt = AVAILABILITY_OPTIONS.find(o => o.value === s)!;
               return (
                 <span
-                  title={opt.label}
+                  title={t(AVAILABILITY_LABEL_KEYS[opt.value])}
                   className={`absolute -bottom-0.5 -left-0.5 h-3 w-3 rounded-full ring-2 ring-white ${opt.dot}`}
                 />
               );
@@ -1105,7 +1120,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
       </nav>
 
       {/* ── Main layout: sidebar + content ── */}
-      <div className="flex-1 flex flex-row-reverse overflow-hidden">
+      <div className="flex-1 flex overflow-hidden">
 
         {/* ── Right Sidebar ── */}
         <AppNav
@@ -1133,26 +1148,26 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
 
       {/* ── Settings Tab ── */}
       {activeTab === 'settings' && (
-        <div className="flex-1 flex flex-col md:flex-row overflow-hidden" dir="rtl">
+        <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
 
           {/* ── Inner settings sidebar ── */}
-          <aside className="w-full md:w-56 bg-white border-b md:border-b-0 md:border-l border-slate-100 py-3 md:py-6 px-3 flex-shrink-0 overflow-x-auto md:overflow-y-auto">
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider px-1 md:px-3 mb-2">הגדרות</p>
+          <aside className="w-full md:w-56 bg-white border-b md:border-b-0 md:border-e border-slate-100 py-3 md:py-6 px-3 flex-shrink-0 overflow-x-auto md:overflow-y-auto">
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider px-1 md:px-3 mb-2">{t('settingsNav.sectionTitle')}</p>
             <div className="flex md:flex-col gap-2 md:gap-1 min-w-max md:min-w-0">
             {([
-              { key: 'profile',    label: 'פרטים אישיים',     icon: <UserIcon size={16} /> },
-              { key: 'account',    label: 'פרטי חשבון',        icon: <Shield size={16} /> },
-              { key: 'connection', label: 'הגדרות חיבור',      icon: <Wifi size={16} /> },
-              { key: 'quota',      label: 'מכסות אישיות',      icon: <Gauge size={16} /> },
-              { key: 'numbers',    label: 'מספרים מחוברים',    icon: <Phone size={16} /> },
-              ...(isRealAdmin ? [{ key: 'routing' as const, label: 'שיוך קווים SMS ', icon: <GitFork size={16} /> }] : []),
-              { key: 'templates',  label: 'הודעות תבנית',      icon: <MessageSquare size={16} /> },
-              { key: 'removal',    label: 'ניהול הסרה מקבוצה', icon: <UserMinus size={16} /> },
+              { key: 'profile',    label: t('settingsNav.profile'),     icon: <UserIcon size={16} /> },
+              { key: 'account',    label: t('settingsNav.account'),        icon: <Shield size={16} /> },
+              { key: 'connection', label: t('settingsNav.connection'),      icon: <Wifi size={16} /> },
+              { key: 'quota',      label: t('settingsNav.quota'),      icon: <Gauge size={16} /> },
+              { key: 'numbers',    label: t('settingsNav.numbers'),    icon: <Phone size={16} /> },
+              ...(isRealAdmin ? [{ key: 'routing' as const, label: t('settingsNav.routing'), icon: <GitFork size={16} /> }] : []),
+              { key: 'templates',  label: t('settingsNav.templates'),      icon: <MessageSquare size={16} /> },
+              { key: 'removal',    label: t('settingsNav.removal'), icon: <UserMinus size={16} /> },
             ] as { key: SettingsSection; label: string; icon: React.ReactNode }[]).map(({ key, label, icon }) => (
               <button
                 key={key}
                 onClick={() => setSettingsSection(key)}
-                className={`flex items-center gap-3 px-4 py-3 rounded-2xl font-bold text-sm transition-all w-auto md:w-full text-right whitespace-nowrap ${
+                className={`flex items-center gap-3 px-4 py-3 rounded-2xl font-bold text-sm transition-all w-auto md:w-full text-start whitespace-nowrap ${
                   settingsSection === key
                     ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20'
                     : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700'
@@ -1186,9 +1201,9 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
             <div className="max-w-2xl mx-auto">
 
             {profileLoading ? (
-              <div className="text-center text-slate-400 py-20 font-bold">טוען פרטים...</div>
+              <div className="text-center text-slate-400 py-20 font-bold">{t('settings.loading')}</div>
             ) : !profile ? (
-              <div className="text-center text-slate-400 py-20 font-bold">לא ניתן לטעון פרטים. אנא נסה שוב.</div>
+              <div className="text-center text-slate-400 py-20 font-bold">{t('settings.loadError')}</div>
             ) : (
               <>
 
@@ -1196,23 +1211,23 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
               {settingsSection === 'profile' && (
                 <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-8">
                   <h2 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-6 flex items-center gap-2 border-b border-slate-100 pb-4">
-                    <UserIcon size={14} /> פרטים אישיים
+                    <UserIcon size={14} /> {t('settings.profile.heading')}
                   </h2>
                   <div className="space-y-5">
                     <div>
-                      <label className="block text-xs font-bold text-slate-400 mb-2">שם מלא</label>
+                      <label className="block text-xs font-bold text-slate-400 mb-2">{t('settings.profile.fullName')}</label>
                       <input
-                        className="w-full px-5 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600 transition-all text-right disabled:opacity-60 disabled:cursor-not-allowed"
+                        className="w-full px-5 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600 transition-all text-start disabled:opacity-60 disabled:cursor-not-allowed"
                         value={editName}
                         onChange={e => setEditName(e.target.value)}
                         disabled={!can('settings.edit_profile')}
                       />
                     </div>
                     <div>
-                      <label className="block text-xs font-bold text-slate-400 mb-2">אימייל</label>
+                      <label className="block text-xs font-bold text-slate-400 mb-2">{t('settings.profile.email')}</label>
                       <input
                         type="email"
-                        className="w-full px-5 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600 transition-all text-right disabled:opacity-60 disabled:cursor-not-allowed"
+                        className="w-full px-5 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600 transition-all text-start disabled:opacity-60 disabled:cursor-not-allowed"
                         value={editEmail}
                         onChange={e => setEditEmail(e.target.value)}
                         dir="ltr"
@@ -1220,23 +1235,23 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                       />
                     </div>
                     <div>
-                      <label className="block text-xs font-bold text-slate-400 mb-2">טלפון</label>
+                      <label className="block text-xs font-bold text-slate-400 mb-2">{t('settings.profile.phone')}</label>
                       <input
                         type="tel"
-                        className="w-full px-5 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600 transition-all text-right disabled:opacity-60 disabled:cursor-not-allowed"
+                        className="w-full px-5 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600 transition-all text-start disabled:opacity-60 disabled:cursor-not-allowed"
                         value={editPhone}
                         onChange={e => setEditPhone(e.target.value)}
-                        placeholder="05X-XXXXXXX"
+                        placeholder={t('settings.profile.phonePlaceholder')}
                         disabled={!can('settings.edit_profile')}
                       />
                     </div>
                   </div>
                   {profileError && (
-                    <div className="mt-4 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-red-600 text-sm font-bold text-right">{profileError}</div>
+                    <div className="mt-4 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-red-600 text-sm font-bold text-start">{profileError}</div>
                   )}
                   {profileSuccess && (
-                    <div className="mt-4 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 text-emerald-600 text-sm font-bold text-right flex items-center gap-2">
-                      <Check size={16} /> הפרטים נשמרו בהצלחה
+                    <div className="mt-4 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 text-emerald-600 text-sm font-bold text-start flex items-center gap-2">
+                      <Check size={16} /> {t('settings.profile.saveSuccess')}
                     </div>
                   )}
                   {can('settings.edit_profile') && (
@@ -1246,7 +1261,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                       className="mt-6 flex items-center gap-2 px-8 py-4 bg-blue-600 text-white rounded-2xl font-bold shadow-lg shadow-blue-600/20 hover:bg-blue-700 transition-all disabled:opacity-60 active:scale-95"
                     >
                       <Save size={18} />
-                      {profileSaving ? 'שומר...' : 'שמור שינויים'}
+                      {profileSaving ? t('settings.profile.saving') : t('settings.profile.save')}
                     </button>
                   )}
                 </div>
@@ -1256,49 +1271,49 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
               {settingsSection === 'account' && (
                 <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-8">
                   <h2 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-6 flex items-center gap-2 border-b border-slate-100 pb-4">
-                    <Shield size={14} /> פרטי חשבון
+                    <Shield size={14} /> {t('settings.account.heading')}
                   </h2>
                   <div className="space-y-5">
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-slate-400">מזהה ציבורי</span>
+                      <span className="text-xs font-bold text-slate-400">{t('settings.account.publicId')}</span>
                       <div className="flex items-center gap-3">
-                        <button onClick={copyPublicId} className="p-2 text-slate-400 hover:text-blue-600 transition-colors" title="העתק מזהה">
+                        <button onClick={copyPublicId} className="p-2 text-slate-400 hover:text-blue-600 transition-colors" title={t('settings.account.copyId')}>
                           {copiedId ? <Check size={16} className="text-emerald-500" /> : <Copy size={16} />}
                         </button>
                         <span className="text-slate-800 font-mono text-sm bg-slate-50 px-3 py-1 rounded-lg border border-slate-100 select-all">{profile.public_id}</span>
                       </div>
                     </div>
                     <div className="flex items-center justify-between py-1">
-                      <span className="text-xs font-bold text-slate-400">סוג חשבון</span>
+                      <span className="text-xs font-bold text-slate-400">{t('settings.account.accountType')}</span>
                       <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold border ${
                         profile.account_type === 'Premium' ? 'bg-amber-50 text-amber-600 border-amber-100'
                         : profile.account_type === 'Trial' ? 'bg-orange-50 text-orange-600 border-orange-100'
                         : 'bg-slate-100 text-slate-600 border-slate-200'
                       }`}>
                         <Star size={12} className="fill-current" />
-                        {profile.account_type === 'Trial' ? 'ניסיוני' : profile.account_type}
+                        {profile.account_type === 'Trial' ? t('settings.account.trial') : profile.account_type}
                       </div>
                     </div>
                     <div className="flex items-center justify-between py-1">
-                      <span className="text-xs font-bold text-slate-400">סטטוס</span>
+                      <span className="text-xs font-bold text-slate-400">{t('settings.account.status')}</span>
                       <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold border ${
                         profile.status === 'active' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-red-50 text-red-600 border-red-100'
                       }`}>
                         <span className={`w-1.5 h-1.5 rounded-full ${profile.status === 'active' ? 'bg-emerald-500' : 'bg-red-500'}`} />
-                        {profile.status === 'active' ? 'פעיל' : 'חסום'}
+                        {profile.status === 'active' ? t('settings.account.active') : t('settings.account.blocked')}
                       </div>
                     </div>
                     <div className="flex items-center justify-between py-1">
-                      <span className="text-xs font-bold text-slate-400">תפקיד</span>
-                      <span className="text-slate-700 font-bold text-sm">{profile.role === 'admin' ? 'מנהל' : 'משתמש'}</span>
+                      <span className="text-xs font-bold text-slate-400">{t('settings.account.role')}</span>
+                      <span className="text-slate-700 font-bold text-sm">{profile.role === 'admin' ? t('settings.account.admin') : t('settings.account.user')}</span>
                     </div>
                     <div className="flex items-center justify-between py-1">
-                      <span className="text-xs font-bold text-slate-400">תאריך הצטרפות</span>
+                      <span className="text-xs font-bold text-slate-400">{t('settings.account.joinDate')}</span>
                       <span className="text-slate-700 font-bold text-sm">{profile.createdAt ? new Date(profile.createdAt).toLocaleDateString('he-IL') : '-'}</span>
                     </div>
                     {profile.trial_expires_at && (
                       <div className="flex items-center justify-between py-1">
-                        <span className="text-xs font-bold text-slate-400">תפוגת תקופת ניסיון</span>
+                        <span className="text-xs font-bold text-slate-400">{t('settings.account.trialExpiry')}</span>
                         <span className="text-orange-600 font-bold text-sm">{new Date(profile.trial_expires_at).toLocaleDateString('he-IL')}</span>
                       </div>
                     )}
@@ -1310,15 +1325,15 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
               {settingsSection === 'connection' && (
                 <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-8">
                   <h2 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-6 flex items-center gap-2 border-b border-slate-100 pb-4">
-                    <Wifi size={14} /> הגדרות חיבור
+                    <Wifi size={14} /> {t('settings.connection.heading')}
                   </h2>
                   <div className="space-y-5">
                     <div className="flex items-center justify-between py-1">
-                      <span className="text-xs font-bold text-slate-400">בוטים פעילים</span>
+                      <span className="text-xs font-bold text-slate-400">{t('settings.connection.activeBots')}</span>
                       <span className="text-slate-700 font-bold text-sm">{profile.active_bots_count ?? 0}</span>
                     </div>
                     <div className="flex items-center justify-between py-1">
-                      <span className="text-xs font-bold text-slate-400">זרימות שיחה</span>
+                      <span className="text-xs font-bold text-slate-400">{t('settings.connection.flows')}</span>
                       <span className="text-slate-700 font-bold text-sm">{profile.flows_count ?? 0}</span>
                     </div>
                   </div>
@@ -1329,27 +1344,27 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
               {settingsSection === 'quota' && (
                 <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-8">
                   <h2 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-6 flex items-center gap-2 border-b border-slate-100 pb-4">
-                    <Gauge size={14} /> מכסות אישיות
+                    <Gauge size={14} /> {t('settings.quota.heading')}
                   </h2>
                   <div className="space-y-5">
                     <div className="flex items-center justify-between py-1">
-                      <span className="text-xs font-bold text-slate-400">מקסימום מספרים מחוברים</span>
+                      <span className="text-xs font-bold text-slate-400">{t('settings.quota.maxConnectedNumbers')}</span>
                       <span className="text-slate-700 font-bold text-sm">{profile.limits_in_effect?.maxConnectedNumbers ?? '-'}</span>
                     </div>
                     <div className="flex items-center justify-between py-1">
-                      <span className="text-xs font-bold text-slate-400">מקסימום בוטים</span>
+                      <span className="text-xs font-bold text-slate-400">{t('settings.quota.maxBots')}</span>
                       <span className="text-slate-700 font-bold text-sm">{profile.limits_in_effect?.maxBots ?? '-'}</span>
                     </div>
                     <div className="flex items-center justify-between py-1">
-                      <span className="text-xs font-bold text-slate-400">מקסימום גרסאות</span>
+                      <span className="text-xs font-bold text-slate-400">{t('settings.quota.maxVersions')}</span>
                       <span className="text-slate-700 font-bold text-sm">{profile.limits_in_effect?.maxVersions ?? '-'}</span>
                     </div>
                     <div className="flex items-center justify-between py-1">
-                      <span className="text-xs font-bold text-slate-400">עלות גרסה</span>
+                      <span className="text-xs font-bold text-slate-400">{t('settings.quota.versionPrice')}</span>
                       <span className="text-slate-700 font-bold text-sm">{profile.limits_in_effect?.versionPrice != null ? `₪${profile.limits_in_effect.versionPrice}` : '-'}</span>
                     </div>
                     <div className="flex items-center justify-between py-1">
-                      <span className="text-xs font-bold text-slate-400">עלות בוט</span>
+                      <span className="text-xs font-bold text-slate-400">{t('settings.quota.botPrice')}</span>
                       <span className="text-slate-700 font-bold text-sm">{profile.limits_in_effect?.botPrice != null ? `₪${profile.limits_in_effect.botPrice}` : '-'}</span>
                     </div>
                   </div>
@@ -1360,15 +1375,15 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
               <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-5 sm:p-6 lg:p-8">
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-slate-100 pb-4 mb-6">
                   <h2 className="text-xs font-black text-slate-400 uppercase tracking-wider flex items-center gap-2">
-                    <Phone size={14} /> מספרים מחוברים
+                    <Phone size={14} /> {t('settings.numbers.heading')}
                   </h2>
                   {onConnectFacebook && (() => {
                     const maxNums = profile?.limits_in_effect?.maxConnectedNumbers ?? 1;
                     const atQuota = connectedNumbers.length >= maxNums;
                     return atQuota ? (
-                      <div className="flex items-center gap-2 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-2xl text-amber-800 text-xs font-bold max-w-xs text-right">
+                      <div className="flex items-center gap-2 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-2xl text-amber-800 text-xs font-bold max-w-xs text-start">
                         <AlertTriangle size={14} className="shrink-0 text-amber-500" />
-                        נגמרה המכסה ({connectedNumbers.length}/{maxNums}). להוספת מספר יש ליצור קשר עם המשרד לתשלום.
+                        {t('settings.numbers.quotaReached', { count: connectedNumbers.length, max: maxNums })}
                       </div>
                     ) : (
                       <div className="flex items-center gap-2">
@@ -1377,7 +1392,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                           className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 text-white rounded-2xl font-bold text-sm hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-600/20"
                         >
                           <span className="text-xs font-black">360</span>
-                          הוסף Dialog360
+                          {t('settings.numbers.addDialog360')}
                         </button>
                         <button
                           onClick={handleOpenFbOAuthFree}
@@ -1385,7 +1400,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                           className="flex items-center gap-2 px-5 py-2.5 bg-[#1877F2] text-white rounded-2xl font-bold text-sm hover:bg-[#166FE5] transition-all disabled:opacity-60 shadow-lg shadow-blue-600/20"
                         >
                           <FacebookIcon size={16} />
-                          {fbConnecting ? 'מתחבר...' : 'הוסף Facebook'}
+                          {fbConnecting ? t('settings.numbers.connecting') : t('settings.numbers.addFacebook')}
                         </button>
                       </div>
                     );
@@ -1396,23 +1411,23 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                 {d360FormOpen && (
                   <div className="mb-6 p-5 bg-emerald-50 border border-emerald-200 rounded-2xl">
                     <div className="flex items-center justify-between mb-4">
-                      <p className="text-sm font-bold text-emerald-800">חיבור מספר Dialog360</p>
+                      <p className="text-sm font-bold text-emerald-800">{t('settings.numbers.d360Title')}</p>
                       <button onClick={() => { setD360FormOpen(false); setD360Error(null); }} className="text-slate-400 hover:text-slate-600 transition-colors"><X size={16} /></button>
                     </div>
                     <div className="space-y-3">
                       <div>
-                        <label className="block text-xs font-bold text-slate-500 mb-1">Token360 *</label>
+                        <label className="block text-xs font-bold text-slate-500 mb-1">{t('settings.numbers.d360TokenLabel')}</label>
                         <input
                           type="text"
                           value={d360Token}
                           onChange={e => setD360Token(e.target.value)}
-                          placeholder="הדבק את ה-token של ה-channel ב-Dialog360"
+                          placeholder={t('settings.numbers.d360TokenPlaceholder')}
                           className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-mono outline-none focus:ring-2 focus:ring-emerald-600/20 focus:border-emerald-600 transition-all text-left"
                           dir="ltr"
                         />
                       </div>
                       <div>
-                        <label className="block text-xs font-bold text-slate-500 mb-1">Link (Webhook URL) *</label>
+                        <label className="block text-xs font-bold text-slate-500 mb-1">{t('settings.numbers.d360LinkLabel')}</label>
                         <input
                           type="url"
                           value={d360Link}
@@ -1430,7 +1445,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                         disabled={d360Saving || !d360Token.trim() || !d360Link.trim()}
                         className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 text-white rounded-xl font-bold text-sm hover:bg-emerald-700 transition-all disabled:opacity-50 active:scale-95"
                       >
-                        {d360Saving ? <><span className="animate-spin inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full" /> שומר...</> : 'שמור מספר Dialog360'}
+                        {d360Saving ? <><span className="animate-spin inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full" /> {t('settings.numbers.d360Saving')}</> : t('settings.numbers.d360Save')}
                       </button>
                     </div>
                   </div>
@@ -1441,8 +1456,8 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                     <div className="flex items-center gap-3">
                       <FacebookIcon size={18} className="text-[#1877F2] shrink-0" />
                       <div>
-                        <p className="text-sm font-bold text-slate-800">חיבור לפייסבוק עבור הבוט: <strong>{fbConnectBot.name}</strong></p>
-                        <p className="text-xs text-slate-500 mt-0.5">לחץ על "הוסף Facebook" להמשך תהליך הרישום.</p>
+                        <p className="text-sm font-bold text-slate-800">{t('settings.numbers.fbConnectFor')} <strong>{fbConnectBot.name}</strong></p>
+                        <p className="text-xs text-slate-500 mt-0.5">{t('settings.numbers.fbConnectHint')}</p>
                       </div>
                     </div>
                     <button onClick={() => { setFbConnectBot(null); setFbResult(null); setFbActivateLogs([]); setFbActivateDone(false); }} className="text-slate-400 hover:text-slate-600 transition-colors shrink-0">
@@ -1463,7 +1478,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                     {/* Raw JSON */}
                     {fbResult.raw && (
                       <div className="px-4 pb-3">
-                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">JSON שהתקבל מפייסבוק</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">{t('settings.numbers.fbRawJsonLabel')}</p>
                         <pre className="bg-slate-900 text-emerald-300 rounded-xl p-3 text-[11px] leading-relaxed overflow-auto max-h-52 ltr text-left whitespace-pre-wrap break-all">{JSON.stringify(fbResult.raw, null, 2)}</pre>
                       </div>
                     )}
@@ -1475,7 +1490,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                           disabled={fbActivating}
                           onClick={async () => {
                             setFbActivating(true);
-                            setFbActivateLogs(['מתחיל תהליך הפעלת מספר...']);
+                            setFbActivateLogs([t('facebook.activateStarting')]);
                             try {
                               const r = await fetch(`${API_BASE}/whatsapp-registration/fetch-and-activate`, {
                                 method: 'POST',
@@ -1486,20 +1501,20 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                                 })
                               });
                               const data = await r.json();
-                              setFbActivateLogs(Array.isArray(data.logs) ? data.logs : [String(data.error || 'שגיאה לא ידועה')]);
+                              setFbActivateLogs(Array.isArray(data.logs) ? data.logs : [String(data.error || t('errors.unknownError'))]);
                               if (data.success || (Array.isArray(data.activated) && data.activated.length > 0)) {
                                 setFbActivateDone(true);
                                 loadConnectedNumbers();
                               }
                             } catch (e: any) {
-                              setFbActivateLogs([`שגיאת רשת: ${e.message}`]);
+                              setFbActivateLogs([t('errors.networkErrorWithReason', { message: e.message })]);
                             } finally {
                               setFbActivating(false);
                             }
                           }}
                           className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-700 transition-all disabled:opacity-50 active:scale-95"
                         >
-                          {fbActivating ? <><span className="animate-spin inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full" /> מפעיל מספר...</> : <><Zap size={14} /> הפעל מספר</>}
+                          {fbActivating ? <><span className="animate-spin inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full" /> {t('settings.numbers.activating')}</> : <><Zap size={14} /> {t('settings.numbers.activate')}</>}
                         </button>
                       </div>
                     )}
@@ -1507,14 +1522,14 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                     {/* Activation done */}
                     {fbActivateDone && (
                       <div className="px-4 pb-3 flex items-center gap-2 text-emerald-700 text-sm font-bold">
-                        <CheckCircle size={14} /> המספר הופעל ושויך לחשבון בהצלחה
+                        <CheckCircle size={14} /> {t('settings.numbers.activatedSuccess')}
                       </div>
                     )}
 
                     {/* Step-by-step logs */}
                     {fbActivateLogs.length > 0 && (
                       <div className="px-4 pb-4">
-                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">לוג הפעלה</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">{t('settings.numbers.activationLogLabel')}</p>
                         <div className="bg-slate-900 text-slate-300 rounded-xl p-3 text-[11px] leading-relaxed max-h-44 overflow-auto ltr text-left space-y-0.5">
                           {fbActivateLogs.map((log, i) => (
                             <div key={i} className={log.includes('✅') || log.includes('הצליחה') ? 'text-emerald-400' : log.includes('❌') || log.includes('נכשל') || log.includes('שגיאה') ? 'text-red-400' : 'text-slate-300'}>{log}</div>
@@ -1531,7 +1546,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                   </div>
                 ) : connectedNumbers.length === 0 ? (
                   <div className="text-center py-10 text-sm font-bold text-slate-400">
-                    אין מספרים מחוברים עדיין. לאחר הפעלת מספר ושיוך לחשבון הוא יופיע כאן.
+                    {t('settings.numbers.empty')}
                   </div>
                 ) : (
                   <div className="space-y-4">
@@ -1563,11 +1578,11 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                                 )}
                                 {n.registered ? (
                                   <span className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-blue-500 text-white flex items-center gap-1">
-                                    <CheckCircle size={10} /> פעיל
+                                    <CheckCircle size={10} /> {t('settings.numbers.activeBadge')}
                                   </span>
                                 ) : (
                                   <span className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-amber-100 text-amber-700 border border-amber-200 flex items-center gap-1">
-                                    <AlertTriangle size={10} /> מחובר — טרם הופעל
+                                    <AlertTriangle size={10} /> {t('settings.numbers.connectedNotActivated')}
                                   </span>
                                 )}
                               </div>
@@ -1575,7 +1590,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                                 {n.provider === 'dialog360' ? (
                                   <>
                                     <div>link: {n.link || n.phone_number_id}</div>
-                                    <div>token360: {n.has_token360 ? '✓ שמור' : '—'}</div>
+                                    <div>token360: {n.has_token360 ? t('settings.numbers.token360Saved') : '—'}</div>
                                   </>
                                 ) : (
                                   <>
@@ -1594,10 +1609,10 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                                 <>
                                   <button
                                     disabled={isActivating || !n.has_access_token}
-                                    title={!n.has_access_token ? 'אין access_token שמור — חבר מחדש דרך פייסבוק' : 'הפעל מספר זה'}
+                                    title={!n.has_access_token ? t('settings.numbers.activateTitleNoToken') : t('settings.numbers.activateTitle')}
                                     onClick={async () => {
                                       setActivatingPnid(n.phone_number_id);
-                                      setActivateListLogs(prev => ({ ...prev, [n.phone_number_id]: ['מפעיל מספר...'] }));
+                                      setActivateListLogs(prev => ({ ...prev, [n.phone_number_id]: [t('settings.numbers.activating')] }));
                                       try {
                                         const r = await fetch(`${API_BASE}/whatsapp-registration/activate-number`, {
                                           method: 'POST',
@@ -1609,12 +1624,12 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                                         setActivateListLogs(prev => ({
                                           ...prev,
                                           [n.phone_number_id]: ok
-                                            ? ['✅ הופעל בהצלחה']
-                                            : [`❌ נכשל: ${JSON.stringify(data.meta_response?.error || data.error || data)}`]
+                                            ? [t('settings.numbers.activateLogSuccess')]
+                                            : [t('settings.numbers.activateLogFailure', { reason: JSON.stringify(data.meta_response?.error || data.error || data) })]
                                         }));
                                         if (ok) loadConnectedNumbers();
                                       } catch (e: any) {
-                                        setActivateListLogs(prev => ({ ...prev, [n.phone_number_id]: [`שגיאת רשת: ${e.message}`] }));
+                                        setActivateListLogs(prev => ({ ...prev, [n.phone_number_id]: [t('errors.networkErrorWithReason', { message: e.message })] }));
                                       } finally {
                                         setActivatingPnid(null);
                                       }
@@ -1622,14 +1637,14 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                                     className="flex items-center gap-2 px-4 py-2 bg-amber-500 text-white rounded-xl text-xs font-bold hover:bg-amber-600 transition-all disabled:opacity-50 active:scale-95"
                                   >
                                     {isActivating
-                                      ? <><span className="animate-spin inline-block w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full" /> מפעיל...</>
-                                      : <><Zap size={12} /> הפעל מספר</>}
+                                      ? <><span className="animate-spin inline-block w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full" /> {t('settings.numbers.activatingShort')}</>
+                                      : <><Zap size={12} /> {t('settings.numbers.activate')}</>}
                                   </button>
                                   <button
                                     disabled={markingPnid === n.phone_number_id}
-                                    title="סמן מספר זה כמופעל ידנית (ללא קריאה ל-Meta)"
+                                    title={t('settings.numbers.markManualTitle')}
                                     onClick={async () => {
-                                      if (!window.confirm('לסמן מספר זה כמופעל ללא קריאה ל-Meta?\nפעולה זו מתאימה כאשר המספר כבר מופעל בפועל.')) return;
+                                      if (!window.confirm(t('errors.markManualConfirm'))) return;
                                       setMarkingPnid(n.phone_number_id);
                                       try {
                                         const r = await fetch(`${API_BASE}/whatsapp-registration/mark-registered`, {
@@ -1639,9 +1654,9 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                                         });
                                         const data = await r.json();
                                         if (data.success) loadConnectedNumbers();
-                                        else alert(`שגיאה: ${data.error || 'לא ידוע'}`);
+                                        else alert(t('errors.genericErrorWithReason', { reason: data.error || t('errors.unknownReason') }));
                                       } catch (e: any) {
-                                        alert(`שגיאת רשת: ${e.message}`);
+                                        alert(t('errors.networkErrorWithReason', { message: e.message }));
                                       } finally {
                                         setMarkingPnid(null);
                                       }
@@ -1651,7 +1666,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                                     {markingPnid === n.phone_number_id
                                       ? <span className="animate-spin inline-block w-3 h-3 border-2 border-slate-400 border-t-transparent rounded-full" />
                                       : <CheckCircle size={12} />}
-                                    סמן כמופעל
+                                    {t('settings.numbers.markManual')}
                                   </button>
                                 </>
                               ) : assignedBot ? (
@@ -1660,15 +1675,15 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                                   <span className={`inline-flex items-center gap-2 px-3 py-2 border rounded-xl text-xs font-bold ${n.provider === 'dialog360' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-emerald-50 text-emerald-700 border-emerald-100'}`}>
                                     <LinkIcon size={12} />
                                     {n.provider === 'dialog360' ? '360 • ' : 'FB • '}
-                                    משויך לבוט: {assignedBot.name}
+                                    {t('settings.numbers.assignedTo', { name: assignedBot.name })}
                                   </span>
                                   {n.provider !== 'dialog360' && (
                                   <button
                                     disabled={phpCreatingPnid === n.phone_number_id}
-                                    title="עדכן נתונים בשרת החיצוני (facebook-create.php)"
+                                    title={t('settings.numbers.phpCreateTitle')}
                                     onClick={async () => {
                                       setPhpCreatingPnid(n.phone_number_id);
-                                      setPhpCreateResults(prev => ({ ...prev, [n.phone_number_id]: { success: false, logs: ['⏳ שולח בקשה לשרת...'] } }));
+                                      setPhpCreateResults(prev => ({ ...prev, [n.phone_number_id]: { success: false, logs: [t('settings.numbers.phpCreateSendingLog')] } }));
                                       try {
                                         const r = await fetch(`${API_BASE}/whatsapp-registration/php-create`, {
                                           method: 'POST',
@@ -1680,7 +1695,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                                           ...prev,
                                           [n.phone_number_id]: {
                                             success: !!data.success,
-                                            logs: Array.isArray(data.logs) ? data.logs : [data.success ? '✅ הצליח' : `❌ נכשל: ${data.error || 'שגיאה לא ידועה'}`],
+                                            logs: Array.isArray(data.logs) ? data.logs : [data.success ? t('settings.numbers.phpCreateSuccessLog') : t('settings.numbers.phpCreateFailureLog', { reason: data.error || t('errors.unknownError') })],
                                             webhook: data.webhook || null,
                                             endpoint: data.endpoint || null
                                           }
@@ -1690,7 +1705,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                                           onUpdateBotEndpoint(String(n.assigned_bot_id), data.endpoint).catch(() => {});
                                         }
                                       } catch (e: any) {
-                                        setPhpCreateResults(prev => ({ ...prev, [n.phone_number_id]: { success: false, logs: [`❌ שגיאת רשת: ${e.message}`] } }));
+                                        setPhpCreateResults(prev => ({ ...prev, [n.phone_number_id]: { success: false, logs: [t('settings.numbers.phpCreateNetworkErrorLog', { message: e.message })] } }));
                                       } finally {
                                         setPhpCreatingPnid(null);
                                       }
@@ -1698,15 +1713,15 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                                     className="flex items-center gap-1.5 px-3 py-2 bg-indigo-600 text-white rounded-xl text-xs font-bold hover:bg-indigo-700 transition-all disabled:opacity-50 active:scale-95"
                                   >
                                     {phpCreatingPnid === n.phone_number_id
-                                      ? <><span className="animate-spin inline-block w-3 h-3 border-2 border-white border-t-transparent rounded-full" /> שולח...</>
-                                      : <><Globe size={12} /> הגדר בשרת</>}
+                                      ? <><span className="animate-spin inline-block w-3 h-3 border-2 border-white border-t-transparent rounded-full" /> {t('settings.numbers.phpCreateSending')}</>
+                                      : <><Globe size={12} /> {t('settings.numbers.phpCreate')}</>}
                                   </button>
                                   )}
                                   <button
                                     onClick={() => handleUnassign(n.phone_number_id)}
                                     disabled={isBusy}
                                     className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all disabled:opacity-50"
-                                    title="בטל שיוך"
+                                    title={t('settings.numbers.unassignTitle')}
                                   >
                                     <Unlink size={16} />
                                   </button>
@@ -1719,7 +1734,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                                     onChange={(e) => setAssignSelection(prev => ({ ...prev, [n.phone_number_id]: e.target.value }))}
                                     className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600"
                                   >
-                                    <option value="">בחר בוט...</option>
+                                    <option value="">{t('settings.numbers.chooseBotPlaceholder')}</option>
                                     {bots.map(b => (
                                       <option key={b.id} value={b.id}>{b.name}</option>
                                     ))}
@@ -1729,13 +1744,13 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                                     disabled={isBusy || !assignSelection[n.phone_number_id]}
                                     className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl text-xs font-bold hover:bg-blue-700 transition-all disabled:opacity-50 active:scale-95"
                                   >
-                                    <LinkIcon size={12} /> {isBusy ? 'משייך...' : 'שייך לבוט'}
+                                    <LinkIcon size={12} /> {isBusy ? t('settings.numbers.assigning') : t('settings.numbers.assignToBot')}
                                   </button>
                                   <button
                                     onClick={() => handleRemoveConnectedNumber(n.phone_number_id)}
                                     disabled={removingPnid === n.phone_number_id}
                                     className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all disabled:opacity-50"
-                                    title="מחק מספר מחובר"
+                                    title={t('settings.numbers.deleteTitle')}
                                   >
                                     {removingPnid === n.phone_number_id
                                       ? <span className="animate-spin inline-block w-3.5 h-3.5 border-2 border-red-400 border-t-transparent rounded-full" />
@@ -1748,7 +1763,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
 
                           {/* Payment-country prefixes (972 / 1) allowed for this number */}
                           <div className="mt-4 pt-4 border-t border-slate-200/70 flex items-center gap-4 flex-wrap">
-                            <span className="text-[11px] font-bold text-slate-400">קידומות מדינה מותרות לתשלום:</span>
+                            <span className="text-[11px] font-bold text-slate-400">{t('settings.numbers.paymentCountriesLabel')}</span>
                             {(() => {
                               const sel = getPaymentCountriesSelection(n);
                               const isSaving = savingPaymentCountriesPnid === n.phone_number_id;
@@ -1762,7 +1777,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                                       onChange={() => handleTogglePaymentCountry(n.phone_number_id, sel, 'il')}
                                       className="w-4 h-4 rounded accent-blue-600"
                                     />
-                                    🇮🇱 ישראל (972)
+                                    {t('settings.numbers.countryIsrael')}
                                   </label>
                                   <label className="flex items-center gap-1.5 text-xs font-bold text-slate-600 cursor-pointer select-none">
                                     <input
@@ -1771,7 +1786,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                                       onChange={() => handleTogglePaymentCountry(n.phone_number_id, sel, 'us')}
                                       className="w-4 h-4 rounded accent-blue-600"
                                     />
-                                    🇺🇸 ארה"ב/קנדה (1)
+                                    {t('settings.numbers.countryUs')}
                                   </label>
                                   {hasDraft && (
                                     <button
@@ -1781,7 +1796,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                                     >
                                       {isSaving
                                         ? <span className="animate-spin inline-block w-3 h-3 border-2 border-white border-t-transparent rounded-full" />
-                                        : 'שמור'}
+                                        : t('settings.numbers.save')}
                                     </button>
                                   )}
                                 </>
@@ -1802,7 +1817,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                           {phpCreateResults[n.phone_number_id] && (
                             <div className={`mt-3 rounded-xl border px-3 py-2.5 ${phpCreateResults[n.phone_number_id].success ? 'bg-indigo-50 border-indigo-200' : 'bg-red-50 border-red-200'}`}>
                               <div className="flex items-center justify-between mb-1.5">
-                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">הגדרת שרת חיצוני</span>
+                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{t('settings.numbers.phpConfigLabel')}</span>
                                 <button onClick={() => setPhpCreateResults(prev => { const n2 = {...prev}; delete n2[n.phone_number_id]; return n2; })} className="text-slate-400 hover:text-slate-600">
                                   <X size={12} />
                                 </button>
@@ -1814,7 +1829,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                               </div>
                               {phpCreateResults[n.phone_number_id].endpoint && (
                                 <div className="mt-2 flex items-center gap-2 pt-2 border-t border-indigo-100">
-                                  <span className="text-[10px] font-bold text-slate-400">Endpoint בבוט:</span>
+                                  <span className="text-[10px] font-bold text-slate-400">{t('settings.numbers.endpointLabel')}</span>
                                   <code className="text-[11px] font-mono text-indigo-700 bg-indigo-100 px-2 py-0.5 rounded-lg">{phpCreateResults[n.phone_number_id].endpoint}</code>
                                 </div>
                               )}
@@ -1833,7 +1848,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
               <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-8">
                 <div className="flex items-center justify-between mb-6 border-b border-slate-100 pb-4">
                   <h2 className="text-xs font-black text-slate-400 uppercase tracking-wider flex items-center gap-2">
-                    <MessageSquare size={14} /> הודעות תבנית
+                    <MessageSquare size={14} /> {t('settings.templates.heading')}
                   </h2>
                   <div className="flex items-center gap-1 bg-slate-100 rounded-xl p-1">
                     <button
@@ -1842,7 +1857,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                         templatesSubTab === 'wa' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
                       }`}
                     >
-                      <MessageSquare size={13} /> תבניות WhatsApp
+                      <MessageSquare size={13} /> {t('settings.templates.waTab')}
                     </button>
                     <button
                       onClick={() => setTemplatesSubTab('internal')}
@@ -1850,7 +1865,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                         templatesSubTab === 'internal' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
                       }`}
                     >
-                      <MessageCircle size={13} /> תבניות פנימיות
+                      <MessageCircle size={13} /> {t('settings.templates.internalTab')}
                     </button>
                   </div>
                 </div>
@@ -1859,14 +1874,14 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                   <div className="flex items-center justify-center py-12">
                     <div className="text-center text-slate-400">
                       <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-sky-600 mx-auto mb-3"></div>
-                      <div className="text-sm font-bold">טוען הודעות תבנית...</div>
+                      <div className="text-sm font-bold">{t('settings.templates.loadingWa')}</div>
                     </div>
                   </div>
                 ) : waTemplates.length === 0 ? (
                   <div className="text-center py-12">
                     <MessageSquare size={32} className="text-slate-300 mx-auto mb-3" />
-                    <p className="text-sm font-bold text-slate-500">לא נמצאו הודעות תבנית</p>
-                    <p className="text-xs text-slate-400 mt-1">ודא שהגדרת Bot ID בהגדרות החיבור</p>
+                    <p className="text-sm font-bold text-slate-500">{t('settings.templates.noneFound')}</p>
+                    <p className="text-xs text-slate-400 mt-1">{t('settings.templates.noneFoundHint')}</p>
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
@@ -1911,7 +1926,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                                         ? 'bg-emerald-500 hover:bg-emerald-600 text-white'
                                         : 'bg-slate-300 hover:bg-slate-400 text-slate-700'
                                     }`}
-                                    title={(templateSettings[name] ?? true) ? 'מוצג בשיחות' : 'מוסתר בשיחות'}
+                                    title={(templateSettings[name] ?? true) ? t('settings.templates.shownInChat') : t('settings.templates.hiddenInChat')}
                                   >
                                     {(templateSettings[name] ?? true) ? <Eye size={14} /> : <EyeOff size={14} />}
                                   </button>
@@ -1919,12 +1934,12 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                                 <div
                                   className="flex items-center gap-0.5 bg-white border border-slate-200 rounded-lg p-0.5 w-fit"
                                   onClick={(e) => e.stopPropagation()}
-                                  title="מה קורה לשיחה אחרי שליחת התבנית הזו"
+                                  title={t('settings.templates.postSendTitle')}
                                 >
                                   {([
-                                    { value: 'no_change', label: 'ללא שינוי' },
-                                    { value: 'agent', label: '→ נציג' },
-                                    { value: 'bot', label: '→ בוט' },
+                                    { value: 'no_change', label: t('settings.templates.postSendNoChange') },
+                                    { value: 'agent', label: t('settings.templates.postSendAgent') },
+                                    { value: 'bot', label: t('settings.templates.postSendBot') },
                                   ] as const).map(opt => {
                                     const active = (templatePostSendMode[name] ?? 'no_change') === opt.value;
                                     return (
@@ -1971,7 +1986,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                                 {bodyText.substring(0, 200)}{bodyText.length > 200 ? '...' : ''}
                               </p>
                             ) : (
-                              <p className="text-xs text-slate-400 italic">אין תוכן</p>
+                              <p className="text-xs text-slate-400 italic">{t('settings.templates.noContent')}</p>
                             )}
 
                             {/* Default header media (image/video/document) — reusable when sending in chat */}
@@ -1979,25 +1994,25 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                               <div className="mt-3" onClick={(e) => e.stopPropagation()}>
                                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-wide mb-1.5 flex items-center gap-1">
                                   <ImageIcon size={11} />
-                                  תמונת ברירת מחדל
+                                  {t('settings.templates.defaultMediaLabel')}
                                 </label>
                                 {defaultMedia?.url ? (
                                   <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl p-2">
                                     <div className="w-10 h-10 rounded-lg overflow-hidden border border-slate-200 bg-slate-50 flex-shrink-0 flex items-center justify-center">
                                       {headerMediaType === 'image' ? (
-                                        <img src={defaultMedia.url} alt="ברירת מחדל" className="w-full h-full object-cover" />
+                                        <img src={defaultMedia.url} alt={t('settings.templates.defaultMediaAlt')} className="w-full h-full object-cover" />
                                       ) : headerMediaType === 'video' ? (
                                         <video src={defaultMedia.url} className="w-full h-full object-cover" />
                                       ) : (
                                         <FileText size={16} className="text-slate-400" />
                                       )}
                                     </div>
-                                    <span className="flex-1 text-[11px] text-slate-500 font-bold">הוגדרה</span>
+                                    <span className="flex-1 text-[11px] text-slate-500 font-bold">{t('settings.templates.defaultMediaSet')}</span>
                                     <button
                                       type="button"
                                       onClick={() => updateTemplateDefaultMedia(tmpl, null, null)}
                                       className="p-1.5 rounded-lg text-rose-600 hover:bg-rose-50 transition-colors border border-rose-200"
-                                      title="הסר תמונת ברירת מחדל"
+                                      title={t('settings.templates.removeDefaultMedia')}
                                     >
                                       <X size={12} />
                                     </button>
@@ -2007,7 +2022,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                                     value=""
                                     onChange={(url) => updateTemplateDefaultMedia(tmpl, url, headerMediaType)}
                                     accept={headerMediaType === 'image' ? 'image/*' : headerMediaType === 'video' ? 'video/*' : '*/*'}
-                                    label={headerMediaType === 'image' ? 'תמונה' : headerMediaType === 'video' ? 'וידאו' : 'מסמך'}
+                                    label={headerMediaType === 'image' ? t('settings.templates.mediaImage') : headerMediaType === 'video' ? t('settings.templates.mediaVideo') : t('settings.templates.mediaDocument')}
                                     mediaType={headerMediaType}
                                     token={token || ''}
                                   />
@@ -2016,8 +2031,8 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                             )}
 
                             <div className="flex items-center gap-3 mt-3 text-[10px] text-slate-400 font-bold">
-                              <span className="flex items-center gap-1"><Layers size={11} />{components.length} רכיבים</span>
-                              {buttonCount > 0 && <span>{buttonCount} כפתורים</span>}
+                              <span className="flex items-center gap-1"><Layers size={11} />{t('settings.templates.componentsCount', { count: components.length })}</span>
+                              {buttonCount > 0 && <span>{t('settings.templates.buttonsCount', { count: buttonCount })}</span>}
                             </div>
                           </div>
                         </div>
@@ -2034,7 +2049,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                         className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-xl font-bold text-xs hover:bg-blue-700 transition-colors shadow-sm"
                       >
                         <Plus size={14} />
-                        הוסף תבנית
+                        {t('settings.templates.addTemplate')}
                       </button>
                     </div>
 
@@ -2042,14 +2057,14 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                       <div className="flex items-center justify-center py-12">
                         <div className="text-center text-slate-400">
                           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-3"></div>
-                          <div className="text-sm font-bold">טוען תבניות פנימיות...</div>
+                          <div className="text-sm font-bold">{t('settings.templates.loadingInternal')}</div>
                         </div>
                       </div>
                     ) : internalTemplates.length === 0 ? (
                       <div className="text-center py-12">
                         <MessageCircle size={32} className="text-slate-300 mx-auto mb-3" />
-                        <p className="text-sm font-bold text-slate-500">אין עדיין תבניות פנימיות</p>
-                        <p className="text-xs text-slate-400 mt-1">תבניות פנימיות נשלחות כהודעת טקסט/מדיה רגילה בתוך שיחה פעילה, ולא דרך ה-API הרשמי של WhatsApp</p>
+                        <p className="text-sm font-bold text-slate-500">{t('settings.templates.noneInternal')}</p>
+                        <p className="text-xs text-slate-400 mt-1">{t('settings.templates.noneInternalHint')}</p>
                       </div>
                     ) : (
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
@@ -2062,15 +2077,15 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                                   <MessageCircle size={16} />
                                 </div>
                                 <div className="flex gap-1.5">
-                                  <button onClick={() => openEditInternalTemplateModal(tpl)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="ערוך">
+                                  <button onClick={() => openEditInternalTemplateModal(tpl)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title={t('settings.templates.edit')}>
                                     <Edit2 size={14} />
                                   </button>
                                   {deleteInternalTemplateConfirmId === tpl._id ? (
-                                    <button onClick={() => handleDeleteInternalTemplate(tpl._id)} className="p-1.5 text-white bg-rose-600 hover:bg-rose-700 rounded-lg transition-colors" title="אשר מחיקה">
+                                    <button onClick={() => handleDeleteInternalTemplate(tpl._id)} className="p-1.5 text-white bg-rose-600 hover:bg-rose-700 rounded-lg transition-colors" title={t('settings.templates.confirmDelete')}>
                                       <CheckCircle size={14} />
                                     </button>
                                   ) : (
-                                    <button onClick={() => setDeleteInternalTemplateConfirmId(tpl._id)} className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg transition-colors" title="מחק">
+                                    <button onClick={() => setDeleteInternalTemplateConfirmId(tpl._id)} className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg transition-colors" title={t('settings.templates.delete')}>
                                       <Trash2 size={14} />
                                     </button>
                                   )}
@@ -2085,7 +2100,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                                 {tpl.mediaType && (
                                   <span className="flex items-center gap-1 text-blue-600 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded font-bold">
                                     <MediaIcon size={10} />
-                                    {tpl.mediaType === 'image' ? 'תמונה' : tpl.mediaType === 'video' ? 'וידאו' : 'מסמך'}
+                                    {tpl.mediaType === 'image' ? t('settings.templates.mediaImage') : tpl.mediaType === 'video' ? t('settings.templates.mediaVideo') : t('settings.templates.mediaDocument')}
                                   </span>
                                 )}
                               </div>
@@ -2106,10 +2121,10 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                   <div>
                     <h2 className="text-base font-black text-slate-800 flex items-center gap-2">
                       <UserMinus size={18} className="text-rose-500" />
-                      ניהול הסרה מקבוצה
+                      {t('settings.removal.heading')}
                     </h2>
                     <p className="text-xs text-slate-500 font-medium mt-1">
-                      כאשר נמען שולח אחת ממילות המפתח, המספר שלו מתווסף אוטומטית לרשימת ההסרה ונשלחת לו הודעת אישור.
+                      {t('settings.removal.description')}
                     </p>
                   </div>
                   <div className="flex items-center gap-2 flex-wrap">
@@ -2118,16 +2133,16 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                         ? 'bg-sky-50 text-sky-700 border-sky-200'
                         : 'bg-slate-100 text-slate-500 border-slate-200'
                     }`}>
-                      {removalCustomized ? 'הגדרה אישית פעילה' : 'משתמש בברירת המחדל המערכתית'}
+                      {removalCustomized ? t('settings.removal.customActive') : t('settings.removal.usingSystemDefault')}
                     </span>
                     {removalCustomized && (
                       <button
                         onClick={() => setRemovalConfirmOpen('revert')}
                         disabled={removalSaving}
                         className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-600 rounded-xl font-bold text-xs hover:bg-slate-200 transition-all disabled:opacity-50"
-                        title="חזרה לברירת המחדל של המערכת"
+                        title={t('settings.removal.revertTitle')}
                       >
-                        <RefreshCcw size={12} /> חזרה לברירת מחדל
+                        <RefreshCcw size={12} /> {t('settings.removal.revert')}
                       </button>
                     )}
                     <button
@@ -2136,26 +2151,26 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                       className="flex items-center gap-2 px-5 py-2 bg-rose-600 text-white rounded-xl font-bold text-xs hover:bg-rose-700 transition-all shadow-lg shadow-rose-200 disabled:opacity-60 active:scale-95"
                     >
                       <Save size={12} />
-                      {removalSaving ? 'שומר…' : 'שמור הגדרה אישית'}
+                      {removalSaving ? t('settings.removal.saving') : t('settings.removal.saveCustom')}
                     </button>
                   </div>
                 </div>
 
                 {removalLoading || !removalDraft ? (
-                  <div className="text-center text-slate-400 py-10 font-bold">טוען הגדרות הסרה…</div>
+                  <div className="text-center text-slate-400 py-10 font-bold">{t('settings.removal.loading')}</div>
                 ) : (
                   <div className="space-y-6">
                     <div className="bg-amber-50 border border-amber-200 rounded-2xl px-5 py-4 flex items-start gap-3">
                       <AlertTriangle size={18} className="text-amber-600 mt-0.5 flex-shrink-0" />
                       <div className="text-amber-800 text-xs font-bold leading-relaxed">
-                        שינוי ההגדרה דורס את ברירת המחדל הכללית. מילים שגויות עלולות למנוע הסרה אוטומטית של נמענים שביקשו זאת — באחריותך לוודא שהמילים מתאימות לכל הבוטים שלך.
+                        {t('settings.removal.warning')}
                       </div>
                     </div>
 
                     <div className="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4">
                       <div>
-                        <div className="text-sm font-black text-slate-800">הסרה אוטומטית פעילה</div>
-                        <div className="text-[11px] text-slate-500 font-medium">בעת ביטול — לא תתבצע הסרה אוטומטית בבוטים שלך, גם אם המילה הוגדרה.</div>
+                        <div className="text-sm font-black text-slate-800">{t('settings.removal.autoRemovalActive')}</div>
+                        <div className="text-[11px] text-slate-500 font-medium">{t('settings.removal.autoRemovalHint')}</div>
                       </div>
                       <button
                         onClick={() => {
@@ -2172,7 +2187,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                         }`}
                       >
                         {removalDraft.enabled ? <ToggleRight size={18} /> : <ToggleLeft size={18} />}
-                        {removalDraft.enabled ? 'פעיל' : 'מושבת'}
+                        {removalDraft.enabled ? t('settings.removal.active') : t('settings.removal.disabled')}
                       </button>
                     </div>
 
@@ -2180,61 +2195,61 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                     <div className="bg-blue-50 border border-blue-100 rounded-2xl p-5 space-y-4">
                       <div className="flex items-center gap-2 mb-1">
                         <span className="text-base">🇮🇱</span>
-                        <span className="text-sm font-black text-blue-800">עברית</span>
+                        <span className="text-sm font-black text-blue-800">{t('settings.removal.hebrewLangLabel')}</span>
                       </div>
 
                       <div>
-                        <label className="block text-xs font-black text-blue-500 uppercase tracking-wider mb-3">מילות מפתח להסרה בעברית</label>
+                        <label className="block text-xs font-black text-blue-500 uppercase tracking-wider mb-3">{t('settings.removal.hebrewKeywordsLabel')}</label>
                         <div className="flex gap-2 mb-3" dir="rtl">
                           <input
                             type="text"
                             value={removalKwInputHe}
                             onChange={e => setRemovalKwInputHe(e.target.value)}
                             onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addRemovalDraftKeywordHe(); } }}
-                            placeholder="למשל: הסר, הסרה, תסיר"
+                            placeholder={t('settings.removal.hebrewKeywordsPlaceholder')}
                             className="flex-1 px-4 py-3 bg-white border border-blue-200 rounded-2xl text-sm font-bold outline-none focus:ring-2 focus:ring-blue-400/20 focus:border-blue-400 transition-all"
                           />
                           <button
                             onClick={addRemovalDraftKeywordHe}
                             className="flex items-center gap-2 px-5 py-3 bg-blue-700 text-white rounded-2xl font-bold text-sm hover:bg-blue-800 transition-all"
                           >
-                            <Plus size={14} /> הוסף
+                            <Plus size={14} /> {t('settings.removal.add')}
                           </button>
                         </div>
                         {removalDraft.keywords_he.length === 0 ? (
                           <div className="text-center text-blue-300 text-sm py-6 bg-white rounded-2xl border border-dashed border-blue-200">
-                            אין מילות מפתח בעברית.
+                            {t('settings.removal.noHebrewKeywords')}
                           </div>
                         ) : (
                           <div className="flex flex-wrap gap-2">
                             {removalDraft.keywords_he.map((kw, idx) => (
                               <span key={`he-${kw}-${idx}`} className="inline-flex items-center gap-2 bg-white text-blue-700 border border-blue-200 px-3 py-1.5 rounded-xl text-sm font-bold">
                                 <span dir="rtl">{kw}</span>
-                                <button onClick={() => removeRemovalDraftKeywordHe(idx)} className="text-blue-300 hover:text-blue-700 transition-colors" title="הסר מילה"><X size={14} /></button>
+                                <button onClick={() => removeRemovalDraftKeywordHe(idx)} className="text-blue-300 hover:text-blue-700 transition-colors" title={t('settings.removal.removeKeyword')}><X size={14} /></button>
                               </span>
                             ))}
                           </div>
                         )}
                         {removalGlobal && (
                           <p className="text-[11px] text-blue-400 font-medium mt-2">
-                            ברירת מחדל: {removalGlobal.keywords_he.length} מילים בעברית{removalCustomized ? '' : ' — פעילה כרגע'}.
+                            {t('settings.removal.defaultKeywordsHe', { count: removalGlobal.keywords_he.length, activeSuffix: removalCustomized ? '' : t('settings.removal.defaultActiveSuffix') })}
                           </p>
                         )}
                       </div>
 
                       <div>
-                        <label className="block text-xs font-black text-blue-500 uppercase tracking-wider mb-2">הודעת אישור לאחר ההסרה — עברית</label>
+                        <label className="block text-xs font-black text-blue-500 uppercase tracking-wider mb-2">{t('settings.removal.hebrewMessageLabel')}</label>
                         <textarea
                           value={removalDraft.message_he}
                           onChange={e => setRemovalDraft({ ...removalDraft, message_he: e.target.value })}
                           rows={2}
                           dir="rtl"
-                          placeholder="הודעה שתישלח לנמען שכתב מילת מפתח עברית"
+                          placeholder={t('settings.removal.hebrewMessagePlaceholder')}
                           className="w-full px-5 py-3 bg-white border border-blue-200 rounded-2xl text-sm font-bold outline-none focus:ring-2 focus:ring-blue-400/20 focus:border-blue-400 transition-all resize-none"
                         />
                         {removalGlobal?.message_he && (
                           <p className="text-[11px] text-blue-400 font-medium mt-1">
-                            ברירת מחדל: <span className="text-blue-500">"{removalGlobal.message_he}"</span>
+                            {t('settings.removal.defaultMessage')} <span className="text-blue-500">"{removalGlobal.message_he}"</span>
                           </p>
                         )}
                       </div>
@@ -2244,60 +2259,60 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                     <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-5 space-y-4">
                       <div className="flex items-center gap-2 mb-1">
                         <span className="text-base">🇺🇸</span>
-                        <span className="text-sm font-black text-emerald-800">English</span>
+                        <span className="text-sm font-black text-emerald-800">{t('settings.removal.englishLangLabel')}</span>
                       </div>
 
                       <div>
-                        <label className="block text-xs font-black text-emerald-600 uppercase tracking-wider mb-3">English Removal Keywords</label>
+                        <label className="block text-xs font-black text-emerald-600 uppercase tracking-wider mb-3">{t('settings.removal.englishKeywordsLabel')}</label>
                         <div className="flex gap-2 mb-3">
                           <input
                             type="text"
                             value={removalKwInputEn}
                             onChange={e => setRemovalKwInputEn(e.target.value)}
                             onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addRemovalDraftKeywordEn(); } }}
-                            placeholder="e.g. stop, remove, unsubscribe"
+                            placeholder={t('settings.removal.englishKeywordsPlaceholder')}
                             className="flex-1 px-4 py-3 bg-white border border-emerald-200 rounded-2xl text-sm font-bold outline-none focus:ring-2 focus:ring-emerald-400/20 focus:border-emerald-400 transition-all"
                           />
                           <button
                             onClick={addRemovalDraftKeywordEn}
                             className="flex items-center gap-2 px-5 py-3 bg-emerald-700 text-white rounded-2xl font-bold text-sm hover:bg-emerald-800 transition-all"
                           >
-                            <Plus size={14} /> Add
+                            <Plus size={14} /> {t('settings.removal.add')}
                           </button>
                         </div>
                         {removalDraft.keywords_en.length === 0 ? (
                           <div className="text-center text-emerald-300 text-sm py-6 bg-white rounded-2xl border border-dashed border-emerald-200">
-                            No English keywords defined.
+                            {t('settings.removal.noEnglishKeywords')}
                           </div>
                         ) : (
                           <div className="flex flex-wrap gap-2">
                             {removalDraft.keywords_en.map((kw, idx) => (
                               <span key={`en-${kw}-${idx}`} className="inline-flex items-center gap-2 bg-white text-emerald-700 border border-emerald-200 px-3 py-1.5 rounded-xl text-sm font-bold">
                                 <span>{kw}</span>
-                                <button onClick={() => removeRemovalDraftKeywordEn(idx)} className="text-emerald-300 hover:text-emerald-700 transition-colors" title="Remove keyword"><X size={14} /></button>
+                                <button onClick={() => removeRemovalDraftKeywordEn(idx)} className="text-emerald-300 hover:text-emerald-700 transition-colors" title={t('settings.removal.removeKeyword')}><X size={14} /></button>
                               </span>
                             ))}
                           </div>
                         )}
                         {removalGlobal && (
                           <p className="text-[11px] text-emerald-500 font-medium mt-2">
-                            Default: {removalGlobal.keywords_en.length} English keywords{removalCustomized ? '' : ' — currently active'}.
+                            {t('settings.removal.defaultKeywordsEn', { count: removalGlobal.keywords_en.length, activeSuffix: removalCustomized ? '' : t('settings.removal.defaultActiveSuffix') })}
                           </p>
                         )}
                       </div>
 
                       <div>
-                        <label className="block text-xs font-black text-emerald-600 uppercase tracking-wider mb-2">Confirmation message after removal — English</label>
+                        <label className="block text-xs font-black text-emerald-600 uppercase tracking-wider mb-2">{t('settings.removal.englishMessageLabel')}</label>
                         <textarea
                           value={removalDraft.message_en}
                           onChange={e => setRemovalDraft({ ...removalDraft, message_en: e.target.value })}
                           rows={2}
-                          placeholder="Message sent to the contact after an English keyword match"
+                          placeholder={t('settings.removal.englishMessagePlaceholder')}
                           className="w-full px-5 py-3 bg-white border border-emerald-200 rounded-2xl text-sm font-bold outline-none focus:ring-2 focus:ring-emerald-400/20 focus:border-emerald-400 transition-all resize-none"
                         />
                         {removalGlobal?.message_en && (
                           <p className="text-[11px] text-emerald-500 font-medium mt-1">
-                            Default: <span className="text-emerald-600">"{removalGlobal.message_en}"</span>
+                            {t('settings.removal.defaultMessage')} <span className="text-emerald-600">"{removalGlobal.message_en}"</span>
                           </p>
                         )}
                       </div>
@@ -2305,7 +2320,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
 
                     {removalSaved && (
                       <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 text-emerald-700 text-sm font-bold flex items-center gap-2">
-                        <CheckCircle size={16} /> ההגדרה האישית נשמרה
+                        <CheckCircle size={16} /> {t('settings.removal.savedSuccess')}
                       </div>
                     )}
                   </div>
@@ -2325,16 +2340,18 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
       {activeTab === 'bots' && can('bots.view_tab') && (
       <div className="flex-1 overflow-y-auto px-4 py-6 sm:px-6 sm:py-8 lg:px-10 lg:py-10 xl:px-12">
         <div className="max-w-6xl mx-auto">
-          <div className="flex flex-col-reverse sm:flex-row-reverse sm:items-center sm:justify-between gap-4 mb-6 sm:mb-8 lg:mb-10">
-            <h1 className="text-2xl sm:text-3xl font-black text-slate-900 text-right">הבוטים שלי</h1>
+          {/* DOM order swapped (button before title) instead of flex-col-reverse/flex-row-reverse,
+              so the create button stays first (inline-start / top) and the title second in both languages. */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6 sm:mb-8 lg:mb-10">
             {can('bots.create') && (
-              <button 
+              <button
                 onClick={() => setIsModalOpen(true)}
                 className="w-full sm:w-auto justify-center flex items-center gap-3 px-5 sm:px-7 lg:px-8 py-3 sm:py-4 bg-blue-600 text-white rounded-2xl font-bold text-sm sm:text-base shadow-lg shadow-blue-600/20 hover:bg-blue-700 transition-all scale-100 active:scale-95"
               >
-                <Plus size={20} /> צור תזרים חדש
+                <Plus size={20} /> {t('bots.createNew')}
               </button>
             )}
+            <h1 className="text-2xl sm:text-3xl font-black text-slate-900 text-start">{t('bots.title')}</h1>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5 lg:gap-6">
@@ -2345,13 +2362,12 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                 onClick={() => can('bots.edit') && onEnterBot(bot)}
               >
                 <div>
-                  <div className="flex items-center justify-between mb-4 sm:mb-6 flex-row-reverse">
-                    <div className="p-3 sm:p-4 bg-blue-50 text-blue-600 rounded-2xl group-hover:bg-blue-600 group-hover:text-white transition-colors">
-                      <Bot size={28} />
-                    </div>
+                  {/* DOM order swapped (buttons before the icon) instead of flex-row-reverse, so the
+                      buttons stay at the inline-start and the icon at the inline-end in both languages. */}
+                  <div className="flex items-center justify-between mb-4 sm:mb-6">
                     <div className="flex items-center gap-2">
                       {can('bots.delete') && (
-                        <button 
+                        <button
                           onClick={(e) => { e.stopPropagation(); onDeleteBot(bot.id); }}
                           className="p-2 text-slate-200 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
                         >
@@ -2362,11 +2378,14 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                         <button
                           onClick={(e) => { e.stopPropagation(); setSettingsBot(bot); }}
                           className="p-2 text-slate-300 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-all"
-                          title="הגדרות בוט"
+                          title={t('bots.botSettingsTitle')}
                         >
                           <Settings size={18} />
                         </button>
                       )}
+                    </div>
+                    <div className="p-3 sm:p-4 bg-blue-50 text-blue-600 rounded-2xl group-hover:bg-blue-600 group-hover:text-white transition-colors">
+                      <Bot size={28} />
                     </div>
                   </div>
                   <h3 className="text-xl sm:text-2xl font-black text-slate-900 mb-2 truncate">{bot.name}</h3>
@@ -2377,7 +2396,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                   {bot.display_phone_number && (
                     <p className="text-slate-500 text-sm font-bold flex items-center justify-end gap-2 mt-1">
                       <span dir="ltr">{bot.display_phone_number}</span>
-                      <span>בוט משויך למספר</span>
+                      <span>{t('bots.assignedToNumber')}</span>
                       {bot.whatsapp_provider === 'dialog360' ? (
                         <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-emerald-600 text-white">360</span>
                       ) : (
@@ -2391,18 +2410,18 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                   <div></div>
                   {can('bots.edit') && (
                   <div className="flex items-center gap-2 text-blue-600 font-black text-sm group-hover:gap-4 transition-all">
-                    <span>כניסה לעריכה</span>
-                    <ArrowLeft size={18} />
+                    <span>{t('bots.enterEdit')}</span>
+                    <ForwardArrow size={18} />
                   </div>
                   )}
                 </div>
               </div>
             ))}
-            
+
             {bots.length === 0 && (
               <div className="col-span-full py-12 sm:py-16 lg:py-20 px-6 text-center bg-white border-2 border-dashed border-slate-200 rounded-[2rem] sm:rounded-[2.5rem] flex flex-col items-center justify-center gap-4 text-slate-300">
                 <Bot size={56} strokeWidth={1} />
-                <p className="text-lg sm:text-xl font-bold">אין לך בוטים עדיין. בוא ניצור את הראשון!</p>
+                <p className="text-lg sm:text-xl font-bold">{t('bots.empty')}</p>
               </div>
             )}
           </div>
@@ -2423,32 +2442,32 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
       </div>{/* end main layout */}
 
       {facebookConfirmBot && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[100] p-6 text-right">
-          <div className="bg-white w-full max-w-sm rounded-[2.5rem] shadow-2xl p-10 border border-slate-100" dir="rtl">
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[100] p-6 text-start">
+          <div className="bg-white w-full max-w-sm rounded-[2.5rem] shadow-2xl p-10 border border-slate-100">
             <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-3xl flex items-center justify-center mb-6">
               <FacebookIcon size={32} />
             </div>
             {facebookDone ? (
               <>
-                <h3 className="text-2xl font-bold text-slate-900 mb-2">החלונית נפתחה!</h3>
+                <h3 className="text-2xl font-bold text-slate-900 mb-2">{t('facebook.popupOpenedTitle')}</h3>
                 <p className="text-slate-400 text-sm mb-8 font-medium leading-relaxed">
-                  המשך את תהליך החיבור בחלונית פייסבוק שנפתחה. אם החלונית לא נפתחה — אפשר את החלונות הקופצים בדפדפן ונסה שוב.
+                  {t('facebook.popupOpenedBody')}
                 </p>
                 <button
                   onClick={() => setFacebookConfirmBot(null)}
                   className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold shadow-lg shadow-blue-600/20 hover:bg-blue-700"
                 >
-                  סגור
+                  {t('facebook.close')}
                 </button>
               </>
             ) : (
               <>
-                <h3 className="text-2xl font-bold text-slate-900 mb-2">חיבור לפייסבוק</h3>
+                <h3 className="text-2xl font-bold text-slate-900 mb-2">{t('facebook.connectTitle')}</h3>
                 <p className="text-slate-400 text-sm mb-2 font-medium leading-relaxed">
-                  האם ברצונך לחבר את הבוט <strong className="text-slate-700">{facebookConfirmBot.name}</strong> לפייסבוק?
+                  {t('facebook.connectConfirmPrefix')} <strong className="text-slate-700">{facebookConfirmBot.name}</strong> {t('facebook.connectConfirmSuffix')}
                 </p>
                 <p className="text-slate-400 text-sm mb-8 font-medium leading-relaxed">
-                  לחיצה על &quot;אישור&quot; תפתח חלונית של פייסבוק להתחברות והרשאה. השלם/י את התהליך בתוך החלונית.
+                  {t('facebook.connectHint')}
                 </p>
                 <div className="flex gap-4">
                   <button
@@ -2456,7 +2475,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                     className="flex-1 py-4 border border-slate-200 text-slate-400 rounded-2xl font-bold text-xs uppercase hover:bg-slate-50"
                     disabled={facebookSending}
                   >
-                    ביטול
+                    {t('facebook.cancel')}
                   </button>
                   <button
                     onClick={async () => {
@@ -2466,7 +2485,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                     className="flex-1 py-4 bg-blue-600 text-white rounded-2xl font-bold text-xs uppercase shadow-lg shadow-blue-600/20 hover:bg-blue-700 disabled:opacity-60"
                     disabled={facebookSending}
                   >
-                    {facebookSending ? 'פותח...' : 'אישור'}
+                    {facebookSending ? t('facebook.opening') : t('facebook.confirm')}
                   </button>
                 </div>
               </>
@@ -2506,22 +2525,22 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
       )}
 
       {isModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[100] p-6 text-right">
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[100] p-6 text-start">
           <div className="bg-white w-full max-w-sm rounded-[2.5rem] shadow-2xl p-10 animate-in zoom-in duration-200 border border-slate-100">
             <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-3xl flex items-center justify-center mb-6 mr-0"><Plus size={32} /></div>
-            <h3 className="text-2xl font-bold text-slate-900 mb-2 text-right">בוט חדש</h3>
-            <p className="text-slate-400 text-sm mb-8 font-medium leading-relaxed text-right">הזן שם עבור תזרים הזרימה החדש שלך.</p>
+            <h3 className="text-2xl font-bold text-slate-900 mb-2 text-start">{t('bots.newBotTitle')}</h3>
+            <p className="text-slate-400 text-sm mb-8 font-medium leading-relaxed text-start">{t('bots.newBotDescription')}</p>
             <div className="space-y-6">
-              <input 
-                className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-blue-600/10 focus:border-blue-600 transition-all text-sm font-bold text-right" 
-                placeholder="שם הבוט (למשל: שירות לקוחות)..." 
-                value={newBotName} 
-                onChange={e => setNewBotName(e.target.value)} 
-                autoFocus 
+              <input
+                className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-blue-600/10 focus:border-blue-600 transition-all text-sm font-bold text-start"
+                placeholder={t('bots.newBotPlaceholder')}
+                value={newBotName}
+                onChange={e => setNewBotName(e.target.value)}
+                autoFocus
               />
               <div className="flex gap-4">
-                <button onClick={() => setIsModalOpen(false)} className="flex-1 py-4 border border-slate-200 text-slate-400 rounded-2xl font-bold text-xs uppercase hover:bg-slate-50">ביטול</button>
-                <button onClick={handleCreate} className="flex-1 py-4 bg-blue-600 text-white rounded-2xl font-bold text-xs uppercase shadow-lg shadow-blue-600/20 hover:bg-blue-700">יצירה</button>
+                <button onClick={() => setIsModalOpen(false)} className="flex-1 py-4 border border-slate-200 text-slate-400 rounded-2xl font-bold text-xs uppercase hover:bg-slate-50">{t('bots.cancel')}</button>
+                <button onClick={handleCreate} className="flex-1 py-4 bg-blue-600 text-white rounded-2xl font-bold text-xs uppercase shadow-lg shadow-blue-600/20 hover:bg-blue-700">{t('bots.create')}</button>
               </div>
             </div>
           </div>
@@ -2530,10 +2549,10 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
 
       {/* ── Internal Template Create/Edit Modal ── */}
       {showInternalTemplateModal && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4" dir="rtl">
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white p-8 rounded-3xl w-full max-w-xl shadow-2xl max-h-[90vh] flex flex-col overflow-y-auto">
             <div className="flex justify-between items-center mb-6 flex-shrink-0">
-              <h3 className="text-xl font-black text-slate-800">{editingInternalTemplate ? 'עריכת תבנית פנימית' : 'תבנית פנימית חדשה'}</h3>
+              <h3 className="text-xl font-black text-slate-800">{editingInternalTemplate ? t('templatesModal.editTitle') : t('templatesModal.newTitle')}</h3>
               <button onClick={() => setShowInternalTemplateModal(false)} className="p-3 bg-slate-100 rounded-full hover:bg-slate-200 transition-colors">
                 <X size={20} />
               </button>
@@ -2541,32 +2560,32 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
 
             <div className="space-y-5">
               <div>
-                <label className="block text-xs font-black text-slate-400 uppercase tracking-wider mb-1.5">שם התבנית</label>
+                <label className="block text-xs font-black text-slate-400 uppercase tracking-wider mb-1.5">{t('templatesModal.nameLabel')}</label>
                 <input
                   type="text"
                   value={internalTemplateForm.name}
                   onChange={e => setInternalTemplateForm(f => ({ ...f, name: e.target.value }))}
-                  placeholder="לדוגמה: הודעת סיום"
-                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-right outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                  placeholder={t('templatesModal.namePlaceholder')}
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-start outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-black text-slate-400 uppercase tracking-wider mb-1.5">תוכן ההודעה</label>
+                <label className="block text-xs font-black text-slate-400 uppercase tracking-wider mb-1.5">{t('templatesModal.bodyLabel')}</label>
                 <textarea
                   value={internalTemplateForm.body}
                   onChange={e => setInternalTemplateForm(f => ({ ...f, body: e.target.value }))}
                   rows={5}
-                  placeholder="לדוגמה: שלום {{1}}, תודה שפנית אלינו..."
-                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-right outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all resize-none"
+                  placeholder={t('templatesModal.bodyPlaceholder', { p1: '{{1}}' })}
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-start outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all resize-none"
                 />
                 <p className="text-[11px] text-slate-400 mt-1.5 font-medium">
-                  ניתן להשתמש בפרמטרים ממוספרים כמו <span className="font-mono font-black bg-slate-100 px-1 rounded">{'{{1}}'}</span>, <span className="font-mono font-black bg-slate-100 px-1 rounded">{'{{2}}'}</span> שהנציג ימלא בעת השליחה.
+                  {t('templatesModal.paramsHintPrefix')} <span className="font-mono font-black bg-slate-100 px-1 rounded">{'{{1}}'}</span>, <span className="font-mono font-black bg-slate-100 px-1 rounded">{'{{2}}'}</span> {t('templatesModal.paramsHintSuffix')}
                 </p>
               </div>
 
               <div>
-                <label className="block text-xs font-black text-slate-400 uppercase tracking-wider mb-1.5">מדיה בכותרת (אופציונלי)</label>
+                <label className="block text-xs font-black text-slate-400 uppercase tracking-wider mb-1.5">{t('templatesModal.mediaLabel')}</label>
                 <div className="flex gap-2 mb-3">
                   {(['none', 'image', 'video', 'document'] as const).map(opt => (
                     <button
@@ -2579,7 +2598,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                           : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'
                       }`}
                     >
-                      {opt === 'none' ? 'ללא' : opt === 'image' ? 'תמונה' : opt === 'video' ? 'וידאו' : 'מסמך'}
+                      {opt === 'none' ? t('templatesModal.mediaNone') : opt === 'image' ? t('templatesModal.mediaImage') : opt === 'video' ? t('templatesModal.mediaVideo') : t('templatesModal.mediaDocument')}
                     </button>
                   ))}
                 </div>
@@ -2588,7 +2607,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                     value={internalTemplateForm.mediaUrl}
                     onChange={(url) => setInternalTemplateForm(f => ({ ...f, mediaUrl: url }))}
                     accept={internalTemplateForm.mediaType === 'image' ? 'image/*' : internalTemplateForm.mediaType === 'video' ? 'video/*' : '*/*'}
-                    label={internalTemplateForm.mediaType === 'image' ? 'תמונה' : internalTemplateForm.mediaType === 'video' ? 'וידאו' : 'מסמך'}
+                    label={internalTemplateForm.mediaType === 'image' ? t('templatesModal.mediaImage') : internalTemplateForm.mediaType === 'video' ? t('templatesModal.mediaVideo') : t('templatesModal.mediaDocument')}
                     mediaType={internalTemplateForm.mediaType}
                     token={token || ''}
                   />
@@ -2601,7 +2620,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                 onClick={() => setShowInternalTemplateModal(false)}
                 className="flex-1 py-3 border border-slate-200 text-slate-500 rounded-2xl font-bold text-sm hover:bg-slate-50 transition-colors"
               >
-                ביטול
+                {t('templatesModal.cancel')}
               </button>
               <button
                 onClick={saveInternalTemplate}
@@ -2609,7 +2628,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                 className="flex-[2] py-3 bg-blue-600 text-white rounded-2xl font-bold text-sm shadow-lg hover:bg-blue-700 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
               >
                 <Save size={16} />
-                {savingInternalTemplate ? 'שומר...' : 'שמור תבנית'}
+                {savingInternalTemplate ? t('templatesModal.saving') : t('templatesModal.save')}
               </button>
             </div>
           </div>
@@ -2642,7 +2661,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                   </div>
                   <div>
                     <h3 className="text-white font-bold text-lg">{templateName}</h3>
-                    <p className="text-emerald-100 text-xs font-medium">תצוגה מקדימה</p>
+                    <p className="text-emerald-100 text-xs font-medium">{t('templatesModal.previewTitle')}</p>
                   </div>
                 </div>
                 <button
@@ -2663,7 +2682,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                       <div className="relative bg-gradient-to-br from-slate-100 to-slate-200 h-32 flex items-center justify-center">
                         <div className="text-center">
                           <ImageIcon size={32} className="text-slate-400 mx-auto mb-1" />
-                          <p className="text-slate-500 text-xs font-medium">תמונת ברירת מחדל</p>
+                          <p className="text-slate-500 text-xs font-medium">{t('templatesModal.previewDefaultMedia')}</p>
                         </div>
                       </div>
                     )}
@@ -2696,7 +2715,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                             className={`px-3 py-2 text-center ${idx < buttons.length - 1 ? 'border-b border-slate-200' : ''}`}
                           >
                             <span className="text-sky-600 font-bold text-xs">
-                              {btn.text || `כפתור ${idx + 1}`}
+                              {btn.text || t('templatesModal.previewButtonFallback', { index: idx + 1 })}
                             </span>
                           </div>
                         ))}
@@ -2739,25 +2758,25 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
 
       {/* ── Legal warning: disabling auto-removal ── */}
       {removalDisableConfirmOpen && removalDraft && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center p-6" dir="rtl">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center p-6">
           <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl border border-slate-100 p-8">
             <div className="flex items-start gap-4 mb-6">
               <div className="w-12 h-12 bg-red-50 text-red-600 rounded-2xl flex items-center justify-center flex-shrink-0 shrink-0">
                 <AlertTriangle size={24} />
               </div>
-              <div className="text-right">
-                <h4 className="text-lg font-black text-slate-900 mb-2">אזהרה חוקית — ביטול הסרה אוטומטית</h4>
+              <div className="text-start">
+                <h4 className="text-lg font-black text-slate-900 mb-2">{t('settings.removal.disableWarningTitle')}</h4>
                 <p className="text-sm text-slate-700 font-bold leading-relaxed mb-2">
-                  לפי חוק הספאם ותקנות הגנת הפרטיות, חובה לאפשר לנמענים להסיר את עצמם מרשימות תפוצה.
+                  {t('settings.removal.disableWarningLine1')}
                 </p>
                 <p className="text-sm text-slate-500 font-medium leading-relaxed">
-                  השבתת ההסרה האוטומטית פוטרת את המערכת מאחריות — האחריות לטיפול בבקשות הסרה עוברת אליך באופן מלא ואישי.
+                  {t('settings.removal.disableWarningLine2')}
                 </p>
               </div>
             </div>
-            <div className="bg-red-50 border border-red-200 rounded-2xl px-4 py-3 mb-6 text-right">
+            <div className="bg-red-50 border border-red-200 rounded-2xl px-4 py-3 mb-6 text-start">
               <p className="text-red-700 text-xs font-bold leading-relaxed">
-                בלחיצה על &quot;אני מודע/ת ומקבל/ת אחריות&quot; אתה מאשר/ת שקראת את האזהרה לעיל ומקבל/ת על עצמך את מלוא האחריות החוקית לניהול בקשות הסרה.
+                {t('settings.removal.disableWarningAck')}
               </p>
             </div>
             <div className="flex gap-3">
@@ -2765,7 +2784,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                 onClick={() => setRemovalDisableConfirmOpen(false)}
                 className="flex-1 py-3 border border-slate-200 text-slate-600 rounded-2xl font-bold text-xs hover:bg-slate-50 transition-all"
               >
-                ביטול — השאר פעיל
+                {t('settings.removal.cancelKeepActive')}
               </button>
               <button
                 onClick={() => {
@@ -2774,7 +2793,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                 }}
                 className="flex-1 py-3 bg-red-600 text-white rounded-2xl font-bold text-xs hover:bg-red-700 transition-all shadow-lg shadow-red-200"
               >
-                אני מודע/ת ומקבל/ת אחריות
+                {t('settings.removal.acknowledgeResponsibility')}
               </button>
             </div>
           </div>
@@ -2783,20 +2802,20 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
 
       {/* ── Confirm removal-config change ── */}
       {removalConfirmOpen && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[200] flex items-center justify-center p-6" dir="rtl">
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[200] flex items-center justify-center p-6">
           <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl border border-slate-100 p-8">
             <div className="flex items-start gap-4 mb-6">
               <div className="w-12 h-12 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center flex-shrink-0">
                 <AlertTriangle size={22} />
               </div>
-              <div className="text-right">
+              <div className="text-start">
                 <h4 className="text-lg font-black text-slate-900 mb-1">
-                  {removalConfirmOpen === 'save' ? 'לאשר שמירת הגדרת הסרה אישית?' : 'לחזור לברירת המחדל של המערכת?'}
+                  {removalConfirmOpen === 'save' ? t('settings.removal.confirmSaveTitle') : t('settings.removal.confirmRevertTitle')}
                 </h4>
                 <p className="text-sm text-slate-500 font-medium leading-relaxed">
                   {removalConfirmOpen === 'save'
-                    ? 'ההגדרה תדרוס את ברירת המחדל הכללית עבור כל הבוטים שלך. מילים חסרות עלולות למנוע הסרה אוטומטית של נמענים שביקשו זאת — באחריותך.'
-                    : 'ההגדרה האישית שלך תוסר, וכל הבוטים שלך יחזרו להשתמש במילות המפתח ובהודעה שמוגדרות במערכת.'}
+                    ? t('settings.removal.confirmSaveBody')
+                    : t('settings.removal.confirmRevertBody')}
                 </p>
               </div>
             </div>
@@ -2806,14 +2825,14 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                 className="flex-1 py-3 border border-slate-200 text-slate-500 rounded-2xl font-bold text-xs uppercase hover:bg-slate-50"
                 disabled={removalSaving}
               >
-                ביטול
+                {t('settings.removal.cancel')}
               </button>
               <button
                 onClick={() => { if (removalConfirmOpen === 'save') saveRemovalConfig(); else revertRemovalToGlobal(); }}
                 disabled={removalSaving}
                 className="flex-1 py-3 bg-rose-600 text-white rounded-2xl font-bold text-xs uppercase hover:bg-rose-700 disabled:opacity-60"
               >
-                {removalSaving ? 'שומר…' : 'אני מבין/ה, אישור'}
+                {removalSaving ? t('settings.removal.saving') : t('settings.removal.confirmAck')}
               </button>
             </div>
           </div>

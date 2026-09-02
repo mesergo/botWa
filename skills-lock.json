@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "skills": {
+    "hebrew-i18n": {
+      "source": "skills-il/localization",
+      "sourceType": "github",
+      "computedHash": "99581b2c2ec00e23a09af737676629526a13d05f002af3955c511a6283cd90d5"
+    },
+    "hebrew-rtl-best-practices": {
+      "source": "skills-il/localization",
+      "sourceType": "github",
+      "computedHash": "1a4fac8ec6ec6d99b9158033326a0fd781cdc35efc811de92d2c5701b2c2f805"
+    }
+  }
+}

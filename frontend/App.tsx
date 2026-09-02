@@ -1,6 +1,7 @@
 
 import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { useNavigate, useLocation, Routes, Route, Navigate } from 'react-router-dom';
+import { useTranslation, Trans } from 'react-i18next';
 import { ReactFlowProvider, addEdge, Node, Edge, applyNodeChanges, applyEdgeChanges, OnNodesChange, OnEdgesChange, OnConnect, ReactFlowInstance, MarkerType } from 'reactflow';
 import { NodeType, NodeData, User, FixedProcess, Version, BotFlow, PredefinedTemplate, RestorableVersionsData } from './types';
 import { normalizePhone } from './utils/phone';
@@ -25,48 +26,60 @@ import Simulator from './components/Simulator';
 import AdminPanel from './components/AdminPanel';
 import HomePage from './components/HomePage'; 
 import BotSettingsModal from './components/BotSettingsModal';
+import { translateAuthApiError } from './i18n/authErrors';
+import { LANGUAGE_STORAGE_KEY, getFormatLocale } from './i18n';
   
 // ── Trial Expired Screen ─────────────────────────────────────────────────────
-const TrialExpiredScreen: React.FC<{ userName: string; onLogout: () => void }> = ({ userName, onLogout }) => (
-  <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6" dir="rtl">
-    <div className="bg-white rounded-3xl shadow-xl w-full max-w-md p-12 text-center border border-slate-100">
-      <div className="flex justify-center mb-8">
-        <div className="w-20 h-20 bg-red-50 rounded-full flex items-center justify-center">
-          <Lock className="w-10 h-10 text-red-500" strokeWidth={2} />
-        </div>
-      </div>
-      <h2 className="text-3xl font-black text-slate-800 mb-3">תקופת הניסיון הסתיימה</h2>
-      <p className="text-slate-500 mb-2 font-medium">
-        שלום <span className="font-bold text-slate-700">{userName}</span>,
-      </p>
-      <p className="text-slate-500 mb-8 text-sm leading-relaxed">
-        תקופת הניסיון החינמי שלך של 30 יום הסתיימה.<br />
-        כדי להמשיך להשתמש במערכת, אנא שדרג את חשבונך לתוכנית Basic או Premium.
-      </p>
-      <div className="bg-slate-50 rounded-2xl p-5 mb-8 text-right space-y-2">
-        <p className="text-xs font-black text-slate-400 uppercase tracking-wider mb-3">מה כלול בתוכנית Basic</p>
-        {['עד 3 בוטים פעילים', 'עד 5 גרסאות לבוט', 'פרסום ושיתוף הבוט', 'ממשק ניהול מלא'].map(f => (
-          <div key={f} className="flex items-center gap-2 text-sm text-slate-600 font-medium">
-            <span className="w-4 h-4 bg-green-100 text-green-600 rounded-full flex items-center justify-center text-[10px] font-black flex-shrink-0">✓</span>
-            {f}
+const TRIAL_FEATURE_KEYS = ['bots', 'versions', 'publish', 'admin'] as const;
+
+const TrialExpiredScreen: React.FC<{ userName: string; onLogout: () => void }> = ({ userName, onLogout }) => {
+  const { t } = useTranslation('editor');
+  return (
+    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
+      <div className="bg-white rounded-3xl shadow-xl w-full max-w-md p-12 text-center border border-slate-100">
+        <div className="flex justify-center mb-8">
+          <div className="w-20 h-20 bg-red-50 rounded-full flex items-center justify-center">
+            <Lock className="w-10 h-10 text-red-500" strokeWidth={2} />
           </div>
-        ))}
+        </div>
+        <h2 className="text-3xl font-black text-slate-800 mb-3">{t('trial.title')}</h2>
+        <p className="text-slate-500 mb-2 font-medium">
+          <Trans
+            i18nKey="trial.greeting"
+            ns="editor"
+            values={{ name: userName }}
+            components={[<span key="name" className="font-bold text-slate-700" />]}
+          />
+        </p>
+        <p className="text-slate-500 mb-8 text-sm leading-relaxed">
+          {t('trial.expired')}<br />
+          {t('trial.upgradePrompt')}
+        </p>
+        <div className="bg-slate-50 rounded-2xl p-5 mb-8 text-start space-y-2">
+          <p className="text-xs font-black text-slate-400 uppercase tracking-wider mb-3">{t('trial.includedTitle')}</p>
+          {TRIAL_FEATURE_KEYS.map(featureKey => (
+            <div key={featureKey} className="flex items-center gap-2 text-sm text-slate-600 font-medium">
+              <span className="w-4 h-4 bg-green-100 text-green-600 rounded-full flex items-center justify-center text-[10px] font-black flex-shrink-0">✓</span>
+              {t(`trial.features.${featureKey}`)}
+            </div>
+          ))}
+        </div>
+        <button
+          onClick={() => { alert(t('trial.contactForUpgrade')); }}
+          className="w-full bg-blue-600 text-white py-4 rounded-xl font-bold text-lg shadow-lg shadow-blue-600/20 hover:bg-blue-700 transition-all mb-3"
+        >
+          {t('trial.upgradeNow')}
+        </button>
+        <button
+          onClick={onLogout}
+          className="w-full text-slate-400 py-2 text-sm font-medium hover:text-slate-600 transition-colors"
+        >
+          {t('trial.logout')}
+        </button>
       </div>
-      <button
-        onClick={() => { alert('ליצירת קשר לשדרוג: go@mesergo.co.il'); }}
-        className="w-full bg-blue-600 text-white py-4 rounded-xl font-bold text-lg shadow-lg shadow-blue-600/20 hover:bg-blue-700 transition-all mb-3"
-      >
-        שדרג עכשיו
-      </button>
-      <button
-        onClick={onLogout}
-        className="w-full text-slate-400 py-2 text-sm font-medium hover:text-slate-600 transition-colors"
-      >
-        התנתק
-      </button>
     </div>
-  </div>
-);
+  );
+};
  
 const API_BASE = window.location.hostname === 'localhost' 
   ? 'http://localhost:3001/api' 
@@ -134,6 +147,7 @@ function saveStoredAuth(token: string, user: any, rememberMe: boolean) {
 type ViewMode = 'home' | 'dashboard' | 'editor' | 'editing-process' | 'viewing-process' | 'simulator-only' | 'template-selection' | 'template-form' | 'admin-panel' | 'editing-template' | 'creating-template' | 'contacts' | 'sessions' | 'groups' | 'sms_in';
 
 const FlowBuilder: React.FC = () => {
+  const { t, i18n } = useTranslation(['auth', 'common', 'editor']);
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
   const location = useLocation();
@@ -1035,11 +1049,10 @@ const FlowBuilder: React.FC = () => {
           let body: any = {};
           try { body = await response.json(); } catch {}
           console.warn('syncFlow blocked by server guard:', body);
-          const msg = body?.message ||
-            'השמירה נחסמה ע"י השרת כדי למנוע איבוד רכיבים. רענני את הדף לפני שמירה.';
+          const msg = body?.message || t('editor:alerts.saveBlocked');
           // Use setTimeout so we don't alert during a React render cycle
           setTimeout(() => {
-            if (window.confirm(`${msg}\n\nלטעון מחדש את הדף עכשיו?`)) {
+            if (window.confirm(t('editor:alerts.reloadNow', { message: msg }))) {
               window.location.reload();
             }
           }, 0);
@@ -1241,7 +1254,7 @@ const FlowBuilder: React.FC = () => {
   };
 
   const handleDeleteBot = async (id: string) => {
-    if (!window.confirm("בטוח שברצונך למחוק את הבוט?")) return;
+    if (!window.confirm(t('editor:alerts.confirmDeleteBot'))) return;
     try {
       const res = await fetch(`${API_BASE}/bots/${id}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
       
@@ -1253,7 +1266,7 @@ const FlowBuilder: React.FC = () => {
       setBots(prev => prev.filter(b => b.id !== id));
     } catch (error) {
       console.error('Error deleting bot:', error);
-      alert('שגיאה במחיקת הבוט. נסה שוב.');
+      alert(t('editor:alerts.deleteBotFailed'));
     }
   };
 
@@ -1264,7 +1277,7 @@ const FlowBuilder: React.FC = () => {
     });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
-      throw new Error(data.error || 'שגיאה בשליחת הבקשה');
+      throw new Error(data.error || t('editor:alerts.requestFailed'));
     }
   };
 
@@ -1281,11 +1294,11 @@ const FlowBuilder: React.FC = () => {
       } else {
         const errorData = await res.json();
         console.error('Failed to set default bot:', errorData);
-        alert('שגיאה בהגדרת ברירת מחדל: ' + (errorData.error || 'שגיאה לא ידועה'));
+        alert(t('editor:alerts.setDefaultFailed', { error: errorData.error || t('editor:alerts.unknownError') }));
       }
     } catch (error) {
       console.error('Error setting default bot:', error);
-      alert('שגיאה בהגדרת ברירת מחדל');
+      alert(t('editor:alerts.setDefaultFailedGeneric'));
     }
   };
 
@@ -1297,7 +1310,7 @@ const FlowBuilder: React.FC = () => {
     });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
-      throw new Error(data.error || 'שגיאה בעדכון המזהה');
+      throw new Error(data.error || t('editor:alerts.updateIdFailed'));
     }
     const data = await res.json();
     setBots(prev => prev.map(b => b.id === id ? { ...b, public_id: data.public_id } : b));
@@ -1311,7 +1324,7 @@ const FlowBuilder: React.FC = () => {
     });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
-      throw new Error(data.error || 'שגיאה בעדכון ה-Endpoint');
+      throw new Error(data.error || t('editor:alerts.updateEndpointFailed'));
     }
     const data = await res.json();
     setBots(prev => prev.map(b => b.id === id ? { ...b, endpoint: data.endpoint } : b));
@@ -1325,7 +1338,7 @@ const FlowBuilder: React.FC = () => {
     });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
-      throw new Error(data.error || 'שגיאה בעדכון מילת המפתח');
+      throw new Error(data.error || t('editor:alerts.updateKeywordFailed'));
     }
     const data = await res.json();
     setBots(prev => prev.map(b => b.id === id ? { ...b, restart_keyword: data.restart_keyword } : b));
@@ -1357,7 +1370,7 @@ const FlowBuilder: React.FC = () => {
     });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
-      throw new Error(data.error || 'שגיאה בעדכון סטטוס זמינות');
+      throw new Error(data.error || t('editor:alerts.updateAvailabilityFailed'));
     }
     setCurrentUser(prev => {
       if (!prev) return prev;
@@ -1386,7 +1399,11 @@ const FlowBuilder: React.FC = () => {
         }).catch(() => {});
       } catch { /* ignore */ }
     }
+    const selectedLanguage = localStorage.getItem(LANGUAGE_STORAGE_KEY);
     localStorage.clear();
+    if (selectedLanguage) {
+      localStorage.setItem(LANGUAGE_STORAGE_KEY, selectedLanguage);
+    }
     sessionStorage.clear();
     window.location.reload();
   }, [token]);
@@ -1429,10 +1446,10 @@ const FlowBuilder: React.FC = () => {
         setAuthForm(prev => ({ ...prev, accountId: accounts[0]?.id }));
       } else {
         setPendingGoogleCredential(null);
-        setAuthErrors({ general: data.error || 'שגיאה בהתחברות עם גוגל' });
+        setAuthErrors({ general: translateAuthApiError(data.error, 'errors.googleLogin') });
       }
     } catch {
-      setAuthErrors({ general: 'אין חיבור לשרת' });
+      setAuthErrors({ general: t('errors.network', { ns: 'common' }) });
     }
   };
 
@@ -1452,36 +1469,40 @@ const FlowBuilder: React.FC = () => {
     // Preserve any deep link (e.g. /sessions?phone=...) the user landed on before login
     const deepLinkTarget = (location.pathname !== '/' || location.search) ? location.pathname + location.search : null;
     const endpoint = '/auth/login';
-    const res = await fetch(`${API_BASE}${endpoint}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: authForm.email, password: authForm.password, accountId: (authForm as any).accountId })
-    });
-    const data = await res.json();
-    if (res.ok && data.token) {
-      saveStoredAuth(data.token, data.user, authForm.rememberMe);
-      setToken(data.token);
-      setCurrentUser(data.user);
-      // Route reps directly to sessions view, unless a deep link should take priority
-      if (deepLinkTarget) {
-        navigate(deepLinkTarget);
-      } else if (isRepOnlyUser(data.user)) {
-        setSessionsOwnOnly(false);
-        navigate('/sessions');
+    try {
+      const res = await fetch(`${API_BASE}${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: authForm.email, password: authForm.password, accountId: (authForm as any).accountId })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.token) {
+        saveStoredAuth(data.token, data.user, authForm.rememberMe);
+        setToken(data.token);
+        setCurrentUser(data.user);
+        // Route reps directly to sessions view, unless a deep link should take priority
+        if (deepLinkTarget) {
+          navigate(deepLinkTarget);
+        } else if (isRepOnlyUser(data.user)) {
+          setSessionsOwnOnly(false);
+          navigate('/sessions');
+        } else {
+          navigate('/');
+        }
+      } else if (res.status === 409 && data.requiresAccountSelection) {
+        // Several accounts share this exact email+password and none was pre-selected
+        // (e.g. the email-blur picker didn't run) — show the friendly picker instead
+        // of logging into an arbitrary account.
+        const accounts = data.accounts || [];
+        setPendingAccountsForLogin(accounts);
+        setPendingAccountsSource('password');
+        setAuthForm(prev => ({ ...prev, accountId: accounts[0]?.id }));
+        setAuthErrors({ general: t('errors.multipleAccounts', { ns: 'auth' }) });
       } else {
-        navigate('/');
+        setAuthErrors({ general: translateAuthApiError(data.error, 'errors.invalidCredentials') });
       }
-    } else if (res.status === 409 && data.requiresAccountSelection) {
-      // Several accounts share this exact email+password and none was pre-selected
-      // (e.g. the email-blur picker didn't run) — show the friendly picker instead
-      // of logging into an arbitrary account.
-      const accounts = data.accounts || [];
-      setPendingAccountsForLogin(accounts);
-      setPendingAccountsSource('password');
-      setAuthForm(prev => ({ ...prev, accountId: accounts[0]?.id }));
-      setAuthErrors({ general: 'למייל זה משויכים מספר חשבונות - יש לבחור חשבון ולנסות שוב' });
-    } else {
-      setAuthErrors({ general: data.error === 'Invalid credentials' ? 'שם משתמש או סיסמה שגויים' : (data.error || 'שם משתמש או סיסמה שגויים') });
+    } catch {
+      setAuthErrors({ general: t('errors.networkRetry', { ns: 'common' }) });
     }
   };
 
@@ -1583,20 +1604,20 @@ const FlowBuilder: React.FC = () => {
         setQuotaError(null);
         await loadVersions();
         await loadRestorableVersions();
-        alert(`הגרסה פורסמה בהצלחה! סכום התשלום: ${quotaError?.price}₪`);
+        alert(t('editor:alerts.publishSuccessPaid', { price: quotaError?.price }));
       } else {
         console.error('Paid publish error:', data);
-        alert(`שגיאה בפרסום: ${data.error || 'אנא נסה שוב'}`);
+        alert(t('editor:alerts.publishFailed', { error: data.error || t('editor:alerts.tryAgain') }));
       }
     } catch (e) {
       console.error("Publish paid version failed", e);
-      alert("שגיאה בתקשורת עם השרת");
+      alert(t('editor:alerts.serverCommunicationError'));
     }
   };
 
   const handlePublishVersion = async () => {
     if (!newVersionName.trim() || !selectedBot || !token) {
-      if (!newVersionName.trim()) alert("נא להזין שם לגרסה");
+      if (!newVersionName.trim()) alert(t('editor:alerts.versionNameRequired'));
       return;
     }
 
@@ -1606,7 +1627,7 @@ const FlowBuilder: React.FC = () => {
     );
     if (invalidNodes.length > 0) {
       const ids = invalidNodes.map(n => n.data?.serialId ?? n.id).join(', ');
-      alert(`⚠ יש צמתים עם "שמור בפרטי איש קשר" ללא שדה נבחר (${ids}).\nיש לבחור שדה לשמירה בכל צומת כזה לפני הפרסום.`);
+      alert(t('editor:alerts.missingContactField', { ids }));
       return;
     }
     
@@ -1637,11 +1658,11 @@ const FlowBuilder: React.FC = () => {
         loadVersions();
         loadRestorableVersions();
       } else {
-        alert(`שגיאה בפרסום: ${data.error || 'אנא נסה שוב'}`);
+        alert(t('editor:alerts.publishFailed', { error: data.error || t('editor:alerts.tryAgain') }));
       }
     } catch (e) {
       console.error("Publish version failed", e);
-      alert("שגיאה בתקשורת עם השרת");
+      alert(t('editor:alerts.serverCommunicationError'));
     }
   };
 
@@ -1661,7 +1682,7 @@ const FlowBuilder: React.FC = () => {
   };
 
   const handleDeleteVersion = async (id: string) => {
-    if (!token || !window.confirm("בטוח שברצונך למחוק את הגרסה?")) return;
+    if (!token || !window.confirm(t('editor:alerts.confirmDeleteVersion'))) return;
     try {
       const res = await fetch(`${API_BASE}/versions/${id}`, {
         method: 'DELETE',
@@ -1671,7 +1692,7 @@ const FlowBuilder: React.FC = () => {
         setVersions(prev => prev.filter(v => v.id !== id));
         loadRestorableVersions();
       } else {
-        alert("שגיאה במחיקת הגרסה");
+        alert(t('editor:alerts.deleteVersionFailed'));
       }
     } catch (e) { console.error(e); }
   };
@@ -1705,7 +1726,7 @@ const FlowBuilder: React.FC = () => {
       }
     } catch (e) {
       console.error("Restore version failed", e);
-      alert("שגיאה בשחזור הגרסה");
+      alert(t('editor:alerts.restoreVersionFailed'));
     }
   };
 
@@ -1720,7 +1741,7 @@ const FlowBuilder: React.FC = () => {
       
       // For now, we'll simulate payment confirmation
       const confirmPayment = window.confirm(
-        `האם אתה בטוח שברצונך לשלם ${archivedVersionToRestore.price}₪ לשיחזור הגירסה?`
+        t('editor:alerts.confirmPaidRestore', { price: archivedVersionToRestore.price })
       );
       
       if (!confirmPayment) {
@@ -1746,13 +1767,13 @@ const FlowBuilder: React.FC = () => {
         
         setIsRestoreArchivedModalOpen(false);
         setArchivedVersionToRestore(null);
-        alert(`הגרסה שוחזרה בהצלחה! סכום התשלום: ${archivedVersionToRestore.price}₪`);
+        alert(t('editor:alerts.restoreSuccessPaid', { price: archivedVersionToRestore.price }));
       } else {
-        alert(`שגיאה בשיחזור: ${data.error || 'אנא נסה שוב'}`);
+        alert(t('editor:alerts.restoreFailed', { error: data.error || t('editor:alerts.tryAgain') }));
       }
     } catch (e) {
       console.error("Restore archived version failed", e);
-      alert("שגיאה בתקשורת עם השרת");
+      alert(t('editor:alerts.serverCommunicationError'));
     }
   };
 
@@ -1783,7 +1804,7 @@ const FlowBuilder: React.FC = () => {
         setNewProcessName('');
         loadProcesses();
       } else {
-        alert("שגיאה ביצירת תהליך");
+        alert(t('editor:alerts.createProcessFailed'));
       }
     } catch (e) { console.error(e); }
   };
@@ -1858,7 +1879,7 @@ const FlowBuilder: React.FC = () => {
       }
     } catch (e) {
       console.error("Duplicate failed", e);
-      alert("שכפול התהליך נכשל. אנא נסה שוב.");
+      alert(t('editor:alerts.duplicateProcessFailed'));
     }
   };
 
@@ -1884,7 +1905,7 @@ const FlowBuilder: React.FC = () => {
         loadFlow(selectedBot.id);
         setViewMode('editor');
       } else {
-        alert("שגיאה ביצירת תהליך מהתבנית");
+        alert(t('editor:alerts.createFromTemplateFailed'));
       }
     } catch (e) { console.error(e); }
   };
@@ -1939,7 +1960,7 @@ const FlowBuilder: React.FC = () => {
       navigate('/');
     } catch (e) { 
       console.error(e); 
-      alert("שגיאה בטעינת תבנית");
+      alert(t('editor:alerts.loadTemplateFailed'));
     }
   };
 
@@ -1977,13 +1998,13 @@ const FlowBuilder: React.FC = () => {
       if (res.ok) {
         setCreatingTemplate(false);
         navigate('/admin/templates');
-        alert('תבנית נשמרה בהצלחה!');
+        alert(t('editor:alerts.templateSaved'));
       } else {
-        alert('שגיאה בשמירת תבנית');
+        alert(t('editor:alerts.saveTemplateFailed'));
       }
     } catch (e) {
       console.error(e);
-      alert('שגיאה בשמירת תבנית');
+      alert(t('editor:alerts.saveTemplateFailed'));
     }
   };
 
@@ -2003,13 +2024,13 @@ const FlowBuilder: React.FC = () => {
       });
       if (res.ok) {
         setEditingTemplateData({ name, description, isPublic });
-        alert('תבנית עודכנה בהצלחה!');
+        alert(t('editor:alerts.templateUpdated'));
       } else {
-        alert('שגיאה בעדכון תבנית');
+        alert(t('editor:alerts.updateTemplateFailed'));
       }
     } catch (e) {
       console.error(e);
-      alert('שגיאה בעדכון תבנית');
+      alert(t('editor:alerts.updateTemplateFailed'));
     }
   };
 
@@ -2049,7 +2070,7 @@ const FlowBuilder: React.FC = () => {
       if (res.ok) {
         setIsTemplateParamsModalOpen(false);
       } else {
-        alert('שגיאה בשמירת הפרמטרים');
+        alert(t('editor:alerts.saveParamsFailed'));
       }
     } catch (err) {
       console.error(err);
@@ -2075,7 +2096,7 @@ const FlowBuilder: React.FC = () => {
       setViewMode('template-selection');
     } catch (e) {
       console.error("Change template failed", e);
-      alert("שגיאה בהחלפת התסריט");
+      alert(t('editor:alerts.changeTemplateFailed'));
     }
   };
 
@@ -2254,11 +2275,12 @@ const FlowBuilder: React.FC = () => {
 
   const openPublishModal = useCallback(() => {
     const now = new Date();
-    const dateStr = now.toLocaleDateString('he-IL').replace(/\./g, '/');
-    const timeStr = now.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
-    setNewVersionName(`גרסה מ-${dateStr} ${timeStr}`);
+    const locale = getFormatLocale(i18n.resolvedLanguage);
+    const dateStr = now.toLocaleDateString(locale).replace(/\./g, '/');
+    const timeStr = now.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' });
+    setNewVersionName(t('editor:flow.defaultVersionName', { date: dateStr, time: timeStr }));
     setIsPublishModalOpen(true);
-  }, []);
+  }, [i18n.resolvedLanguage, t]);
 
   // Show standalone registration page when ?register=1 is in the URL
   const isRegisterPage = new URLSearchParams(window.location.search).get('register') === '1';
@@ -2274,14 +2296,14 @@ const FlowBuilder: React.FC = () => {
             <svg width="40" height="40" fill="none" viewBox="0 0 24 24"><path stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
           </div>
           <div>
-            <h2 className="text-2xl font-bold text-slate-900 mb-2">הסשן פג תוקף</h2>
-            <p className="text-slate-500 text-sm">כל השינויים שביצעת עד כה נשמרו.<br/>אנא התחבר מחדש כדי להמשיך לעבוד.</p>
+            <h2 className="text-2xl font-bold text-slate-900 mb-2">{t('editor:session.expiredTitle')}</h2>
+            <p className="text-slate-500 text-sm">{t('editor:session.expiredBody')}<br/>{t('editor:session.expiredBodySecondLine')}</p>
           </div>
           <button
             onClick={() => { setSessionExpired(false); window.location.reload(); }}
             className="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold text-sm uppercase tracking-widest shadow-lg shadow-blue-600/20 hover:bg-blue-700 transition-all"
           >
-            התחבר מחדש
+            {t('editor:session.reconnect')}
           </button>
         </div>
       </div>
@@ -2448,15 +2470,15 @@ const FlowBuilder: React.FC = () => {
 
         {/* Template Params Modal - accessible from within editor */}
         {isTemplateParamsModalOpen && (
-          <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-md z-[300] flex items-center justify-center p-6" dir="rtl">
+          <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-md z-[300] flex items-center justify-center p-6">
             <div className="bg-white p-8 rounded-[2.5rem] w-full max-w-xl shadow-2xl border border-white/50 max-h-[90vh] flex flex-col">
               {/* Header */}
               <div className="flex justify-between items-center mb-6 flex-shrink-0">
                 <button onClick={() => setIsTemplateParamsModalOpen(false)} className="p-3 bg-slate-100 rounded-full hover:bg-slate-200 transition-colors">
                   <X size={20} />
                 </button>
-                <div className="text-right">
-                  <h3 className="text-xl font-black text-slate-800">ניהול פרמטרים</h3>
+                <div className="text-start">
+                  <h3 className="text-xl font-black text-slate-800">{t('editor:params.title')}</h3>
                   <p className="text-xs text-slate-400 font-medium mt-0.5">{editingTemplateData?.name}</p>
                 </div>
               </div>
@@ -2464,8 +2486,12 @@ const FlowBuilder: React.FC = () => {
               {/* Explanation */}
               <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 mb-6 flex-shrink-0">
                 <p className="text-xs font-bold text-amber-800 leading-relaxed">
-                  הגדר כאן את השדות שיוצגו למשתמש בטופס לפני שימוש בתבנית.<br />
-                  בתוכן הרכיבים השתמש בתחביר <span className="font-black font-mono bg-amber-100 px-1 rounded">--שם_משתנה--</span> כדי להציג את הערך.
+                  {t('editor:params.descriptionLine1')}<br />
+                  <Trans
+                    i18nKey="params.descriptionLine2"
+                    ns="editor"
+                    components={[<span key="syntax" className="font-black font-mono bg-amber-100 px-1 rounded" />]}
+                  />
                 </p>
               </div>
 
@@ -2474,7 +2500,7 @@ const FlowBuilder: React.FC = () => {
                 {templateEditingParams.length === 0 && (
                   <div className="text-center py-8 text-slate-400">
                     <Sliders size={32} className="mx-auto mb-2 opacity-30" />
-                    <p className="text-sm font-medium">אין פרמטרים. לחץ &ldquo;הוסף פרמטר&rdquo; להתחיל.</p>
+                    <p className="text-sm font-medium">{t('editor:params.empty')}</p>
                   </div>
                 )}
                 {templateEditingParams.map((param, idx) => (
@@ -2487,20 +2513,20 @@ const FlowBuilder: React.FC = () => {
                     </button>
                     <div className="flex-1 grid grid-cols-2 gap-3">
                       <div>
-                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1">תווית למשתמש</label>
+                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1">{t('editor:params.userLabel')}</label>
                         <input
                           type="text"
-                          placeholder="לדוגמה: שם החברה"
+                          placeholder={t('editor:params.userLabelPlaceholder')}
                           value={param.label}
                           onChange={e => setTemplateEditingParams(prev => prev.map((p, i) => i === idx ? { ...p, label: e.target.value } : p))}
-                          className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold text-right outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all"
+                          className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold text-start outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all"
                         />
                       </div>
                       <div>
-                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1">שם משתנה (ב‑--‑--)</label>
+                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1">{t('editor:params.variableName')}</label>
                         <input
                           type="text"
-                          placeholder="לדוגמה: comp_name"
+                          placeholder={t('editor:params.variableNamePlaceholder')}
                           value={param.variableName}
                           onChange={e => setTemplateEditingParams(prev => prev.map((p, i) => i === idx ? { ...p, variableName: e.target.value.replace(/\s/g, '_') } : p))}
                           className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-mono font-bold text-right outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all"
@@ -2518,14 +2544,14 @@ const FlowBuilder: React.FC = () => {
                   onClick={() => setTemplateEditingParams(prev => [...prev, { label: '', variableName: '' }])}
                   className="w-full py-3 border-2 border-dashed border-amber-300 text-amber-600 rounded-2xl font-bold text-sm hover:bg-amber-50 transition-colors flex items-center justify-center gap-2"
                 >
-                  <Plus size={18} /> הוסף פרמטר
+                  <Plus size={18} /> {t('editor:params.add')}
                 </button>
                 <div className="flex gap-3">
                   <button
                     onClick={() => setIsTemplateParamsModalOpen(false)}
                     className="flex-1 py-3 border border-slate-200 text-slate-500 rounded-2xl font-bold text-sm hover:bg-slate-50 transition-colors"
                   >
-                    ביטול
+                    {t('editor:params.cancel')}
                   </button>
                   <button
                     onClick={saveTemplateParamsFromEditor}
@@ -2533,7 +2559,7 @@ const FlowBuilder: React.FC = () => {
                     className="flex-[2] py-3 bg-amber-500 text-white rounded-2xl font-bold text-sm shadow-lg hover:bg-amber-600 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
                   >
                     <Save size={16} />
-                    {templateSavingParams ? 'שומר...' : 'שמור פרמטרים'}
+                    {templateSavingParams ? t('editor:params.saving') : t('editor:params.save')}
                   </button>
                 </div>
               </div>
@@ -2677,14 +2703,14 @@ const FlowBuilder: React.FC = () => {
                 initialTab="bots"
               />
               {quotaError && quotaError.type === 'bots' && (
-                <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[200] p-6 text-right">
+                <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[200] p-6 text-start">
                   <div className="bg-white w-full max-w-sm rounded-[2.5rem] shadow-2xl p-10 animate-in zoom-in duration-200 border border-slate-100">
-                    <div className="w-16 h-16 bg-red-50 text-red-500 rounded-3xl flex items-center justify-center mb-6 mr-0"><AlertTriangle size={32} /></div>
-                    <h3 className="text-2xl font-bold text-slate-900 mb-2">המכסה הסתיימה</h3>
+                    <div className="w-16 h-16 bg-red-50 text-red-500 rounded-3xl flex items-center justify-center mb-6 me-0"><AlertTriangle size={32} /></div>
+                    <h3 className="text-2xl font-bold text-slate-900 mb-2">{t('editor:quota.title')}</h3>
                     <p className="text-slate-500 text-sm mb-8 font-medium leading-relaxed">{quotaError.message}</p>
                     <div className="flex flex-col gap-3">
-                      <button onClick={() => window.open('https://payment.mesergo.com', '_blank')} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold shadow-lg hover:bg-blue-700">קנה בוט חדש ({quotaError.price}₪)</button>
-                      <button onClick={() => setQuotaError(null)} className="w-full py-4 border border-slate-200 text-slate-400 rounded-2xl font-bold hover:bg-slate-50">ביטול</button>
+                      <button onClick={() => window.open('https://payment.mesergo.com', '_blank')} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold shadow-lg hover:bg-blue-700">{t('editor:quota.buyBot', { price: quotaError.price })}</button>
+                      <button onClick={() => setQuotaError(null)} className="w-full py-4 border border-slate-200 text-slate-400 rounded-2xl font-bold hover:bg-slate-50">{t('editor:quota.cancel')}</button>
                     </div>
                   </div>
                 </div>
@@ -2829,7 +2855,7 @@ const FlowBuilder: React.FC = () => {
         onHome={() => { setSelectedBot(null); setActiveProcessId(null); setViewMode('home'); navigate('/dashboard'); }}
         onSimulatorOpen={() => setIsSimulatorOpen(true)}
         onSimulatorClose={() => { setIsSimulatorOpen(false); setSimulatorActiveNodeId(null); setSimulatorFixedProcessNodeId(null); }}
-        onDuplicate={() => { setDuplicateName(`${fixedProcesses.find(p => p.id.toString() === activeProcessId)?.name || ''} (עותק)`); setIsDuplicateModalOpen(true); }}
+          onDuplicate={() => { setDuplicateName(t('editor:flow.copySuffix', { name: fixedProcesses.find(p => p.id.toString() === activeProcessId)?.name || '' })); setIsDuplicateModalOpen(true); }}
         onChangeTemplate={() => setIsChangeTemplateModalOpen(true)}
         onOpenContacts={() => navigate('/contacts')}
         onOpenSessions={() => { setSessionsOwnOnly(true); navigate('/sessions'); }}
@@ -2886,11 +2912,11 @@ const FlowBuilder: React.FC = () => {
       )}
 
       {quotaError && quotaError.type === 'versions' && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[200] p-6 text-right">
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[200] p-6 text-start">
           <div className="bg-white w-full max-w-sm rounded-[2.5rem] shadow-2xl p-10 animate-in zoom-in duration-200 border border-slate-100">
-            <div className="w-16 h-16 bg-red-50 text-red-500 rounded-3xl flex items-center justify-center mb-6 mr-0"><Lock size={32} /></div>
+            <div className="w-16 h-16 bg-red-50 text-red-500 rounded-3xl flex items-center justify-center mb-6 me-0"><Lock size={32} /></div>
             <h3 className="text-2xl font-bold text-slate-900 mb-2">
-              הגעת למגבלת הגרסאות
+              {t('editor:quota.versionLimitReached')}
             </h3>
             <p className="text-slate-500 text-sm mb-8 font-medium leading-relaxed">{quotaError.message}</p>
             <div className="flex flex-col gap-3">
@@ -2898,13 +2924,13 @@ const FlowBuilder: React.FC = () => {
                 onClick={handlePublishPaidVersion} 
                 className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg shadow-indigo-600/20 hover:bg-indigo-700 transition-all"
               >
-                פרסם גרסה בתשלום ({quotaError.price}₪)
+                {t('editor:quota.publishPaid', { price: quotaError.price })}
               </button>
               <button 
                 onClick={() => { setQuotaError(null); setIsPublishModalOpen(false); setNewVersionName(''); }} 
                 className="w-full py-4 border border-slate-200 text-slate-400 rounded-2xl font-bold hover:bg-slate-50 transition-all"
               >
-                ביטול
+                {t('editor:quota.cancel')}
               </button>
             </div>
           </div>
@@ -2912,16 +2938,16 @@ const FlowBuilder: React.FC = () => {
       )}
 
       {isProcessModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[100] p-6 text-right">
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[100] p-6 text-start">
           <div className="bg-white w-full max-w-sm rounded-[2.5rem] shadow-2xl p-10 animate-in zoom-in duration-200 border border-slate-100">
-            <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-3xl flex items-center justify-center mb-6 mr-0"><Plus size={32} /></div>
-            <h3 className="text-2xl font-bold text-slate-900 mb-2 text-right">תהליך חדש</h3>
-            <p className="text-slate-400 text-sm mb-8 font-medium leading-relaxed text-right">צור תהליך חדש שתוכל להשתמש בו שוב ושוב.</p>
+            <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-3xl flex items-center justify-center mb-6 me-0"><Plus size={32} /></div>
+            <h3 className="text-2xl font-bold text-slate-900 mb-2 text-start">{t('editor:processModal.newTitle')}</h3>
+            <p className="text-slate-400 text-sm mb-8 font-medium leading-relaxed text-start">{t('editor:processModal.newDescription')}</p>
             <div className="space-y-6">
-              <input className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-blue-600/10 focus:border-blue-600 transition-all text-sm font-bold text-right" placeholder="שם התהליך..." value={newProcessName} onChange={e => setNewProcessName(e.target.value)} autoFocus />
+              <input className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-blue-600/10 focus:border-blue-600 transition-all text-sm font-bold text-start" placeholder={t('editor:processModal.namePlaceholder')} value={newProcessName} onChange={e => setNewProcessName(e.target.value)} autoFocus />
               <div className="flex gap-4">
-                <button onClick={() => { setIsProcessModalOpen(false); setNewProcessName(''); }} className="flex-1 py-4 border border-slate-200 text-slate-400 rounded-2xl font-bold text-xs uppercase tracking-widest hover:bg-slate-50 transition-colors">ביטול</button>
-                <button onClick={handleCreateProcess} className="flex-1 py-4 bg-blue-600 text-white rounded-2xl font-bold text-xs uppercase tracking-widest shadow-lg shadow-blue-600/20 hover:bg-blue-700 transition-colors">צור תהליך</button>
+                <button onClick={() => { setIsProcessModalOpen(false); setNewProcessName(''); }} className="flex-1 py-4 border border-slate-200 text-slate-400 rounded-2xl font-bold text-xs uppercase tracking-widest hover:bg-slate-50 transition-colors">{t('editor:processModal.cancel')}</button>
+                <button onClick={handleCreateProcess} className="flex-1 py-4 bg-blue-600 text-white rounded-2xl font-bold text-xs uppercase tracking-widest shadow-lg shadow-blue-600/20 hover:bg-blue-700 transition-colors">{t('editor:processModal.create')}</button>
               </div>
             </div>
           </div>
@@ -2929,32 +2955,32 @@ const FlowBuilder: React.FC = () => {
       )}
 
       {isChangeTemplateModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[110] p-6 text-right">
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[110] p-6 text-start">
           <div className="bg-white w-full max-w-sm rounded-[2.5rem] shadow-2xl p-10 animate-in zoom-in duration-200 border border-slate-100">
-            <div className="w-16 h-16 bg-orange-50 text-orange-500 rounded-3xl flex items-center justify-center mb-6 mr-0"><AlertTriangle size={32} /></div>
-            <h3 className="text-2xl font-bold text-slate-900 mb-2 text-right">הזהרה</h3>
-            <p className="text-slate-500 text-sm mb-8 font-medium leading-relaxed text-right">
-              פעולה זו תמחק את כל התסריט, לרבות השינויים שבוצעו בו עד כה. האם תרצה להמשיך לשינוי התסריט?
+            <div className="w-16 h-16 bg-orange-50 text-orange-500 rounded-3xl flex items-center justify-center mb-6 me-0"><AlertTriangle size={32} /></div>
+            <h3 className="text-2xl font-bold text-slate-900 mb-2 text-start">{t('editor:changeTemplateModal.title')}</h3>
+            <p className="text-slate-500 text-sm mb-8 font-medium leading-relaxed text-start">
+              {t('editor:changeTemplateModal.body')}
             </p>
             <div className="flex gap-4">
-              <button onClick={() => setIsChangeTemplateModalOpen(false)} className="flex-1 py-4 border border-slate-200 text-slate-400 rounded-2xl font-bold text-xs uppercase tracking-widest hover:bg-slate-50 transition-colors">בטל</button>
-              <button onClick={handleChangeTemplate} className="flex-1 py-4 bg-orange-500 text-white rounded-2xl font-bold text-xs uppercase tracking-widest shadow-lg shadow-orange-500/20 hover:bg-orange-600 transition-colors">אשר</button>
+              <button onClick={() => setIsChangeTemplateModalOpen(false)} className="flex-1 py-4 border border-slate-200 text-slate-400 rounded-2xl font-bold text-xs uppercase tracking-widest hover:bg-slate-50 transition-colors">{t('editor:changeTemplateModal.cancel')}</button>
+              <button onClick={handleChangeTemplate} className="flex-1 py-4 bg-orange-500 text-white rounded-2xl font-bold text-xs uppercase tracking-widest shadow-lg shadow-orange-500/20 hover:bg-orange-600 transition-colors">{t('editor:changeTemplateModal.confirm')}</button>
             </div>
           </div>
         </div>
       )}
 
       {isDuplicateModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[110] p-6 text-right">
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[110] p-6 text-start">
           <div className="bg-white w-full max-w-sm rounded-[2.5rem] shadow-2xl p-10 animate-in zoom-in duration-200 border border-slate-100">
-            <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-3xl flex items-center justify-center mb-6 mr-0"><Copy size={32} /></div>
-            <h3 className="text-2xl font-bold text-slate-900 mb-2 text-right">שכפול תהליך</h3>
-            <p className="text-slate-400 text-sm mb-8 font-medium leading-relaxed text-right">הזן שם חדש עבור העותק של התהליך הנוכחי.</p>
+            <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-3xl flex items-center justify-center mb-6 me-0"><Copy size={32} /></div>
+            <h3 className="text-2xl font-bold text-slate-900 mb-2 text-start">{t('editor:processModal.duplicateTitle')}</h3>
+            <p className="text-slate-400 text-sm mb-8 font-medium leading-relaxed text-start">{t('editor:processModal.duplicateDescription')}</p>
             <div className="space-y-6">
-              <input className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-blue-600/10 focus:border-blue-600 transition-all text-sm font-bold text-right" placeholder="שם העותק..." value={duplicateName} onChange={e => setDuplicateName(e.target.value)} autoFocus />
+              <input className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-blue-600/10 focus:border-blue-600 transition-all text-sm font-bold text-start" placeholder={t('editor:processModal.duplicatePlaceholder')} value={duplicateName} onChange={e => setDuplicateName(e.target.value)} autoFocus />
               <div className="flex gap-4">
-                <button onClick={() => setIsDuplicateModalOpen(false)} className="flex-1 py-4 border border-slate-200 text-slate-400 rounded-2xl font-bold text-xs uppercase tracking-widest hover:bg-slate-50 transition-colors">ביטול</button>
-                <button onClick={handleDuplicateProcess} className="flex-1 py-4 bg-blue-600 text-white rounded-2xl font-bold text-xs uppercase tracking-widest shadow-lg shadow-blue-600/20 hover:bg-blue-700 transition-colors">שכפול</button>
+                <button onClick={() => setIsDuplicateModalOpen(false)} className="flex-1 py-4 border border-slate-200 text-slate-400 rounded-2xl font-bold text-xs uppercase tracking-widest hover:bg-slate-50 transition-colors">{t('editor:processModal.cancel')}</button>
+                <button onClick={handleDuplicateProcess} className="flex-1 py-4 bg-blue-600 text-white rounded-2xl font-bold text-xs uppercase tracking-widest shadow-lg shadow-blue-600/20 hover:bg-blue-700 transition-colors">{t('editor:processModal.duplicate')}</button>
               </div>
             </div>
           </div>
@@ -2962,33 +2988,41 @@ const FlowBuilder: React.FC = () => {
       )}  
 
       {isDeleteModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[120] p-6 text-right">
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[120] p-6 text-start">
           <div className="bg-white w-full max-w-sm rounded-[2.5rem] shadow-2xl p-10 animate-in zoom-in duration-200 border border-slate-100">
-            <div className="w-16 h-16 bg-red-50 text-red-500 rounded-3xl flex items-center justify-center mb-6 mr-0"><AlertTriangle size={32} /></div>
-            <h3 className="text-2xl font-bold text-slate-900 mb-2 text-right">אישור מחיקה</h3>
-            <p className="text-slate-500 text-sm mb-8 font-medium leading-relaxed text-right">
-              שים לב: תהליך זה מופיע <span className="text-red-600 font-bold">{instanceCount}</span> פעמים בסך כל הבוטים. המחיקה תסיר את כל המופעים של <span className="text-slate-900 font-bold">{processToDelete?.name}</span> מכל הבוטים.
-              <br /> האם אתה בטוח שברצונך למחוק?
+            <div className="w-16 h-16 bg-red-50 text-red-500 rounded-3xl flex items-center justify-center mb-6 me-0"><AlertTriangle size={32} /></div>
+            <h3 className="text-2xl font-bold text-slate-900 mb-2 text-start">{t('editor:processModal.deleteTitle')}</h3>
+            <p className="text-slate-500 text-sm mb-8 font-medium leading-relaxed text-start">
+              <Trans
+                i18nKey="processModal.deleteWarning"
+                ns="editor"
+                values={{ count: instanceCount, name: processToDelete?.name ?? '' }}
+                components={[
+                  <span key="count" className="text-red-600 font-bold" />,
+                  <span key="name" className="text-slate-900 font-bold" />,
+                ]}
+              />
+              <br /> {t('editor:processModal.deleteConfirmQuestion')}
             </p>
             <div className="flex gap-4">
-              <button onClick={() => { setIsDeleteModalOpen(false); setProcessToDelete(null); }} className="flex-1 py-4 border border-slate-200 text-slate-400 rounded-2xl font-bold text-xs uppercase tracking-widest hover:bg-slate-50 transition-colors">ביטול</button>
-              <button onClick={confirmDeleteProcess} className="flex-1 py-4 bg-red-500 text-white rounded-2xl font-bold text-xs uppercase tracking-widest shadow-lg shadow-red-500/20 hover:bg-red-600 transition-colors">מחק</button>
+              <button onClick={() => { setIsDeleteModalOpen(false); setProcessToDelete(null); }} className="flex-1 py-4 border border-slate-200 text-slate-400 rounded-2xl font-bold text-xs uppercase tracking-widest hover:bg-slate-50 transition-colors">{t('editor:processModal.cancel')}</button>
+              <button onClick={confirmDeleteProcess} className="flex-1 py-4 bg-red-500 text-white rounded-2xl font-bold text-xs uppercase tracking-widest shadow-lg shadow-red-500/20 hover:bg-red-600 transition-colors">{t('editor:processModal.delete')}</button>
             </div>
           </div>
         </div>
       )}
 
       {isPublishModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[100] p-6 text-right">
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[100] p-6 text-start">
           <div className="bg-white w-full max-w-sm rounded-[2.5rem] shadow-2xl p-10 animate-in zoom-in duration-200 border border-slate-100">
-            <div className="w-16 h-16 bg-indigo-50 text-indigo-600 rounded-3xl flex items-center justify-center mb-6 mr-0"><CloudUpload size={32} /></div>
-            <h3 className="text-2xl font-bold text-slate-900 mb-2 text-right">פרסום גרסה</h3>
-            <p className="text-slate-400 text-sm mb-8 font-medium leading-relaxed text-right">שמור צילום מצב (Snapshot) מלא של התזרים הנוכחי.</p>
+            <div className="w-16 h-16 bg-indigo-50 text-indigo-600 rounded-3xl flex items-center justify-center mb-6 me-0"><CloudUpload size={32} /></div>
+            <h3 className="text-2xl font-bold text-slate-900 mb-2 text-start">{t('editor:publishModal.title')}</h3>
+            <p className="text-slate-400 text-sm mb-8 font-medium leading-relaxed text-start">{t('editor:publishModal.description')}</p>
             <div className="space-y-6">
-              <input className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-indigo-600/10 focus:border-blue-600 transition-all text-sm font-bold text-right" placeholder="שם הגרסה (למשל: לפני עדכון API)..." value={newVersionName} onChange={e => setNewVersionName(e.target.value)} autoFocus />
+              <input className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-indigo-600/10 focus:border-blue-600 transition-all text-sm font-bold text-start" placeholder={t('editor:publishModal.namePlaceholder')} value={newVersionName} onChange={e => setNewVersionName(e.target.value)} autoFocus />
               <div className="flex gap-4">
-                <button onClick={() => { setIsPublishModalOpen(false); setNewVersionName(''); }} className="flex-1 py-4 border border-slate-200 text-slate-400 rounded-2xl font-bold text-xs uppercase tracking-widest hover:bg-slate-50 transition-colors">ביטול</button>
-                <button onClick={handlePublishVersion} className="flex-1 py-4 bg-indigo-600 text-white rounded-2xl font-bold text-xs uppercase tracking-widest shadow-lg shadow-indigo-600/20 hover:bg-indigo-700 transition-colors">פרסם</button>
+                <button onClick={() => { setIsPublishModalOpen(false); setNewVersionName(''); }} className="flex-1 py-4 border border-slate-200 text-slate-400 rounded-2xl font-bold text-xs uppercase tracking-widest hover:bg-slate-50 transition-colors">{t('editor:publishModal.cancel')}</button>
+                <button onClick={handlePublishVersion} className="flex-1 py-4 bg-indigo-600 text-white rounded-2xl font-bold text-xs uppercase tracking-widest shadow-lg shadow-indigo-600/20 hover:bg-indigo-700 transition-colors">{t('editor:publishModal.publish')}</button>
               </div>
             </div>
           </div>
@@ -2996,54 +3030,59 @@ const FlowBuilder: React.FC = () => {
       )}
 
       {isRestoreModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[100] p-6 text-right">
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[100] p-6 text-start">
           <div className="bg-white w-full max-w-sm rounded-[2.5rem] shadow-2xl p-10 animate-in zoom-in duration-200 border border-slate-100">
-            <div className="w-16 h-16 bg-amber-50 text-amber-500 rounded-3xl flex items-center justify-center mb-6 mr-0"><RotateCcw size={32} /></div>
-            <h3 className="text-2xl font-bold text-slate-900 mb-2 text-right">אישור שחזור גרסה</h3>
-            <p className="text-slate-500 text-sm mb-8 font-medium leading-relaxed text-right">
-              שים לב: שחזור הגרסה <span className="text-slate-900 font-bold">{versionToRestore?.name}</span> ידרוס את העבודה הנוכחית שלך אם לא שמרת גרסה.
-              <br /> האם אתה בטוח שברצונך להמשיך?
+            <div className="w-16 h-16 bg-amber-50 text-amber-500 rounded-3xl flex items-center justify-center mb-6 me-0"><RotateCcw size={32} /></div>
+            <h3 className="text-2xl font-bold text-slate-900 mb-2 text-start">{t('editor:restoreModal.title')}</h3>
+            <p className="text-slate-500 text-sm mb-8 font-medium leading-relaxed text-start">
+              <Trans
+                i18nKey="restoreModal.warning"
+                ns="editor"
+                values={{ name: versionToRestore?.name ?? '' }}
+                components={[<span key="name" className="text-slate-900 font-bold" />]}
+              />
+              <br /> {t('editor:restoreModal.confirmQuestion')}
             </p>
             <div className="flex gap-4">
-              <button onClick={() => { setIsRestoreModalOpen(false); setVersionToRestore(null); }} className="flex-1 py-4 border border-slate-200 text-slate-400 rounded-2xl font-bold text-xs uppercase tracking-widest hover:bg-slate-50 transition-colors">ביטול</button>
-              <button onClick={handleRestoreVersion} className="flex-1 py-4 bg-amber-500 text-white rounded-2xl font-bold text-xs uppercase tracking-widest shadow-lg shadow-amber-500/20 hover:bg-amber-600 transition-colors">שחזר עכשיו</button>
+              <button onClick={() => { setIsRestoreModalOpen(false); setVersionToRestore(null); }} className="flex-1 py-4 border border-slate-200 text-slate-400 rounded-2xl font-bold text-xs uppercase tracking-widest hover:bg-slate-50 transition-colors">{t('editor:restoreModal.cancel')}</button>
+              <button onClick={handleRestoreVersion} className="flex-1 py-4 bg-amber-500 text-white rounded-2xl font-bold text-xs uppercase tracking-widest shadow-lg shadow-amber-500/20 hover:bg-amber-600 transition-colors">{t('editor:restoreModal.restoreNow')}</button>
             </div>
           </div>
         </div>
       )}
 
       {isRestoreArchivedModalOpen && archivedVersionToRestore && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[100] p-6 text-right">
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[100] p-6 text-start">
           <div className="bg-white w-full max-w-sm rounded-[2.5rem] shadow-2xl p-10 animate-in zoom-in duration-200 border border-slate-100">
-            <div className="w-16 h-16 bg-slate-100 text-slate-600 rounded-3xl flex items-center justify-center mb-6 mr-0"><RotateCcw size={32} /></div>
-            <h3 className="text-2xl font-bold text-slate-900 mb-2 text-right">שיחזור גרסה</h3>
-            <p className="text-slate-500 text-sm mb-4 font-medium leading-relaxed text-right">
-              שחזור גרסה זו ידרוס את העבודה הנוכחית שלך אם לא שמרת גרסה.
+            <div className="w-16 h-16 bg-slate-100 text-slate-600 rounded-3xl flex items-center justify-center mb-6 me-0"><RotateCcw size={32} /></div>
+            <h3 className="text-2xl font-bold text-slate-900 mb-2 text-start">{t('editor:restoreModal.paidTitle')}</h3>
+            <p className="text-slate-500 text-sm mb-4 font-medium leading-relaxed text-start">
+              {t('editor:restoreModal.paidBody')}
             </p>
             <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 mb-6">
               <div className="flex items-center justify-center gap-2 text-slate-700">
                 <Wallet size={20} />
-                <span className="text-lg font-bold">עלות שחזור: {archivedVersionToRestore.price}₪</span>
+                <span className="text-lg font-bold">{t('editor:restoreModal.paidCost', { price: archivedVersionToRestore.price })}</span>
               </div>
               <div className="text-xs text-center text-slate-600 mt-2">
-                תשלום חד פעמי
+                {t('editor:restoreModal.oneTimePayment')}
               </div>
             </div>
             <p className="text-slate-400 text-xs mb-6 text-center">
-              שחזור הגרסה ינעל אותה ותוסיף אותה לרשימה הנראית מעבר למגבלה
+              {t('editor:restoreModal.paidNote')}
             </p>
             <div className="flex gap-4">
               <button 
                 onClick={() => { setIsRestoreArchivedModalOpen(false); setArchivedVersionToRestore(null); }} 
                 className="flex-1 py-4 border border-slate-200 text-slate-400 rounded-2xl font-bold text-xs uppercase tracking-widest hover:bg-slate-50 transition-colors"
               >
-                ביטול
+                {t('editor:restoreModal.cancel')}
               </button>
               <button 
                 onClick={handleRestoreArchivedVersion} 
                 className="flex-1 py-4 bg-slate-600 text-white rounded-2xl font-bold text-xs uppercase tracking-widest shadow-lg shadow-slate-600/20 hover:bg-slate-700 transition-colors"
               >
-                שלם ושחזר ({archivedVersionToRestore.price}₪)
+                {t('editor:restoreModal.payAndRestore', { price: archivedVersionToRestore.price })}
               </button>
             </div>
           </div>

@@ -123,7 +123,7 @@ const ImportContactsModal: React.FC<ImportContactsModalProps> = ({
       {/* Selection dialog */}
       {stage === 'select' && (
         <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm p-5 sm:p-8" dir="rtl">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm p-5 sm:p-8">
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-xl font-black text-slate-900">ייבוא אנשי קשר</h2>
               <button onClick={onClose} className="p-2 text-slate-300 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-colors">
@@ -164,7 +164,7 @@ const ImportContactsModal: React.FC<ImportContactsModalProps> = ({
                     ) : groups.length === 0 ? (
                       <p className="text-xs text-indigo-400 font-semibold px-1">אין רשימות תפוצה. צור קבוצה תחילה.</p>
                     ) : (
-                      <div className="flex flex-col gap-1.5 max-h-36 overflow-y-auto pr-1">
+                      <div className="flex flex-col gap-1.5 max-h-36 overflow-y-auto ps-1">
                         {groups.map(g => (
                           <label key={g._id} className="flex items-center gap-2.5 cursor-pointer select-none px-3 py-2 rounded-xl hover:bg-indigo-100 transition-colors">
                             <input

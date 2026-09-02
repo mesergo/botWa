@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { 
-  Users, UserCog, LogOut, ArrowLeft, AlertCircle, AlertTriangle, Shield, Activity, 
+  Users, UserCog, LogOut, ArrowLeft, ArrowRight, AlertCircle, AlertTriangle, Shield, Activity,
   Search, Trash2, Edit2, Ban, CheckCircle, BarChart2, Settings, 
-  FileText, Save, Plus, Eye, EyeOff, Bot, ChevronRight, LayoutDashboard,
+  FileText, Save, Plus, Eye, EyeOff, Bot, ChevronRight, ChevronLeft, LayoutDashboard,
   CreditCard, MoreVertical, X, Star, Globe, Lock, Copy, List, Phone, Clock,
   ChevronDown, ChevronUp, ToggleLeft, ToggleRight, XCircle, MessageSquare, Menu,
   User as UserIcon, ExternalLink, Sliders, Image as ImageIcon, Layers,
@@ -110,6 +111,11 @@ const API_BASE = window.location.hostname === 'localhost'
 const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onImpersonate, onEditTemplate, onCreateTemplate }) => {
   const navigate = useNavigate();
   const { tab } = useParams<{ tab?: string }>();
+  // Layout direction follows the UI language (he -> rtl, en -> ltr). Used only for the
+  // few places that cannot be expressed with logical CSS utilities (off-canvas transform,
+  // reading-order arrows).
+  const { i18n } = useTranslation();
+  const isRtl = i18n.dir() === 'rtl';
 
   type AdminTab = 'dashboard' | 'users' | 'user-types' | 'templates' | 'settings' | 'sessions' | 'dialog360' | 'sms-in' | 'sms-external-log' | 'connected-numbers';
   const VALID_TABS: AdminTab[] = ['dashboard', 'users', 'user-types', 'templates', 'settings', 'sessions', 'dialog360', 'sms-in', 'sms-external-log', 'connected-numbers'];
@@ -1680,7 +1686,7 @@ const openRestoreConversations = async () => {
 
   // Render Component
   return (
-    <div className="relative flex items-stretch h-screen bg-[#F8FAFC] text-slate-900 font-sans selection:bg-indigo-100 selection:text-indigo-900 overflow-hidden" dir="rtl" style={{ fontFamily: "'Heebo', sans-serif" }}>
+    <div className="relative flex items-stretch h-screen bg-[#F8FAFC] text-slate-900 font-sans selection:bg-indigo-100 selection:text-indigo-900 overflow-hidden" style={{ fontFamily: "'Heebo', sans-serif" }}>
       <style>{`
         @keyframes fadeIn {
           from { opacity: 0; }
@@ -1719,12 +1725,14 @@ const openRestoreConversations = async () => {
         .sidebar-link-active::before {
           content: '';
           position: absolute;
-          right: 0;
+          /* Logical: inline-start === right under RTL (unchanged in Hebrew), left under LTR. */
+          inset-inline-start: 0;
           top: 0.5rem;
           bottom: 0.5rem;
           width: 4px;
-          border-top-left-radius: 4px;
-          border-bottom-left-radius: 4px;
+          /* block-start + inline-end === top-left under RTL, top-right under LTR. */
+          border-start-end-radius: 4px;
+          border-end-end-radius: 4px;
           background-color: #0284C7;
         }
       `}</style>
@@ -1739,7 +1747,7 @@ const openRestoreConversations = async () => {
       )}
       
       {/* Sidebar Navigation */}
-      <aside className={`fixed md:relative inset-y-0 right-0 w-72 max-w-[85vw] h-screen bg-white flex flex-col z-40 border-l border-slate-100 shadow-[4px_0_24px_rgba(0,0,0,0.12)] md:shadow-[4px_0_24px_rgba(0,0,0,0.02)] transform transition-transform duration-300 flex-shrink-0 ${isMobileSidebarOpen ? 'translate-x-0' : 'translate-x-full md:translate-x-0'}`}>
+      <aside className={`fixed md:relative inset-y-0 start-0 w-72 max-w-[85vw] h-screen bg-white flex flex-col z-40 border-e border-slate-100 shadow-[4px_0_24px_rgba(0,0,0,0.12)] md:shadow-[4px_0_24px_rgba(0,0,0,0.02)] transform transition-transform duration-300 flex-shrink-0 ${isMobileSidebarOpen ? 'translate-x-0' : `${isRtl ? 'translate-x-full' : '-translate-x-full'} md:translate-x-0`}`}>
         <div className="p-8 pb-6">
           <div className="flex items-center gap-3 mb-10">
            <div 
@@ -1772,7 +1780,7 @@ const openRestoreConversations = async () => {
               >
                 <item.icon size={20} className={`transition-colors flex-shrink-0 ${activeTab === item.id ? 'text-sky-600' : 'text-slate-400 group-hover:text-slate-600'}`} />
                 <span className="tracking-tight">{item.label}</span>
-                {activeTab === item.id && <ChevronRight size={16} className="mr-auto opacity-50 text-sky-400" />}
+                {activeTab === item.id && <ChevronRight size={16} className="ms-auto opacity-50 text-sky-400" />}
               </button>
             ))}
           </nav>
@@ -1853,10 +1861,10 @@ const openRestoreConversations = async () => {
         <div className={`flex-1 min-h-0 z-10 ${activeTab === 'sessions' || activeTab === 'sms-in' ? 'overflow-hidden' : 'overflow-visible px-4 sm:px-6 lg:px-10 pb-6 sm:pb-10 pt-2'}`}>
           
           {error && (
-            <div className="bg-red-50 border-r-4 border-red-500 p-4 mb-8 rounded-xl shadow-sm flex items-center gap-4 animate-fade-in group hover:bg-red-100/50 transition-colors">
+            <div className="bg-red-50 border-s-4 border-red-500 p-4 mb-8 rounded-xl shadow-sm flex items-center gap-4 animate-fade-in group hover:bg-red-100/50 transition-colors">
               <div className="p-2 bg-red-100 rounded-full text-red-600 group-hover:bg-red-200 transition-colors"><AlertCircle className="w-5 h-5" /></div>
               <p className="text-red-700 font-bold">{error}</p>
-              <button onClick={() => setError(null)} className="mr-auto p-2 hover:bg-red-200 rounded-full text-red-400 hover:text-red-700 transition-all"><X size={18} /></button>
+              <button onClick={() => setError(null)} className="ms-auto p-2 hover:bg-red-200 rounded-full text-red-400 hover:text-red-700 transition-all"><X size={18} /></button>
             </div>
           )}
 
@@ -1885,17 +1893,16 @@ const openRestoreConversations = async () => {
 
           {/* CONNECTED NUMBERS TAB — global view of every connected WhatsApp number across all customers */}
           {activeTab === 'connected-numbers' && (
-            <div className="space-y-4 animate-fade-in-up" dir="rtl">
+            <div className="space-y-4 animate-fade-in-up">
               {/* Search bar */}
               <div className="relative max-w-md mb-2">
-                <Search size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-300" />
+                <Search size={16} className="absolute start-4 top-1/2 -translate-y-1/2 text-slate-300" />
                 <input
                   type="text"
                   value={allConnectedNumbersSearch}
                   onChange={e => setAllConnectedNumbersSearch(e.target.value)}
                   placeholder="חיפוש לפי מספר, שם משתמש או אימייל..."
-                  className="w-full pr-10 pl-4 py-3 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700 placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all shadow-sm"
-                  dir="rtl"
+                  className="w-full ps-10 pe-4 py-3 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700 placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all shadow-sm"
                 />
               </div>
 
@@ -1986,7 +1993,7 @@ const openRestoreConversations = async () => {
                                   currently active/registered — an active number's past errors
                                   are irrelevant since it since recovered. */}
                               {!n.registered && n.last_error && (
-                                <div className="mt-2 bg-red-50 border border-red-200 rounded-xl px-3 py-2 flex items-start gap-2" dir="rtl">
+                                <div className="mt-2 bg-red-50 border border-red-200 rounded-xl px-3 py-2 flex items-start gap-2">
                                   <AlertCircle size={13} className="text-red-500 mt-0.5 flex-shrink-0" />
                                   <div className="min-w-0">
                                     <p className="text-[11px] font-black text-red-700">שגיאת חיבור אחרונה:</p>
@@ -2060,17 +2067,16 @@ const openRestoreConversations = async () => {
 
               {/* LEFT: Sessions list (flex-1, scrollable) */}
               <div className="flex-1 overflow-y-auto px-4 sm:px-6 lg:px-10 pb-6 sm:pb-10 pt-2">
-                <div className="space-y-4 animate-fade-in-up" dir="rtl">
+                <div className="space-y-4 animate-fade-in-up">
                   {/* Search bar with submit */}
                   <div className="relative max-w-md mb-6">
-                    <Search size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-300" />
+                    <Search size={16} className="absolute start-4 top-1/2 -translate-y-1/2 text-slate-300" />
                     <input
                       type="text"
                       value={sessionsSearchInput}
                       onChange={e => setSessionsSearchInput(e.target.value)}
                       placeholder="חיפוש לפי טלפון, בוט או משתמש..."
-                      className="w-full pr-10 pl-4 py-3 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700 placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all shadow-sm"
-                      dir="rtl"
+                      className="w-full ps-10 pe-4 py-3 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700 placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all shadow-sm"
                     />
                   </div>
 
@@ -2093,15 +2099,15 @@ const openRestoreConversations = async () => {
 
                       {/* Table */}
                       <div className="bg-white border border-slate-200 rounded-2xl overflow-x-auto shadow-sm">
-                        <table className="w-full min-w-[760px] text-sm" dir="rtl">
+                        <table className="w-full min-w-[760px] text-sm">
                           <thead>
                             <tr className="border-b border-slate-100 bg-slate-50/80">
-                              <th className="text-right px-4 py-3 text-xs font-black text-slate-400 uppercase tracking-widest">טלפון</th>
-                              <th className="text-right px-4 py-3 text-xs font-black text-slate-400 uppercase tracking-widest">משתמש</th>
-                              <th className="text-right px-4 py-3 text-xs font-black text-slate-400 uppercase tracking-widest">בוט</th>
-                              <th className="text-right px-4 py-3 text-xs font-black text-slate-400 uppercase tracking-widest">תאריך</th>
-                              <th className="text-right px-4 py-3 text-xs font-black text-slate-400 uppercase tracking-widest">סטטוס</th>
-                              <th className="text-right px-4 py-3 text-xs font-black text-slate-400 uppercase tracking-widest">פעולות</th>
+                              <th className="text-start px-4 py-3 text-xs font-black text-slate-400 uppercase tracking-widest">טלפון</th>
+                              <th className="text-start px-4 py-3 text-xs font-black text-slate-400 uppercase tracking-widest">משתמש</th>
+                              <th className="text-start px-4 py-3 text-xs font-black text-slate-400 uppercase tracking-widest">בוט</th>
+                              <th className="text-start px-4 py-3 text-xs font-black text-slate-400 uppercase tracking-widest">תאריך</th>
+                              <th className="text-start px-4 py-3 text-xs font-black text-slate-400 uppercase tracking-widest">סטטוס</th>
+                              <th className="text-start px-4 py-3 text-xs font-black text-slate-400 uppercase tracking-widest">פעולות</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100">
@@ -2304,7 +2310,6 @@ const openRestoreConversations = async () => {
                     <div
                       ref={adminHistoryScrollRef}
                       className="flex-1 overflow-y-auto p-3 space-y-4 bg-[#fcfcfc]"
-                      dir="rtl"
                     >
                       {session.process_history.length === 0 ? (
                         <div className="flex flex-col items-center justify-center h-full gap-3 text-slate-300">
@@ -2345,10 +2350,10 @@ const openRestoreConversations = async () => {
                                 {isBot ? <Bot size={13} /> : <UserIcon size={13} />}
                               </div>
                               <div className={`flex flex-col gap-0.5 ${isBot ? 'items-end' : 'items-start'}`}>
-                                <div className={`px-3 py-2 rounded-2xl text-xs font-semibold shadow-sm text-right ${
+                                <div className={`px-3 py-2 rounded-2xl text-xs font-semibold shadow-sm text-start ${
                                   isBot
-                                    ? 'bg-white border border-slate-100 text-slate-900 rounded-tr-none'
-                                    : 'bg-sky-500 text-white rounded-tl-none'
+                                    ? 'bg-white border border-slate-100 text-slate-900 rounded-ss-none'
+                                    : 'bg-sky-500 text-white rounded-se-none'
                                 }`}>
                                   {(item.type === 'Text' || item.type === 'UserInput' || !item.type || item.type.startsWith('input_')) && text && !isAudioUrl && (
                                     <p className="whitespace-pre-wrap leading-relaxed">{text}</p>
@@ -3233,7 +3238,7 @@ const openRestoreConversations = async () => {
                     )}
 
                     {userDetailTab === 'removal-log' && (
-                      <div className="flex-1 overflow-y-auto p-4 sm:p-8 content-start h-full" dir="rtl">
+                      <div className="flex-1 overflow-y-auto p-4 sm:p-8 content-start h-full">
                         <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-6">
                           {removalLogLoading ? (
                             <div className="text-center py-10 text-slate-400 text-sm">טוען…</div>
@@ -3245,9 +3250,9 @@ const openRestoreConversations = async () => {
                                 <table className="w-full text-sm">
                                   <thead>
                                     <tr className="border-b border-slate-100">
-                                      <th className="text-right py-2 px-3 font-bold text-slate-500 text-xs">סוג פעולה</th>
-                                      <th className="text-right py-2 px-3 font-bold text-slate-500 text-xs">מילת מפתח</th>
-                                      <th className="text-right py-2 px-3 font-bold text-slate-500 text-xs">תאריך ושעה</th>
+                                      <th className="text-start py-2 px-3 font-bold text-slate-500 text-xs">סוג פעולה</th>
+                                      <th className="text-start py-2 px-3 font-bold text-slate-500 text-xs">מילת מפתח</th>
+                                      <th className="text-start py-2 px-3 font-bold text-slate-500 text-xs">תאריך ושעה</th>
                                     </tr>
                                   </thead>
                                   <tbody>
@@ -3301,7 +3306,7 @@ const openRestoreConversations = async () => {
                     )}
 
                     {userDetailTab === 'cust-templates' && (
-                      <div className="flex-1 overflow-y-auto p-4 sm:p-8 content-start h-full" dir="rtl">
+                      <div className="flex-1 overflow-y-auto p-4 sm:p-8 content-start h-full">
                         {custDialog360Loading ? (
                           <div className="flex items-center justify-center py-20">
                             <div className="text-slate-400 text-center">
@@ -3397,7 +3402,7 @@ const openRestoreConversations = async () => {
                                         </div>
                                       </div>
                                       {hasImage && (
-                                        <div className="ml-3 p-2 bg-white rounded-lg shadow-sm border border-slate-200">
+                                        <div className="ms-3 p-2 bg-white rounded-lg shadow-sm border border-slate-200">
                                           <ImageIcon size={20} className="text-sky-600" />
                                         </div>
                                       )}
@@ -3485,7 +3490,7 @@ const openRestoreConversations = async () => {
                     )}
 
                     {userDetailTab === 'cust-connections' && (
-                      <div className="flex-1 overflow-y-auto p-4 sm:p-8 content-start h-full" dir="rtl">
+                      <div className="flex-1 overflow-y-auto p-4 sm:p-8 content-start h-full">
                         <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-6">
                           <div className="flex items-center justify-between gap-3 mb-5">
                             <h3 className="text-base font-black text-slate-800">מספרים מחוברים</h3>
@@ -3564,7 +3569,7 @@ const openRestoreConversations = async () => {
                                       {/* Show the last connection error only when the number is NOT
                                           currently active/registered. */}
                                       {!n.registered && n.last_error && (
-                                        <div className="mt-2 bg-red-50 border border-red-200 rounded-xl px-3 py-2 flex items-start gap-2" dir="rtl">
+                                        <div className="mt-2 bg-red-50 border border-red-200 rounded-xl px-3 py-2 flex items-start gap-2">
                                           <AlertCircle size={13} className="text-red-500 mt-0.5 flex-shrink-0" />
                                           <div className="min-w-0">
                                             <p className="text-[11px] font-black text-red-700">שגיאת חיבור אחרונה:</p>
@@ -3730,7 +3735,7 @@ const openRestoreConversations = async () => {
                     })()}
 
                     {showRestoreModal && (
-                      <div className="absolute inset-0 z-40 bg-slate-900/40 flex items-center justify-center p-4" dir="rtl">
+                      <div className="absolute inset-0 z-40 bg-slate-900/40 flex items-center justify-center p-4">
                         <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg border border-slate-200 overflow-hidden">
                           <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
                             <div className="flex items-center gap-2">
@@ -4134,14 +4139,14 @@ const openRestoreConversations = async () => {
                PARAMS MODAL - Manage template parameters (for --varName-- filling)
                ─────────────────────────────────────────────────────────────── */}
           {paramsModalTemplate && (
-            <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-md z-50 flex items-center justify-center p-6" dir="rtl">
+            <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-md z-50 flex items-center justify-center p-6">
               <div className="bg-white p-8 rounded-[2.5rem] w-full max-w-xl shadow-2xl animate-fade-in-up border border-white/50 max-h-[90vh] flex flex-col">
                 {/* Header */}
                 <div className="flex justify-between items-center mb-6 flex-shrink-0">
                   <button onClick={() => setParamsModalTemplate(null)} className="p-3 bg-slate-100 rounded-full hover:bg-slate-200 transition-colors">
                     <X size={20} />
                   </button>
-                  <div className="text-right">
+                  <div className="text-start">
                     <h3 className="text-xl font-black text-slate-800">ניהול פרמטרים</h3>
                     <p className="text-xs text-slate-400 font-medium mt-0.5">{paramsModalTemplate.name}</p>
                   </div>
@@ -4180,7 +4185,7 @@ const openRestoreConversations = async () => {
                             placeholder='לדוגמה: שם החברה'
                             value={param.label}
                             onChange={e => updateParam(idx, 'label', e.target.value)}
-                            className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold text-right outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all"
+                            className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold text-start outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all"
                           />
                         </div>
                         <div>
@@ -4617,13 +4622,13 @@ const openRestoreConversations = async () => {
 
           {/* Modal: confirm global removal-config save */}
           {removalConfirmOpen && removalConfig && (
-            <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[100] flex items-center justify-center p-6" dir="rtl">
+            <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[100] flex items-center justify-center p-6">
               <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl border border-slate-100 p-8">
                 <div className="flex items-start gap-4 mb-6">
                   <div className="w-12 h-12 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center flex-shrink-0">
                     <AlertTriangle size={22} />
                   </div>
-                  <div className="text-right">
+                  <div className="text-start">
                     <h4 className="text-lg font-black text-slate-900 mb-1">לאשר שינוי הגדרת הסרה גלובלית?</h4>
                     <p className="text-sm text-slate-500 font-medium leading-relaxed">
                       ההגדרות החדשות יחולו על כל המשתמשים שלא דרסו את ברירת המחדל. שינוי שגוי עלול למנוע הסרה אוטומטית של נמענים שביקשו להסירם — באחריותך.
@@ -4664,7 +4669,7 @@ const openRestoreConversations = async () => {
                     <p className="text-slate-500 text-sm mb-6">בחר כיצד ליצור את התבנית החדשה:</p>
                     <button
                       onClick={() => { setIsCreateChoiceModalOpen(false); onCreateTemplate(); }}
-                      className="w-full flex items-center gap-5 p-5 bg-slate-50 hover:bg-sky-50 border border-slate-200 hover:border-sky-400 rounded-2xl transition-all text-right group"
+                      className="w-full flex items-center gap-5 p-5 bg-slate-50 hover:bg-sky-50 border border-slate-200 hover:border-sky-400 rounded-2xl transition-all text-start group"
                     >
                       <div className="w-12 h-12 bg-white text-slate-400 group-hover:bg-sky-600 group-hover:text-white rounded-2xl flex items-center justify-center flex-shrink-0 transition-all border border-slate-200 shadow-sm">
                         <Plus size={24} />
@@ -4676,7 +4681,7 @@ const openRestoreConversations = async () => {
                     </button>
                     <button
                       onClick={() => setCreateFromBotStep('pick-bot')}
-                      className="w-full flex items-center gap-5 p-5 bg-slate-50 hover:bg-pink-50 border border-slate-200 hover:border-pink-400 rounded-2xl transition-all text-right group"
+                      className="w-full flex items-center gap-5 p-5 bg-slate-50 hover:bg-pink-50 border border-slate-200 hover:border-pink-400 rounded-2xl transition-all text-start group"
                     >
                       <div className="w-12 h-12 bg-white text-slate-400 group-hover:bg-pink-600 group-hover:text-white rounded-2xl flex items-center justify-center flex-shrink-0 transition-all border border-slate-200 shadow-sm">
                         <Copy size={24} />
@@ -4692,10 +4697,10 @@ const openRestoreConversations = async () => {
                 {createFromBotStep === 'pick-bot' && (
                   <div className="space-y-4">
                     <div className="flex items-center gap-3 mb-4">
-                      <button onClick={() => setCreateFromBotStep('choice')} className="p-2 hover:bg-slate-100 rounded-lg text-slate-400 transition-colors"><ArrowLeft size={18} /></button>
+                      <button onClick={() => setCreateFromBotStep('choice')} className="p-2 hover:bg-slate-100 rounded-lg text-slate-400 transition-colors">{isRtl ? <ArrowLeft size={18} /> : <ArrowRight size={18} />}</button>
                       <p className="text-slate-600 font-bold text-sm">בחר בוט מהמערכת</p>
                     </div>
-                    <div className="max-h-72 overflow-y-auto space-y-2 pr-1">
+                    <div className="max-h-72 overflow-y-auto space-y-2 ps-1">
                       {allSystemBots.length === 0 ? (
                         <p className="text-center text-slate-400 py-8 text-sm">אין בוטים במערכת</p>
                       ) : (
@@ -4724,11 +4729,11 @@ const openRestoreConversations = async () => {
                                   <div className="w-10 h-10 bg-white text-slate-400 group-hover:bg-pink-600 group-hover:text-white rounded-xl flex items-center justify-center border border-slate-200 transition-all">
                                     <Bot size={18} />
                                   </div>
-                                  <div className="flex-1 text-right">
+                                  <div className="flex-1 text-start">
                                     <p className="font-bold text-slate-800 text-sm">{bot.name}</p>
                                     <p className="text-xs text-slate-400">ID: {bot.id.slice(-6)}</p>
                                   </div>
-                                  <ChevronRight size={16} className="text-slate-300 group-hover:text-pink-500 transition-colors" />
+                                  {isRtl ? <ChevronLeft size={16} className="text-slate-300 group-hover:text-pink-500 transition-colors" /> : <ChevronRight size={16} className="text-slate-300 group-hover:text-pink-500 transition-colors" />}
                                 </div>
                               ))}
                             </div>
@@ -5278,8 +5283,8 @@ const openRestoreConversations = async () => {
 
       {/* Delete User Confirmation Modal */}
       {deleteConfirmUserId && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-[200] p-6" dir="rtl">
-          <div className="bg-white w-full max-w-sm rounded-[2rem] shadow-2xl p-8 border border-slate-100 text-right animate-in zoom-in duration-200">
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-[200] p-6">
+          <div className="bg-white w-full max-w-sm rounded-[2rem] shadow-2xl p-8 border border-slate-100 text-start animate-in zoom-in duration-200">
             <div className="w-14 h-14 bg-red-100 text-red-600 rounded-2xl flex items-center justify-center mb-5">
               <Trash2 size={28} />
             </div>

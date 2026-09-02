@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   INITIAL_CLIENTS, 
@@ -81,6 +82,10 @@ export default function SmsInApp({
   initialTab,
   lockedTab,
 }: SmsInAppProps) {
+  // Page direction follows the UI language (rtl for he, ltr for en) so directional
+  // affordances — pagination chevrons, toast entrance — mirror with the layout.
+  const { t, i18n } = useTranslation('smsIn');
+  const isRtl = i18n.dir() === 'rtl';
   // Standalone demo = full admin UI; when embedded in botWa, only real admins get assignment tabs
   const isAdmin = isAdminProp ?? !embedded;
   // /admin panel → always every message; user SMS tab → only assigned lines
@@ -243,7 +248,7 @@ export default function SmsInApp({
       }
     } catch (e) {
       console.error('Error fetching SMS clients from MongoDB:', e);
-      setToast({ type: 'error', text: 'לא ניתן לטעון לקוחות מ-MongoDB' });
+      setToast({ type: 'error', text: t('app.errors.loadClients') });
       setTimeout(() => setToast(null), 4000);
     } finally {
       setIsLoadingClients(false);
@@ -439,12 +444,12 @@ export default function SmsInApp({
           googleSheetsUrl: '',
           webhookUrl: '',
           isActive: false,
-          notes: 'נוסף אוטומטית מהודעות נכנסות',
+          notes: t('app.autoNotes'),
           createdAt: new Date().toISOString(),
         })),
       ];
     });
-  }, [messageDestNumbers, isAdmin]);
+  }, [messageDestNumbers, isAdmin, t]);
 
   // Newest-added line first — falls back to array position when createdAt is missing
   const sortedDestSettings = useMemo(() => {
@@ -509,31 +514,31 @@ export default function SmsInApp({
   const smsDbNotice = useMemo(() => {
     if (messagesLoadError === 'failed') {
       return {
-        title: 'לא ניתן להתחבר לשרת',
-        detail: 'בקשת ההודעות נכשלה. בדוק שהשרת (backend) פועל ושהכתובת נגישה מהדפדפן.',
+        title: t('app.dbNotice.connectionFailed.title'),
+        detail: t('app.dbNotice.connectionFailed.detail'),
       };
     }
     if (dbStatusChecked && !dbStatus.configured) {
       return {
-        title: 'מסד ה-SMS אינו מוגדר',
-        detail: dbStatus.message || 'חסר SMS_MONGODB_URI בהגדרות השרת (backend/.env) — לכן אין מאיפה לטעון הודעות.',
+        title: t('app.dbNotice.notConfigured.title'),
+        detail: dbStatus.message || t('app.dbNotice.notConfigured.detail'),
       };
     }
     if (messagesLoadError === 'unavailable' || (dbStatusChecked && dbStatus.configured && !dbStatus.connected)) {
       return {
-        title: 'אין חיבור למסד ה-SMS',
+        title: t('app.dbNotice.disconnected.title'),
         detail: dbStatus.message
-          || 'השרת לא הצליח להתחבר למסד ה-SMS החיצוני. ההודעות אינן נטענות עד שהחיבור יחזור.',
+          || t('app.dbNotice.disconnected.detail'),
       };
     }
     return null;
-  }, [messagesLoadError, dbStatus, dbStatusChecked]);
+  }, [messagesLoadError, dbStatus, dbStatusChecked, t]);
 
   // Login handler
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
     if (!loginEmail || !loginPassword) {
-      setLoginError('אנא הזן דוא"ל וסיסמה תקינים');
+      setLoginError(t('app.login.errors.missingCredentials'));
       return;
     }
     // simple authentication validation
@@ -541,9 +546,9 @@ export default function SmsInApp({
       localStorage.setItem('mesergo_logged_in', 'true');
       setIsLoggedIn(true);
       setLoginError('');
-      showToastMsg('התחברת למערכת בהצלחה אדמין מסרגו', 'success');
+      showToastMsg(t('app.login.toasts.loginSuccess'), 'success');
     } else {
-      setLoginError('סיסמה שגויה או קצרה מדי (מינימום 4 תווים)');
+      setLoginError(t('app.login.errors.invalidPassword'));
     }
   };
 
@@ -551,13 +556,13 @@ export default function SmsInApp({
   const handleLogout = () => {
     localStorage.removeItem('mesergo_logged_in');
     setIsLoggedIn(false);
-    showToastMsg('התנתקת מהמערכת בהצלחה', 'info');
+    showToastMsg(t('app.toasts.logoutSuccess'), 'info');
   };
 
   // Delete message handler
   const handleDeleteMessage = (id_: string) => {
     setMessages(messages.filter(m => m.id_ !== id_));
-    showToastMsg('ההודעה נמחקה בהצלחה', 'info');
+    showToastMsg(t('app.toasts.messageDeleted'), 'info');
   };
 
   // Copy ID helper
@@ -566,7 +571,7 @@ export default function SmsInApp({
     const match = id.match(/"([^"]+)"/);
     const textToCopy = match ? match[1] : id;
     navigator.clipboard.writeText(textToCopy);
-    showToastMsg('מזהה ObjectID הועתק ללוח', 'success');
+    showToastMsg(t('app.toasts.idCopied'), 'success');
   };
 
   // Parse message date to JS Date object
@@ -731,7 +736,7 @@ export default function SmsInApp({
   const handleExportCSV = (customList?: Message[], options?: { suppressSuccessToast?: boolean }) => {
     const listToExport = customList || filteredMessages;
     if (listToExport.length === 0) {
-      showToastMsg('אין הודעות לייצוא בהתאם למסננים שנבחרו', 'error');
+      showToastMsg(t('app.toasts.noExportMatches'), 'error');
       return;
     }
 
@@ -745,8 +750,8 @@ export default function SmsInApp({
         const clientsStr = setting
           ? (setting.assignedClientName ||
               setting.assignedClients.map(resolveClientLabel).join(' | ') ||
-              'ללא שיוך')
-          : 'ללא שיוך';
+              t('app.export.noAssignment'))
+          : t('app.export.noAssignment');
         
         // Clean and quote fields to handle commas in messages
         const cleanId = msg.id_.replace(/"/g, '""');
@@ -771,7 +776,7 @@ export default function SmsInApp({
     document.body.removeChild(link);
 
     if (!options?.suppressSuccessToast) {
-      showToastMsg(`ייצוא של ${listToExport.length} הודעות בוצע בהצלחה!`, 'success');
+      showToastMsg(t('app.toasts.exportSuccess', { count: listToExport.length }), 'success');
     }
   };
 
@@ -784,26 +789,29 @@ export default function SmsInApp({
   const handleExportAllClick = async () => {
     if (isExportingAll) return;
     if (!hasDestFilter) {
-      showToastMsg('יש לבחור נתב / קו נמען (dest) לפני ייצוא', 'error');
+      showToastMsg(t('app.errors.selectDestBeforeExport'), 'error');
       return;
     }
     setIsExportingAll(true);
     try {
       const result = await fetchAllForExport();
       if (!result) {
-        showToastMsg('שגיאה בטעינת ההודעות לייצוא', 'error');
+        showToastMsg(t('app.errors.exportLoadFailed'), 'error');
         return;
       }
       const finalList = applyExportOnlyFilters(result.messages);
       if (finalList.length === 0) {
-        showToastMsg('אין הודעות לייצוא בהתאם למסננים שנבחרו', 'error');
+        showToastMsg(t('app.toasts.noExportMatches'), 'error');
         return;
       }
       const isCapped = result.total > result.messages.length;
       handleExportCSV(finalList, { suppressSuccessToast: isCapped });
       if (isCapped) {
         showToastMsg(
-          `יוצאו ${result.messages.length.toLocaleString()} מתוך ${result.total.toLocaleString()} הודעות התואמות למסננים — הקובץ אינו כולל את כל הרשומות`,
+          t('app.toasts.exportCapped', {
+            sent: result.messages.length.toLocaleString(),
+            total: result.total.toLocaleString(),
+          }),
           'error'
         );
       }
@@ -816,11 +824,11 @@ export default function SmsInApp({
   const [expDateStr, setExpDateStr] = useState('');
   const handleExportByParticularDate = async () => {
     if (!expDateStr) {
-      showToastMsg('נא לבחור תאריך תקין', 'error');
+      showToastMsg(t('app.errors.selectValidDate'), 'error');
       return;
     }
     if (!hasDestFilter) {
-      showToastMsg('יש לבחור נתב / קו נמען (dest) לפני ייצוא', 'error');
+      showToastMsg(t('app.errors.selectDestBeforeExport'), 'error');
       return;
     }
 
@@ -835,7 +843,7 @@ export default function SmsInApp({
     try {
       const result = await fetchAllForExport();
       if (!result) {
-        showToastMsg('שגיאה בטעינת ההודעות לייצוא', 'error');
+        showToastMsg(t('app.errors.exportLoadFailed'), 'error');
         return;
       }
 
@@ -845,7 +853,7 @@ export default function SmsInApp({
       });
 
       if (matchDateList.length === 0) {
-        showToastMsg(`לא נמצאו הודעות המתאימות לתאריך ${expDateStr}`, 'error');
+        showToastMsg(t('app.errors.noMessagesForDate', { date: expDateStr }), 'error');
         return;
       }
 
@@ -853,7 +861,10 @@ export default function SmsInApp({
       handleExportCSV(matchDateList, { suppressSuccessToast: isCapped });
       if (isCapped) {
         showToastMsg(
-          `יוצאו ${result.messages.length.toLocaleString()} מתוך ${result.total.toLocaleString()} הודעות התואמות למסננים — ייתכן שהתאריך שנבחר אינו כולל את כל הרשומות`,
+          t('app.toasts.exportCappedByDate', {
+            sent: result.messages.length.toLocaleString(),
+            total: result.total.toLocaleString(),
+          }),
           'error'
         );
       }
@@ -908,7 +919,7 @@ export default function SmsInApp({
         setWebhookLogs(prev => prev.map(l => l.id === logId ? {
           ...l,
           status: 'success',
-          response: '200 OK — בקשת POST נשלחה בהצלחה במצב מעקף CORS'
+          response: t('app.webhookLog.corsSuccess')
         } : l));
       }
 
@@ -917,7 +928,7 @@ export default function SmsInApp({
         setWebhookLogs(prev => prev.map(l => l.id === logId ? {
           ...l,
           status: 'failed',
-          response: `שגיאה בחיבור: ${err.message || err}`
+          response: t('app.webhookLog.connectionError', { error: err.message || err })
         } : l));
       }
       throw err;
@@ -950,8 +961,8 @@ export default function SmsInApp({
     if (!options?.silent) {
       showToastMsg(
         sent === lineMessages.length
-          ? `${sent} הודעות היסטוריות נשלחו לגוגל שיטס`
-          : `${sent} מתוך ${lineMessages.length} הודעות נשלחו לגוגל שיטס`,
+          ? t('app.toasts.historySyncAll', { count: sent })
+          : t('app.toasts.historySyncPartial', { sent, total: lineMessages.length }),
         sent > 0 ? 'success' : 'info'
       );
     }
@@ -970,22 +981,22 @@ export default function SmsInApp({
   const handleManualWebhookResend = (msg: Message) => {
     const lineSetting = destSettings.find(ds => ds.dest === msg.dest);
     if (!lineSetting) {
-      showToastMsg(`לא נמצאו הגדרות שיוך למספר נמען ${msg.dest}`, 'error');
+      showToastMsg(t('app.errors.noSettingsForDest', { dest: msg.dest }), 'error');
       return;
     }
     if (!lineSetting.googleSheetsUrl && !lineSetting.webhookUrl) {
-      showToastMsg('לא הוגדרה כתובת Google Sheets או Webhook עבור מספר זה. אנא הגדר בהגדרות החיבור', 'error');
+      showToastMsg(t('app.errors.noWebhookConfigured'), 'error');
       return;
     }
 
     triggerLineWebhooks(msg, lineSetting);
-    showToastMsg(`בקשת ניתוב חוזרת נשלחה לכתובת הווב-הוק של ${msg.dest}`, 'info');
+    showToastMsg(t('app.toasts.webhookResent', { dest: msg.dest }), 'info');
   };
 
   // Handle client updates
   const handleAddClient = (nc: Client) => {
     setClients(prev => [...prev, nc]);
-    showToastMsg(`הלקוח "${nc.name}" התווסף בהצלחה למאגר`, 'success');
+    showToastMsg(t('app.toasts.clientAdded', { name: nc.name }), 'success');
   };
 
   const handleDeleteClient = (id: string) => {
@@ -1003,7 +1014,7 @@ export default function SmsInApp({
     })));
 
     setClients(prev => prev.filter(c => c.id !== id));
-    showToastMsg('הלקוח נמחק בהצלחה ועודכנו שיוכי קווים פעילים', 'info');
+    showToastMsg(t('app.toasts.clientDeleted'), 'info');
   };
 
   const handleUpdateClient = (uc: Client) => {
@@ -1019,7 +1030,7 @@ export default function SmsInApp({
     }
 
     setClients(prev => prev.map(c => c.id === uc.id ? uc : c));
-    showToastMsg('פרטי הלקוח עודכנו בהצלחה', 'success');
+    showToastMsg(t('app.toasts.clientUpdated'), 'success');
   };
 
   // Update line destination config
@@ -1061,19 +1072,19 @@ export default function SmsInApp({
         setDestSettingsFromMongo(true);
       } catch (e) {
         console.error('Failed to persist dest setting:', e);
-        showToastMsg('ההגדרות נשמרו מקומית בלבד — שמירה לשרת נכשלה', 'error');
+        showToastMsg(t('app.toasts.saveLocalOnly'), 'error');
       }
     }
 
     if (toSave.googleSheetsUrl) {
-      showToastMsg('שומר הגדרות ומסנכרן היסטוריית הודעות לגוגל שיטס...', 'info');
+      showToastMsg(t('app.toasts.savingAndSyncing'), 'info');
       const { sent, total } = await syncGoogleSheetsHistory(toSave, { silent: true });
       showToastMsg(
-        `הגדרות קו ${toSave.dest} נשמרו! ${sent} הודעות היסטוריות נשלחו לגוגל שיטס (מתוך ${total})`,
+        t('app.toasts.lineSavedWithSync', { dest: toSave.dest, sent, total }),
         'success'
       );
     } else {
-      showToastMsg(`הגדרות קו ${toSave.dest} עודכנו בהצלחה!`, 'success');
+      showToastMsg(t('app.toasts.lineSaved', { dest: toSave.dest }), 'success');
     }
   };
 
@@ -1101,13 +1112,13 @@ export default function SmsInApp({
       const data = await res.json();
 
       await fetchDestSettings();
-      showToastMsg(`שויכו ${data.total} מספרים ל-${resolveClientLabel(bulkClientId)}`, 'success');
+      showToastMsg(t('app.toasts.bulkAssignSuccess', { count: data.total, client: resolveClientLabel(bulkClientId) }), 'success');
       setBulkDestsText('');
       setBulkClientId('');
       setIsBulkAssignModalOpen(false);
     } catch (e) {
       console.error('Failed to bulk assign dest settings:', e);
-      showToastMsg('שיוך המספרים נכשל', 'error');
+      showToastMsg(t('app.toasts.bulkAssignFailed'), 'error');
     } finally {
       setIsBulkAssigning(false);
     }
@@ -1127,7 +1138,7 @@ export default function SmsInApp({
     }`;
 
   const sidebarTabClass = (active: boolean) =>
-    `w-full text-right flex items-center justify-between px-3 py-2.5 rounded-2xl text-sm font-bold transition cursor-pointer ${
+    `w-full text-start flex items-center justify-between px-3 py-2.5 rounded-2xl text-sm font-bold transition cursor-pointer ${
       active ? 'bg-sky-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
     }`;
 
@@ -1139,7 +1150,7 @@ export default function SmsInApp({
       >
         <span className="flex items-center gap-2">
           <MessageSquare size={16} />
-          <span>הודעות נכנסות</span>
+          <span>{t('app.tabs.smsIn')}</span>
         </span>
         {!embedded && totalMessageCount > 0 && (
           <span className={`text-xs font-bold px-1.5 py-0.5 rounded-lg ${
@@ -1156,7 +1167,7 @@ export default function SmsInApp({
             : `flex items-center gap-2 ${sidebarTabClass(activeTab === 'routing')}`}
         >
           <GitFork size={16} />
-          <span>שיוך קווים</span>
+          <span>{t('app.tabs.routing')}</span>
         </button>
       )}
 
@@ -1168,7 +1179,7 @@ export default function SmsInApp({
             : `flex items-center gap-2 ${sidebarTabClass(activeTab === 'clients')}`}
         >
           <Users size={16} />
-          <span>ניהול לקוחות</span>
+          <span>{t('app.tabs.clients')}</span>
         </button>
       )}
 
@@ -1179,7 +1190,7 @@ export default function SmsInApp({
           : `flex items-center gap-2 ${sidebarTabClass(activeTab === 'integrations')}`}
       >
         <FileSpreadsheet size={16} />
-        <span>ווב-הוקס</span>
+        <span>{t('app.tabs.integrations')}</span>
       </button>
 
       <button
@@ -1189,29 +1200,28 @@ export default function SmsInApp({
           : `flex items-center gap-2 ${sidebarTabClass(activeTab === 'dashboard')}`}
       >
         <LayoutDashboard size={16} />
-        <span>סטטיסטיקה</span>
+        <span>{t('app.tabs.dashboard')}</span>
       </button>
     </>
   ) : null;
 
   const tabTitle =
-    activeTab === 'sms_in' ? 'הודעות SMS נכנסות' :
-    activeTab === 'routing' ? 'שיוך וניתוב קווים' :
-    activeTab === 'clients' ? 'ניהול לקוחות' :
-    activeTab === 'integrations' ? 'ווב-הוקס וחיבורים' :
-    'סקירה וסטטיסטיקה';
+    activeTab === 'sms_in' ? t('app.pageTitles.smsIn.title') :
+    activeTab === 'routing' ? t('app.pageTitles.routing.title') :
+    activeTab === 'clients' ? t('app.pageTitles.clients.title') :
+    activeTab === 'integrations' ? t('app.pageTitles.integrations.title') :
+    t('app.pageTitles.dashboard.title');
 
   const tabSubtitle =
-    activeTab === 'sms_in' ? 'צפייה, סינון וייצוא של הודעות SMS שנכנסו למערכת' :
-    activeTab === 'routing' ? 'שיוך קווי destination ללקוחות קצה' :
-    activeTab === 'clients' ? 'ניהול לקוחות הקצה במערכת' :
-    activeTab === 'integrations' ? 'חיבור ל-Google Sheets ו-Webhook' :
-    'תמונת מצב כללית של הניתוב וההודעות';
+    activeTab === 'sms_in' ? t('app.pageTitles.smsIn.subtitle') :
+    activeTab === 'routing' ? t('app.pageTitles.routing.subtitle') :
+    activeTab === 'clients' ? t('app.pageTitles.clients.subtitle') :
+    activeTab === 'integrations' ? t('app.pageTitles.integrations.subtitle') :
+    t('app.pageTitles.dashboard.subtitle');
 
   return (
     <div
-      className={`${embedded ? 'h-full' : 'min-h-screen'} bg-[#f8fafc] text-right flex flex-col font-medium`}
-      dir="rtl"
+      className={`${embedded ? 'h-full' : 'min-h-screen'} bg-[#f8fafc] text-start flex flex-col font-medium`}
       style={{ fontFamily: "'Heebo', sans-serif" }}
     >
       
@@ -1219,10 +1229,10 @@ export default function SmsInApp({
       <AnimatePresence>
         {toast && (
           <motion.div 
-            initial={{ opacity: 0, y: -40, x: 20 }}
+            initial={{ opacity: 0, y: -40, x: isRtl ? 20 : -20 }}
             animate={{ opacity: 1, y: 0, x: 0 }}
             exit={{ opacity: 0, y: -40 }}
-            className={`fixed top-4 right-4 z-50 p-4 rounded-xl shadow-xl border flex items-center gap-2.5 max-w-sm ${
+            className={`fixed top-4 start-4 z-50 p-4 rounded-xl shadow-xl border flex items-center gap-2.5 max-w-sm ${
               toast.type === 'success' 
                 ? 'bg-slate-900 text-emerald-400 border-slate-800' 
                 : toast.type === 'error'
@@ -1252,7 +1262,7 @@ export default function SmsInApp({
                 <h1 className="text-2xl font-black text-slate-900 tracking-tight">mesergo</h1>
                 <span className="text-[10px] text-sky-600 uppercase tracking-widest font-bold">Solutions & Routing Gateway</span>
               </div>
-              <p className="text-xs text-slate-500 pt-1.5 font-medium leading-relaxed">המערכת המרכזית לניהול, ניתוב ווב-הוק ושליית הודעות נכנסות</p>
+              <p className="text-xs text-slate-500 pt-1.5 font-medium leading-relaxed">{t('app.login.tagline')}</p>
             </div>
 
             {/* Login Form */}
@@ -1265,7 +1275,7 @@ export default function SmsInApp({
               )}
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1.5">כתובת אימייל מורשת</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">{t('app.login.emailLabel')}</label>
                 <input 
                   type="email"
                   dir="ltr"
@@ -1278,37 +1288,37 @@ export default function SmsInApp({
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1.5">סיסמת מנהל (אדמין)</label>
-                <input 
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">{t('app.login.passwordLabel')}</label>
+                <input
                   type="password"
                   dir="ltr"
                   required
                   value={loginPassword}
                   onChange={(e) => setLoginPassword(e.target.value)}
-                  placeholder="הזן סיסמה..."
+                  placeholder={t('app.login.passwordPlaceholder')}
                   className="w-full text-xs bg-slate-50 text-slate-800 border border-slate-200 rounded-lg px-4 py-3 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-sky-500 focus:border-sky-500 font-mono transition-all"
                 />
-                <span className="text-[10px] text-slate-400 mt-1 block">סיסמת הדגמה ברירת מחדל: <code className="bg-slate-100 px-1 rounded text-sky-700 font-semibold">admin</code></span>
+                <span className="text-[10px] text-slate-400 mt-1 block">{t('app.login.demoPasswordLabel')} <code className="bg-slate-100 px-1 rounded text-sky-700 font-semibold">admin</code></span>
               </div>
 
               <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1">
                 <label className="flex items-center gap-1.5 cursor-pointer">
                   <input type="checkbox" defaultChecked className="rounded border-slate-300 text-sky-600 focus:ring-sky-500 bg-slate-50" />
-                  <span>זכור אותי במחשב זה</span>
+                  <span>{t('app.login.rememberMe')}</span>
                 </label>
-                <span className="text-sky-600 font-semibold hover:underline cursor-pointer">שכחת סיסמה?</span>
+                <span className="text-sky-600 font-semibold hover:underline cursor-pointer">{t('app.login.forgotPassword')}</span>
               </div>
 
               <button
                 type="submit"
                 className="w-full bg-sky-600 hover:bg-sky-500 text-white font-bold py-3.5 px-4 rounded-lg text-xs tracking-wide transition-all shadow-md hover:shadow-sky-500/10 mt-2 cursor-pointer"
               >
-                כניסה מאובטחת לאדמין
+                {t('app.login.submitButton')}
               </button>
             </form>
 
             <div className="mt-8 pt-4 border-t border-slate-100 text-center text-[10px] text-slate-400">
-              מערכת ניהול מבית מסרגו פתרונות תקשורת בע"מ (2026)
+              {t('app.login.footer')}
             </div>
           </div>
         </div>
@@ -1317,7 +1327,7 @@ export default function SmsInApp({
         <div className={`flex-1 flex flex-col ${embedded ? 'h-full overflow-hidden' : 'md:flex-row min-h-screen'}`}>
           
           {!embedded && (
-          <aside className="w-full md:w-64 bg-white text-slate-800 border-l border-slate-200 flex flex-col justify-between shrink-0 relative z-20">
+          <aside className="w-full md:w-64 bg-white text-slate-800 border-e border-slate-200 flex flex-col justify-between shrink-0 relative z-20">
             <div>
               <div className="p-6 border-b border-slate-100 flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
@@ -1344,7 +1354,7 @@ export default function SmsInApp({
                 </div>
                 <div className="overflow-hidden">
                   <p className="font-bold text-slate-900 truncate text-[11px]">{displayEmail}</p>
-                  <p className="text-[10px] text-slate-500">אדמין ראשי מורשה</p>
+                  <p className="text-[10px] text-slate-500">{t('app.sidebar.roleLabel')}</p>
                 </div>
               </div>
 
@@ -1353,7 +1363,7 @@ export default function SmsInApp({
                 className="w-full bg-white hover:bg-rose-50 hover:text-rose-600 text-slate-700 rounded px-2.5 py-1.5 transition-colors flex items-center justify-center gap-1.5 text-xs cursor-pointer font-bold border border-slate-200"
               >
                 <LogOut size={13} />
-                <span>התנתקות</span>
+                <span>{t('app.sidebar.logout')}</span>
               </button>
             </div>
           </aside>
@@ -1392,34 +1402,34 @@ export default function SmsInApp({
               {activeTab === 'dashboard' && (
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
                 <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm">
-                  <span className="text-slate-400 text-xs font-semibold block">סך כל ה-SMS</span>
+                  <span className="text-slate-400 text-xs font-semibold block">{t('app.stats.totalSms.label')}</span>
                   <div className="flex items-baseline gap-2 mt-1">
                     <span className="text-2xl font-black text-slate-900">{totalMessageCount}</span>
-                    <span className="text-xs text-slate-500 font-bold">הודעות רשומות</span>
+                    <span className="text-xs text-slate-500 font-bold">{t('app.stats.totalSms.suffix')}</span>
                   </div>
                 </div>
 
                 <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm">
-                  <span className="text-slate-400 text-xs font-semibold block">מסוננות בטבלה</span>
+                  <span className="text-slate-400 text-xs font-semibold block">{t('app.stats.filtered.label')}</span>
                   <div className="flex items-baseline gap-2 mt-1">
                     <span className="text-2xl font-black text-sky-700">{filteredMessageCount}</span>
-                    <span className="text-xs text-slate-500 font-bold">מתוך {totalMessageCount}</span>
+                    <span className="text-xs text-slate-500 font-bold">{t('externalLog.outOf')} {totalMessageCount}</span>
                   </div>
                 </div>
 
                 <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm">
-                  <span className="text-slate-400 text-xs font-semibold block">קווים מנותבים פעילים</span>
+                  <span className="text-slate-400 text-xs font-semibold block">{t('app.stats.activeRoutes.label')}</span>
                   <div className="flex items-baseline gap-2 mt-1">
                     <span className="text-2xl font-black text-emerald-600">{activeRoutesCount}</span>
-                    <span className="text-xs text-slate-500 font-bold">מתוך {sortedDestSettings.length} במסגרת</span>
+                    <span className="text-xs text-slate-500 font-bold">{t('externalLog.outOf')} {sortedDestSettings.length} {t('app.stats.activeRoutes.suffix')}</span>
                   </div>
                 </div>
 
                 <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm">
-                  <span className="text-slate-400 text-xs font-semibold block">מאגר לקוחות קצה</span>
+                  <span className="text-slate-400 text-xs font-semibold block">{t('app.stats.totalClients.label')}</span>
                   <div className="flex items-baseline gap-2 mt-1">
                     <span className="text-2xl font-black text-indigo-600">{totalClientsCount}</span>
-                    <span className="text-xs text-slate-500 font-bold">חברות שונות</span>
+                    <span className="text-xs text-slate-500 font-bold">{t('app.stats.totalClients.suffix')}</span>
                   </div>
                 </div>
               </div>
@@ -1453,28 +1463,28 @@ export default function SmsInApp({
                     <div className="bg-white shadow-sm rounded-2xl border border-slate-100 p-5 space-y-4">
                       <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
                         <Filter size={16} className="text-sky-600" />
-                        <h3 className="font-black text-slate-900 text-sm">מסננים וחיפוש</h3>
+                        <h3 className="font-black text-slate-900 text-sm">{t('app.filters.title')}</h3>
                       </div>
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
                         {/* Search keyword input */}
                         <div className="lg:col-span-2 relative min-w-0">
-                          <label className="block text-xs font-bold text-slate-500 mb-1.5">חפש לפי מספר שולח / תוכן הודעה / מזהה</label>
+                          <label className="block text-xs font-bold text-slate-500 mb-1.5">{t('app.filters.searchLabel')}</label>
                           <div className="relative">
-                            <input 
-                              type="text" 
+                            <input
+                              type="text"
                               value={searchText}
                               onChange={(e) => setSearchText(e.target.value)}
-                              placeholder="סינון חופשי לפי מספר או טקסט..." 
-                              className="w-full text-sm pr-9 pl-3 py-2.5 border border-slate-200 rounded-2xl bg-slate-50 focus:bg-white focus:outline-none focus:ring-4 focus:ring-sky-600/10 focus:border-sky-600 transition-all font-medium"
+                              placeholder={t('app.filters.searchPlaceholder')}
+                              className="w-full text-sm ps-9 pe-3 py-2.5 border border-slate-200 rounded-2xl bg-slate-50 focus:bg-white focus:outline-none focus:ring-4 focus:ring-sky-600/10 focus:border-sky-600 transition-all font-medium"
                             />
-                            <Search size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                            <Search size={14} className="absolute start-3 top-1/2 -translate-y-1/2 text-slate-400" />
                           </div>
                         </div>
 
                         {/* Filter by dest — searchable custom dropdown */}
                         <div className="relative min-w-0" ref={destDropdownRef}>
-                          <label className="block text-xs font-bold text-slate-500 mb-1.5">נתב / קו נמען (dest)</label>
+                          <label className="block text-xs font-bold text-slate-500 mb-1.5">{t('app.filters.destLabel')}</label>
                           <div className="relative">
                             <input
                               type="text"
@@ -1487,17 +1497,19 @@ export default function SmsInApp({
                               onFocus={() => setIsDestDropdownOpen(true)}
                               onKeyDown={(e) => { if (e.key === 'Escape') setIsDestDropdownOpen(false); }}
                               autoComplete="off"
-                              placeholder="חפש מספר נמען..."
+                              placeholder={t('app.filters.destPlaceholder')}
                               dir="ltr"
-                              className="w-full text-sm pr-9 pl-8 py-2.5 border border-slate-200 rounded-2xl bg-slate-50 focus:bg-white focus:outline-none focus:ring-4 focus:ring-sky-600/10 focus:border-sky-600 transition-all font-medium text-left"
+                              /* The field keeps dir="ltr" for the Latin dest number, so logical padding would
+                                 resolve against the field rather than the page — mirror it explicitly instead. */
+                              className={`w-full text-sm ${isRtl ? 'pr-9 pl-8' : 'pl-9 pr-8'} py-2.5 border border-slate-200 rounded-2xl bg-slate-50 focus:bg-white focus:outline-none focus:ring-4 focus:ring-sky-600/10 focus:border-sky-600 transition-all font-medium text-left`}
                             />
-                            <Search size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                            <Search size={14} className="absolute start-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                             {filterDest !== 'all' ? (
                               <button
                                 type="button"
                                 onClick={() => { setFilterDest('all'); setIsDestDropdownOpen(false); }}
-                                className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
-                                aria-label="נקה בחירת נתב"
+                                className="absolute end-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                                aria-label={t('app.filters.clearDestAria')}
                               >
                                 <X size={14} />
                               </button>
@@ -1505,7 +1517,7 @@ export default function SmsInApp({
                               <ChevronDown
                                 size={14}
                                 onClick={() => setIsDestDropdownOpen(prev => !prev)}
-                                className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
+                                className="absolute end-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
                               />
                             )}
                           </div>
@@ -1523,11 +1535,11 @@ export default function SmsInApp({
                                   <button
                                     type="button"
                                     onClick={() => { setFilterDest('all'); setIsDestDropdownOpen(false); }}
-                                    className={`w-full text-right px-3.5 py-2 text-sm font-bold transition-colors cursor-pointer ${
+                                    className={`w-full text-start px-3.5 py-2 text-sm font-bold transition-colors cursor-pointer ${
                                       filterDest === 'all' ? 'bg-sky-50 text-sky-700' : 'text-slate-500 hover:bg-slate-50'
                                     }`}
                                   >
-                                    כל המספרים
+                                    {t('app.filters.allNumbers')}
                                   </button>
                                   {destSuggestionsWithMessages.map(dest => (
                                     <button
@@ -1544,7 +1556,7 @@ export default function SmsInApp({
                                   ))}
 
                                   {destSuggestionsWithMessages.length === 0 && (
-                                    <div className="px-3.5 py-2 text-xs font-semibold text-slate-400">לא נמצאו מספרים תואמים</div>
+                                    <div className="px-3.5 py-2 text-xs font-semibold text-slate-400">{t('app.filters.noMatchingNumbers')}</div>
                                   )}
                                 </div>
                               </motion.div>
@@ -1555,7 +1567,7 @@ export default function SmsInApp({
                         {/* Filter by clients associated — admin only — searchable custom dropdown */}
                         {isAdmin && (
                           <div className="relative min-w-0" ref={clientDropdownRef}>
-                            <label className="block text-xs font-bold text-slate-500 mb-1.5">לקוח משויך לקו</label>
+                            <label className="block text-xs font-bold text-slate-500 mb-1.5">{t('app.filters.clientLabel')}</label>
                             <div className="relative">
                               <input
                                 type="text"
@@ -1567,16 +1579,16 @@ export default function SmsInApp({
                                 onFocus={() => { setClientFilterSearch(''); setIsClientDropdownOpen(true); }}
                                 onKeyDown={(e) => { if (e.key === 'Escape') setIsClientDropdownOpen(false); }}
                                 autoComplete="off"
-                                placeholder="כל הלקוחות"
-                                className="w-full text-sm pr-9 pl-8 py-2.5 border border-slate-200 rounded-2xl bg-slate-50 focus:bg-white focus:outline-none focus:ring-4 focus:ring-sky-600/10 focus:border-sky-600 transition-all font-medium"
+                                placeholder={t('app.filters.allClientsPlaceholder')}
+                                className="w-full text-sm ps-9 pe-8 py-2.5 border border-slate-200 rounded-2xl bg-slate-50 focus:bg-white focus:outline-none focus:ring-4 focus:ring-sky-600/10 focus:border-sky-600 transition-all font-medium"
                               />
-                              <Users size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                              <Users size={14} className="absolute start-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                               {filterClient !== 'all' ? (
                                 <button
                                   type="button"
                                   onClick={() => { setFilterClient('all'); setClientFilterSearch(''); setIsClientDropdownOpen(false); }}
-                                  className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
-                                  aria-label="נקה בחירת לקוח"
+                                  className="absolute end-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                                  aria-label={t('app.filters.clearClientAria')}
                                 >
                                   <X size={14} />
                                 </button>
@@ -1584,7 +1596,7 @@ export default function SmsInApp({
                                 <ChevronDown
                                   size={14}
                                   onClick={() => setIsClientDropdownOpen(prev => !prev)}
-                                  className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
+                                  className="absolute end-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
                                 />
                               )}
                             </div>
@@ -1602,11 +1614,11 @@ export default function SmsInApp({
                                     <button
                                       type="button"
                                       onClick={() => { setFilterClient('all'); setClientFilterSearch(''); setIsClientDropdownOpen(false); }}
-                                      className={`w-full text-right px-3.5 py-2 text-sm font-bold transition-colors cursor-pointer ${
+                                      className={`w-full text-start px-3.5 py-2 text-sm font-bold transition-colors cursor-pointer ${
                                         filterClient === 'all' ? 'bg-sky-50 text-sky-700' : 'text-slate-500 hover:bg-slate-50'
                                       }`}
                                     >
-                                      כל הלקוחות
+                                      {t('app.filters.allClientsOption')}
                                     </button>
                                     {clientFilterSuggestions.length > 0 ? (
                                       clientFilterSuggestions.map(c => (
@@ -1614,7 +1626,7 @@ export default function SmsInApp({
                                           key={c.id}
                                           type="button"
                                           onClick={() => { setFilterClient(c.id); setClientFilterSearch(''); setIsClientDropdownOpen(false); }}
-                                          className={`w-full text-right px-3.5 py-2 text-sm font-semibold transition-colors cursor-pointer ${
+                                          className={`w-full text-start px-3.5 py-2 text-sm font-semibold transition-colors cursor-pointer ${
                                             filterClient === c.id ? 'bg-sky-50 text-sky-700' : 'text-slate-700 hover:bg-slate-50'
                                           }`}
                                         >
@@ -1622,7 +1634,7 @@ export default function SmsInApp({
                                         </button>
                                       ))
                                     ) : (
-                                      <div className="px-3.5 py-2 text-xs font-semibold text-slate-400">לא נמצאו לקוחות תואמים</div>
+                                      <div className="px-3.5 py-2 text-xs font-semibold text-slate-400">{t('app.filters.noMatchingClients')}</div>
                                     )}
                                   </div>
                                 </motion.div>
@@ -1633,21 +1645,21 @@ export default function SmsInApp({
 
                         {/* Range/Date Filter — own grid cell each so native date inputs can shrink without overflowing */}
                         <div className="min-w-0">
-                          <label className="block text-xs font-bold text-slate-500 mb-1.5">מתאריך</label>
-                          <input 
+                          <label className="block text-xs font-bold text-slate-500 mb-1.5">{t('app.filters.fromDate')}</label>
+                          <input
                             type="date"
                             value={filterDateStart}
                             onChange={(e) => setFilterDateStart(e.target.value)}
-                            className="w-full min-w-0 text-sm border border-slate-200 rounded-2xl px-3 py-2.5 bg-white text-left font-medium focus:outline-none focus:ring-4 focus:ring-sky-600/10 focus:border-sky-600"
+                            className="w-full min-w-0 text-sm border border-slate-200 rounded-2xl px-3 py-2.5 bg-white text-end font-medium focus:outline-none focus:ring-4 focus:ring-sky-600/10 focus:border-sky-600"
                           />
                         </div>
                         <div className="min-w-0">
-                          <label className="block text-xs font-bold text-slate-500 mb-1.5">עד תאריך</label>
+                          <label className="block text-xs font-bold text-slate-500 mb-1.5">{t('app.filters.toDate')}</label>
                           <input 
                             type="date"
                             value={filterDateEnd}
                             onChange={(e) => setFilterDateEnd(e.target.value)}
-                            className="w-full min-w-0 text-sm border border-slate-200 rounded-2xl px-3 py-2.5 bg-white text-left font-medium focus:outline-none focus:ring-4 focus:ring-sky-600/10 focus:border-sky-600"
+                            className="w-full min-w-0 text-sm border border-slate-200 rounded-2xl px-3 py-2.5 bg-white text-end font-medium focus:outline-none focus:ring-4 focus:ring-sky-600/10 focus:border-sky-600"
                           />
                         </div>
                       </div>
@@ -1659,25 +1671,25 @@ export default function SmsInApp({
                             <button
                               onClick={() => handleExportAllClick()}
                               disabled={isExportingAll || !hasDestFilter}
-                              title={!hasDestFilter ? 'יש לבחור נתב / קו נמען (dest) לפני ייצוא' : undefined}
+                              title={!hasDestFilter ? t('app.errors.selectDestBeforeExport') : undefined}
                               className="bg-slate-900 hover:bg-slate-800 disabled:opacity-60 disabled:cursor-not-allowed text-white font-bold rounded-2xl px-4 py-2.5 text-sm flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
                             >
                               <Download size={14} />
-                              <span>{isExportingAll ? 'מייצא...' : `יצא הכל ל-CSV (${messageResultCount})`}</span>
+                              <span>{isExportingAll ? t('app.export.exporting') : t('app.export.exportAllCsv', { count: messageResultCount })}</span>
                             </button>
-                            
+
                             <button
                               onClick={() => setShowExportDateModal(true)}
                               disabled={!hasDestFilter}
-                              title={!hasDestFilter ? 'יש לבחור נתב / קו נמען (dest) לפני ייצוא' : undefined}
+                              title={!hasDestFilter ? t('app.errors.selectDestBeforeExport') : undefined}
                               className="bg-slate-100 hover:bg-slate-200 disabled:opacity-60 disabled:cursor-not-allowed text-slate-800 font-bold rounded-2xl px-4 py-2.5 text-sm flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
                             >
                               <Calendar size={14} className="text-slate-500" />
-                              <span>יצא לפי תאריך ספציפי</span>
+                              <span>{t('app.export.exportByDate')}</span>
                             </button>
                           </div>
                           {!hasDestFilter && (
-                            <p className="text-xs font-semibold text-amber-600">יש לבחור נתב / קו נמען (dest) כדי לאפשר ייצוא</p>
+                            <p className="text-xs font-semibold text-amber-600">{t('app.filters.selectDestHint')}</p>
                           )}
                         </div>
 
@@ -1690,11 +1702,11 @@ export default function SmsInApp({
                               setClientFilterSearch('');
                               setFilterDateStart('');
                               setFilterDateEnd('');
-                              showToastMsg('המסננים נוקו בהצלחה', 'info');
+                              showToastMsg(t('app.toasts.filtersCleared'), 'info');
                             }}
                             className="text-sm text-sky-600 hover:text-sky-700 font-bold"
                           >
-                            נקה מסננים פעילים
+                            {t('app.filters.clearActive')}
                           </button>
                         )}
                       </div>
@@ -1706,14 +1718,14 @@ export default function SmsInApp({
                         <span className="text-sm text-slate-500 font-bold">
                           {messageResultCount > 0 ? (
                             <>
-                              מציג <span className="text-sky-600 font-black">{pageStart}-{pageEnd}</span> מתוך{' '}
-                              <span className="font-black text-slate-800">{messageResultCount}</span> הודעות
+                              {t('externalLog.showingPrefix')} <span className="text-sky-600 font-black">{pageStart}-{pageEnd}</span> {t('externalLog.outOf')}{' '}
+                              <span className="font-black text-slate-800">{messageResultCount}</span> {t('externalLog.messages')}
                               {!isServerSearch && filteredMessageCount !== totalMessageCount && (
-                                <> (סוננו מ-{totalMessageCount})</>
+                                <> ({t('app.table.filteredFrom', { total: totalMessageCount })})</>
                               )}
                             </>
                           ) : (
-                            <>אין הודעות תואמות</>
+                            <>{t('externalLog.noMatching')}</>
                           )}
                         </span>
                         
@@ -1722,13 +1734,13 @@ export default function SmsInApp({
                       {filteredMessages.length === 0 ? (
                         <div className="py-16 sm:py-20 flex flex-col items-center justify-center gap-3 text-slate-300 px-4">
                           <AlertCircle size={48} strokeWidth={1} />
-                          <p className="text-lg font-bold text-center text-slate-700">לא נמצאו הודעות SMS תואמות</p>
+                          <p className="text-lg font-bold text-center text-slate-700">{t('app.table.emptyTitle')}</p>
                           <p className="text-sm text-slate-400 font-semibold text-center">
                             {smsDbNotice
-                              ? 'ההודעות אינן נטענות כרגע — ראה את ההודעה בראש המסך.'
+                              ? t('app.table.emptyDbNotice')
                               : !isAdmin && myAssignedDests && myAssignedDests.size === 0
-                              ? 'עדיין לא שויך אליך קו SMS. פנה למנהל המערכת לשיוך קו.'
-                              : 'נסה לשנות את פרמטרי החיפוש או לבטל מסננים קיימים.'}
+                              ? t('app.table.emptyNoAssignedLine')
+                              : t('externalLog.empty.description')}
                           </p>
                         </div>
                       ) : (
@@ -1743,12 +1755,12 @@ export default function SmsInApp({
                                   </div>
                                   <div className="min-w-0 flex-1">
                                     <p className="text-sm font-bold text-slate-900 truncate">{msg.phone}</p>
-                                    <p className="text-xs text-slate-500 font-semibold truncate mt-0.5">אל {msg.dest}</p>
+                                    <p className="text-xs text-slate-500 font-semibold truncate mt-0.5">{t('externalLog.to')} {msg.dest}</p>
                                   </div>
                                   <span className="text-xs text-slate-400 font-medium whitespace-nowrap">{msg.date}</span>
                                 </div>
                                 <div className="mt-3 bg-slate-50 rounded-xl px-3 py-2.5 border border-slate-100">
-                                  <p className="text-xs text-slate-400 font-bold mb-1">תוכן ההודעה</p>
+                                  <p className="text-xs text-slate-400 font-bold mb-1">{t('externalLog.messageContent')}</p>
                                   <p className="text-sm font-semibold text-slate-700 whitespace-pre-wrap break-words">{msg.message}</p>
                                 </div>
                               </div>
@@ -1762,10 +1774,10 @@ export default function SmsInApp({
                                 className="grid gap-3 px-6 py-3 bg-slate-50 border-b border-slate-100 text-xs font-bold text-slate-400 uppercase tracking-wide"
                                 style={{ gridTemplateColumns: '1.1fr 1.2fr 1fr 2.5fr' }}
                               >
-                                <span>נמען</span>
-                                <span>מי שלח</span>
-                                <span>תאריך</span>
-                                <span>תוכן ההודעה</span>
+                                <span>{t('externalLog.columns.destination')}</span>
+                                <span>{t('externalLog.columns.sender')}</span>
+                                <span>{t('externalLog.columns.date')}</span>
+                                <span>{t('externalLog.columns.message')}</span>
                               </div>
 
                               {paginatedMessages.map((msg, idx) => (
@@ -1800,12 +1812,12 @@ export default function SmsInApp({
                             onClick={() => setMessagesPage(p => p - 1)}
                             className="flex items-center gap-1.5 px-4 py-2 rounded-2xl text-sm font-bold border border-slate-200 bg-white text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
                           >
-                            <ChevronRight size={14} />
-                            <span>הקודם</span>
+                            {isRtl ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+                            <span>{t('externalLog.pagination.previous')}</span>
                           </button>
 
                           <span className="text-sm text-slate-500 font-bold">
-                            עמוד <span className="text-sky-600">{messagesPage}</span> מתוך {totalPages}
+                            {t('externalLog.pagination.page')} <span className="text-sky-600">{messagesPage}</span> {t('externalLog.outOf')} {totalPages}
                           </span>
 
                           <button
@@ -1814,8 +1826,8 @@ export default function SmsInApp({
                             onClick={() => setMessagesPage(p => p + 1)}
                             className="flex items-center gap-1.5 px-4 py-2 rounded-2xl text-sm font-bold border border-slate-200 bg-white text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
                           >
-                            <span>הבא</span>
-                            <ChevronLeft size={14} />
+                            <span>{t('externalLog.pagination.next')}</span>
+                            {isRtl ? <ChevronLeft size={14} /> : <ChevronRight size={14} />}
                           </button>
                         </div>
                       )}
@@ -1828,48 +1840,48 @@ export default function SmsInApp({
                 {isAdmin && activeTab === 'routing' && (
                   <div className="space-y-4">
                     <div className="bg-sky-50 rounded-2xl border border-sky-100 p-4 text-sm text-sky-900 font-semibold flex items-center justify-between gap-3 flex-wrap">
-                      <span>קווים מוצגים אוטומטית מתוך מספרי הנמען (dest) שנכנסו להודעות ממסד הנתונים. לחץ על שורה לעריכת שיוך לקוח, Google Sheets ו-Webhook.</span>
+                      <span>{t('app.routing.infoBanner')}</span>
                       <button
                         type="button"
                         onClick={() => setIsBulkAssignModalOpen(true)}
                         className="bg-sky-600 hover:bg-sky-700 text-white font-bold text-sm py-2 px-4 rounded-2xl transition-colors cursor-pointer inline-flex items-center gap-2 whitespace-nowrap"
                       >
                         <Link2 size={14} />
-                        שיוך מספרים מרוכז
+                        {t('app.routing.bulkAssignButton')}
                       </button>
                     </div>
 
                     <div className="bg-white shadow-sm rounded-2xl border border-slate-100 p-4">
-                      <label className="block text-xs font-bold text-slate-500 mb-1.5">חפש קו נמען</label>
+                      <label className="block text-xs font-bold text-slate-500 mb-1.5">{t('app.routing.searchLabel')}</label>
                       <div className="relative max-w-md">
                         <input
                           type="text"
                           value={routingDestSearch}
                           onChange={(e) => setRoutingDestSearch(e.target.value)}
-                          placeholder="חפש לפי מספר נמען / לקוח / הערה..."
-                          className="w-full text-sm pr-9 pl-3 py-2.5 border border-slate-200 rounded-2xl bg-slate-50 focus:bg-white focus:outline-none focus:ring-4 focus:ring-sky-600/10 focus:border-sky-600 transition-all font-medium"
+                          placeholder={t('app.routing.searchPlaceholder')}
+                          className="w-full text-sm ps-9 pe-3 py-2.5 border border-slate-200 rounded-2xl bg-slate-50 focus:bg-white focus:outline-none focus:ring-4 focus:ring-sky-600/10 focus:border-sky-600 transition-all font-medium"
                         />
-                        <Search size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                        <Search size={14} className="absolute start-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                       </div>
                       {routingDestSearch.trim() && (
                         <p className="mt-2 text-xs text-slate-500 font-bold">
-                          מציג {visibleDestSettings.length} מתוך {destSettings.length} קווים
+                          {t('app.routing.showingCount', { shown: visibleDestSettings.length, total: destSettings.length })}
                         </p>
                       )}
                     </div>
 
                     <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
                       <div className="overflow-x-auto">
-                        <table className="w-full text-sm text-right">
+                        <table className="w-full text-sm text-start">
                           <thead>
                             <tr className="bg-slate-50 border-b border-slate-100 text-xs font-bold text-slate-500">
-                              <th className="px-4 py-3 text-right">קו נמען (dest)</th>
-                              <th className="px-4 py-3 text-right">סטטוס</th>
-                              <th className="px-4 py-3 text-right">לקוח משויך</th>
-                              <th className="px-4 py-3 text-right">Google Sheets</th>
-                              <th className="px-4 py-3 text-right">Webhook</th>
-                              <th className="px-4 py-3 text-right">הערות</th>
-                              <th className="px-4 py-3 text-center w-28">פעולות</th>
+                              <th className="px-4 py-3 text-start">{t('app.routing.columns.dest')}</th>
+                              <th className="px-4 py-3 text-start">{t('app.routing.columns.status')}</th>
+                              <th className="px-4 py-3 text-start">{t('app.routing.columns.client')}</th>
+                              <th className="px-4 py-3 text-start">Google Sheets</th>
+                              <th className="px-4 py-3 text-start">Webhook</th>
+                              <th className="px-4 py-3 text-start">{t('app.routing.columns.notes')}</th>
+                              <th className="px-4 py-3 text-center w-28">{t('app.routing.columns.actions')}</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100">
@@ -1877,8 +1889,8 @@ export default function SmsInApp({
                               <tr>
                                 <td colSpan={7} className="px-4 py-10 text-center text-slate-400 font-semibold">
                                   {routingDestSearch.trim()
-                                    ? 'לא נמצאו קווים תואמים לחיפוש'
-                                    : 'אין קווים להצגה — טען הודעות ממסד הנתונים או המתן להודעות נכנסות'}
+                                    ? t('app.routing.noSearchResults')
+                                    : t('app.routing.emptyLines')}
                                 </td>
                               </tr>
                             ) : visibleDestSettings.map((ds) => (
@@ -1890,7 +1902,7 @@ export default function SmsInApp({
                                       ? 'bg-emerald-50 text-emerald-800 border border-emerald-100'
                                       : 'bg-slate-100 text-slate-500 border border-slate-200'
                                   }`}>
-                                    {ds.isActive ? 'פעיל' : 'מנוטרל'}
+                                    {ds.isActive ? t('clients.active') : t('app.routing.statusDisabled')}
                                   </span>
                                 </td>
                                 <td className="px-4 py-3 max-w-[160px]">
@@ -1899,7 +1911,7 @@ export default function SmsInApp({
                                       {ds.assignedClientName || resolveClientLabel(ds.assignedClients[0])}
                                     </span>
                                   ) : (
-                                    <span className="text-rose-500 italic font-semibold">לא משויך</span>
+                                    <span className="text-rose-500 italic font-semibold">{t('app.routing.unassigned')}</span>
                                   )}
                                 </td>
                                 <td className="px-4 py-3 max-w-[180px]">
@@ -1929,7 +1941,7 @@ export default function SmsInApp({
                                     className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs py-2 px-3 rounded-2xl transition-colors cursor-pointer inline-flex items-center gap-1"
                                   >
                                     <Link2 size={12} />
-                                    עריכה
+                                    {t('app.routing.editButton')}
                                   </button>
                                 </td>
                               </tr>
@@ -1969,9 +1981,9 @@ export default function SmsInApp({
                 {activeTab === 'dashboard' && (
                   <div className="space-y-6">
                     <div className="bg-white rounded-2xl border border-slate-100 p-6 shadow-sm">
-                      <h2 className="text-lg font-black text-slate-900 mb-2">סקירת מערכת ניתוב SMS</h2>
+                      <h2 className="text-lg font-black text-slate-900 mb-2">{t('app.dashboard.overviewTitle')}</h2>
                       <p className="text-sm text-slate-500 font-semibold leading-relaxed">
-                        מערכת זו מאפשרת לקבל הודעות נכנסות ממכשירי הקצה של לקוחותינו ולנתב אותם בזמן אמת אל קובצי Google Sheets וניהול לקוחות מרובים במקביל בצורה מאובטחת.
+                        {t('app.dashboard.overviewDescription')}
                       </p>
                     </div>
 
@@ -1979,7 +1991,7 @@ export default function SmsInApp({
                       
                       {/* Distribution statistics chart placeholder (simulated clean CSS layout) */}
                       <div className="bg-white rounded-2xl border border-slate-100 p-5 space-y-4 shadow-sm">
-                        <h3 className="font-black text-slate-900 text-sm">פופולריות קווים (סך הודעות נכנסות לקו)</h3>
+                        <h3 className="font-black text-slate-900 text-sm">{t('app.dashboard.linePopularityTitle')}</h3>
                         <div className="space-y-3.5 pt-2">
                           {messageDestNumbers.map(dest => {
                             const count = messages.filter(m => m.dest === dest).length;
@@ -1988,7 +2000,7 @@ export default function SmsInApp({
                               <div key={dest} className="space-y-1">
                                 <div className="flex justify-between items-center text-sm">
                                   <span className="text-slate-700 font-bold">{dest}</span>
-                                  <span className="text-slate-500 font-semibold">{count} SMS ({Math.round(percentage)}%)</span>
+                                  <span className="text-slate-500 font-semibold">{t('app.dashboard.smsCountPercent', { count, percent: Math.round(percentage) })}</span>
                                 </div>
                                 <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden border border-slate-200">
                                   <div 
@@ -2004,20 +2016,20 @@ export default function SmsInApp({
 
                       {/* Quick helpers links */}
                       <div className="bg-white rounded-2xl border border-slate-100 p-5 space-y-4 shadow-sm">
-                        <h3 className="font-black text-slate-900 text-sm">מדריכים וכלים חיצוניים</h3>
+                        <h3 className="font-black text-slate-900 text-sm">{t('app.dashboard.toolsTitle')}</h3>
                         <div className="space-y-2 text-sm">
-                          <a 
-                            href="https://script.google.com" 
-                            target="_blank" 
+                          <a
+                            href="https://script.google.com"
+                            target="_blank"
                             rel="noreferrer"
                             className="p-3 bg-slate-50 hover:bg-slate-100 rounded-2xl border border-slate-100 block transition-colors font-bold text-slate-700 flex items-center justify-between"
                           >
-                            <span>פתח את Google Apps Script Console</span>
+                            <span>{t('app.dashboard.openAppsScriptConsole')}</span>
                             <ExternalLink size={14} className="text-slate-400" />
                           </a>
                           <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100 text-slate-600 leading-relaxed text-sm space-y-1">
-                            <span className="font-black text-slate-800 block">עצה לפריסת Webhook מנצחת:</span>
-                            <p className="font-semibold">במידה ומשתמשים בקוד ה-Apps Script, מומלץ תמיד לקבוע הרשאת ריצה של "Everyone - כולל כולם" כדי לאפשר לנתב מסרגו לקשר את הודעות ה-SMS בצורה חופשית ללא הפרעה.</p>
+                            <span className="font-black text-slate-800 block">{t('app.dashboard.webhookTipTitle')}</span>
+                            <p className="font-semibold">{t('app.dashboard.webhookTipDescription')}</p>
                           </div>
                         </div>
                       </div>
@@ -2031,7 +2043,7 @@ export default function SmsInApp({
 
             {!embedded && (
             <footer className="bg-white border-t border-slate-100 px-6 py-4 text-center text-xs text-slate-400 font-semibold">
-              כל הזכויות שמורות למנהל אדמין Mesergo Solutions. מחובר כעת: {displayEmail}
+              {t('app.footer.copyright', { email: displayEmail })}
             </footer>
             )}
           </main>
@@ -2056,7 +2068,7 @@ export default function SmsInApp({
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-3xl shadow-2xl max-w-lg w-full p-6 border border-slate-100 space-y-4" style={{ fontFamily: "'Heebo', sans-serif" }}>
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h4 className="font-black text-slate-900 text-base">שיוך מספרים מרוכז</h4>
+              <h4 className="font-black text-slate-900 text-base">{t('app.bulkAssignModal.title')}</h4>
               <button
                 type="button"
                 onClick={() => setIsBulkAssignModalOpen(false)}
@@ -2068,11 +2080,11 @@ export default function SmsInApp({
 
             <div className="space-y-3">
               <div>
-                <label className="block text-xs font-bold text-slate-500 mb-1.5">מספרי קו נמען</label>
+                <label className="block text-xs font-bold text-slate-500 mb-1.5">{t('app.bulkAssignModal.numbersLabel')}</label>
                 <textarea
                   value={bulkDestsText}
                   onChange={(e) => setBulkDestsText(e.target.value)}
-                  placeholder="הדבק מספרים, שורה/פסיק/רווח לכל מספר"
+                  placeholder={t('app.bulkAssignModal.numbersPlaceholder')}
                   rows={6}
                   autoFocus
                   className="w-full text-sm px-3 py-2.5 border border-slate-200 rounded-2xl bg-slate-50 focus:bg-white focus:outline-none focus:ring-4 focus:ring-sky-600/10 focus:border-sky-600 transition-all font-medium resize-y"
@@ -2081,13 +2093,13 @@ export default function SmsInApp({
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-500 mb-1.5">שיוך ללקוח</label>
+                <label className="block text-xs font-bold text-slate-500 mb-1.5">{t('app.bulkAssignModal.clientLabel')}</label>
                 <select
                   value={bulkClientId}
                   onChange={(e) => setBulkClientId(e.target.value)}
                   className="w-full text-sm px-3 py-2.5 border border-slate-200 rounded-2xl bg-slate-50 focus:bg-white focus:outline-none focus:ring-4 focus:ring-sky-600/10 focus:border-sky-600 transition-all font-medium"
                 >
-                  <option value="">בחר לקוח...</option>
+                  <option value="">{t('app.bulkAssignModal.selectClientOption')}</option>
                   {clients.map((c) => (
                     <option key={c.id} value={c.id}>{c.name}</option>
                   ))}
@@ -2101,7 +2113,7 @@ export default function SmsInApp({
                 onClick={() => setIsBulkAssignModalOpen(false)}
                 className="text-slate-600 hover:bg-slate-100 font-bold text-sm py-2.5 px-4 rounded-2xl transition-colors cursor-pointer"
               >
-                ביטול
+                {t('app.bulkAssignModal.cancel')}
               </button>
               <button
                 type="button"
@@ -2109,7 +2121,7 @@ export default function SmsInApp({
                 onClick={handleBulkAssignDests}
                 className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-sm py-2.5 px-5 rounded-2xl transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
               >
-                {isBulkAssigning ? 'משייך...' : 'שייך'}
+                {isBulkAssigning ? t('app.bulkAssignModal.assigning') : t('app.bulkAssignModal.assignButton')}
               </button>
             </div>
           </div>
@@ -2121,8 +2133,8 @@ export default function SmsInApp({
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-3xl shadow-2xl max-w-sm w-full p-6 border border-slate-100 space-y-4" style={{ fontFamily: "'Heebo', sans-serif" }}>
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h4 className="font-black text-slate-900 text-base">ייצוא הודעות SMS לפי תאריך</h4>
-              <button 
+              <h4 className="font-black text-slate-900 text-base">{t('app.exportDateModal.title')}</h4>
+              <button
                 onClick={() => setShowExportDateModal(false)}
                 className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg"
               >
@@ -2131,14 +2143,14 @@ export default function SmsInApp({
             </div>
 
             <div className="space-y-3">
-              <label className="block text-xs font-bold text-slate-500">בחר תאריך יעד לייצוא</label>
-              <input 
+              <label className="block text-xs font-bold text-slate-500">{t('app.exportDateModal.dateLabel')}</label>
+              <input
                 type="date"
                 value={expDateStr}
                 onChange={(e) => setExpDateStr(e.target.value)}
-                className="w-full text-sm border border-slate-200 rounded-2xl px-4 py-2.5 bg-slate-50 text-left font-medium focus:bg-white focus:outline-none focus:ring-4 focus:ring-sky-600/10 focus:border-sky-600"
+                className="w-full text-sm border border-slate-200 rounded-2xl px-4 py-2.5 bg-slate-50 text-end font-medium focus:bg-white focus:outline-none focus:ring-4 focus:ring-sky-600/10 focus:border-sky-600"
               />
-              <p className="text-xs text-slate-400 font-semibold">כל הודעות ה-SMS אשר הגיעו למערכת בתאריך נבחר זה יסוננו וייוצאו כקובץ CSV.</p>
+              <p className="text-xs text-slate-400 font-semibold">{t('app.exportDateModal.description')}</p>
             </div>
 
             <div className="flex gap-2.5 justify-end text-sm font-bold pt-2">
@@ -2146,7 +2158,7 @@ export default function SmsInApp({
                 onClick={() => setShowExportDateModal(false)}
                 className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2.5 rounded-2xl"
               >
-                ביטול
+                {t('app.exportDateModal.cancel')}
               </button>
               <button
                 onClick={handleExportByParticularDate}
@@ -2154,7 +2166,7 @@ export default function SmsInApp({
                 className="bg-sky-600 hover:bg-sky-500 disabled:opacity-60 disabled:cursor-not-allowed text-white px-5 py-2.5 rounded-2xl flex items-center gap-1.5"
               >
                 <Download size={14} />
-                {isExportingAll ? 'מייצא...' : 'ייצא והורד'}
+                {isExportingAll ? t('app.exportDateModal.exporting') : t('app.exportDateModal.exportButton')}
               </button>
             </div>
           </div>

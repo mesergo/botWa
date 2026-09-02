@@ -1,0 +1,230 @@
+{
+  "subUsers": {
+    "title": "Manage representatives",
+    "tabs": {
+      "reps": "Representatives",
+      "groups": "Representative groups"
+    },
+    "addRep": "Add representative",
+    "addGroup": "Add group",
+    "loadingReps": "Loading representatives...",
+    "loadingGroups": "Loading groups...",
+    "emptyReps": "No representatives yet. Add the first one!",
+    "emptyGroups": "No representative groups yet. Create the first one!",
+    "table": {
+      "name": "Name",
+      "email": "Email",
+      "phone": "Phone",
+      "type": "Type",
+      "registrationStatus": "Registration status",
+      "groups": "Groups",
+      "allowedNumbers": "Allowed numbers",
+      "availability": "Availability",
+      "actions": "Actions"
+    },
+    "registration": {
+      "active": "Active",
+      "pending": "Awaiting approval"
+    },
+    "allNumbers": "All numbers",
+    "noAssignedReps": "No assigned representatives",
+    "showLess": "Show less ↑",
+    "moreReps": "+ {{count}} more",
+    "titles": {
+      "resendInvite": "Resend invitation email",
+      "copyInviteLink": "Copy invitation link",
+      "edit": "Edit",
+      "delete": "Delete",
+      "groupSettings": "General settings",
+      "deleteGroup": "Delete group"
+    },
+    "modal": {
+      "editRep": "Edit representative",
+      "addRep": "Add new representative",
+      "noUserTypes": "No user types have been defined. Define at least one user type before adding representatives.",
+      "fullName": "Full name *",
+      "fullNamePlaceholder": "John Smith",
+      "email": "Email *",
+      "userType": "User type *",
+      "assignGroups": "Assign to representative groups",
+      "restrictNumbers": "Restrict numbers they can view",
+      "restrictNumbersHint": "Select connected numbers whose conversations this representative can view. If none are selected, they can view all numbers.",
+      "saving": "Saving...",
+      "sendingInvite": "Sending invitation...",
+      "save": "Save",
+      "sendInvite": "Send invitation",
+      "cancel": "Cancel"
+    },
+    "duplicateEmail": {
+      "message": "This email address already exists in the system ({{count}} accounts) — {{question}}",
+      "saveQuestion": "Save anyway?",
+      "createQuestion": "Create anyway?",
+      "saveAnyway": "Save anyway",
+      "createAnyway": "Create anyway"
+    },
+    "inviteSuccess": {
+      "title": "Invitation sent successfully",
+      "body": "This is a personal registration link for the new representative. The link lets them confirm the account and set a password for the first time.",
+      "linkLabel": "Registration link:",
+      "copyAria": "Copy link",
+      "copyTitle": "Copy link",
+      "close": "Close"
+    },
+    "groupModal": {
+      "title": "Add new group",
+      "name": "Group name *",
+      "namePlaceholder": "For example: Morning team",
+      "add": "Add"
+    },
+    "deleteRep": {
+      "title": "Delete representative",
+      "body": "Are you sure? This action cannot be undone. The representative will no longer be able to sign in.",
+      "deleting": "Deleting...",
+      "delete": "Delete"
+    },
+    "deleteGroup": {
+      "title": "Delete group",
+      "body": "Are you sure? Deleting the group will also remove it from every representative assigned to it."
+    },
+    "settings": {
+      "title": "General settings",
+      "groupName": "Group name *",
+      "openingMessage": "Opening message",
+      "openingHint": "Sent to the customer when the conversation is transferred to a representative from this group.",
+      "openingPlaceholder": "For example: Hello, your enquiry has been received — a representative will get back to you shortly.",
+      "closingMessage": "Closing message",
+      "closingHint": "Sent to the customer when the representative ends the conversation.",
+      "closingPlaceholder": "For example: Thank you for getting in touch. We will be happy to help again in future.",
+      "unavailableMessage": "Message when no representative is available",
+      "unavailableHint": "Sent to the customer if the conversation arrives outside working hours, or when no representative from the group is available.",
+      "unavailablePlaceholder": "For example: No representative is available at the moment. We will get back to you during business hours.",
+      "workingHours": "Working hours",
+      "enabled": "On",
+      "disabled": "Off",
+      "workingHoursHint": "When working hours are on, conversations that arrive outside those hours will receive the “when no representative is available” message.",
+      "from": "From",
+      "until": "to",
+      "save": "Save settings"
+    },
+    "days": {
+      "0": "Sunday",
+      "1": "Monday",
+      "2": "Tuesday",
+      "3": "Wednesday",
+      "4": "Thursday",
+      "5": "Friday",
+      "6": "Saturday"
+    },
+    "inviteResent": "Invitation resent to {{email}}",
+    "inviteCopied": "Invitation link copied for {{email}}"
+  },
+  "roles": {
+    "rep_manager": "Shift manager",
+    "rep": "Representative",
+    "user": "User"
+  },
+  "availability": {
+    "available": "Available",
+    "on_break": "On break",
+    "unavailable": "Unavailable"
+  },
+  "errors": {
+    "unexpected": "Unexpected error",
+    "loadReps": "Error loading representatives",
+    "loadGroups": "Error loading groups",
+    "createInviteLink": "Error creating invitation link",
+    "noInviteLink": "No invitation link was received from the server",
+    "resendInvite": "Error resending the invitation",
+    "copyInviteLink": "Error copying the invitation link",
+    "requiredRepFields": "Name, email and user type are required",
+    "save": "Error saving",
+    "delete": "Error deleting",
+    "groupNameRequired": "Group name is required",
+    "createGroup": "Error creating the group",
+    "deleteGroup": "Error deleting the group",
+    "saveSettings": "Error saving settings",
+    "saveWithMessage": "Error saving: {{message}}",
+    "deleteWithMessage": "Error deleting: {{message}}",
+    "createWithMessage": "Error creating: {{message}}"
+  },
+  "userTypes": {
+    "title": "User types",
+    "subtitle": "Set permissions for each user type in the system",
+    "add": "Add user type",
+    "newTitle": "➕ New user type",
+    "namePlaceholder": "Type name (e.g. Senior representative)",
+    "canAddUsers": "Can add users",
+    "whichTypes": "Which types can this user add?",
+    "save": "Save",
+    "cancel": "Cancel",
+    "seeded": "Built-in",
+    "selectAll": "Select all",
+    "deselectAll": "Clear all",
+    "confirmDelete": "Are you sure you want to delete this user type?"
+  },
+  "permissionGroups": {
+    "bots": "Bots",
+    "sessions": "Conversations",
+    "contacts": "Contacts",
+    "groups": "Groups",
+    "settings": "Settings",
+    "users": "Users",
+    "rep_groups": "Representative groups",
+    "sms_in": "Incoming SMS",
+    "send_messages": "Send messages"
+  },
+  "permissionActions": {
+    "bots": {
+      "view_tab": "Show tab",
+      "create": "Create bot",
+      "edit": "Edit bot",
+      "delete": "Delete bot",
+      "settings": "Settings button",
+      "publish": "Publish / connect to Facebook"
+    },
+    "sessions": {
+      "view": "View",
+      "add": "Add conversation",
+      "view_all": "View all conversations",
+      "view_assigned_only": "View assigned conversations only",
+      "templates_as_rep": "View and send templates as a representative",
+      "templates_as_manager": "View and send templates as a shift manager"
+    },
+    "contacts": {
+      "view": "View",
+      "add": "Add",
+      "edit": "Edit",
+      "delete": "Delete",
+      "import_excel": "Import from Excel"
+    },
+    "groups": {
+      "view": "View",
+      "create": "Create group",
+      "add_contact": "Add contact",
+      "send_message": "Send message to group",
+      "remove_contact": "Remove contact"
+    },
+    "settings": {
+      "view": "View",
+      "edit_profile": "Update personal details"
+    },
+    "users": {
+      "view": "View",
+      "add": "Add",
+      "edit": "Update",
+      "delete": "Delete"
+    },
+    "rep_groups": {
+      "view": "View",
+      "add": "Add",
+      "delete": "Delete"
+    },
+    "sms_in": {
+      "view": "Show tab"
+    },
+    "send_messages": {
+      "view": "Show tab",
+      "send": "Send message"
+    }
+  }
+}

@@ -1,6 +1,7 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { MoreVertical } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 export interface QuickInsertOption {
   label: string;
@@ -22,6 +23,7 @@ interface QuickInsertMenuProps {
  * do not trigger onSelect.
  */
 const QuickInsertMenu: React.FC<QuickInsertMenuProps> = ({ options, onSelect, title }) => {
+  const { t } = useTranslation('builder');
   const [open, setOpen] = useState(false);
   const [position, setPosition] = useState<{ top: number; left: number } | null>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -56,8 +58,8 @@ const QuickInsertMenu: React.FC<QuickInsertMenuProps> = ({ options, onSelect, ti
         ref={buttonRef}
         type="button"
         onClick={() => setOpen(v => !v)}
-        className="h-full px-1.5 py-2 bg-slate-50 border-r border-slate-200 text-slate-400 hover:bg-indigo-50 hover:text-indigo-600 transition-colors outline-none flex-shrink-0"
-        title={title || 'מילוי אוטומטי'}
+        className="h-full px-1.5 py-2 bg-slate-50 border-s border-slate-200 text-slate-400 hover:bg-indigo-50 hover:text-indigo-600 transition-colors outline-none flex-shrink-0"
+        title={title || t('quickInsert.autoFill')}
       >
         <MoreVertical size={14} />
       </button>
@@ -77,8 +79,8 @@ const QuickInsertMenu: React.FC<QuickInsertMenuProps> = ({ options, onSelect, ti
                 setOpen(false);
                 onSelect(opt.getValue());
               }}
-              title={opt.disabled ? 'לא הוגדר שם למשתמש' : undefined}
-              className={`w-full text-right px-3 py-2 text-xs font-bold transition-colors ${
+              title={opt.disabled ? t('quickInsert.userNameMissing') : undefined}
+              className={`w-full text-start px-3 py-2 text-xs font-bold transition-colors ${
                 opt.disabled
                   ? 'text-slate-300 cursor-not-allowed'
                   : 'text-slate-700 hover:bg-indigo-50 hover:text-indigo-600'

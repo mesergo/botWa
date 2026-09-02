@@ -1,0 +1,124 @@
+{
+  "tabs": {
+    "contacts": "אנשי קשר",
+    "lists": "רשימות תפוצה"
+  },
+  "page": {
+    "title": "אנשי קשר",
+    "contactCount": "{{count}} איש קשר",
+    "searchPlaceholder": "חיפוש לפי טלפון, שם, מייל...",
+    "import": "ייבוא מאקסל",
+    "importing": "מייבא...",
+    "importTitle": "ייבוא אנשי קשר מאקסל / CSV",
+    "add": "הוסף איש קשר",
+    "empty": "עדיין אין אנשי קשר",
+    "noResults": "לא נמצאו תוצאות",
+    "addFirst": "הוסף איש קשר ראשון"
+  },
+  "table": {
+    "phone": "טלפון",
+    "fullName": "שם מלא",
+    "whatsappName": "שם וואטסאפ",
+    "email": "כתובת מייל",
+    "chattedWith": "שוחח עם",
+    "lists": "רשימות תפוצה",
+    "sessions": "שיחות",
+    "lastActive": "פעיל לאחרונה",
+    "customFields": "שדות מותאמים אישית",
+    "manageFields": "ניהול שדות",
+    "simulator": "סימולטור",
+    "tests": "בדיקות"
+  },
+  "actions": {
+    "goToSessions": "עבור לשיחות",
+    "edit": "ערוך",
+    "confirmDelete": "אשר מחיקה",
+    "cancel": "ביטול",
+    "delete": "מחק",
+    "save": "שמור",
+    "saving": "שומר...",
+    "close": "סגור",
+    "previous": "הקודם",
+    "next": "הבא"
+  },
+  "pagination": {
+    "desktop": "עמוד {{page}} מתוך {{totalPages}} \u00a0·\u00a0 {{count}} איש קשר",
+    "mobile": "עמוד {{page}} / {{totalPages}}"
+  },
+  "modal": {
+    "editTitle": "עריכת איש קשר",
+    "addTitle": "הוספת איש קשר",
+    "phonePlaceholder": "מספר טלפון *",
+    "fullNamePlaceholder": "שם מלא",
+    "whatsappNamePlaceholder": "שם מוואטסאפ",
+    "emailPlaceholder": "כתובת מייל",
+    "lists": "רשימות תפוצה",
+    "noLists": "אין רשימות תפוצה. צור קבוצה תחילה."
+  },
+  "detail": {
+    "sessions": "שיחות",
+    "lastActive": "פעיל לאחרונה",
+    "basicDetails": "פרטי בסיס",
+    "fullName": "שם מלא",
+    "whatsappName": "שם וואטסאפ",
+    "email": "כתובת מייל",
+    "botPhones": "טלפונים שהתכתבו עם איש קשר זה",
+    "savedFromChats": "פרטים שנשמרו מהשיחות",
+    "noSavedDetails": "אין פרטים שנשמרו מהשיחות עדיין",
+    "savedDetailsHint": "פרטים יופיעו כאן לאחר שיחות עם צומת \"שמור בפרטי איש קשר\"",
+    "edit": "ערוך"
+  },
+  "fields": {
+    "title": "ניהול שדות",
+    "baseTitle": "שדות בסיס (קבועים)",
+    "fixed": "קבוע",
+    "customTitle": "שדות מוגדרים אישית",
+    "empty": "אין שדות מוגדרים עדיין",
+    "emptyHint": "לחץ על \"{{action}}\" כדי להתחיל",
+    "addField": "הוסף שדה",
+    "add": "הוסף",
+    "newPlaceholder": "שם השדה (לדוגמה: סוג לקוח)",
+    "deleteConfirm": "למחוק את \"{{label}}\"?",
+    "labelRequired": "שם השדה הוא שדה חובה"
+  },
+  "baseFields": {
+    "phone": "טלפון",
+    "fullName": "שם מלא",
+    "whatsappName": "שם וואטסאפ",
+    "email": "כתובת מייל"
+  },
+  "errors": {
+    "phoneRequired": "מספר טלפון הוא שדה חובה",
+    "saveFailed": "שגיאה בשמירה",
+    "network": "שגיאת רשת",
+    "generic": "שגיאה"
+  },
+  "import": {
+    "title": "ייבוא אנשי קשר",
+    "sampleTitle": "רוצה לראות דוגמה?",
+    "sampleHint": "הורד קובץ לדוגמה כדי לראות את פורמט הנתונים הנדרש",
+    "downloadSample": "הורד קובץ לדוגמה",
+    "assignToList": "שייך לרשימת תפוצה",
+    "noLists": "אין רשימות תפוצה. צור קבוצה תחילה.",
+    "chooseFile": "בחר קובץ Excel / CSV לייבוא",
+    "selectAtLeastOne": "בחר לפחות רשימת תפוצה אחת",
+    "cancel": "ביטול",
+    "resultTitle": "תוצאות ייבוא",
+    "imported": "יובאו בהצלחה: <0>{{count}}</0> אנשי קשר",
+    "skipped": "דולגו (ללא טלפון): <0>{{count}}</0>",
+    "errors": "שגיאות ({{count}}):",
+    "close": "סגור",
+    "importFailed": "שגיאה בייבוא",
+    "unknownError": "שגיאה לא ידועה",
+    "csv": {
+      "phone": "טלפון",
+      "fullName": "שם מלא",
+      "whatsappName": "שם וואטסאפ",
+      "email": "מייל",
+      "sample1Name": "ישראל ישראלי",
+      "sample1Whatsapp": "ישראל",
+      "sample2Name": "שרה כהן",
+      "sample2Whatsapp": "שרה' כהן"
+    }
+  }
+}

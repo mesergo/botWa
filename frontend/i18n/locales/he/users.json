@@ -1,0 +1,230 @@
+{
+  "subUsers": {
+    "title": "ניהול נציגים",
+    "tabs": {
+      "reps": "נציגים",
+      "groups": "קבוצות נציגים"
+    },
+    "addRep": "הוסף נציג",
+    "addGroup": "הוסף קבוצה",
+    "loadingReps": "טוען נציגים...",
+    "loadingGroups": "טוען קבוצות...",
+    "emptyReps": "אין נציגים עדיין. הוסף את הראשון!",
+    "emptyGroups": "אין קבוצות נציגים עדיין. צור את הראשונה!",
+    "table": {
+      "name": "שם",
+      "email": "אימייל",
+      "phone": "טלפון",
+      "type": "סוג",
+      "registrationStatus": "סטטוס הרשמה",
+      "groups": "קבוצות",
+      "allowedNumbers": "מספרים מורשים",
+      "availability": "זמינות",
+      "actions": "פעולות"
+    },
+    "registration": {
+      "active": "פעיל",
+      "pending": "ממתין לאישור"
+    },
+    "allNumbers": "כל המספרים",
+    "noAssignedReps": "אין נציגים משויכים",
+    "showLess": "הצג פחות ↑",
+    "moreReps": "+ {{count}} נוספים",
+    "titles": {
+      "resendInvite": "שלח שוב הזמנה במייל",
+      "copyInviteLink": "העתק קישור הזמנה",
+      "edit": "עריכה",
+      "delete": "מחיקה",
+      "groupSettings": "הגדרות כלליות",
+      "deleteGroup": "מחיקת קבוצה"
+    },
+    "modal": {
+      "editRep": "עריכת נציג",
+      "addRep": "הוספת נציג חדש",
+      "noUserTypes": "לא הוגדרו סוגי משתמשים. יש להגדיר לפחות סוג משתמש אחד לפני הוספת נציגים.",
+      "fullName": "שם מלא *",
+      "fullNamePlaceholder": "ישראל ישראלי",
+      "email": "אימייל *",
+      "userType": "סוג משתמש *",
+      "assignGroups": "שיוך לקבוצות נציגים",
+      "restrictNumbers": "הגבלת מספרים לצפייה",
+      "restrictNumbersHint": "בחר מספרים מחוברים שהנציג יוכל לצפות בשיחותיהם. ללא בחירה — הנציג יצפה בכל המספרים.",
+      "saving": "שומר...",
+      "sendingInvite": "שולח הזמנה...",
+      "save": "שמור",
+      "sendInvite": "שליחת הזמנה",
+      "cancel": "ביטול"
+    },
+    "duplicateEmail": {
+      "message": "כתובת אימייל זו כבר קיימת במערכת ({{count}} חשבונות) — {{question}}",
+      "saveQuestion": "לשמור בכל זאת?",
+      "createQuestion": "ליצור בכל זאת?",
+      "saveAnyway": "שמור בכל זאת",
+      "createAnyway": "צור בכל זאת"
+    },
+    "inviteSuccess": {
+      "title": "ההזמנה נשלחה בהצלחה",
+      "body": "זהו קישור הרשמה אישי לנציג החדש. הקישור מאפשר לנציג לאשר את החשבון ולהגדיר סיסמה בפעם הראשונה.",
+      "linkLabel": "קישור הרשמה:",
+      "copyAria": "העתק קישור",
+      "copyTitle": "העתק קישור",
+      "close": "סגור"
+    },
+    "groupModal": {
+      "title": "הוספת קבוצה חדשה",
+      "name": "שם הקבוצה *",
+      "namePlaceholder": "לדוגמה: צוות בוקר",
+      "add": "הוסף"
+    },
+    "deleteRep": {
+      "title": "מחיקת נציג",
+      "body": "האם אתה בטוח? פעולה זו לא ניתנת לביטול. הנציג לא יוכל עוד להתחבר למערכת.",
+      "deleting": "מוחק...",
+      "delete": "מחק"
+    },
+    "deleteGroup": {
+      "title": "מחיקת קבוצה",
+      "body": "האם אתה בטוח? מחיקת הקבוצה תסיר אותה גם מכל הנציגים המשויכים אליה."
+    },
+    "settings": {
+      "title": "הגדרות כלליות",
+      "groupName": "שם הקבוצה *",
+      "openingMessage": "הודעת פתיחה",
+      "openingHint": "תישלח ללקוח כשהשיחה מועברת לנציג מהקבוצה.",
+      "openingPlaceholder": "לדוגמה: שלום, פנייתך התקבלה — נציג יחזור אליך בקרוב.",
+      "closingMessage": "הודעת סיום",
+      "closingHint": "תישלח ללקוח כשהנציג מסיים את השיחה.",
+      "closingPlaceholder": "לדוגמה: תודה שפנית אלינו. נשמח לעמוד לרשותך גם בעתיד.",
+      "unavailableMessage": "הודעה כשאף נציג לא זמין",
+      "unavailableHint": "תישלח ללקוח אם השיחה הגיעה מחוץ לשעות העבודה, או כשאין נציג זמין מהקבוצה.",
+      "unavailablePlaceholder": "לדוגמה: כרגע אין נציג זמין. נחזור אליך בשעות הפעילות.",
+      "workingHours": "שעות עבודה",
+      "enabled": "פעיל",
+      "disabled": "כבוי",
+      "workingHoursHint": "כאשר השעות פעילות — שיחות שמגיעות מחוץ לשעות יזכו בהודעת \"כשאין נציג זמין\".",
+      "from": "מ-",
+      "until": "עד",
+      "save": "שמור הגדרות"
+    },
+    "days": {
+      "0": "ראשון",
+      "1": "שני",
+      "2": "שלישי",
+      "3": "רביעי",
+      "4": "חמישי",
+      "5": "שישי",
+      "6": "שבת"
+    },
+    "inviteResent": "הזמנה נשלחה מחדש ל־{{email}}",
+    "inviteCopied": "קישור ההזמנה הועתק עבור {{email}}"
+  },
+  "roles": {
+    "rep_manager": "מנהל משמרת",
+    "rep": "נציג",
+    "user": "משתמש"
+  },
+  "availability": {
+    "available": "זמין",
+    "on_break": "בהפסקה",
+    "unavailable": "לא זמין"
+  },
+  "errors": {
+    "unexpected": "שגיאה לא צפויה",
+    "loadReps": "שגיאה בטעינת הנציגים",
+    "loadGroups": "שגיאה בטעינת הקבוצות",
+    "createInviteLink": "שגיאה ביצירת קישור הזמנה",
+    "noInviteLink": "לא התקבל קישור הזמנה מהשרת",
+    "resendInvite": "שגיאה בשליחה מחדש של ההזמנה",
+    "copyInviteLink": "שגיאה בהעתקת קישור ההזמנה",
+    "requiredRepFields": "שם, אימייל וסוג משתמש הם שדות חובה",
+    "save": "שגיאה בשמירה",
+    "delete": "שגיאה במחיקה",
+    "groupNameRequired": "שם הקבוצה הוא שדה חובה",
+    "createGroup": "שגיאה ביצירת הקבוצה",
+    "deleteGroup": "שגיאה במחיקת הקבוצה",
+    "saveSettings": "שגיאה בשמירת ההגדרות",
+    "saveWithMessage": "שגיאה בשמירה: {{message}}",
+    "deleteWithMessage": "שגיאה במחיקה: {{message}}",
+    "createWithMessage": "שגיאה ביצירה: {{message}}"
+  },
+  "userTypes": {
+    "title": "סוגי משתמשים",
+    "subtitle": "הגדרת הרשאות לכל סוג משתמש במערכת",
+    "add": "הוסף סוג משתמש",
+    "newTitle": "➕ סוג משתמש חדש",
+    "namePlaceholder": "שם הסוג (למשל: נציג בכיר)",
+    "canAddUsers": "יכול להוסיף משתמשים",
+    "whichTypes": "אילו סוגים המשתמש הזה יוכל להוסיף?",
+    "save": "שמור",
+    "cancel": "ביטול",
+    "seeded": "מובנה",
+    "selectAll": "בחר הכל",
+    "deselectAll": "הסר הכל",
+    "confirmDelete": "האם אתה בטוח שברצונך למחוק סוג משתמש זה?"
+  },
+  "permissionGroups": {
+    "bots": "בוטים",
+    "sessions": "שיחות",
+    "contacts": "אנשי קשר",
+    "groups": "קבוצות",
+    "settings": "הגדרות",
+    "users": "משתמשים",
+    "rep_groups": "קבוצות נציגים",
+    "sms_in": "SMS נכנס",
+    "send_messages": "שליחת הודעות"
+  },
+  "permissionActions": {
+    "bots": {
+      "view_tab": "הצגת לשונית",
+      "create": "יצירת בוט",
+      "edit": "עריכת בוט",
+      "delete": "מחיקת בוט",
+      "settings": "כפתור הגדרות",
+      "publish": "פרסום / חיבור לפייסבוק"
+    },
+    "sessions": {
+      "view": "הצגה",
+      "add": "הוספת שיחה",
+      "view_all": "הצגת כל השיחות",
+      "view_assigned_only": "הצגת שיחות משויכות בלבד",
+      "templates_as_rep": "הצגה ושליחת תבניות כנציג",
+      "templates_as_manager": "הצגה ושליחת תבניות כמנהל משמרת"
+    },
+    "contacts": {
+      "view": "הצגה",
+      "add": "הוספה",
+      "edit": "עריכה",
+      "delete": "מחיקה",
+      "import_excel": "יבוא מאקסל"
+    },
+    "groups": {
+      "view": "הצגה",
+      "create": "יצירת קבוצה",
+      "add_contact": "הוספת איש קשר",
+      "send_message": "שליחת הודעה לקבוצה",
+      "remove_contact": "הסרת איש קשר"
+    },
+    "settings": {
+      "view": "הצגה",
+      "edit_profile": "עדכון פרטים אישיים"
+    },
+    "users": {
+      "view": "הצגה",
+      "add": "הוספה",
+      "edit": "עדכון",
+      "delete": "מחיקה"
+    },
+    "rep_groups": {
+      "view": "הצגה",
+      "add": "הוספה",
+      "delete": "מחיקה"
+    },
+    "sms_in": {
+      "view": "הצגת לשונית"
+    },
+    "send_messages": {
+      "view": "הצגת לשונית",
+      "send": "שליחת הודעה"
+    }
+  }
+}

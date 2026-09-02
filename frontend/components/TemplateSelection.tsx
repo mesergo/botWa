@@ -189,8 +189,9 @@ const TemplateSelection: React.FC<{
   const publicDbTemplates = dbTemplates.filter(t => !t.type || t.type === 'public');
 
   return (
-    <div className="h-screen w-screen bg-[#f8fafc] flex flex-col font-medium text-right overflow-y-auto">
-      <nav className="h-20 bg-white border-b border-slate-100 flex items-center justify-between px-10 flex-row-reverse">
+    <div className="h-screen w-screen bg-[#f8fafc] flex flex-col font-medium text-start overflow-y-auto">
+      {/* Fixed physical layout regardless of page language, matching AppNavbar.tsx/PageTopBar.tsx's <nav dir="ltr"> convention. */}
+      <nav className="h-20 bg-white border-b border-slate-100 flex items-center justify-between px-10" dir="ltr">
         <h2 className="text-xl font-black text-slate-900">בחירת תסריט</h2>
         <button onClick={onBack} className="p-3 text-slate-400 hover:text-blue-600 transition-all"><ArrowLeft size={22} /></button>
       </nav>
@@ -314,7 +315,7 @@ const TemplateSelection: React.FC<{
 
       {/* Clone from bot modal */}
       {showCloneModal && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-6 text-right">
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-6 text-start">
           <div className="bg-white w-full max-w-md rounded-[2.5rem] shadow-2xl p-8 border border-slate-100">
             <div className="flex items-center justify-between mb-6">
               <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center">
@@ -343,7 +344,7 @@ const TemplateSelection: React.FC<{
                     key={bot.id}
                     onClick={() => handleCloneFromBot(bot.id)}
                     disabled={!!cloningBotId}
-                    className="w-full flex items-center gap-4 p-4 bg-slate-50 hover:bg-emerald-50 border border-slate-200 hover:border-emerald-300 rounded-xl transition-all text-right group disabled:opacity-50"
+                    className="w-full flex items-center gap-4 p-4 bg-slate-50 hover:bg-emerald-50 border border-slate-200 hover:border-emerald-300 rounded-xl transition-all text-start group disabled:opacity-50"
                   >
                     <div className="w-10 h-10 bg-white text-emerald-600 rounded-xl border border-slate-200 flex items-center justify-center flex-shrink-0">
                       {cloningBotId === bot.id ? (
@@ -352,7 +353,7 @@ const TemplateSelection: React.FC<{
                         <Bot size={18} />
                       )}
                     </div>
-                    <div className="flex-1 text-right">
+                    <div className="flex-1 text-start">
                       <p className="font-bold text-slate-800 text-sm">{bot.name}</p>
                       <p className="text-xs text-slate-400">{new Date(bot.created_at).toLocaleDateString('he-IL')}</p>
                     </div>
@@ -367,7 +368,7 @@ const TemplateSelection: React.FC<{
 
       {/* Paid template confirmation modal */}
       {paidConfirmTemplate && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-6 text-right">
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-6 text-start">
           <div className="bg-white w-full max-w-sm rounded-[2.5rem] shadow-2xl p-10 border border-slate-100">
             <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-3xl flex items-center justify-center mb-6">
               <Wallet size={32} />
