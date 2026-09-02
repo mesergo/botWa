@@ -414,7 +414,12 @@ const addToHistory = (session, message, nodeId) => {
 };
 
 // Main: Walk through nodes chain
-const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null) => {
+// `ctx` is a plain object shared across the recursive fixed_process calls made
+// while walking ONE incoming message; every external (non-recursive) call site
+// omits it, so it defaults to a fresh {} each time. It is used to signal from a
+// deeply-nested action_return_to_main_menu jump back up through every enclosing
+// fixed_process frame that they must unwind without resuming their own chain.
+const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null, ctx = {}) => {
   const messages = [];
   let currentNodeId = startNodeId;
   let depth = 0;
@@ -598,6 +603,42 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
           console.log(`[BOT] action_set_parameter: ${paramName} = "${resolvedValue}"`);
         }
         currentNodeId = findNextNode(currentNodeId, edges);
+        break;
+      }
+
+      case 'action_return_to_main_menu': {
+        // Always resolve against the MAIN/ROOT flow's automatic_responses node —
+        // `flowId` stays the root flow's id through every level of fixed_process
+        // recursion, so this works correctly even when the node is reached from
+        // deep inside a nested sub-flow.
+        const searchText = String(nodeData.returnMenuText || '').trim();
+        const rootFlow = await getFlowData(flowId);
+        const autoNode = rootFlow.nodes.find(n => n.type === 'automatic_responses');
+        let nextId = null;
+        if (autoNode) {
+          const arOptions = autoNode.data.options || [];
+          const arOperators = autoNode.data.optionOperators || arOptions.map(() => 'eq');
+          let matchedIdx = -1;
+          for (let i = 1; i < arOptions.length; i++) {
+            if (evaluateCondition(arOperators[i], searchText, arOptions[i])) { matchedIdx = i; break; }
+          }
+          const finalIdx = matchedIdx !== -1 ? matchedIdx : 0;
+          nextId = findNextNode(autoNode.id, rootFlow.edges, `option-${finalIdx}`);
+        }
+        if (!nextId) {
+          console.log(`[WALK] ⏹ action_return_to_main_menu: no automatic_responses/edge match in main flow → dead end`);
+          return messages;
+        }
+        // Jump straight into the main flow's graph and abandon any pending
+        // sub-flow resume points — returning to the main menu exits every
+        // nested fixed_process context, however deep.
+        nodes = rootFlow.nodes;
+        edges = rootFlow.edges;
+        session.execution_stack = [];
+        session.markModified('execution_stack');
+        ctx.jumpedToMainMenu = true;
+        console.log(`[WALK] 🔀 action_return_to_main_menu → jumping to main flow node ${nextId} (execution_stack cleared)`);
+        currentNodeId = nextId;
         break;
       }
 
@@ -1087,9 +1128,19 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null)
             
             // Process subprocess
             console.log(`[SUB-FLOW]   calling walkChain from startNode=${startNode.id}`);
-            const subMessages = await walkChain(startNode.id, subFlow.nodes, subFlow.edges, session, flowId, req);
+            const subMessages = await walkChain(startNode.id, subFlow.nodes, subFlow.edges, session, flowId, req, ctx);
             console.log(`[SUB-FLOW]   walkChain RETURNED | msgs=${subMessages.length} | waiting_text=${session.waiting_text_input} | waiting_ws=${session.waiting_webservice} | current_node=${session.current_node_id}`);
             messages.push(...subMessages);
+
+            // If a nested action_return_to_main_menu jumped straight to the main
+            // flow (possibly several fixed_process levels below this one), every
+            // enclosing frame must unwind immediately without resuming its own
+            // chain — the execution_stack was already cleared at the jump site.
+            if (ctx.jumpedToMainMenu) {
+              console.log(`[SUB-FLOW]   🔀 return-to-main-menu jump in progress — unwinding without resuming`);
+              console.log(`${'─'.repeat(60)}\n`);
+              return messages;
+            }
             
             // If subprocess finished, return to parent.
             // NOTE: output_menu pauses with waiting_text_input=false, so we must
@@ -2205,10 +2256,14 @@ export const respondToMessage = async (req, res) => {
         const nextNodeId = condNextId !== null ? condNextId : findNextNode(currentNode.id, menuActiveEdges, `option-${selectedIdx}`);
         console.log(`[SUB-FLOW]   matched ${condNextId !== null ? 'conditional option' : 'option-' + selectedIdx} → nextNodeId=${nextNodeId || '(none)'}`);
         if (nextNodeId) {
-          messages = await walkChain(nextNodeId, menuActiveNodes, menuActiveEdges, session, session.flow_id, req);
+          const menuCtx = {};
+          messages = await walkChain(nextNodeId, menuActiveNodes, menuActiveEdges, session, session.flow_id, req, menuCtx);
           console.log(`[SUB-FLOW]   walkChain after menu: msgs=${messages.length} | waiting_text=${session.waiting_text_input} | waiting_ws=${session.waiting_webservice}`);
-          // If sub-flow finished (not waiting), pop stack and continue in parent
-          if (subFlowContext && !session.waiting_text_input && !session.waiting_webservice) {
+          // If a return-to-main-menu jump happened inside that walk, the execution_stack
+          // was already cleared at the jump site — do not pop/resume this sub-flow's parent.
+          if (menuCtx.jumpedToMainMenu) {
+            console.log(`[SUB-FLOW]   🔀 return-to-main-menu jump — not resuming parent`);
+          } else if (subFlowContext && !session.waiting_text_input && !session.waiting_webservice) {
             const newStack = [...session.execution_stack];
             newStack.pop();
             session.execution_stack = newStack;
@@ -2233,10 +2288,14 @@ export const respondToMessage = async (req, res) => {
           setOpeningWord(params, selectedValue);
           session.parameters = params;
           session.markModified('parameters');
-          messages = await walkChain(defaultNextId, menuActiveNodes, menuActiveEdges, session, session.flow_id, req);
+          const defaultCtx = {};
+          messages = await walkChain(defaultNextId, menuActiveNodes, menuActiveEdges, session, session.flow_id, req, defaultCtx);
           console.log(`[SUB-FLOW]   walkChain after default: msgs=${messages.length} | waiting_text=${session.waiting_text_input} | waiting_ws=${session.waiting_webservice}`);
-          // If sub-flow finished (not waiting), pop stack and continue in parent
-          if (subFlowContext && !session.waiting_text_input && !session.waiting_webservice) {
+          // If a return-to-main-menu jump happened inside that walk, the execution_stack
+          // was already cleared at the jump site — do not pop/resume this sub-flow's parent.
+          if (defaultCtx.jumpedToMainMenu) {
+            console.log(`[SUB-FLOW]   🔀 return-to-main-menu jump — not resuming parent`);
+          } else if (subFlowContext && !session.waiting_text_input && !session.waiting_webservice) {
             const newStack = [...session.execution_stack];
             newStack.pop();
             session.execution_stack = newStack;

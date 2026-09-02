@@ -18,7 +18,7 @@ import GroupsPage from './components/GroupsPage';
 import SmsInPage from './components/SmsInPage';
 import SendMessagesPage from './components/SendMessagesPage';
 import ActiveContactsQuotaToast from './components/ActiveContactsQuotaToast';
-import { StartNode, InputTextNode, InputDateNode, InputFileNode, OutputTextNode, OutputImageNode, OutputLinkNode, OutputMenuNode, ActionWebServiceNode, ActionWaitNode, ActionTimeRoutingNode, ActionAddToGroupNode, ActionRemoveFromGroupNode, ActionTransferToAgentNode, ActionSetParameterNode, FixedProcessNode, AutomaticResponsesNode } from './components/nodes/CustomNodes';
+import { StartNode, InputTextNode, InputDateNode, InputFileNode, OutputTextNode, OutputImageNode, OutputLinkNode, OutputMenuNode, ActionWebServiceNode, ActionWaitNode, ActionTimeRoutingNode, ActionAddToGroupNode, ActionRemoveFromGroupNode, ActionTransferToAgentNode, ActionSetParameterNode, ActionReturnToMainMenuNode, FixedProcessNode, AutomaticResponsesNode } from './components/nodes/CustomNodes';
 import ButtonEdge from './components/edges/ButtonEdge';
 import { CloudUpload, RotateCcw, Plus, AlertTriangle, Copy, X, Lock, Wallet, Sliders, Save } from 'lucide-react';
 import Simulator from './components/Simulator';
@@ -87,6 +87,7 @@ const nodeTypes = {
   [NodeType.ACTION_REMOVE_FROM_GROUP]: ActionRemoveFromGroupNode,
   [NodeType.ACTION_TRANSFER_TO_AGENT]: ActionTransferToAgentNode,
   [NodeType.ACTION_SET_PARAMETER]: ActionSetParameterNode,
+  [NodeType.ACTION_RETURN_TO_MAIN_MENU]: ActionReturnToMainMenuNode,
   [NodeType.FIXED_PROCESS]: FixedProcessNode,
   [NodeType.AUTOMATIC_RESPONSES]: AutomaticResponsesNode,
 };
@@ -455,6 +456,9 @@ const FlowBuilder: React.FC = () => {
         case NodeType.START:
           // No searchable text fields
           break;
+        case NodeType.ACTION_RETURN_TO_MAIN_MENU:
+          if (check(d.returnMenuText)) reasons.push(`returnMenuText: "${d.returnMenuText}"`);
+          break;
         case NodeType.AUTOMATIC_RESPONSES:
           if (Array.isArray(d.options) && d.options.some((opt: string) => check(opt)))
             reasons.push(`options`);
@@ -680,6 +684,16 @@ const FlowBuilder: React.FC = () => {
     );
   }, []);
 
+  // Deletes a single edge originating from a specific source handle (used by the
+  // small "X" overlay on connected output handles), without removing the option
+  // row itself. Goes through App-level `setEdges` (not ReactFlow's imperative
+  // `useReactFlow().setEdges()`) so it updates the controlled `edges` state and
+  // marks the flow dirty, ensuring the deletion is included in the next autosave.
+  const onDeleteEdge = useCallback((nodeId: string, handleId: string) => {
+    dirtyRef.current = true;
+    setEdges((eds) => eds.filter((e) => !(e.source === nodeId && e.sourceHandle === handleId)));
+  }, []);
+
   const bindNodeCallbacks = useCallback((node: Node): Node => ({
     ...node,
     data: { 
@@ -688,9 +702,10 @@ const FlowBuilder: React.FC = () => {
       onDelete: () => onDeleteNode(node.id),
       onRemoveOption: (optionIndex: number) => onRemoveOption(node.id, optionIndex),
       onRemoveConditionOption: (index: number) => onRemoveConditionOption(node.id, index),
+      onDeleteEdge: (handleId: string) => onDeleteEdge(node.id, handleId),
       token,
     }
-  }), [onNodeDataChange, onDeleteNode, onRemoveOption, onRemoveConditionOption, token]);
+  }), [onNodeDataChange, onDeleteNode, onRemoveOption, onRemoveConditionOption, onDeleteEdge, token]);
 
 
   // Centralized session-expiry handler — called from any place that gets 401/403
@@ -1160,6 +1175,7 @@ const FlowBuilder: React.FC = () => {
           height += 40; 
           break;
         case NodeType.ACTION_WAIT: height += 80; break;
+        case NodeType.ACTION_RETURN_TO_MAIN_MENU: height += 80; break;
         case NodeType.ACTION_TIME_ROUTING: {
           const branches = node.data.timeRoutingBranches || [];
           const conditionCount = branches.reduce((s: number, b: any) => s + (b.conditions?.length || 1), 0);

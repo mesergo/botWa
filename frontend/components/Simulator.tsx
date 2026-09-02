@@ -610,6 +610,36 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
            return processNext(findNextNodeId(nodeId, instance, `option-${finalIdx}`), instance, depth + 1, stack);
         }
         break;
+      case NodeType.ACTION_RETURN_TO_MAIN_MENU: {
+        // Always resolve against the MAIN flow's automatic_responses node — when
+        // currently inside a fixed-process sub-flow, stack[0].instance is always
+        // the main flow's instance (pushed there when the first sub-flow was
+        // entered), so this works correctly however deep the nesting is.
+        const mainInstance = stack.length > 0 ? stack[0].instance : instance;
+        const mainNodesList = mainInstance?.getNodes() || [];
+        const autoNode = mainNodesList.find((n: any) => n.type === NodeType.AUTOMATIC_RESPONSES);
+        if (!autoNode) {
+          // No automatic_responses in the main flow at all → dead end, discard any pending sub-flow stack
+          return processNext(null, mainInstance, depth + 1, []);
+        }
+        const options = autoNode.data.options || [];
+        const operators = autoNode.data.optionOperators || Array(options.length).fill('eq');
+        const searchText = node.data.returnMenuText || '';
+
+        let matchedIdx = -1;
+        // Skip index 0 (כניסה) - it acts as a fallback
+        for (let k = 1; k < options.length; k++) {
+          if (evaluateCondition(operators[k], searchText, options[k])) {
+            matchedIdx = k;
+            break;
+          }
+        }
+
+        const finalIdx = matchedIdx !== -1 ? matchedIdx : 0;
+        // Jump straight into the main flow's graph and abandon any pending sub-flow
+        // stack — returning to the main menu exits every nested fixed_process context.
+        return processNext(findNextNodeId(autoNode.id, mainInstance, `option-${finalIdx}`), mainInstance, depth + 1, []);
+      }
       case NodeType.FIXED_PROCESS:
         console.log('[Simulator] 🔄 FIXED_PROCESS node:', { nodeId, processId: node.data.processId, flowId, hasToken: !!token });
         

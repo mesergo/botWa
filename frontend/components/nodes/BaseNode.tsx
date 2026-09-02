@@ -19,6 +19,7 @@ const NODE_TYPE_LABELS: Record<string, string> = {
   [NodeType.ACTION_REMOVE_FROM_GROUP]: 'הסרה מקבוצה',
   [NodeType.ACTION_TRANSFER_TO_AGENT]: 'נציגים',
   [NodeType.ACTION_SET_PARAMETER]:     'הגדרת פרמטר',
+  [NodeType.ACTION_RETURN_TO_MAIN_MENU]: 'חזרה לתפריט ראשי',
   [NodeType.FIXED_PROCESS]:            'תת-תזרים',
   [NodeType.AUTOMATIC_RESPONSES]:      'תגובות אוטומטיות',
   [NodeType.START]:                    'התחלה',
@@ -123,7 +124,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ id, title, icon, children, type, se
   }, [dropdownOpen]);
   const isStart = type === NodeType.START;
   const isAutomaticResponses = type === NodeType.AUTOMATIC_RESPONSES;
-  const isTerminal = type === NodeType.ACTION_TRANSFER_TO_AGENT;
+  const isTerminal = type === NodeType.ACTION_TRANSFER_TO_AGENT || type === NodeType.ACTION_RETURN_TO_MAIN_MENU;
   const isBranchingNode = type === NodeType.OUTPUT_MENU || type === NodeType.ACTION_WEB_SERVICE || type === NodeType.AUTOMATIC_RESPONSES || type === NodeType.ACTION_TIME_ROUTING;
   const isMediaNode = type === NodeType.OUTPUT_IMAGE;
 
@@ -153,6 +154,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ id, title, icon, children, type, se
       case NodeType.ACTION_TIME_ROUTING:
       case NodeType.ACTION_ADD_TO_GROUP:
       case NodeType.ACTION_TRANSFER_TO_AGENT:
+      case NodeType.ACTION_RETURN_TO_MAIN_MENU:
         return { bar: 'bg-orange-500', iconColor: 'text-orange-600', ring: 'ring-orange-600/10' };
       case NodeType.FIXED_PROCESS:
         return { bar: 'bg-indigo-500', iconColor: 'text-indigo-600', ring: 'ring-indigo-600/10' };

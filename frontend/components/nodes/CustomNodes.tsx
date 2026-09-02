@@ -5,7 +5,7 @@ import { Handle, Position, useReactFlow, useEdges } from 'reactflow';
 import {
   Type, Calendar, Upload, MessageSquare,
   Image as ImageIcon, ExternalLink, List, Globe, Clock, PlayCircle, Plus, Layers, X, GitBranch, Trash2, ChevronDown, Zap,
-  Mail, Phone, CreditCard, Link, Users, UserMinus, UserCheck, Settings, Pencil, MoreVertical
+  Mail, Phone, CreditCard, Link, Users, UserMinus, UserCheck, Settings, Pencil, MoreVertical, CornerUpLeft
 } from 'lucide-react';
 import BaseNode from './BaseNode';
 import { NodeType } from '../../types';
@@ -595,15 +595,23 @@ const OptionActionsMenu = ({ onEdit, onDelete, editLabel = 'עריכה', deleteL
   );
 };
 
-const DeletableHandle = ({ nodeId, handleId, style }: { nodeId: string; handleId: string; style?: React.CSSProperties }) => {
+const DeletableHandle = ({ nodeId, handleId, style, onDelete }: { nodeId: string; handleId: string; style?: React.CSSProperties; onDelete?: (handleId: string) => void }) => {
   const [hovered, setHovered] = useState(false);
+  // Fallback only: `useReactFlow().setEdges()` mutates ReactFlow's internal store
+  // directly, bypassing the App-level controlled `edges` state/autosave. Prefer
+  // the `onDelete` callback (wired via node data to App.tsx's `onDeleteEdge`),
+  // which updates the real state and marks the flow dirty so the deletion is saved.
   const { setEdges } = useReactFlow();
   const edges = useEdges();
   const hasEdge = edges.some(e => e.source === nodeId && e.sourceHandle === handleId);
 
   const deleteEdge = (e: React.MouseEvent) => {
     e.stopPropagation();
-    setEdges(eds => eds.filter(edge => !(edge.source === nodeId && edge.sourceHandle === handleId)));
+    if (onDelete) {
+      onDelete(handleId);
+    } else {
+      setEdges(eds => eds.filter(edge => !(edge.source === nodeId && edge.sourceHandle === handleId)));
+    }
     setHovered(false);
   };
 
@@ -1345,21 +1353,22 @@ export const OutputMenuNode = (props: any) => {
         )}
       </InputFieldWrapper>
       <div className="space-y-4 relative text-right">
-        <label className="block text-[14px] font-bold text-slate-400 uppercase tracking-widest">רשימת אפשרויות</label>
+        <label className="block text-[14px] font-bold text-slate-400 uppercase tracking-widest">רשימת אפשרויות ({options.length <= 2 ? 'כפתורים' : 'רכיב נפתח'})</label>
         {/* Default (catch-all) handle — always first */}
         <div className="flex items-center gap-2 p-2 bg-slate-50 border border-dashed border-slate-300 rounded-2xl relative">
-          <DeletableHandle nodeId={props.id} handleId="option-default" style={{ top: '50%', right: -10 }} />
+          <DeletableHandle nodeId={props.id} handleId="option-default" style={{ top: '50%', right: -10 }} onDelete={props.data.onDeleteEdge} />
           <span className="flex-1 text-[12px] font-black text-slate-400 uppercase tracking-widest px-2 text-right">ברירת מחדל</span>
         </div>
         {options.map((opt: string, i: number) => (
           <div key={i} className="flex items-center gap-2 p-2 bg-slate-50 border border-slate-100 rounded-2xl group/item relative transition-colors hover:bg-white hover:border-blue-100">
-            <DeletableHandle nodeId={props.id} handleId={`option-${i}`} style={{ top: '50%', right: -10 }} />
+            <DeletableHandle nodeId={props.id} handleId={`option-${i}`} style={{ top: '50%', right: -10 }} onDelete={props.data.onDeleteEdge} />
             <OptionActionsMenu
               onEdit={() => optionInputRefs.current[i]?.openExpandModal()}
               onDelete={() => removeOption(i)}
             />
-            <div className="flex-1">
+            <div className="flex-1 relative">
               <SearchableInput ref={(el: any) => { optionInputRefs.current[i] = el; }} value={opt} onChange={(v: string) => updateOption(i, v)} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} placeholder="הזן ערך" expandable={false} />
+              <span className="absolute top-1 left-1 z-20 pointer-events-none text-[10px] font-bold text-slate-400 bg-white/80 px-1 rounded">{(opt || '').length} תווים</span>
             </div>
             <div className="flex items-center gap-1.5 pl-1 pr-1">
               {optionImages[i] ? (
@@ -1414,7 +1423,7 @@ export const OutputMenuNode = (props: any) => {
               const operator = conditionOperators[j] || 'eq';
               return (
                 <div key={j} className="flex items-center gap-2 p-2 bg-purple-50/50 border border-purple-100 rounded-2xl group/item relative transition-colors hover:bg-white">
-                  <DeletableHandle nodeId={props.id} handleId={`option-cond-${j}`} style={{ top: '50%', right: -10 }} />
+                  <DeletableHandle nodeId={props.id} handleId={`option-cond-${j}`} style={{ top: '50%', right: -10 }} onDelete={props.data.onDeleteEdge} />
                   <OptionActionsMenu
                     onEdit={operator !== 'eq' ? () => conditionInputRefs.current[j]?.openExpandModal() : undefined}
                     onDelete={() => removeConditionOption(j)}
@@ -1520,7 +1529,7 @@ export const ActionWebServiceNode = (props: any) => {
         <div>
           <label className="block text-[14px] font-bold text-slate-400 uppercase tracking-widest mb-2">יציאה ברירת מחדל</label>
           <div className="flex items-center gap-2 p-3 bg-slate-50 border border-slate-100 rounded-2xl relative">
-            <DeletableHandle nodeId={props.id} handleId="default" style={{ top: '50%', right: -10 }} />
+            <DeletableHandle nodeId={props.id} handleId="default" style={{ top: '50%', right: -10 }} onDelete={props.data.onDeleteEdge} />
             <div className="flex-1 text-center">
               <span className="text-sm font-bold text-slate-600">default</span>
             </div>
@@ -1532,7 +1541,7 @@ export const ActionWebServiceNode = (props: any) => {
           <label className="block text-[14px] font-bold text-slate-400 uppercase tracking-widest mb-2">יציאות מותנות לפי Return</label>
           {branches.map((branch: string, i: number) => (
             <div key={i} className="flex flex-col gap-2 p-3 bg-slate-50 border border-slate-100 rounded-2xl group/branch relative transition-colors hover:bg-white hover:border-blue-100 mb-3">
-              <DeletableHandle nodeId={props.id} handleId={`option-${i}`} style={{ top: '50%', right: -10 }} />
+              <DeletableHandle nodeId={props.id} handleId={`option-${i}`} style={{ top: '50%', right: -10 }} onDelete={props.data.onDeleteEdge} />
              
               <div className="flex items-center gap-2 flex-row-reverse">
                 <OperatorSelector value={operators[i]} onChange={(op) => updateOperator(i, op)} />
@@ -1571,6 +1580,15 @@ export const ActionSetParameterNode = (props: any) => (
       <SearchableInput value={props.data.parameterValue} onChange={(v: string) => props.data.onChange({ parameterValue: v })} placeholder="ערך קבוע או --שם_משתנה--" searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
     </InputFieldWrapper>
     <p className="text-[11px] text-slate-400 text-right px-1 -mt-2 mb-1">ניתן לכתוב ערך קבוע או לשלב --שם_פרמטר-- כדי להעתיק ערך של פרמטר אחר</p>
+  </BaseNode>
+);
+
+export const ActionReturnToMainMenuNode = (props: any) => (
+  <BaseNode id={props.id} title="חזרה לתפריט ראשי" icon={<CornerUpLeft size={20} />} type={NodeType.ACTION_RETURN_TO_MAIN_MENU} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} isSearchMatch={props.data.isSearchMatch} nodeClassName="max-w-[280px]">
+    <InputFieldWrapper label="ביטוי להתאמה">
+      <SearchableInput value={props.data.returnMenuText} onChange={(v: string) => props.data.onChange({ returnMenuText: v })} placeholder="תגובה אוטומטית" searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
+    </InputFieldWrapper>
+    <p className="text-[11px] text-slate-400 text-right px-1 -mt-2 mb-1">הביטוי ייבדק מול אפשרויות הצומת "תגובות אוטומטיות" בתזרים, וההודעה תמשיך מהיציאה המתאימה</p>
   </BaseNode>
 );
 
@@ -1674,7 +1692,7 @@ export const ActionTimeRoutingNode = (props: any) => {
 
         {/* Default option */}
         <div className="flex items-center gap-2 p-2 bg-slate-50 border border-slate-200 rounded-2xl relative">
-          <DeletableHandle nodeId={props.id} handleId="option-default" style={{ top: '50%', right: -10 }} />
+          <DeletableHandle nodeId={props.id} handleId="option-default" style={{ top: '50%', right: -10 }} onDelete={props.data.onDeleteEdge} />
           <div className="flex-1 text-center py-2">
             <span className="text-sm font-bold text-slate-600">ברירת מחדל (כל שאר המקרים)</span>
           </div>
@@ -1683,7 +1701,7 @@ export const ActionTimeRoutingNode = (props: any) => {
         {/* Branches */}
         {branches.map((branch, bi) => (
           <div key={bi} className="p-3 bg-slate-50 border border-slate-100 rounded-2xl group/item relative transition-colors hover:bg-white hover:border-orange-100 space-y-2">
-            <DeletableHandle nodeId={props.id} handleId={`option-${bi}`} style={{ top: '50%', right: -10 }} />
+            <DeletableHandle nodeId={props.id} handleId={`option-${bi}`} style={{ top: '50%', right: -10 }} onDelete={props.data.onDeleteEdge} />
 
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-black text-slate-400 uppercase tracking-widest">אופציה {bi + 1}</span>
@@ -2253,7 +2271,7 @@ export const AutomaticResponsesNode = (props: any) => {
       <div className="space-y-4 relative text-right">
         <label className="block text-[14px] font-bold text-slate-400 uppercase tracking-widest">מילות מפתח ופתיחים</label>
         <div className="flex items-center gap-2 p-2 border rounded-2xl group/item relative transition-colors bg-slate-50 border-slate-200">
-          <DeletableHandle nodeId={props.id} handleId="option-system-case2" style={{ top: '50%', right: -10 }} />
+          <DeletableHandle nodeId={props.id} handleId="option-system-case2" style={{ top: '50%', right: -10 }} onDelete={props.data.onDeleteEdge} />
           <div className="flex-1">
             <div className="relative w-full rounded-xl overflow-hidden border border-slate-200 bg-slate-50 opacity-70 cursor-not-allowed">
               <div
@@ -2278,7 +2296,7 @@ export const AutomaticResponsesNode = (props: any) => {
           const isDefault = i === 0;
           return (
             <div key={i} className={`flex items-center gap-2 p-2 border rounded-2xl group/item relative transition-colors ${isDefault ? 'bg-slate-50 border-slate-200' : 'bg-slate-50 border-slate-100 hover:bg-white hover:border-blue-100'}`}>
-              <DeletableHandle nodeId={props.id} handleId={`option-${i}`} style={{ top: '50%', right: -10 }} />
+              <DeletableHandle nodeId={props.id} handleId={`option-${i}`} style={{ top: '50%', right: -10 }} onDelete={props.data.onDeleteEdge} />
               <div className="flex-1">
                 <SearchableInput value={opt} onChange={(v: string) => updateOption(i, v)} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} disabled={isDefault} placeholder={!isDefault ? "הזן ערך" : ""} />
               </div>
