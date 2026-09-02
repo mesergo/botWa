@@ -50,6 +50,10 @@ export interface NodeData {
   options?: string[];
   optionOperators?: string[];
   optionImages?: string[];
+  /** Menu conditional-option target values (parallel to menuConditionOperators); unused/empty for 'eq' */
+  menuConditionOptions?: string[];
+  /** Menu conditional-option operators: 'eq' | 'contains' | 'contains_any' | 'contains_all' */
+  menuConditionOperators?: string[];
   dateTimeMode?: 'date' | 'time' | 'datetime';
   timeRoutingBranches?: Array<{ conditions: TimeRoutingCondition[] }>;
   groupId?: string;

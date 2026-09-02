@@ -1,11 +1,11 @@
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Handle, Position, useReactFlow, useEdges } from 'reactflow';
 import {
   Type, Calendar, Upload, MessageSquare,
   Image as ImageIcon, ExternalLink, List, Globe, Clock, PlayCircle, Plus, Layers, X, GitBranch, Trash2, ChevronDown, Zap,
-  Mail, Phone, CreditCard, Link, Users, UserMinus, UserCheck, Settings, Pencil
+  Mail, Phone, CreditCard, Link, Users, UserMinus, UserCheck, Settings, Pencil, MoreVertical
 } from 'lucide-react';
 import BaseNode from './BaseNode';
 import { NodeType } from '../../types';
@@ -422,10 +422,14 @@ const ExpandTextModal = ({ value, onChange, onClose }: {
   );
 };
 
-const SearchableInput = ({ value, onChange, placeholder, type = "text", searchQuery, isCurrentMatch, isTextArea = false, disabled = false, expandable = true, autoResize = false }: any) => {
+const SearchableInput = React.forwardRef(({ value, onChange, placeholder, type = "text", searchQuery, isCurrentMatch, isTextArea = false, disabled = false, expandable = true, autoResize = false }: any, ref: React.Ref<{ openExpandModal: () => void }>) => {
   const [isFocused, setIsFocused] = React.useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useImperativeHandle(ref, () => ({
+    openExpandModal: () => setModalOpen(true),
+  }));
 
   const adjustHeight = React.useCallback(() => {
     const el = textareaRef.current;
@@ -511,6 +515,83 @@ const SearchableInput = ({ value, onChange, placeholder, type = "text", searchQu
         )}
       </div>
     </>
+  );
+});
+
+/** Combined "⋮" actions button (edit + delete) used for option/condition rows. */
+const OptionActionsMenu = ({ onEdit, onDelete, editLabel = 'עריכה', deleteLabel = 'מחיקה' }: { onEdit?: () => void; onDelete: () => void; editLabel?: string; deleteLabel?: string }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const closeAll = () => { setIsOpen(false); setConfirmingDelete(false); };
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        closeAll();
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isOpen]);
+
+  return (
+    <div ref={containerRef} className="relative flex-shrink-0">
+      <button
+        type="button"
+        onClick={() => setIsOpen(o => { const next = !o; if (!next) setConfirmingDelete(false); return next; })}
+        className="w-10 h-10 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-all nodrag flex-shrink-0"
+        title="פעולות נוספות"
+      >
+        <MoreVertical size={18} />
+      </button>
+      {isOpen && (
+        confirmingDelete ? (
+          <div className="absolute left-0 top-full mt-1 w-56 bg-white border border-slate-100 rounded-xl shadow-2xl z-[100] overflow-hidden animate-in fade-in slide-in-from-top-1 duration-150 nodrag p-3">
+            <p className="text-[12px] font-bold text-slate-700 text-right mb-3">האם אתה בטוח שברצונך למחוק?</p>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => { closeAll(); onDelete(); }}
+                className="flex-1 px-2 py-1.5 rounded-lg bg-red-600 text-white text-[12px] font-bold hover:bg-red-700 transition-colors"
+              >
+                מחיקה
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmingDelete(false)}
+                className="flex-1 px-2 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-[12px] font-bold hover:bg-slate-200 transition-colors"
+              >
+                ביטול
+              </button>
+            </div>
+          </div>
+        ) : (
+        <div className="absolute left-0 top-full mt-1 w-36 bg-white border border-slate-100 rounded-xl shadow-2xl z-[100] overflow-hidden animate-in fade-in slide-in-from-top-1 duration-150 nodrag">
+          {onEdit && (
+            <button
+              type="button"
+              onClick={() => { closeAll(); onEdit(); }}
+              className="w-full flex items-center gap-2 px-3 py-2 hover:bg-slate-50 transition-colors text-right text-slate-700"
+            >
+              <Pencil size={14} />
+              <span className="text-[12px] font-bold">{editLabel}</span>
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => setConfirmingDelete(true)}
+            className="w-full flex items-center gap-2 px-3 py-2 hover:bg-red-50 transition-colors text-right text-red-600"
+          >
+            <Trash2 size={14} />
+            <span className="text-[12px] font-bold">{deleteLabel}</span>
+          </button>
+        </div>
+        )
+      )}
+    </div>
   );
 };
 
@@ -598,6 +679,76 @@ const ResponseOperatorSelector = ({ value, onChange, disabled = false }: { value
               key={op.id}
               onClick={() => { onChange(op.id); setIsOpen(false); }}
               className={`w-full flex items-center justify-between px-3 py-2 hover:bg-slate-50 transition-colors text-right ${value === op.id ? 'bg-blue-50 text-blue-600' : 'text-slate-700'}`}
+            >
+              <span className="text-xs font-bold">{op.icon}</span>
+              <span className="text-[11px] font-bold">{op.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const MENU_CONDITION_OPERATORS = [
+  { id: 'eq', label: 'אחת מהאפשרויות', icon: '≡' },
+  { id: 'contains', label: 'מכיל מילה', icon: '=' },
+  { id: 'contains_any', label: 'מכיל אחת מהמילים', icon: '∈' },
+  { id: 'contains_all', label: 'מכיל את כל המילים', icon: '∀' },
+];
+
+const MenuConditionOperatorSelector = ({ value, onChange, disabled = false }: { value: string, onChange: (op: string) => void, disabled?: boolean }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const currentOp = MENU_CONDITION_OPERATORS.find(o => o.id === value) || MENU_CONDITION_OPERATORS[0];
+
+  return (
+    <div className="relative">
+      <button
+        disabled={disabled}
+        onClick={() => setIsOpen(!isOpen)}
+        className={`flex items-center justify-center w-10 h-10 border rounded-lg transition-all text-slate-900 font-bold nodrag ${disabled ? 'bg-slate-100 border-slate-100 text-slate-400 cursor-not-allowed' : 'bg-slate-50 border-slate-100 hover:border-blue-600'}`}
+        title={currentOp.label}
+      >
+        <span className="text-xs">{currentOp.icon}</span>
+      </button>
+
+      {!disabled && isOpen && (
+        <div className="absolute right-0 top-full mt-1 w-48 bg-white border border-slate-100 rounded-xl shadow-2xl z-[100] overflow-hidden animate-in fade-in slide-in-from-top-1 duration-150">
+          {MENU_CONDITION_OPERATORS.map((op) => (
+            <button
+              key={op.id}
+              onClick={() => { onChange(op.id); setIsOpen(false); }}
+              className={`w-full flex items-center justify-between px-3 py-2 hover:bg-slate-50 transition-colors text-right ${value === op.id ? 'bg-blue-50 text-blue-600' : 'text-slate-700'}`}
+            >
+              <span className="text-xs font-bold">{op.icon}</span>
+              <span className="text-[11px] font-bold">{op.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const AddMenuConditionButton = ({ onSelect }: { onSelect: (operator: string) => void }) => {
+  const [isOpen, setIsOpen] = useState(false);
+
+  return (
+    <div className="relative flex-shrink-0 w-20">
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full py-4 text-[13px] font-bold bg-white text-blue-600 rounded-2xl border-2 border-dashed border-blue-100 hover:bg-blue-50 hover:border-blue-400 flex items-center justify-center gap-1 transition-all nodrag uppercase tracking-wider whitespace-nowrap"
+      >
+        <Plus size={16} className="flex-shrink-0" />תנאי
+      </button>
+
+      {isOpen && (
+        <div className="absolute right-0 bottom-full mb-1 w-56 bg-white border border-slate-100 rounded-xl shadow-2xl z-[100] overflow-hidden animate-in fade-in slide-in-from-bottom-1 duration-150">
+          {MENU_CONDITION_OPERATORS.map((op) => (
+            <button
+              key={op.id}
+              onClick={() => { onSelect(op.id); setIsOpen(false); }}
+              className="w-full flex items-center justify-between px-3 py-2 hover:bg-slate-50 transition-colors text-right text-slate-700"
             >
               <span className="text-xs font-bold">{op.icon}</span>
               <span className="text-[11px] font-bold">{op.label}</span>
@@ -1104,7 +1255,11 @@ export const OutputLinkNode = (props: any) => {
 export const OutputMenuNode = (props: any) => {
   const options = props.data.options || [''];
   const optionImages = props.data.optionImages || [];
+  const conditionOptions = props.data.menuConditionOptions || [];
+  const conditionOperators = props.data.menuConditionOperators || [];
   const fileInputRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const optionInputRefs = useRef<({ openExpandModal: () => void } | null)[]>([]);
+  const conditionInputRefs = useRef<({ openExpandModal: () => void } | null)[]>([]);
   const [uploadingIndex, setUploadingIndex] = useState<number | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
@@ -1146,11 +1301,36 @@ export const OutputMenuNode = (props: any) => {
   };
 
   const removeOption = (index: number) => {
-    if (options.length <= 1) return;
     const newOptions = options.filter((_: any, i: number) => i !== index);
     const newImages = (props.data.optionImages || []).filter((_: any, i: number) => i !== index);
     props.data.onRemoveOption?.(index);
     props.data.onChange({ options: newOptions, optionImages: newImages });
+  };
+
+  const addConditionOption = (operator: string) => {
+    props.data.onChange({
+      menuConditionOptions: [...conditionOptions, ''],
+      menuConditionOperators: [...conditionOperators, operator],
+    });
+  };
+
+  const updateConditionOption = (index: number, value: string) => {
+    const newValues = [...conditionOptions];
+    newValues[index] = value;
+    props.data.onChange({ menuConditionOptions: newValues });
+  };
+
+  const updateConditionOperator = (index: number, operator: string) => {
+    const newOps = [...conditionOperators];
+    newOps[index] = operator;
+    props.data.onChange({ menuConditionOperators: newOps });
+  };
+
+  const removeConditionOption = (index: number) => {
+    const newValues = conditionOptions.filter((_: any, i: number) => i !== index);
+    const newOps = conditionOperators.filter((_: any, i: number) => i !== index);
+    props.data.onRemoveConditionOption?.(index);
+    props.data.onChange({ menuConditionOptions: newValues, menuConditionOperators: newOps });
   };
 
   return (
@@ -1174,15 +1354,12 @@ export const OutputMenuNode = (props: any) => {
         {options.map((opt: string, i: number) => (
           <div key={i} className="flex items-center gap-2 p-2 bg-slate-50 border border-slate-100 rounded-2xl group/item relative transition-colors hover:bg-white hover:border-blue-100">
             <DeletableHandle nodeId={props.id} handleId={`option-${i}`} style={{ top: '50%', right: -10 }} />
-            <button
-              onClick={() => removeOption(i)}
-              className="w-10 h-10 rounded-lg flex items-center justify-center text-red-400 hover:text-red-600 hover:bg-red-50 transition-all nodrag flex-shrink-0"
-              title="מחק אפשרות"
-            >
-              <X size={18} />
-            </button>
+            <OptionActionsMenu
+              onEdit={() => optionInputRefs.current[i]?.openExpandModal()}
+              onDelete={() => removeOption(i)}
+            />
             <div className="flex-1">
-              <SearchableInput value={opt} onChange={(v: string) => updateOption(i, v)} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} placeholder="הזן ערך" />
+              <SearchableInput ref={(el: any) => { optionInputRefs.current[i] = el; }} value={opt} onChange={(v: string) => updateOption(i, v)} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} placeholder="הזן ערך" expandable={false} />
             </div>
             <div className="flex items-center gap-1.5 pl-1 pr-1">
               {optionImages[i] ? (
@@ -1195,20 +1372,22 @@ export const OutputMenuNode = (props: any) => {
                     <Trash2 size={16} className="text-white" />
                   </div>
                 </div>
-              ) : (
-                <button
-                  disabled={uploadingIndex === i}
-                  onClick={() => fileInputRefs.current[i]?.click()}
-                  className="w-12 h-12 rounded-lg bg-white border border-slate-100 flex items-center justify-center text-slate-300 hover:text-blue-500 hover:border-blue-200 transition-all flex-shrink-0 disabled:opacity-50"
-                  title="הוסף תמונה"
-                >
-                  {uploadingIndex === i ? (
-                    <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-                  ) : (
-                    <ImageIcon size={20} />
-                  )}
-                </button>
-              )}
+              ) : (<div></div>)
+              // (
+              //   <button
+              //     disabled={uploadingIndex === i}
+              //     onClick={() => fileInputRefs.current[i]?.click()}
+              //     className="w-12 h-12 rounded-lg bg-white border border-slate-100 flex items-center justify-center text-slate-300 hover:text-blue-500 hover:border-blue-200 transition-all flex-shrink-0 disabled:opacity-50"
+              //     title="הוסף תמונה"
+              //   >
+              //     {uploadingIndex === i ? (
+              //       <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+              //     ) : (
+              //       <ImageIcon size={20} />
+              //     )}
+              //   </button>
+              // )
+              }
             </div>
             <input
               type="file"
@@ -1223,13 +1402,49 @@ export const OutputMenuNode = (props: any) => {
         {uploadError && (
           <div className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded-lg">{uploadError}</div>
         )}
-        <button onClick={addOption} className="w-full mt-2 py-4 text-[13px] font-bold bg-white text-blue-600 rounded-2xl border-2 border-dashed border-blue-100 hover:bg-blue-50 hover:border-blue-400 flex items-center justify-center gap-2 transition-all nodrag uppercase tracking-wider">
-          <Plus size={18} /> הוסף אפשרות חדשה
-        </button>
+
+        {conditionOptions.length > 0 && (
+          <>
+            <div className="flex items-center gap-2 pt-2">
+              <div className="flex-1 border-t border-dashed border-slate-200" />
+              <span className="text-[11px] font-black text-slate-400 uppercase tracking-widest"></span>
+              <div className="flex-1 border-t border-dashed border-slate-200" />
+            </div>
+            {conditionOptions.map((val: string, j: number) => {
+              const operator = conditionOperators[j] || 'eq';
+              return (
+                <div key={j} className="flex items-center gap-2 p-2 bg-purple-50/50 border border-purple-100 rounded-2xl group/item relative transition-colors hover:bg-white">
+                  <DeletableHandle nodeId={props.id} handleId={`option-cond-${j}`} style={{ top: '50%', right: -10 }} />
+                  <OptionActionsMenu
+                    onEdit={operator !== 'eq' ? () => conditionInputRefs.current[j]?.openExpandModal() : undefined}
+                    onDelete={() => removeConditionOption(j)}
+                    deleteLabel="מחק תנאי"
+                  />
+                  <MenuConditionOperatorSelector value={operator} onChange={(op) => updateConditionOperator(j, op)} />
+                  <div className="flex-1">
+                    {operator !== 'eq' ? (
+                      <SearchableInput ref={(el: any) => { conditionInputRefs.current[j] = el; }} value={val} onChange={(v: string) => updateConditionOption(j, v)} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} placeholder="הזן ערך" expandable={false} />
+                    ) : (
+                      <span className="block px-3 py-2 text-[12px] text-slate-400 font-bold">מתאים לכל אחת מהאפשרויות שלמעלה</span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </>
+        )}
+
+        <div className="flex items-stretch gap-2 mt-2">
+          <button onClick={addOption} className="flex-1 min-w-0 py-4 px-2 text-[13px] font-bold bg-white text-blue-600 rounded-2xl border-2 border-dashed border-blue-100 hover:bg-blue-50 hover:border-blue-400 flex items-center justify-center gap-2 transition-all nodrag uppercase tracking-wider whitespace-nowrap">
+            <Plus size={18} className="flex-shrink-0" /> הוסף אפשרות חדשה
+          </button>
+          <AddMenuConditionButton onSelect={addConditionOption} />
+        </div>
       </div>
     </BaseNode>
   );
 };
+
 
 const METHOD_BADGE: Record<string, string> = {
   GET:    'bg-emerald-50 text-emerald-700 border-emerald-200',

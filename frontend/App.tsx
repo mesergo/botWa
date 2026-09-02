@@ -434,6 +434,8 @@ const FlowBuilder: React.FC = () => {
           if (check(d.variableName)) reasons.push(`variableName: "${d.variableName}"`);
           if (Array.isArray(d.options) && d.options.some((opt: string) => check(opt)))
             reasons.push(`options`);
+          if (Array.isArray(d.menuConditionOptions) && d.menuConditionOptions.some((opt: string) => check(opt)))
+            reasons.push(`menuConditionOptions`);
           break;
         case NodeType.ACTION_WEB_SERVICE:
           if (check(d.url)) reasons.push(`url: "${d.url}"`);
@@ -594,6 +596,10 @@ const FlowBuilder: React.FC = () => {
               const m = (d.options as string[]).find(opt => check(opt));
               if (m) matchText = m;
             }
+            if (!matchText && Array.isArray(d.menuConditionOptions)) {
+              const m = (d.menuConditionOptions as string[]).find(opt => check(opt));
+              if (m) matchText = m;
+            }
             break;
           case NodeType.ACTION_WEB_SERVICE:
             matchText = check(d.url) ? d.url : '';
@@ -656,6 +662,24 @@ const FlowBuilder: React.FC = () => {
     );
   }, []);
 
+  // Same re-indexing logic as onRemoveOption, but for the menu's conditional-option
+  // handles (option-cond-<index>), which are a separate handle namespace.
+  const onRemoveConditionOption = useCallback((nodeId: string, index: number) => {
+    dirtyRef.current = true;
+    setEdges((eds) =>
+      eds
+        .filter((e) => !(e.source === nodeId && e.sourceHandle === `option-cond-${index}`))
+        .map((e) => {
+          if (e.source !== nodeId) return e;
+          const match = e.sourceHandle?.match(/^option-cond-(\d+)$/);
+          if (!match) return e;
+          const idx = parseInt(match[1], 10);
+          if (idx > index) return { ...e, sourceHandle: `option-cond-${idx - 1}` };
+          return e;
+        })
+    );
+  }, []);
+
   const bindNodeCallbacks = useCallback((node: Node): Node => ({
     ...node,
     data: { 
@@ -663,9 +687,11 @@ const FlowBuilder: React.FC = () => {
       onChange: (data: Partial<NodeData>) => onNodeDataChange(node.id, data), 
       onDelete: () => onDeleteNode(node.id),
       onRemoveOption: (optionIndex: number) => onRemoveOption(node.id, optionIndex),
+      onRemoveConditionOption: (index: number) => onRemoveConditionOption(node.id, index),
       token,
     }
-  }), [onNodeDataChange, onDeleteNode, onRemoveOption, token]);
+  }), [onNodeDataChange, onDeleteNode, onRemoveOption, onRemoveConditionOption, token]);
+
 
   // Centralized session-expiry handler — called from any place that gets 401/403
   const handleSessionExpired = useCallback(() => {
@@ -1125,6 +1151,7 @@ const FlowBuilder: React.FC = () => {
         case NodeType.OUTPUT_MENU:
           height += 80 + 40; 
           if (node.data.options) height += node.data.options.length * 100; 
+          if (node.data.menuConditionOptions?.length) height += 40 + node.data.menuConditionOptions.length * 100; 
           height += 100; 
           break;
         case NodeType.ACTION_WEB_SERVICE:
