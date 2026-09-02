@@ -52,7 +52,17 @@
     },
     "media": {
       "label": "צירוף מדיה (אופציונלי):",
-      "remove": "הסר מדיה"
+      "remove": "הסר מדיה",
+      "types": {
+        "image": "תמונה",
+        "video": "סרטון",
+        "document": "מסמך"
+      },
+      "upload": {
+        "image": "העלאת תמונה",
+        "video": "העלאת סרטון",
+        "document": "העלאת מסמך"
+      }
     },
     "actions": {
       "schedule": "תזמון קבוע",

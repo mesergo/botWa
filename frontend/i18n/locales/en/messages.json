@@ -52,7 +52,17 @@
     },
     "media": {
       "label": "Attach media (optional):",
-      "remove": "Remove media"
+      "remove": "Remove media",
+      "types": {
+        "image": "Image",
+        "video": "Video",
+        "document": "Document"
+      },
+      "upload": {
+        "image": "Upload image",
+        "video": "Upload video",
+        "document": "Upload document"
+      }
     },
     "actions": {
       "schedule": "Schedule",

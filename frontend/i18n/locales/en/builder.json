@@ -1,4 +1,26 @@
 {
+  "palette": {
+    "groups": {
+      "input": "Input (user)",
+      "output": "Output (bot)",
+      "actions": "System actions"
+    },
+    "items": {
+      "inputText": "Text field",
+      "inputDate": "Date/time picker",
+      "inputFile": "File upload",
+      "outputText": "Text message",
+      "outputMedia": "Media message",
+      "outputLink": "External link",
+      "outputMenu": "Selection menu",
+      "api": "API call",
+      "wait": "Wait",
+      "timeRouting": "Route by time/date/day",
+      "groupMembership": "Add/remove from group",
+      "agents": "Agents",
+      "setParameter": "Set parameter"
+    }
+  },
   "sidebar": {
     "tabs": {
       "versions": "Versions",

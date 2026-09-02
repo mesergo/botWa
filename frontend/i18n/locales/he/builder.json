@@ -1,4 +1,26 @@
 {
+  "palette": {
+    "groups": {
+      "input": "קלט (משתמש)",
+      "output": "פלט (בוט)",
+      "actions": "פעולות מערכת"
+    },
+    "items": {
+      "inputText": "שדה טקסט",
+      "inputDate": "בחירת תאריך/שעה",
+      "inputFile": "העלאת קובץ",
+      "outputText": "הודעת טקסט",
+      "outputMedia": "הודעת מדיה",
+      "outputLink": "קישור חיצוני",
+      "outputMenu": "תפריט בחירה",
+      "api": "קריאת API",
+      "wait": "המתנה",
+      "timeRouting": "ניתוב לפי שעה/תאריך/יום",
+      "groupMembership": "הוספה/הסרה מקבוצה",
+      "agents": "נציגים",
+      "setParameter": "הגדרת פרמטר"
+    }
+  },
   "sidebar": {
     "tabs": {
       "versions": "גרסאות",

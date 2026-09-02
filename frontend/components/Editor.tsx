@@ -367,7 +367,10 @@ const Editor: React.FC<EditorProps> = ({
       </nav>
 
       <div className="flex-1 overflow-hidden">
-        <div className="flex h-full w-full">
+        {/* Fixed physical layout regardless of page language (components sidebar always on the left,
+            canvas always on the right), matching the nav's dir="ltr" convention above. Sidebar.tsx's
+            own Hebrew/English text still renders via its own inherited/explicit direction. */}
+        <div className="flex h-full w-full" dir="ltr">
           <Sidebar {...sidebarProps} isReadOnly={viewMode === 'viewing-process'} />
           <div className="flex-1 relative h-full bg-[#f8fafc]" ref={reactFlowWrapper}>
             {isTransitioning && (
