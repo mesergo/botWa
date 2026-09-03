@@ -24,6 +24,9 @@ export const ApiGeneratorTab: React.FC<ApiGeneratorTabProps> = ({ token, table, 
   const [method, setMethod] = useState<'GET' | 'POST'>('GET');
   const [outputFormat, setOutputFormat] = useState<InternalDataOutputFormat>('single_object');
   const [includeApiKeyInUrl, setIncludeApiKeyInUrl] = useState<boolean>(false);
+  const [successReturn, setSuccessReturn] = useState<string>('-2');
+  const [notFoundReturn, setNotFoundReturn] = useState<string>('0');
+  const [notFoundMessage, setNotFoundMessage] = useState<string>('❌ לא נמצאה רשומה תואמת');
 
   const [filterField, setFilterField] = useState<string>(fields[0] || '');
   const [filterOperator, setFilterOperator] = useState<string>('contains');
@@ -51,6 +54,11 @@ export const ApiGeneratorTab: React.FC<ApiGeneratorTabProps> = ({ token, table, 
       params.set('value', lookupValue);
       if (selectedFields.length > 0) params.set('fields', selectedFields.join(','));
       if (outputFormat && outputFormat !== 'single_object') params.set('_format', outputFormat);
+      if (outputFormat === 'bot_actions') {
+        params.set('_successReturn', successReturn);
+        params.set('_notFoundReturn', notFoundReturn);
+        params.set('_notFoundMessage', notFoundMessage);
+      }
       if (includeApiKeyInUrl && table.api.key && !table.api.enabled) params.set('apiKey', table.api.key);
 
       if (method === 'GET') {
@@ -60,6 +68,12 @@ export const ApiGeneratorTab: React.FC<ApiGeneratorTabProps> = ({ token, table, 
       const fullUrl = `${origin}/api/v1/collections/${table._id}/lookup`;
       const body: Record<string, any> = { key: lookupKey, value: lookupValue };
       if (selectedFields.length > 0) body.fields = selectedFields;
+      if (outputFormat && outputFormat !== 'single_object') body._format = outputFormat;
+      if (outputFormat === 'bot_actions') {
+        body._successReturn = successReturn;
+        body._notFoundReturn = notFoundReturn;
+        body._notFoundMessage = notFoundMessage;
+      }
       return { url: fullUrl, displayUrl: fullUrl, requestBody: body };
     }
 
@@ -69,6 +83,11 @@ export const ApiGeneratorTab: React.FC<ApiGeneratorTabProps> = ({ token, table, 
     }
     if (selectedFields.length > 0) params.set('_fields', selectedFields.join(','));
     if (outputFormat && outputFormat !== 'json_array') params.set('_format', outputFormat);
+    if (outputFormat === 'bot_actions') {
+      params.set('_successReturn', successReturn);
+      params.set('_notFoundReturn', notFoundReturn);
+      params.set('_notFoundMessage', notFoundMessage);
+    }
     if (limit) params.set('_limit', String(limit));
     if (includeApiKeyInUrl && table.api.key && !table.api.enabled) params.set('apiKey', table.api.key);
 
@@ -85,6 +104,11 @@ export const ApiGeneratorTab: React.FC<ApiGeneratorTabProps> = ({ token, table, 
     }
     const body: Record<string, any> = { filter, limit, format: outputFormat };
     if (selectedFields.length > 0) body.projection = selectedFields;
+    if (outputFormat === 'bot_actions') {
+      body._successReturn = successReturn;
+      body._notFoundReturn = notFoundReturn;
+      body._notFoundMessage = notFoundMessage;
+    }
     return { url: fullUrl, displayUrl: fullUrl, requestBody: body };
   };
 
@@ -282,8 +306,27 @@ export const ApiGeneratorTab: React.FC<ApiGeneratorTabProps> = ({ token, table, 
                 <option value="key_value">מילון מפתחות</option>
                 <option value="csv">קובץ CSV</option>
                 <option value="xml">פורמט XML</option>
+                <option value="bot_actions">Actions לבוט (SetParameter/Return)</option>
               </select>
             </div>
+            {outputFormat === 'bot_actions' && (
+              <div className="space-y-2 pt-1">
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[11px] text-slate-600 mb-1">קוד Return בהצלחה:</label>
+                    <input type="text" value={successReturn} onChange={(e) => setSuccessReturn(e.target.value)} className="w-full px-3 py-1.5 text-xs font-mono bg-white border border-slate-300 rounded-lg text-slate-800 focus:ring-2 focus:ring-indigo-500" dir="ltr" />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] text-slate-600 mb-1">קוד Return כשלא נמצא:</label>
+                    <input type="text" value={notFoundReturn} onChange={(e) => setNotFoundReturn(e.target.value)} className="w-full px-3 py-1.5 text-xs font-mono bg-white border border-slate-300 rounded-lg text-slate-800 focus:ring-2 focus:ring-indigo-500" dir="ltr" />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-[11px] text-slate-600 mb-1">הודעה כשלא נמצאה רשומה:</label>
+                  <input type="text" value={notFoundMessage} onChange={(e) => setNotFoundMessage(e.target.value)} className="w-full px-3 py-1.5 text-xs bg-white border border-slate-300 rounded-lg text-slate-900 focus:ring-2 focus:ring-indigo-500" />
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="space-y-3 p-4 bg-slate-50 rounded-2xl border border-slate-200">

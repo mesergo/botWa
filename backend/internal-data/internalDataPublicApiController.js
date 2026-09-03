@@ -9,7 +9,7 @@ import mongoose from 'mongoose';
 import InternalDataTable from './InternalDataTable.js';
 import InternalDataRow from './InternalDataRow.js';
 import { extractRequestApiKey } from './internalDataApiKeys.js';
-import { buildSafeFilter, flattenRow, formatRows, operatorParamToFilter, UnsafeQueryError } from './internalDataQueryEngine.js';
+import { buildSafeFilter, flattenRow, formatBotActionsRow, formatNotFoundActions, formatRows, operatorParamToFilter, UnsafeQueryError } from './internalDataQueryEngine.js';
 
 const loadAuthorizedTable = async (req) => {
   const { id } = req.params;
@@ -38,6 +38,19 @@ const respondFormatted = (res, rows, format, selectedFields) => {
   return res.send(body ?? '');
 };
 
+// 'bot_actions' bypasses the {success,count,data} envelope entirely — bot/IVR engines
+// (e.g. message.co.il campaigns) expect the raw { actions: [...] } object at the top level,
+// always with HTTP 200 (flow control happens via the trailing Return action's value, not the status code).
+const respondBotActions = (res, params, row, selectedFields) => {
+  const successReturn = params._successReturn !== undefined ? Number(params._successReturn) : -2;
+  if (!row) {
+    const notFoundReturn = params._notFoundReturn !== undefined ? Number(params._notFoundReturn) : 0;
+    const message = params._notFoundMessage || '❌ לא נמצאה רשומה תואמת';
+    return res.status(200).json(formatNotFoundActions(message, notFoundReturn));
+  }
+  return res.status(200).json(formatBotActionsRow(row, selectedFields, successReturn));
+};
+
 // GET/POST /api/v1/collections/:id/lookup — { key, value } → single matching record
 export const lookupRecord = async (req, res) => {
   const params = req.method === 'GET' ? req.query : req.body;
@@ -52,9 +65,11 @@ export const lookupRecord = async (req, res) => {
     const filter = buildSafeFilter(table._id, { [key]: value });
     const row = await InternalDataRow.findOne(filter);
     recordApiCall(table);
-    if (!row) return res.status(404).json({ success: false, error: 'לא נמצאה רשומה תואמת' });
 
     const selectedFields = (fields || _fields) ? String(fields || _fields).split(',').map((s) => s.trim()) : undefined;
+    if (_format === 'bot_actions') return respondBotActions(res, params, row ? flattenRow(row) : null, selectedFields);
+
+    if (!row) return res.status(404).json({ success: false, error: 'לא נמצאה רשומה תואמת' });
     respondFormatted(res, [flattenRow(row)], _format, selectedFields);
   } catch (err) {
     if (err instanceof UnsafeQueryError) return res.status(400).json({ success: false, error: err.message });
@@ -76,6 +91,7 @@ export const queryRecords = async (req, res) => {
     let limit = 50;
     let format = 'json_array';
     let single = false;
+    let params = {};
 
     if (req.method === 'POST' && req.body && typeof req.body.filter === 'object') {
       rawFilter = req.body.filter || {};
@@ -84,8 +100,9 @@ export const queryRecords = async (req, res) => {
       limit = req.body.limit || limit;
       format = req.body.format || format;
       single = req.body.single === true;
+      params = req.body;
     } else {
-      const params = req.method === 'GET' ? req.query : req.body;
+      params = req.method === 'GET' ? req.query : req.body;
       for (const [rawKey, val] of Object.entries(params || {})) {
         if (rawKey.startsWith('_') || rawKey === 'apiKey') continue;
         const [field, operator] = rawKey.split('__');
@@ -106,6 +123,8 @@ export const queryRecords = async (req, res) => {
     const docs = await query;
     recordApiCall(table);
     const rows = docs.map(flattenRow);
+
+    if (format === 'bot_actions') return respondBotActions(res, params, rows[0] || null, selectedFields);
 
     if (single || format === 'single_object') {
       return respondFormatted(res, rows.slice(0, 1), 'single_object', selectedFields);

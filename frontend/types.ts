@@ -9,7 +9,7 @@ export interface ContactFieldDef {
 export type InternalDataFieldType = 'string' | 'number' | 'date' | 'boolean' | 'email' | 'phone' | 'json';
 export type InternalDataSourceType = 'google_sheet' | 'excel_url' | 'manual';
 export type InternalDataSyncMode = 'replace' | 'upsert' | 'append';
-export type InternalDataOutputFormat = 'json_array' | 'single_object' | 'fields_only' | 'key_value' | 'csv' | 'xml';
+export type InternalDataOutputFormat = 'json_array' | 'single_object' | 'fields_only' | 'key_value' | 'csv' | 'xml' | 'bot_actions';
 
 export interface InternalDataField {
   key: string;

@@ -97,6 +97,30 @@ const toXml = (rows) => {
   return `<?xml version="1.0" encoding="UTF-8"?><records>${rowsXml}</records>`;
 };
 
+// Builds the "actions" envelope some external bot/IVR engines (e.g. message.co.il
+// campaigns) expect from a webhook: a flat array of SetParameter actions — one per
+// returned field — followed by a single Return action carrying a flow-control code.
+// Used both for a matched record and for the not-found case (see formatNotFoundActions).
+export const formatBotActionsRow = (row, selectedFields, successReturn = -2) => {
+  const projected = selectedFields && selectedFields.length > 0
+    ? Object.fromEntries(selectedFields.filter((f) => f in row).map((f) => [f, row[f]]))
+    : Object.fromEntries(Object.entries(row).filter(([k]) => !k.startsWith('_')));
+  const actions = Object.entries(projected).map(([name, value]) => ({
+    type: 'SetParameter',
+    name,
+    value: value === null || value === undefined ? '' : value,
+  }));
+  actions.push({ type: 'Return', value: successReturn });
+  return { actions };
+};
+
+export const formatNotFoundActions = (message = '❌ לא נמצאה רשומה תואמת', notFoundReturn = 0) => ({
+  actions: [
+    { type: 'SetParameter', name: 'message', value: message },
+    { type: 'Return', value: notFoundReturn },
+  ],
+});
+
 // Formats flattened rows per the requested OutputFormat, returning { body, contentType }.
 export const formatRows = (rows, format, selectedFields) => {
   let projected = rows;
