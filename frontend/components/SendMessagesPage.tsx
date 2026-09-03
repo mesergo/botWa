@@ -61,6 +61,7 @@ interface SendMessagesPageProps {
   onOpenSessions?: (phone?: string) => void;
   onOpenGroups?: () => void;
   onOpenSmsIn?: () => void;
+  onOpenInternalData?: () => void;
   onOpenAdminPanel?: () => void;
   onOpenSettings?: () => void;
   onOpenSubUsers?: () => void;
@@ -74,7 +75,7 @@ const API_BASE = window.location.hostname === 'localhost'
   : `${window.location.origin}/api`;
 
 const SendMessagesPage: React.FC<SendMessagesPageProps> = ({
-  token, currentUser, onBack, onLogout, onOpenContacts, onOpenSessions, onOpenGroups, onOpenSmsIn,
+  token, currentUser, onBack, onLogout, onOpenContacts, onOpenSessions, onOpenGroups, onOpenSmsIn, onOpenInternalData,
   onOpenAdminPanel, onOpenSettings, onOpenSubUsers, onStopImpersonation, onSwitchAccount, onGoHome,
 }) => {
   const can = usePermission(currentUser as any);
@@ -511,6 +512,7 @@ const SendMessagesPage: React.FC<SendMessagesPageProps> = ({
           onContacts={onOpenContacts ? () => onOpenContacts() : undefined}
           onGroups={onOpenGroups}
           onSmsIn={onOpenSmsIn}
+          onInternalData={onOpenInternalData}
           onSettings={onOpenSettings}
           onUsers={onOpenSubUsers && can('users.view') ? onOpenSubUsers : undefined}
         />

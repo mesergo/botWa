@@ -22,6 +22,8 @@ import subUserRoutes from './routes/subUserRoutes.js';
 import repGroupRoutes from './routes/repGroupRoutes.js';
 import contactRoutes from './routes/contactRoutes.js';
 import contactFieldRoutes from './routes/contactFieldRoutes.js';
+import internalDataRoutes from './internal-data/internalDataRoutes.js';
+import internalDataPublicApiRoutes from './internal-data/internalDataPublicApiRoutes.js';
 import groupRoutes from './routes/groupRoutes.js';
 import whatsappWebhookRoutes from './routes/whatsappWebhookRoutes.js';
 import whatsappRegistrationRoutes from './routes/whatsappRegistrationRoutes.js';
@@ -36,6 +38,7 @@ import { authenticateToken } from './middleware/auth.js';
 import { setPushNotificationService } from './config/pushNotificationsRuntime.js';
 import { registerExpoPushNotifier } from './utils/expoPushNotifier.js';
 import './utils/activeContactsTicker.js';
+import './internal-data/internalDataSyncTicker.js';
  
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -95,6 +98,8 @@ async function startServer() {
     app.use('/api/rep-groups', repGroupRoutes);
     app.use('/api/contacts', contactRoutes);
     app.use('/api/contact-fields', contactFieldRoutes);
+    app.use('/api/internal-data', internalDataRoutes);
+    app.use('/api/v1/collections', internalDataPublicApiRoutes);  // External read API for internal-data tables (per-table public/key-gated, see internalDataPublicApiController.js)
     app.use('/api/groups', groupRoutes);
     app.use('/api/whatsapp', whatsappWebhookRoutes);  // Meta WhatsApp Business webhook (GET verify + POST events)
     app.use('/api/whatsapp-registration', whatsappRegistrationRoutes);  // Stage 2/3 of FB onboarding + connected-numbers settings

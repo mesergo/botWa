@@ -52,6 +52,7 @@ interface GroupsPageProps {
   onOpenSessions?: (phone?: string) => void;
   onOpenSendMessages?: () => void;
   onOpenSmsIn?: () => void;
+  onOpenInternalData?: () => void;
   onOpenAdminPanel?: () => void;
   onOpenSettings?: () => void;
   onOpenSubUsers?: () => void;
@@ -71,7 +72,7 @@ const API_BASE = window.location.hostname === 'localhost'
 // ─── Component ────────────────────────────────────────────────────────────────
 
 const GroupsPage: React.FC<GroupsPageProps> = ({
-  token, currentUser, onBack, onLogout, onOpenContacts, onOpenSessions,onOpenSendMessages,onOpenSmsIn,
+  token, currentUser, onBack, onLogout, onOpenContacts, onOpenSessions,onOpenSendMessages,onOpenSmsIn, onOpenInternalData,
   onOpenAdminPanel, onOpenSettings, onOpenSubUsers, onStopImpersonation, onSwitchAccount, onGoHome, embedded = false,
 }) => {
   const [groups, setGroups] = useState<GroupSummary[]>([]);
@@ -871,6 +872,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
           onSessions={onOpenSessions ? () => onOpenSessions() : undefined}
           onContacts={onOpenContacts ? () => onOpenContacts() : undefined}
           onSmsIn={onOpenSmsIn}
+          onInternalData={onOpenInternalData}
           onSendMessages={onOpenSendMessages}
           onSettings={onOpenSettings}
           onUsers={onOpenSubUsers && can('users.view') ? onOpenSubUsers : undefined}

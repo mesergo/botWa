@@ -1,6 +1,6 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { Bot, MessageSquare, Users, Settings, LogOut, Shield, ArrowLeft, ArrowRight, LayoutDashboard, Inbox, Send, UserCog  } from 'lucide-react';
+import { Bot, MessageSquare, Users, Settings, LogOut, Shield, ArrowLeft, ArrowRight, LayoutDashboard, Inbox, Send, UserCog,Database  } from 'lucide-react';
 import { User } from '../types';
 import { usePermission } from '../hooks/usePermission';
 import { getFormatLocale } from '../i18n';
@@ -15,6 +15,7 @@ interface HomePageProps {
   onGoToChats: () => void;
   onGoToContacts: () => void;
   onGoToSmsIn?: () => void;
+  onGoToInternalData?: () => void;
   onGoToSendMessages?: () => void;
   onGoToUsers?: () => void;
   onGoToSettings: () => void;
@@ -26,7 +27,7 @@ interface HomePageProps {
 }
 
 // Sidebar nav items definition
-type NavId = 'home' | 'bots' | 'chats' | 'sms_in' | 'contacts' | 'send_messages' | 'users' | 'settings';
+type NavId = 'home' | 'bots' | 'chats' | 'sms_in' | 'internal_data' | 'contacts' | 'send_messages' | 'users' | 'settings';
 
 interface SideNavItem {
   id: NavId;
@@ -42,6 +43,7 @@ const SIDE_NAV: SideNavItem[] = [
   { id: 'bots',     labelKey: 'pages.bots',         Icon: Bot,             color: 'text-blue-600',    permission: 'bots.view_tab' },
   { id: 'chats',    labelKey: 'pages.sessions',     Icon: MessageSquare,   color: 'text-emerald-600', permission: 'sessions.view' },
   { id: 'sms_in',   labelKey: 'pages.smsIn',        Icon: Inbox,           color: 'text-sky-600',     permission: 'sms_in.view' },
+    { id: 'internal_data', labelKey: 'ניהול דטה פנימי', Icon: Database, color: 'text-amber-600', permission: 'internal_data.view' },
   { id: 'contacts', labelKey: 'pages.contacts',     Icon: Users,           color: 'text-violet-600',  permission: 'contacts.view' },
    { id: 'send_messages', labelKey: 'שליחת הודעות', Icon: Send,       color: 'text-fuchsia-600', permission: 'send_messages.view' },
   { id: 'users',    labelKey: 'משתמשים',      Icon: UserCog,         color: 'text-cyan-600',    permission: 'users.view' },
@@ -87,6 +89,17 @@ const tiles = [
     badge: null,
   },
   {
+    id: 'internal_data' as const,
+    label: 'ניהול דטה פנימי',
+    description: 'טבלאות נתונים מותאמות אישית, ייבוא וסנכרון אונליין',
+    icon: Database,
+    iconBg: 'bg-amber-50',
+    iconColor: 'text-amber-600',
+    accent: 'group-hover:border-amber-200',
+    arrowColor: 'text-amber-400',
+    badge: null,
+  },
+  {
     id: 'send_messages' as const,
     label: 'שליחת הודעות',
     description: 'שליחת הודעות לאנשי קשר וקבוצות',
@@ -123,6 +136,7 @@ const HomePage: React.FC<HomePageProps> = ({
   onGoToChats,
   onGoToContacts,
   onGoToSmsIn,
+  onGoToInternalData,
   onGoToSendMessages,
   onGoToUsers,
   onGoToSettings,
@@ -142,6 +156,7 @@ const HomePage: React.FC<HomePageProps> = ({
     if (id === 'bots') return onGoToBots;
     if (id === 'chats') return onGoToChats;
     if (id === 'sms_in') return onGoToSmsIn;
+    if (id === 'internal_data') return onGoToInternalData;
     if (id === 'contacts') return onGoToContacts;
     if (id === 'send_messages') return onGoToSendMessages;
     if (id === 'users') return onGoToUsers;
@@ -152,6 +167,7 @@ const HomePage: React.FC<HomePageProps> = ({
   const mobileNavItems = SIDE_NAV.filter(({ id, permission }) => {
     if (id === 'home') return false;
     if (id === 'sms_in' && !onGoToSmsIn) return false;
+    if (id === 'internal_data' && !onGoToInternalData) return false;
     if (id === 'send_messages' && !onGoToSendMessages) return false;
     if (id === 'users' && !onGoToUsers) return false;
     return !permission || can(permission as any);
@@ -162,6 +178,7 @@ const HomePage: React.FC<HomePageProps> = ({
     if (id === 'chats')    return can('sessions.view');
     if (id === 'contacts') return can('contacts.view');
     if (id === 'sms_in')   return can('sms_in.view') && !!onGoToSmsIn;
+    if (id === 'internal_data') return can('internal_data.view') && !!onGoToInternalData;
     if (id === 'send_messages') return can('send_messages.view') && !!onGoToSendMessages;
     if (id === 'users')   return can('users.view') && !!onGoToUsers;
     if (id === 'settings') return can('settings.view');
@@ -173,6 +190,7 @@ const HomePage: React.FC<HomePageProps> = ({
     else if (id === 'chats') onGoToChats();
     else if (id === 'contacts') onGoToContacts();
     else if (id === 'sms_in') onGoToSmsIn?.();
+    else if (id === 'internal_data') onGoToInternalData?.();
     else if (id === 'send_messages') onGoToSendMessages?.();
     else if (id === 'users') onGoToUsers?.();
     else if (id === 'settings') onGoToSettings();
