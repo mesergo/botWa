@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Bot, List, Users, Settings, UserCog, Home, MessageSquare, Send, Menu, X, LogOut, Shield } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { Bot, List, Users, Settings, UserCog, Home, MessageSquare, Send, Menu, X, LogOut, Shield, Database } from 'lucide-react';
 
-export type NavPage = 'bots' | 'sessions' | 'contacts' | 'groups'| 'send_messages' | 'sms_in' | 'settings' | 'users';
+export type NavPage = 'bots' | 'sessions' | 'contacts' | 'groups'| 'send_messages' | 'sms_in' | 'internal_data' | 'settings' | 'users';
 
 const NAV_PATHS: Record<NavPage, string> = {
   bots:     '/dashboard',
@@ -13,6 +13,7 @@ const NAV_PATHS: Record<NavPage, string> = {
   send_messages: '/send-messages',
   settings: '/settings',
   sms_in:   '/sms-in',
+  internal_data: '/internal-data',
   users:    '/users',
 };
 
@@ -34,6 +35,7 @@ interface AppNavProps {
   onGroups?: () => void;
   onSendMessages?: () => void;
   onSmsIn?: () => void;
+  onInternalData?: () => void;
   onSettings?: () => void;
   onUsers?: () => void;
   /** Navigate back to the home / dashboard overview page */
@@ -60,6 +62,7 @@ const NAV_ITEMS: { key: NavPage; labelKey: string; Icon: React.FC<{ size?: numbe
   { key: 'contacts', labelKey: 'pages.contacts',     Icon: Users },
   { key: 'send_messages', labelKey: 'pages.sendMessages', Icon: Send },
   { key: 'sms_in',   labelKey: 'pages.smsIn',        Icon: MessageSquare },
+  { key: 'internal_data', labelKey: 'pages.internalData', Icon: Database },
   { key: 'settings', labelKey: 'pages.settings',     Icon: Settings },
   { key: 'users',    labelKey: 'pages.users',        Icon: UserCog },
 ];
@@ -72,6 +75,7 @@ const AppNav: React.FC<AppNavProps> = ({
   onGroups,
   onSendMessages,
   onSmsIn,
+  onInternalData,
   onSettings,
   onUsers,
   onGoHome,
@@ -131,6 +135,7 @@ const AppNav: React.FC<AppNavProps> = ({
     groups: onGroups,
     send_messages: onSendMessages,
     sms_in: onSmsIn,
+    internal_data: onInternalData,
     settings: onSettings,
     users: onUsers,
   };

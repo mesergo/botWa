@@ -1,14 +1,13 @@
 import React, { useState } from 'react';
-import { MessageSquare } from 'lucide-react';
-import ImpersonationBanner from './ImpersonationBanner';
-import MigrationNoticeBanner from './MigrationNoticeBanner';
-import AppNav from './AppNav';
-import PageTopBar from './PageTopBar';
-import SmsInApp from './sms-in/SmsInApp';
-import { usePermission } from '../hooks/usePermission';
-import { useTranslation } from 'react-i18next';
+import { Database } from 'lucide-react';
+import ImpersonationBanner from '../ImpersonationBanner';
+import MigrationNoticeBanner from '../MigrationNoticeBanner';
+import AppNav from '../AppNav';
+import PageTopBar from '../PageTopBar';
+import InternalDataApp from './InternalDataApp';
+import { usePermission } from '../../hooks/usePermission';
 
-interface SmsInPageProps {
+interface InternalDataPageProps {
   token: string | null;
   currentUser?: {
     id?: string;
@@ -23,7 +22,7 @@ interface SmsInPageProps {
   onOpenContacts?: (phone?: string) => void;
   onOpenGroups?: () => void;
   onOpenSendMessages?: () => void;
-  onOpenInternalData?: () => void;
+  onOpenSmsIn?: () => void;
   onOpenAdminPanel?: () => void;
   onOpenSettings?: () => void;
   onOpenSubUsers?: () => void;
@@ -31,8 +30,8 @@ interface SmsInPageProps {
   onSwitchAccount?: (accountId: string) => void;
 }
 
-const SmsInPage: React.FC<SmsInPageProps> = ({
-  token: _token,
+const InternalDataPage: React.FC<InternalDataPageProps> = ({
+  token,
   currentUser,
   onBack,
   onLogout,
@@ -40,24 +39,23 @@ const SmsInPage: React.FC<SmsInPageProps> = ({
   onOpenContacts,
   onOpenGroups,
   onOpenSendMessages,
-  onOpenInternalData,
+  onOpenSmsIn,
   onOpenAdminPanel,
   onOpenSettings,
   onOpenSubUsers,
   onStopImpersonation,
   onSwitchAccount,
 }) => {
-  const { t } = useTranslation('smsIn');
   const can = usePermission(currentUser as any);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   return (
-    <div className="h-screen w-screen bg-[#f8fafc] flex flex-col font-medium text-start overflow-hidden">
-      <ImpersonationBanner currentUser={currentUser} onStopImpersonation={onStopImpersonation} token={_token} onSwitchAccount={onSwitchAccount} />
+    <div className="h-screen w-screen bg-[#f8fafc] flex flex-col font-medium text-right overflow-hidden" dir="rtl">
+      <ImpersonationBanner currentUser={currentUser} onStopImpersonation={onStopImpersonation} token={token} onSwitchAccount={onSwitchAccount} />
       <MigrationNoticeBanner />
 
       <PageTopBar
-        token={_token}
+        token={token}
         currentUser={currentUser}
         onBack={onBack}
         onLogout={onLogout}
@@ -66,13 +64,13 @@ const SmsInPage: React.FC<SmsInPageProps> = ({
         showMobileNavToggle
         mobileNavOpen={mobileNavOpen}
         onMobileNavToggle={() => setMobileNavOpen((prev) => !prev)}
-        badge={{ label: t('page.badge'), icon: <MessageSquare size={14} />, className: 'bg-sky-50 text-sky-700' }}
+        badge={{ label: 'ניהול דטה פנימי', icon: <Database size={14} />, className: 'bg-amber-50 text-amber-700' }}
       />
 
       <div className="flex-1 overflow-hidden flex">
         <AppNav
           mode="sidebar"
-          activePage="sms_in"
+          activePage="internal_data"
           hideMobileTrigger
           mobileMenuOpen={mobileNavOpen}
           onMobileMenuOpenChange={setMobileNavOpen}
@@ -85,26 +83,17 @@ const SmsInPage: React.FC<SmsInPageProps> = ({
           onContacts={onOpenContacts ? () => onOpenContacts() : undefined}
           onGroups={onOpenGroups}
           onSendMessages={onOpenSendMessages}
-          onInternalData={onOpenInternalData && can('internal_data.view') ? onOpenInternalData : undefined}
+          onSmsIn={onOpenSmsIn && can('sms_in.view') ? onOpenSmsIn : undefined}
           onSettings={onOpenSettings}
           onUsers={onOpenSubUsers && can('users.view') ? onOpenSubUsers : undefined}
         />
 
         <div className="flex-1 overflow-hidden min-w-0">
-          <SmsInApp
-            embedded
-            userEmail={currentUser?.email}
-            userId={currentUser?.id}
-            userName={currentUser?.name}
-            // Admin user accounts see only lines assigned to them.
-            // Full inbox lives in פאנל ניהול.
-            isAdmin={false}
-            token={_token}
-          />
+          <InternalDataApp token={token} />
         </div>
       </div>
     </div>
   );
 };
 
-export default SmsInPage;
+export default InternalDataPage;

@@ -171,7 +171,10 @@ export const resolvePermissions = async (user) => {
   // Per-user gate for the "חבר לפייסבוק" button in bot settings: admins always see it,
   // other users only when the admin enabled it on their account (User.facebook_connect_enabled).
   const facebookConnectView = user?.role === 'admin' ? true : user?.facebook_connect_enabled === true;
-  const result = { ...base, sms_in: { view: smsInView }, facebook_connect: { view: facebookConnectView } };
+  // Per-user gate for the "ניהול דטה פנימי" tab: admins always see it,
+  // other users only when the admin enabled it on their account (User.internal_data_enabled).
+  const internalDataView = user?.role === 'admin' ? true : user?.internal_data_enabled === true;
+  const result = { ...base, sms_in: { view: smsInView }, facebook_connect: { view: facebookConnectView }, internal_data: { view: internalDataView } };
 
   // Final layer: per-customer tab visibility overrides (tri-state), set by admin on
   // User.tab_overrides. Only applied when explicitly true/false (null/undefined = inherit).

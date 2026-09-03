@@ -63,6 +63,7 @@ interface SessionsPageProps {
   onOpenGroups?: () => void;
   onOpenSendMessages?: () => void;
   onOpenSmsIn?: () => void;
+  onOpenInternalData?: () => void;
   onOpenAdminPanel?: () => void;
   onOpenSettings?: () => void;
   onOpenSubUsers?: () => void;
@@ -85,7 +86,7 @@ const WhatsAppIcon = ({ size = 12, className = '' }: { size?: number; className?
   </svg>
 );
 
-const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack, onLogout, onOpenContacts, onOpenGroups, onOpenSendMessages, onOpenAdminPanel,onOpenSmsIn, onOpenSettings, onOpenSubUsers, onStopImpersonation, onSwitchAccount, onUpdateAvailability, onGoHome, initialPhone, initialBotPhone }) => {
+const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack, onLogout, onOpenContacts, onOpenGroups, onOpenSendMessages, onOpenAdminPanel,onOpenSmsIn, onOpenSettings, onOpenSubUsers, onStopImpersonation, onSwitchAccount, onUpdateAvailability, onGoHome, initialPhone, initialBotPhone,onOpenInternalData }) => {
   // UI direction follows the active language (he -> rtl, en -> ltr).
   const { i18n } = useTranslation();
   const isRtl = i18n.dir() === 'rtl';
@@ -2295,6 +2296,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
               onGroups={onOpenGroups}
               onSendMessages={onOpenSendMessages}
               onSmsIn={onOpenSmsIn}
+              onInternalData={onOpenInternalData}
               onSettings={onOpenSettings}
               onUsers={onOpenSubUsers && can('users.view') ? onOpenSubUsers : undefined}
             />
