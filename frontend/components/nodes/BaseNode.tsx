@@ -75,6 +75,22 @@ const BaseNode: React.FC<BaseNodeProps> = ({ id, title, icon, children, type, se
     return words.slice(0, 5).join(' ') + (words.length > 5 ? '…' : '');
   };
 
+  // Ranks a source handle so the "רכיבים הבאים" (outgoing) dropdown lists targets
+  // in the same top-to-bottom order as the option/branch rows shown in the node
+  // body (which the user can reorder via drag-and-drop) — fixed handles (default,
+  // system trigger) are pinned first/second, then numbered option-N / option-cond-N
+  // handles are sorted by their current numeric index.
+  const getHandleSortRank = (handle: string | null | undefined): number => {
+    if (!handle) return 0;
+    if (handle === 'default' || handle === 'option-default') return -2;
+    if (handle === 'option-system-case2') return -1;
+    const condMatch = handle.match(/^option-cond-(\d+)$/);
+    if (condMatch) return 10000 + parseInt(condMatch[1], 10);
+    const optMatch = handle.match(/^option-(\d+)$/);
+    if (optMatch) return parseInt(optMatch[1], 10);
+    return 0;
+  };
+
   const incomingNodes = edges
     .filter(e => e.target === id)
     .map(e => {
@@ -86,6 +102,8 @@ const BaseNode: React.FC<BaseNodeProps> = ({ id, title, icon, children, type, se
 
   const outgoingNodes = edges
     .filter(e => e.source === id)
+    .slice()
+    .sort((a, b) => getHandleSortRank(a.sourceHandle) - getHandleSortRank(b.sourceHandle))
     .map(e => {
       const tgt = allNodes.find(n => n.id === e.target);
       const d = tgt?.data as any;

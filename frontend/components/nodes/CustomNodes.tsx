@@ -5,7 +5,7 @@ import { Handle, Position, useReactFlow, useEdges } from 'reactflow';
 import {
   Type, Calendar, Upload, MessageSquare,
   Image as ImageIcon, ExternalLink, List, Globe, Clock, PlayCircle, Plus, Layers, X, GitBranch, Trash2, ChevronDown, Zap,
-  Mail, Phone, CreditCard, Link, Users, UserMinus, UserCheck, Settings, Pencil, MoreVertical, CornerUpLeft
+  Mail, Phone, CreditCard, Link, Users, UserMinus, UserCheck, Settings, Pencil, MoreVertical, CornerUpLeft, GripVertical
 } from 'lucide-react';
 import BaseNode from './BaseNode';
 import { NodeType } from '../../types';
@@ -648,6 +648,123 @@ const DeletableHandle = ({ nodeId, handleId, style, onDelete }: { nodeId: string
     </>
   );
 };
+
+/** Pure splice-move helper: removes the element at `from` and reinserts it at `to`. */
+function moveItem<T>(arr: T[], from: number, to: number): T[] {
+  if (from === to) return arr;
+  const next = arr.slice();
+  const [item] = next.splice(from, 1);
+  next.splice(to, 0, item);
+  return next;
+}
+
+/**
+ * Small local hook powering native HTML5 drag-and-drop reordering of option/branch
+ * rows. `minIndex` excludes leading pinned rows (e.g. AutomaticResponsesNode's
+ * index 0) from being dragged or acting as a drop target.
+ *
+ * The actual move is committed on drop at the *container* level (via
+ * `getContainerProps`/`commitDrop`), not on each individual row — this way,
+ * releasing the mouse anywhere inside the list (gaps between rows, padding,
+ * a button, etc.) still reorders to whatever position was last highlighted,
+ * instead of requiring a pixel-perfect drop exactly on the target row.
+ */
+function useDragReorder(onMove: (from: number, to: number) => void, minIndex: number = 0) {
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [overIndex, setOverIndex] = useState<number | null>(null);
+  const [overPosition, setOverPosition] = useState<'before' | 'after' | null>(null);
+  // Mirrors the state above so `commitDrop` (called from the container's onDrop)
+  // always reads the latest values without needing them in a dependency array.
+  const stateRef = useRef({ dragIndex, overIndex, overPosition });
+  stateRef.current = { dragIndex, overIndex, overPosition };
+
+  const clear = () => {
+    setDragIndex(null);
+    setOverIndex(null);
+    setOverPosition(null);
+  };
+
+  const getHandleProps = (i: number) => {
+    if (i < minIndex) return {};
+    return {
+      draggable: true,
+      onDragStart: (e: React.DragEvent) => {
+        e.dataTransfer.effectAllowed = 'move';
+        setDragIndex(i);
+      },
+      // Always fires on the drag source, even if the drop was cancelled or
+      // landed outside any valid drop target — guarantees state is cleared.
+      onDragEnd: clear,
+    };
+  };
+
+  const getRowProps = (i: number) => {
+    if (i < minIndex) return {};
+    return {
+      onDragOver: (e: React.DragEvent) => {
+        e.preventDefault();
+        if (stateRef.current.dragIndex === null) return;
+        if (stateRef.current.dragIndex === i) {
+          // Hovering back over the origin row — clear any previously
+          // highlighted position so a drop here is a no-op.
+          setOverIndex(null);
+          setOverPosition(null);
+          return;
+        }
+        const rect = e.currentTarget.getBoundingClientRect();
+        const position = e.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
+        setOverIndex(i);
+        setOverPosition(position);
+      },
+    };
+  };
+
+  // Performs the move based on the last-highlighted position, then resets state.
+  // Safe to call unconditionally (no-ops if nothing is being dragged).
+  const commitDrop = () => {
+    const { dragIndex: from, overIndex: over, overPosition: pos } = stateRef.current;
+    if (from !== null && over !== null && pos !== null && from !== over) {
+      // `over` is the current index of the row the item was dropped on. Since the
+      // dragged item will be removed first, any row after it shifts down by one
+      // before the reinsertion — account for that, then insert before/after it.
+      const postRemoval = over > from ? over - 1 : over;
+      const to = pos === 'after' ? postRemoval + 1 : postRemoval;
+      if (to !== from) onMove(from, to);
+    }
+    clear();
+  };
+
+  // Convenience for lists whose container has only this single reorder instance.
+  const getContainerProps = () => ({
+    onDragOver: (e: React.DragEvent) => e.preventDefault(),
+    onDrop: (e: React.DragEvent) => { e.preventDefault(); commitDrop(); },
+  });
+
+  return { dragIndex, overIndex, overPosition, getHandleProps, getRowProps, getContainerProps, commitDrop };
+}
+
+/** Small drag-handle icon for reorderable option/branch rows. */
+const DragHandle = (props: React.HTMLAttributes<HTMLDivElement>) => (
+  <div
+    {...props}
+    className={`nodrag flex-shrink-0 flex items-center justify-center w-6 h-10 text-slate-300 hover:text-slate-500 cursor-grab active:cursor-grabbing ${props.className || ''}`}
+    title="גרירה לשינוי סדר"
+  >
+    <GripVertical size={16} />
+  </div>
+);
+
+/**
+ * Thin highlighted line rendered at the top or bottom edge of a row while
+ * something is being dragged over it, indicating exactly where the dragged
+ * option will land (between it and the previous/next row). The parent row
+ * must be positioned (`relative`).
+ */
+const DropIndicatorLine = ({ position }: { position: 'before' | 'after' }) => (
+  <div
+    className={`absolute right-2 left-2 h-[3px] bg-blue-500 rounded-full z-20 pointer-events-none shadow-[0_0_4px_rgba(37,99,235,0.6)] ${position === 'before' ? '-top-2' : '-bottom-2'}`}
+  />
+);
 
 const InputFieldWrapper = ({ label, children }: any) => (
   <div className="relative mb-4 p-1 text-right">
@@ -1341,6 +1458,16 @@ export const OutputMenuNode = (props: any) => {
     props.data.onChange({ menuConditionOptions: newValues, menuConditionOperators: newOps });
   };
 
+  const optionsReorder = useDragReorder((from, to) => {
+    props.data.onChange({ options: moveItem(options, from, to), optionImages: moveItem(optionImages, from, to) });
+    props.data.onReorderOption?.(from, to);
+  });
+
+  const conditionsReorder = useDragReorder((from, to) => {
+    props.data.onChange({ menuConditionOptions: moveItem(conditionOptions, from, to), menuConditionOperators: moveItem(conditionOperators, from, to) });
+    props.data.onReorderConditionOption?.(from, to);
+  });
+
   return (
     <BaseNode id={props.id} title="תפריט בחירה" icon={<List size={20} />} type={NodeType.OUTPUT_MENU} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} isSearchMatch={props.data.isSearchMatch}>
       <InputFieldWrapper label="הנחיית בחירה">
@@ -1352,7 +1479,11 @@ export const OutputMenuNode = (props: any) => {
           <p className="text-[11px] text-red-500 text-right mt-1">⚠ "{props.data.variableName}" הוא שם שמור במערכת ולא ניתן להשתמש בו</p>
         )}
       </InputFieldWrapper>
-      <div className="space-y-4 relative text-right">
+      <div
+        className="space-y-4 relative text-right"
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={(e) => { e.preventDefault(); optionsReorder.commitDrop(); conditionsReorder.commitDrop(); }}
+      >
         <label className="block text-[14px] font-bold text-slate-400 uppercase tracking-widest">רשימת אפשרויות ({options.length <= 2 ? 'כפתורים' : 'רכיב נפתח'})</label>
         {/* Default (catch-all) handle — always first */}
         <div className="flex items-center gap-2 p-2 bg-slate-50 border border-dashed border-slate-300 rounded-2xl relative">
@@ -1360,8 +1491,14 @@ export const OutputMenuNode = (props: any) => {
           <span className="flex-1 text-[12px] font-black text-slate-400 uppercase tracking-widest px-2 text-right">ברירת מחדל</span>
         </div>
         {options.map((opt: string, i: number) => (
-          <div key={i} className="flex items-center gap-2 p-2 bg-slate-50 border border-slate-100 rounded-2xl group/item relative transition-colors hover:bg-white hover:border-blue-100">
+          <div
+            key={i}
+            {...optionsReorder.getRowProps(i)}
+            className={`flex items-center gap-2 p-2 bg-slate-50 border border-slate-100 rounded-2xl group/item relative transition-colors hover:bg-white hover:border-blue-100 ${optionsReorder.dragIndex === i ? 'opacity-40' : ''}`}
+          >
+            {optionsReorder.overIndex === i && optionsReorder.overPosition && <DropIndicatorLine position={optionsReorder.overPosition} />}
             <DeletableHandle nodeId={props.id} handleId={`option-${i}`} style={{ top: '50%', right: -10 }} onDelete={props.data.onDeleteEdge} />
+            <DragHandle {...optionsReorder.getHandleProps(i)} />
             <OptionActionsMenu
               onEdit={() => optionInputRefs.current[i]?.openExpandModal()}
               onDelete={() => removeOption(i)}
@@ -1422,8 +1559,14 @@ export const OutputMenuNode = (props: any) => {
             {conditionOptions.map((val: string, j: number) => {
               const operator = conditionOperators[j] || 'eq';
               return (
-                <div key={j} className="flex items-center gap-2 p-2 bg-purple-50/50 border border-purple-100 rounded-2xl group/item relative transition-colors hover:bg-white">
+                <div
+                  key={j}
+                  {...conditionsReorder.getRowProps(j)}
+                  className={`flex items-center gap-2 p-2 bg-purple-50/50 border border-purple-100 rounded-2xl group/item relative transition-colors hover:bg-white ${conditionsReorder.dragIndex === j ? 'opacity-40' : ''}`}
+                >
+                  {conditionsReorder.overIndex === j && conditionsReorder.overPosition && <DropIndicatorLine position={conditionsReorder.overPosition} />}
                   <DeletableHandle nodeId={props.id} handleId={`option-cond-${j}`} style={{ top: '50%', right: -10 }} onDelete={props.data.onDeleteEdge} />
+                  <DragHandle {...conditionsReorder.getHandleProps(j)} />
                   <OptionActionsMenu
                     onEdit={operator !== 'eq' ? () => conditionInputRefs.current[j]?.openExpandModal() : undefined}
                     onDelete={() => removeConditionOption(j)}
@@ -1497,6 +1640,11 @@ export const ActionWebServiceNode = (props: any) => {
     props.data.onChange({ options: newBranches, optionOperators: newOps });
   };
 
+  const branchesReorder = useDragReorder((from, to) => {
+    props.data.onChange({ options: moveItem(branches, from, to), optionOperators: moveItem(operators, from, to) });
+    props.data.onReorderOption?.(from, to);
+  });
+
   return (
     <>
     {settingsOpen && (
@@ -1537,13 +1685,22 @@ export const ActionWebServiceNode = (props: any) => {
         </div>
 
         {/* Conditional exits based on Return value */}
-        <div>
+        <div
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => { e.preventDefault(); branchesReorder.commitDrop(); }}
+        >
           <label className="block text-[14px] font-bold text-slate-400 uppercase tracking-widest mb-2">יציאות מותנות לפי Return</label>
           {branches.map((branch: string, i: number) => (
-            <div key={i} className="flex flex-col gap-2 p-3 bg-slate-50 border border-slate-100 rounded-2xl group/branch relative transition-colors hover:bg-white hover:border-blue-100 mb-3">
+            <div
+              key={i}
+              {...branchesReorder.getRowProps(i)}
+              className={`flex flex-col gap-2 p-3 bg-slate-50 border border-slate-100 rounded-2xl group/branch relative transition-colors hover:bg-white hover:border-blue-100 mb-3 ${branchesReorder.dragIndex === i ? 'opacity-40' : ''}`}
+            >
+              {branchesReorder.overIndex === i && branchesReorder.overPosition && <DropIndicatorLine position={branchesReorder.overPosition} />}
               <DeletableHandle nodeId={props.id} handleId={`option-${i}`} style={{ top: '50%', right: -10 }} onDelete={props.data.onDeleteEdge} />
              
               <div className="flex items-center gap-2 flex-row-reverse">
+                <DragHandle {...branchesReorder.getHandleProps(i)} />
                 <OperatorSelector value={operators[i]} onChange={(op) => updateOperator(i, op)} />
                 <div className="flex-1">
                   <SearchableInput value={branch} onChange={(v: string) => updateBranch(i, v)} placeholder="ערך להשוואה..." searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} expandable={false} />
@@ -1684,9 +1841,18 @@ export const ActionTimeRoutingNode = (props: any) => {
     updateBranches(branches.filter((_, bi) => bi !== branchIndex));
   };
 
+  const branchesReorder = useDragReorder((from, to) => {
+    updateBranches(moveItem(branches, from, to));
+    props.data.onReorderOption?.(from, to);
+  });
+
   return (
     <BaseNode id={props.id} title="ניתוב לפי זמן" icon={<Clock size={20} />} type={NodeType.ACTION_TIME_ROUTING} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} isSearchMatch={props.data.isSearchMatch}>
-      <div className="space-y-4 relative text-right">
+      <div
+        className="space-y-4 relative text-right"
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={(e) => { e.preventDefault(); branchesReorder.commitDrop(); }}
+      >
 
         <label className="block text-[14px] font-bold text-slate-400 uppercase tracking-widest">ענפי ניתוב</label>
 
@@ -1700,10 +1866,16 @@ export const ActionTimeRoutingNode = (props: any) => {
 
         {/* Branches */}
         {branches.map((branch, bi) => (
-          <div key={bi} className="p-3 bg-slate-50 border border-slate-100 rounded-2xl group/item relative transition-colors hover:bg-white hover:border-orange-100 space-y-2">
+          <div
+            key={bi}
+            {...branchesReorder.getRowProps(bi)}
+            className={`p-3 bg-slate-50 border border-slate-100 rounded-2xl group/item relative transition-colors hover:bg-white hover:border-orange-100 space-y-2 ${branchesReorder.dragIndex === bi ? 'opacity-40' : ''}`}
+          >
+            {branchesReorder.overIndex === bi && branchesReorder.overPosition && <DropIndicatorLine position={branchesReorder.overPosition} />}
             <DeletableHandle nodeId={props.id} handleId={`option-${bi}`} style={{ top: '50%', right: -10 }} onDelete={props.data.onDeleteEdge} />
 
             <div className="flex items-center justify-between">
+              <DragHandle {...branchesReorder.getHandleProps(bi)} />
               <span className="text-[11px] font-black text-slate-400 uppercase tracking-widest">אופציה {bi + 1}</span>
               <button
                 onClick={() => removeBranch(bi)}
@@ -2266,9 +2438,18 @@ export const AutomaticResponsesNode = (props: any) => {
     props.data.onChange({ options: newOptions, optionOperators: newOps });
   };
 
+  const optionsReorder = useDragReorder((from, to) => {
+    props.data.onChange({ options: moveItem(options, from, to), optionOperators: moveItem(operators, from, to) });
+    props.data.onReorderOption?.(from, to);
+  }, 1);
+
   return (
     <BaseNode id={props.id} title="תגובות אוטומטיות" icon={<Zap size={20} />} type={NodeType.AUTOMATIC_RESPONSES} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} isSearchMatch={props.data.isSearchMatch}>
-      <div className="space-y-4 relative text-right">
+      <div
+        className="space-y-4 relative text-right"
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={(e) => { e.preventDefault(); optionsReorder.commitDrop(); }}
+      >
         <label className="block text-[14px] font-bold text-slate-400 uppercase tracking-widest">מילות מפתח ופתיחים</label>
         <div className="flex items-center gap-2 p-2 border rounded-2xl group/item relative transition-colors bg-slate-50 border-slate-200">
           <DeletableHandle nodeId={props.id} handleId="option-system-case2" style={{ top: '50%', right: -10 }} onDelete={props.data.onDeleteEdge} />
@@ -2295,8 +2476,14 @@ export const AutomaticResponsesNode = (props: any) => {
         {visibleOptions.map((opt: string, i: number) => {
           const isDefault = i === 0;
           return (
-            <div key={i} className={`flex items-center gap-2 p-2 border rounded-2xl group/item relative transition-colors ${isDefault ? 'bg-slate-50 border-slate-200' : 'bg-slate-50 border-slate-100 hover:bg-white hover:border-blue-100'}`}>
+            <div
+              key={i}
+              {...optionsReorder.getRowProps(i)}
+              className={`flex items-center gap-2 p-2 border rounded-2xl group/item relative transition-colors ${isDefault ? 'bg-slate-50 border-slate-200' : 'bg-slate-50 border-slate-100 hover:bg-white hover:border-blue-100'} ${optionsReorder.dragIndex === i ? 'opacity-40' : ''}`}
+            >
+              {optionsReorder.overIndex === i && optionsReorder.overPosition && <DropIndicatorLine position={optionsReorder.overPosition} />}
               <DeletableHandle nodeId={props.id} handleId={`option-${i}`} style={{ top: '50%', right: -10 }} onDelete={props.data.onDeleteEdge} />
+              {!isDefault && <DragHandle {...optionsReorder.getHandleProps(i)} />}
               <div className="flex-1">
                 <SearchableInput value={opt} onChange={(v: string) => updateOption(i, v)} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} disabled={isDefault} placeholder={!isDefault ? "הזן ערך" : ""} />
               </div>
