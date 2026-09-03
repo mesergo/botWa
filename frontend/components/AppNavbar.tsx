@@ -67,8 +67,8 @@ const AppNavbar: React.FC<AppNavbarProps> = ({
       </div>
 
       {/* Navigation tabs — hidden for pure rep users */}
+      {/* The nav keeps a fixed dir="ltr" arrangement, so the tab strip states the page direction explicitly. */}
       {!isRep && (
-        {/* The nav keeps a fixed `dir="ltr"` arrangement, so the tab strip states the page direction explicitly. */}
         <div className="flex items-center gap-1 bg-slate-100 rounded-2xl p-1" dir={i18n.dir()}>
           {tabBtn('bots', <Bot size={16} />, t('pages.bots'), onNavigateBots)}
           {showSessions && tabBtn('sessions', <List size={16} />, t('pages.sessions'), onNavigateSessions)}
