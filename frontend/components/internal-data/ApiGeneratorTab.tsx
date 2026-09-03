@@ -22,11 +22,13 @@ export const ApiGeneratorTab: React.FC<ApiGeneratorTabProps> = ({ token, table, 
   const [lookupValue, setLookupValue] = useState<string>('0501234567');
   const [selectedFields, setSelectedFields] = useState<string[]>([]);
   const [method, setMethod] = useState<'GET' | 'POST'>('GET');
-  const [outputFormat, setOutputFormat] = useState<InternalDataOutputFormat>('single_object');
+  const [outputFormat, setOutputFormat] = useState<InternalDataOutputFormat>(table.api.response_format || 'single_object');
   const [includeApiKeyInUrl, setIncludeApiKeyInUrl] = useState<boolean>(false);
-  const [successReturn, setSuccessReturn] = useState<string>('-2');
-  const [notFoundReturn, setNotFoundReturn] = useState<string>('0');
-  const [notFoundMessage, setNotFoundMessage] = useState<string>('❌ לא נמצאה רשומה תואמת');
+  const [successReturn, setSuccessReturn] = useState<string>(String(table.api.bot_success_return ?? -2));
+  const [notFoundReturn, setNotFoundReturn] = useState<string>(String(table.api.bot_not_found_return ?? 0));
+  const [notFoundMessage, setNotFoundMessage] = useState<string>(table.api.bot_not_found_message || '❌ לא נמצאה רשומה תואמת');
+  const [successMessage, setSuccessMessage] = useState<string>(table.api.bot_success_message || '');
+  const [isSavingFormat, setIsSavingFormat] = useState<boolean>(false);
 
   const [filterField, setFilterField] = useState<string>(fields[0] || '');
   const [filterOperator, setFilterOperator] = useState<string>('contains');
@@ -45,7 +47,34 @@ export const ApiGeneratorTab: React.FC<ApiGeneratorTabProps> = ({ token, table, 
 
   useEffect(() => {
     setLookupKey(table.fields.find((f) => f.type === 'phone')?.key || table.fields[0]?.key || 'phone');
+    setOutputFormat(table.api.response_format || 'single_object');
+    setSuccessReturn(String(table.api.bot_success_return ?? -2));
+    setNotFoundReturn(String(table.api.bot_not_found_return ?? 0));
+    setNotFoundMessage(table.api.bot_not_found_message || '❌ לא נמצאה רשומה תואמת');
+    setSuccessMessage(table.api.bot_success_message || '');
   }, [table._id]);
+
+  const isSavedAsDefault = (table.api.response_format || null) === outputFormat;
+
+  // Persists the chosen format on the table itself, so calls that arrive without a
+  // _format param (e.g. a URL pasted straight into a bot engine) still get this shape.
+  const handleSaveFormatAsDefault = async () => {
+    setIsSavingFormat(true);
+    try {
+      await updateApiSettings(token, table._id, {
+        response_format: outputFormat,
+        bot_success_return: Number(successReturn),
+        bot_not_found_return: Number(notFoundReturn),
+        bot_not_found_message: notFoundMessage,
+        bot_success_message: successMessage,
+      });
+      onRefreshTable();
+    } catch (err: any) {
+      alert('שגיאה בשמירת פורמט התגובה: ' + err.message);
+    } finally {
+      setIsSavingFormat(false);
+    }
+  };
 
   const generateEndpointUrl = (): { url: string; displayUrl: string; requestBody?: any } => {
     if (apiMode === 'phone_lookup') {
@@ -53,11 +82,12 @@ export const ApiGeneratorTab: React.FC<ApiGeneratorTabProps> = ({ token, table, 
       params.set('key', lookupKey);
       params.set('value', lookupValue);
       if (selectedFields.length > 0) params.set('fields', selectedFields.join(','));
-      if (outputFormat && outputFormat !== 'single_object') params.set('_format', outputFormat);
+      params.set('_format', outputFormat);
       if (outputFormat === 'bot_actions') {
         params.set('_successReturn', successReturn);
         params.set('_notFoundReturn', notFoundReturn);
         params.set('_notFoundMessage', notFoundMessage);
+        if (successMessage) params.set('_successMessage', successMessage);
       }
       if (includeApiKeyInUrl && table.api.key && !table.api.enabled) params.set('apiKey', table.api.key);
 
@@ -68,11 +98,12 @@ export const ApiGeneratorTab: React.FC<ApiGeneratorTabProps> = ({ token, table, 
       const fullUrl = `${origin}/api/v1/collections/${table._id}/lookup`;
       const body: Record<string, any> = { key: lookupKey, value: lookupValue };
       if (selectedFields.length > 0) body.fields = selectedFields;
-      if (outputFormat && outputFormat !== 'single_object') body._format = outputFormat;
+      body._format = outputFormat;
       if (outputFormat === 'bot_actions') {
         body._successReturn = successReturn;
         body._notFoundReturn = notFoundReturn;
         body._notFoundMessage = notFoundMessage;
+        if (successMessage) body._successMessage = successMessage;
       }
       return { url: fullUrl, displayUrl: fullUrl, requestBody: body };
     }
@@ -82,11 +113,12 @@ export const ApiGeneratorTab: React.FC<ApiGeneratorTabProps> = ({ token, table, 
       params.set(filterOperator === 'equals' ? filterField : `${filterField}__${filterOperator}`, filterValue);
     }
     if (selectedFields.length > 0) params.set('_fields', selectedFields.join(','));
-    if (outputFormat && outputFormat !== 'json_array') params.set('_format', outputFormat);
+    params.set('_format', outputFormat);
     if (outputFormat === 'bot_actions') {
       params.set('_successReturn', successReturn);
       params.set('_notFoundReturn', notFoundReturn);
       params.set('_notFoundMessage', notFoundMessage);
+      if (successMessage) params.set('_successMessage', successMessage);
     }
     if (limit) params.set('_limit', String(limit));
     if (includeApiKeyInUrl && table.api.key && !table.api.enabled) params.set('apiKey', table.api.key);
@@ -108,6 +140,7 @@ export const ApiGeneratorTab: React.FC<ApiGeneratorTabProps> = ({ token, table, 
       body._successReturn = successReturn;
       body._notFoundReturn = notFoundReturn;
       body._notFoundMessage = notFoundMessage;
+      if (successMessage) body._successMessage = successMessage;
     }
     return { url: fullUrl, displayUrl: fullUrl, requestBody: body };
   };
@@ -308,6 +341,21 @@ export const ApiGeneratorTab: React.FC<ApiGeneratorTabProps> = ({ token, table, 
                 <option value="xml">פורמט XML</option>
                 <option value="bot_actions">Actions לבוט (SetParameter/Return)</option>
               </select>
+              <button
+                type="button"
+                onClick={handleSaveFormatAsDefault}
+                disabled={isSavingFormat || isSavedAsDefault}
+                className={`mt-2 w-full py-1.5 px-3 rounded-lg text-[11px] font-semibold border transition disabled:opacity-60 ${
+                  isSavedAsDefault
+                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                    : 'bg-white text-indigo-700 border-indigo-200 hover:bg-indigo-50'
+                }`}
+              >
+                {isSavingFormat ? 'שומר...' : isSavedAsDefault ? '✓ זהו פורמט הברירת מחדל של הטבלה' : 'קבע כפורמט קבוע לכל קריאה לטבלה'}
+              </button>
+              <p className="text-[10px] text-slate-500 mt-1">
+                בלי שמירה, הפורמט חל רק כשהכתובת כוללת <span className="font-mono" dir="ltr">_format</span>.
+              </p>
             </div>
             {outputFormat === 'bot_actions' && (
               <div className="space-y-2 pt-1">
@@ -324,6 +372,10 @@ export const ApiGeneratorTab: React.FC<ApiGeneratorTabProps> = ({ token, table, 
                 <div>
                   <label className="block text-[11px] text-slate-600 mb-1">הודעה כשלא נמצאה רשומה:</label>
                   <input type="text" value={notFoundMessage} onChange={(e) => setNotFoundMessage(e.target.value)} className="w-full px-3 py-1.5 text-xs bg-white border border-slate-300 rounded-lg text-slate-900 focus:ring-2 focus:ring-indigo-500" />
+                </div>
+                <div>
+                  <label className="block text-[11px] text-slate-600 mb-1">פרמטר message כשנמצאה רשומה (אופציונלי):</label>
+                  <textarea value={successMessage} onChange={(e) => setSuccessMessage(e.target.value)} rows={2} placeholder="ריק = ללא פרמטר message" className="w-full px-3 py-1.5 text-xs bg-white border border-slate-300 rounded-lg text-slate-900 focus:ring-2 focus:ring-indigo-500" />
                 </div>
               </div>
             )}

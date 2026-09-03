@@ -479,15 +479,21 @@ export const importJsonRows = async (req, res) => {
   }
 };
 
-// PUT /api/internal-data/tables/:id/api — toggle public access and/or rotate the key
+// PUT /api/internal-data/tables/:id/api — toggle public access, rotate the key,
+// and/or persist the default response format used when a caller sends no _format
 export const updateApiSettings = async (req, res) => {
   const userId = getEffectiveUserId(req);
-  const { enabled, regenerate } = req.body;
+  const { enabled, regenerate, response_format, bot_success_return, bot_not_found_return, bot_not_found_message, bot_success_message } = req.body;
   try {
     const table = await findOwnedTable(req.params.id, userId);
     if (!table) return res.status(404).json({ error: 'טבלה לא נמצאה' });
     if (enabled !== undefined) table.api.enabled = enabled === true;
     if (regenerate === true) table.api.key = generateApiKey();
+    if (response_format !== undefined) table.api.response_format = response_format || null;
+    if (bot_success_return !== undefined) table.api.bot_success_return = Number(bot_success_return);
+    if (bot_not_found_return !== undefined) table.api.bot_not_found_return = Number(bot_not_found_return);
+    if (bot_not_found_message !== undefined) table.api.bot_not_found_message = String(bot_not_found_message);
+    if (bot_success_message !== undefined) table.api.bot_success_message = String(bot_success_message);
     await table.save();
     const [withCount] = await withRecordCounts([table]);
     res.json(withCount);

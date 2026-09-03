@@ -40,6 +40,15 @@ const internalDataTableSchema = new mongoose.Schema({
     key: { type: String, default: () => generateApiKey() },
     total_calls: { type: Number, default: 0 },
     last_called_at: { type: Date, default: null },
+    // Response shape the endpoints fall back to when the caller sends no _format,
+    // so a plain URL pasted into a bot/IVR engine returns the right envelope.
+    // null = keep each endpoint's historical default (single_object for lookup,
+    // json_array for query). bot_* settings apply only to the bot_actions format.
+    response_format: { type: String, enum: ['json_array', 'single_object', 'fields_only', 'key_value', 'csv', 'xml', 'bot_actions', null], default: null },
+    bot_success_return: { type: Number, default: -2 },
+    bot_not_found_return: { type: Number, default: 0 },
+    bot_not_found_message: { type: String, default: '❌ לא נמצאה רשומה תואמת' },
+    bot_success_message: { type: String, default: '' },
   },
 }, {
   timestamps: true,

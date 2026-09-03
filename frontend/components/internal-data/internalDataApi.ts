@@ -149,7 +149,15 @@ export async function fetchSyncLogs(token: string | null, tableId: string): Prom
   return json.data;
 }
 
-export async function updateApiSettings(token: string | null, tableId: string, payload: { enabled?: boolean; regenerate?: boolean }): Promise<InternalDataTable> {
+export async function updateApiSettings(token: string | null, tableId: string, payload: {
+  enabled?: boolean;
+  regenerate?: boolean;
+  response_format?: string | null;
+  bot_success_return?: number;
+  bot_not_found_return?: number;
+  bot_not_found_message?: string;
+  bot_success_message?: string;
+}): Promise<InternalDataTable> {
   const res = await fetch(`${API_BASE}/tables/${tableId}/api`, {
     method: 'PUT', headers: jsonHeaders(token), body: JSON.stringify(payload),
   });

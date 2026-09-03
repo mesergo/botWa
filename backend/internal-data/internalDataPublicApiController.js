@@ -38,17 +38,29 @@ const respondFormatted = (res, rows, format, selectedFields) => {
   return res.send(body ?? '');
 };
 
+// A caller-supplied _format always wins; otherwise the table's saved api.response_format
+// applies, so a bare URL pasted into a bot/IVR engine still returns the envelope its
+// owner configured in the API generator tab. `fallback` is the endpoint's historical
+// default, kept so existing integrations that send no _format don't change shape.
+const resolveFormat = (requested, table, fallback) => requested || table?.api?.response_format || fallback;
+
 // 'bot_actions' bypasses the {success,count,data} envelope entirely — bot/IVR engines
 // (e.g. message.co.il campaigns) expect the raw { actions: [...] } object at the top level,
 // always with HTTP 200 (flow control happens via the trailing Return action's value, not the status code).
-const respondBotActions = (res, params, row, selectedFields) => {
-  const successReturn = params._successReturn !== undefined ? Number(params._successReturn) : -2;
+// Every knob can come either from the request (_successReturn, _notFoundMessage, ...) or,
+// when absent, from the table's saved bot_* settings.
+const respondBotActions = (res, params, row, selectedFields, table) => {
+  const api = table?.api || {};
+  const successReturn = params._successReturn !== undefined ? Number(params._successReturn) : (api.bot_success_return ?? -2);
   if (!row) {
-    const notFoundReturn = params._notFoundReturn !== undefined ? Number(params._notFoundReturn) : 0;
-    const message = params._notFoundMessage || '❌ לא נמצאה רשומה תואמת';
+    const notFoundReturn = params._notFoundReturn !== undefined ? Number(params._notFoundReturn) : (api.bot_not_found_return ?? 0);
+    const message = params._notFoundMessage || api.bot_not_found_message || '❌ לא נמצאה רשומה תואמת';
     return res.status(200).json(formatNotFoundActions(message, notFoundReturn));
   }
-  return res.status(200).json(formatBotActionsRow(row, selectedFields, successReturn));
+  return res.status(200).json(formatBotActionsRow(row, selectedFields, successReturn, {
+    fieldOrder: (table?.fields || []).map((f) => f.key),
+    message: params._successMessage || params._message || api.bot_success_message,
+  }));
 };
 
 // GET/POST /api/v1/collections/:id/lookup — { key, value } → single matching record
@@ -67,10 +79,11 @@ export const lookupRecord = async (req, res) => {
     recordApiCall(table);
 
     const selectedFields = (fields || _fields) ? String(fields || _fields).split(',').map((s) => s.trim()) : undefined;
-    if (_format === 'bot_actions') return respondBotActions(res, params, row ? flattenRow(row) : null, selectedFields);
+    const format = resolveFormat(_format, table, 'json_array');
+    if (format === 'bot_actions') return respondBotActions(res, params, row ? flattenRow(row) : null, selectedFields, table);
 
     if (!row) return res.status(404).json({ success: false, error: 'לא נמצאה רשומה תואמת' });
-    respondFormatted(res, [flattenRow(row)], _format, selectedFields);
+    respondFormatted(res, [flattenRow(row)], format, selectedFields);
   } catch (err) {
     if (err instanceof UnsafeQueryError) return res.status(400).json({ success: false, error: err.message });
     res.status(500).json({ success: false, error: err.message });
@@ -89,7 +102,7 @@ export const queryRecords = async (req, res) => {
     let selectedFields;
     let sort;
     let limit = 50;
-    let format = 'json_array';
+    let format = null;
     let single = false;
     let params = {};
 
@@ -114,6 +127,8 @@ export const queryRecords = async (req, res) => {
       if (params?._sort) sort = { [params._sort]: params._order === 'asc' ? 1 : -1 };
     }
 
+    format = resolveFormat(format, table, 'json_array');
+
     const safeFilter = buildSafeFilter(table._id, rawFilter);
     const safeLimit = Math.min(200, Math.max(1, Number(limit) || 50));
 
@@ -124,7 +139,7 @@ export const queryRecords = async (req, res) => {
     recordApiCall(table);
     const rows = docs.map(flattenRow);
 
-    if (format === 'bot_actions') return respondBotActions(res, params, rows[0] || null, selectedFields);
+    if (format === 'bot_actions') return respondBotActions(res, params, rows[0] || null, selectedFields, table);
 
     if (single || format === 'single_object') {
       return respondFormatted(res, rows.slice(0, 1), 'single_object', selectedFields);

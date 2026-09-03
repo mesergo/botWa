@@ -37,6 +37,11 @@ export interface InternalDataApiConfig {
   key: string;
   total_calls: number;
   last_called_at: string | null;
+  response_format?: InternalDataOutputFormat | null;
+  bot_success_return?: number;
+  bot_not_found_return?: number;
+  bot_not_found_message?: string;
+  bot_success_message?: string;
 }
 
 export interface InternalDataTable {

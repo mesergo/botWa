@@ -101,15 +101,26 @@ const toXml = (rows) => {
 // campaigns) expect from a webhook: a flat array of SetParameter actions — one per
 // returned field — followed by a single Return action carrying a flow-control code.
 // Used both for a matched record and for the not-found case (see formatNotFoundActions).
-export const formatBotActionsRow = (row, selectedFields, successReturn = -2) => {
-  const projected = selectedFields && selectedFields.length > 0
-    ? Object.fromEntries(selectedFields.filter((f) => f in row).map((f) => [f, row[f]]))
-    : Object.fromEntries(Object.entries(row).filter(([k]) => !k.startsWith('_')));
-  const actions = Object.entries(projected).map(([name, value]) => ({
-    type: 'SetParameter',
-    name,
-    value: value === null || value === undefined ? '' : value,
-  }));
+//
+// `fieldOrder` (the table's own field order) makes the action list stable and complete:
+// every declared field is emitted even when the row has no value for it, so the bot never
+// keeps a stale parameter from a previous call. Values are passed through untouched —
+// null/array/number stay null/array/number, since the consuming engines distinguish them
+// from an empty string. An optional `message` is emitted first, mirroring the not-found
+// shape so both branches expose the same parameter.
+export const formatBotActionsRow = (row, selectedFields, successReturn = -2, { fieldOrder, message } = {}) => {
+  const explicitFields = selectedFields && selectedFields.length > 0;
+  const rowKeys = Object.keys(row).filter((k) => !k.startsWith('_'));
+  const names = explicitFields
+    ? selectedFields.filter((f) => f in row)
+    : [...(fieldOrder || []), ...rowKeys.filter((k) => !(fieldOrder || []).includes(k))];
+
+  const actions = [];
+  if (message) actions.push({ type: 'SetParameter', name: 'message', value: message });
+  for (const name of names) {
+    if (message && name === 'message') continue;
+    actions.push({ type: 'SetParameter', name, value: row[name] === undefined ? null : row[name] });
+  }
   actions.push({ type: 'Return', value: successReturn });
   return { actions };
 };
