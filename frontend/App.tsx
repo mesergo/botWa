@@ -16,6 +16,7 @@ import ContactsPage from './components/ContactsPage';
 import SessionsPage from './components/SessionsPage';
 import GroupsPage from './components/GroupsPage';
 import SmsInPage from './components/SmsInPage';
+import InternalDataPage from './components/internal-data/InternalDataPage';
 import SendMessagesPage from './components/SendMessagesPage';
 import ActiveContactsQuotaToast from './components/ActiveContactsQuotaToast';
 import { StartNode, InputTextNode, InputDateNode, InputFileNode, OutputTextNode, OutputImageNode, OutputLinkNode, OutputMenuNode, ActionWebServiceNode, ActionWaitNode, ActionTimeRoutingNode, ActionAddToGroupNode, ActionRemoveFromGroupNode, ActionTransferToAgentNode, ActionSetParameterNode, FixedProcessNode, AutomaticResponsesNode } from './components/nodes/CustomNodes';
@@ -2580,6 +2581,7 @@ const FlowBuilder: React.FC = () => {
               onGoToChats={() => { setSessionsOwnOnly(true); navigate('/sessions'); }}
               onGoToContacts={() => navigate('/contacts')}
               onGoToSmsIn={can('sms_in.view') ? () => navigate('/sms-in') : undefined}
+              onGoToInternalData={can('internal_data.view') ? () => navigate('/internal-data') : undefined}
               onGoToSendMessages={can('send_messages.view') ? () => navigate('/send-messages') : undefined}
               onGoToUsers={can('users.view') ? () => navigate('/users') : undefined}
               onGoToSettings={() => navigate('/settings')}
@@ -2601,6 +2603,7 @@ const FlowBuilder: React.FC = () => {
               onOpenGroups={can('groups.view') ? () => navigate('/groups') : undefined}
               onOpenSendMessages={can('send_messages.view') ? () => navigate('/send-messages') : undefined}
               onOpenSmsIn={can('sms_in.view') ? () => navigate('/sms-in') : undefined}
+              onOpenInternalData={can('internal_data.view') ? () => navigate('/internal-data') : undefined}
               onOpenAdminPanel={() => navigate('/admin')}
               onOpenSettings={can('settings.view') ? () => navigate('/settings') : undefined}
               onOpenSubUsers={can('users.view') ? () => navigate('/users') : undefined}
@@ -2620,6 +2623,7 @@ const FlowBuilder: React.FC = () => {
               onOpenSessions={can('sessions.view') ? (phone?: string) => { setSessionsInitialPhone(phone ?? null); setSessionsOwnOnly(true); navigate('/sessions'); } : undefined}
               onOpenSendMessages={can('send_messages.view') ? () => navigate('/send-messages') : undefined}
               onOpenSmsIn={can('sms_in.view') ? () => navigate('/sms-in') : undefined}
+              onOpenInternalData={can('internal_data.view') ? () => navigate('/internal-data') : undefined}
               onOpenAdminPanel={() => navigate('/admin')}
               onOpenSettings={can('settings.view') ? () => navigate('/settings') : undefined}
               onOpenSubUsers={can('users.view') ? () => navigate('/users') : undefined}
@@ -2638,6 +2642,7 @@ const FlowBuilder: React.FC = () => {
               onOpenGroups={can('groups.view') ? () => navigate('/groups') : undefined}
               onOpenSendMessages={can('send_messages.view') ? () => navigate('/send-messages') : undefined}
               onOpenSmsIn={can('sms_in.view') ? () => navigate('/sms-in') : undefined}
+              onOpenInternalData={can('internal_data.view') ? () => navigate('/internal-data') : undefined}
               onOpenAdminPanel={() => navigate('/admin')}
               ownOnly={sessionsOwnOnly}
               initialPhone={sessionsInitialPhone}
@@ -2665,6 +2670,7 @@ const FlowBuilder: React.FC = () => {
                 onOpenGroups={() => navigate('/groups')}
                 onOpenSendMessages={can('send_messages.view') ? () => navigate('/send-messages') : undefined}
                 onOpenSmsIn={can('sms_in.view') ? () => navigate('/sms-in') : undefined}
+              onOpenInternalData={can('internal_data.view') ? () => navigate('/internal-data') : undefined}
                 onStopImpersonation={handleStopImpersonation}
                 onSwitchAccount={handleSwitchAccount}
                 onConnectFacebook={(can('facebook_connect.view') || currentUser?.isImpersonating) ? handleConnectFacebook : undefined}
@@ -2706,6 +2712,7 @@ const FlowBuilder: React.FC = () => {
               onOpenGroups={() => navigate('/groups')}
               onOpenSendMessages={can('send_messages.view') ? () => navigate('/send-messages') : undefined}
               onOpenSmsIn={can('sms_in.view') ? () => navigate('/sms-in') : undefined}
+              onOpenInternalData={can('internal_data.view') ? () => navigate('/internal-data') : undefined}
               onStopImpersonation={handleStopImpersonation}
               onSwitchAccount={handleSwitchAccount}
               onConnectFacebook={(can('facebook_connect.view') || currentUser?.isImpersonating) ? handleConnectFacebook : undefined}
@@ -2733,6 +2740,7 @@ const FlowBuilder: React.FC = () => {
               onOpenGroups={() => navigate('/groups')}
               onOpenSendMessages={can('send_messages.view') ? () => navigate('/send-messages') : undefined}
               onOpenSmsIn={can('sms_in.view') ? () => navigate('/sms-in') : undefined}
+              onOpenInternalData={can('internal_data.view') ? () => navigate('/internal-data') : undefined}
               onStopImpersonation={handleStopImpersonation}
               onSwitchAccount={handleSwitchAccount}
               onConnectFacebook={(can('facebook_connect.view') || currentUser?.isImpersonating) ? handleConnectFacebook : undefined}
@@ -2756,6 +2764,26 @@ const FlowBuilder: React.FC = () => {
               onOpenContacts={can('contacts.view') ? (phone?: string) => { setContactsInitialPhone(phone ?? null); navigate('/contacts'); } : undefined}
               onOpenGroups={can('groups.view') ? () => navigate('/groups') : undefined}
               onOpenSendMessages={can('send_messages.view') ? () => navigate('/send-messages') : undefined}
+              onOpenInternalData={can('internal_data.view') ? () => navigate('/internal-data') : undefined}
+              onOpenAdminPanel={currentUser?.role === 'admin' ? () => navigate('/admin') : undefined}
+              onOpenSettings={can('settings.view') ? () => navigate('/settings') : undefined}
+              onOpenSubUsers={can('users.view') ? () => navigate('/users') : undefined}
+              onStopImpersonation={handleStopImpersonation}
+              onSwitchAccount={handleSwitchAccount}
+            />
+          } />
+          <Route path="/internal-data" element={
+            !can('internal_data.view') ? <Navigate to="/" replace /> :
+            <InternalDataPage
+              token={token}
+              currentUser={currentUser}
+              onBack={() => navigate('/dashboard')}
+              onLogout={handleLogout}
+              onOpenSessions={can('sessions.view') ? (phone?: string) => { setSessionsInitialPhone(phone ?? null); setSessionsOwnOnly(true); navigate('/sessions'); } : undefined}
+              onOpenContacts={can('contacts.view') ? (phone?: string) => { setContactsInitialPhone(phone ?? null); navigate('/contacts'); } : undefined}
+              onOpenGroups={can('groups.view') ? () => navigate('/groups') : undefined}
+              onOpenSendMessages={can('send_messages.view') ? () => navigate('/send-messages') : undefined}
+              onOpenSmsIn={can('sms_in.view') ? () => navigate('/sms-in') : undefined}
               onOpenAdminPanel={currentUser?.role === 'admin' ? () => navigate('/admin') : undefined}
               onOpenSettings={can('settings.view') ? () => navigate('/settings') : undefined}
               onOpenSubUsers={can('users.view') ? () => navigate('/users') : undefined}
@@ -2775,6 +2803,7 @@ const FlowBuilder: React.FC = () => {
               onOpenSessions={can('sessions.view') ? (phone?: string) => { setSessionsInitialPhone(phone ?? null); setSessionsOwnOnly(true); navigate('/sessions'); } : undefined}
               onOpenGroups={can('groups.view') ? () => navigate('/groups') : undefined}
               onOpenSmsIn={can('sms_in.view') ? () => navigate('/sms-in') : undefined}
+              onOpenInternalData={can('internal_data.view') ? () => navigate('/internal-data') : undefined}
               onOpenAdminPanel={() => navigate('/admin')}
               onOpenSettings={can('settings.view') ? () => navigate('/settings') : undefined}
               onOpenSubUsers={can('users.view') ? () => navigate('/users') : undefined}

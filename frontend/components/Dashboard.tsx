@@ -44,6 +44,7 @@ interface DashboardProps {
   onOpenGroups?: () => void;
   onOpenSendMessages?: () => void;
   onOpenSmsIn?: () => void;
+  onOpenInternalData?: () => void;
   onConnectFacebook?: (bot: BotFlow) => Promise<void>;
   onUpdateBotPublicId?: (id: string, publicId: string) => Promise<void>;
   onUpdateBotEndpoint?: (id: string, endpoint: string) => Promise<void>;
@@ -168,7 +169,7 @@ const AvailabilityBadge: React.FC<{
   );
 };
 
-const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, onDeleteBot, onSetDefaultBot, onLogout, currentUser, onOpenAdminPanel, onStopImpersonation, onSwitchAccount, onOpenContacts, onOpenSessions, onOpenGroups, onOpenSendMessages, onConnectFacebook, onUpdateBotPublicId, onUpdateBotEndpoint, onUpdateBotRestartKeyword, onUpdateAvailability, onGoHome,onOpenSmsIn, token, initialTab }) => {
+const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, onDeleteBot, onSetDefaultBot, onLogout, currentUser, onOpenAdminPanel, onStopImpersonation, onSwitchAccount, onOpenContacts, onOpenSessions, onOpenGroups, onOpenSendMessages, onConnectFacebook, onUpdateBotPublicId, onUpdateBotEndpoint, onUpdateBotRestartKeyword, onUpdateAvailability, onGoHome,onOpenSmsIn, onOpenInternalData, token, initialTab }) => {
   const can = usePermission(currentUser as User | null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newBotName, setNewBotName] = useState('');
@@ -1124,6 +1125,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
           onGroups={onOpenGroups && can('groups.view') ? onOpenGroups : undefined}
           onSendMessages={onOpenSendMessages && can('send_messages.view') ? onOpenSendMessages : undefined}
           onSmsIn={onOpenSmsIn && can('sms_in.view') ? onOpenSmsIn : undefined}
+          onInternalData={onOpenInternalData && can('internal_data.view') ? onOpenInternalData : undefined}
           onSettings={can('settings.view') ? () => setActiveTab('settings') : undefined}
           onUsers={can('users.view') ? () => setActiveTab('users') : undefined}
         />

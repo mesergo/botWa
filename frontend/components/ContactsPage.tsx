@@ -50,6 +50,7 @@ interface ContactsPageProps {
   onOpenGroups?: () => void;
   onOpenSendMessages?: () => void;
   onOpenSmsIn?: () => void;
+  onOpenInternalData?: () => void;
   onOpenAdminPanel?: () => void;
   onOpenSettings?: () => void;
   onOpenSubUsers?: () => void;
@@ -160,7 +161,7 @@ const BotPhonesTags: React.FC<{ phones: string[] }> = ({ phones }) => {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 const ContactsPage: React.FC<ContactsPageProps> = ({
-  token, currentUser, onBack, onLogout, onOpenSessions, onOpenGroups, onOpenSendMessages,onOpenSmsIn,
+  token, currentUser, onBack, onLogout, onOpenSessions, onOpenGroups, onOpenSendMessages,onOpenSmsIn, onOpenInternalData,
   onOpenAdminPanel, onOpenSettings, onOpenSubUsers, onStopImpersonation, onSwitchAccount, onGoHome, initialPhone,
 }) => {
   const [contacts, setContacts] = useState<MergedContact[]>([]);
@@ -438,6 +439,7 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
           onBots={can('bots.view_tab') ? onBack : undefined}
           onSessions={onOpenSessions ? () => onOpenSessions() : undefined}
           onSmsIn={onOpenSmsIn}
+          onInternalData={onOpenInternalData}
           onSendMessages={onOpenSendMessages}
           onSettings={onOpenSettings}
           onUsers={onOpenSubUsers && can('users.view') ? onOpenSubUsers : undefined}
@@ -969,6 +971,7 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
             onLogout={onLogout}
             onOpenSessions={onOpenSessions}
             onOpenSmsIn={onOpenSmsIn}
+            onOpenInternalData={onOpenInternalData}
             onOpenAdminPanel={onOpenAdminPanel}
             onOpenSettings={onOpenSettings}
             onOpenSubUsers={onOpenSubUsers}

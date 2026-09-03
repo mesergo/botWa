@@ -62,6 +62,7 @@ interface SessionsPageProps {
   onOpenGroups?: () => void;
   onOpenSendMessages?: () => void;
   onOpenSmsIn?: () => void;
+  onOpenInternalData?: () => void;
   onOpenAdminPanel?: () => void;
   onOpenSettings?: () => void;
   onOpenSubUsers?: () => void;
@@ -84,7 +85,7 @@ const WhatsAppIcon = ({ size = 12, className = '' }: { size?: number; className?
   </svg>
 );
 
-const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack, onLogout, onOpenContacts, onOpenGroups, onOpenSendMessages, onOpenAdminPanel,onOpenSmsIn, onOpenSettings, onOpenSubUsers, onStopImpersonation, onSwitchAccount, onUpdateAvailability, onGoHome, initialPhone, initialBotPhone }) => {
+const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack, onLogout, onOpenContacts, onOpenGroups, onOpenSendMessages, onOpenAdminPanel,onOpenSmsIn, onOpenInternalData, onOpenSettings, onOpenSubUsers, onStopImpersonation, onSwitchAccount, onUpdateAvailability, onGoHome, initialPhone, initialBotPhone }) => {
   // Contacts panel state
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [contactsLoading, setContactsLoading] = useState(true);
@@ -2290,6 +2291,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
               onGroups={onOpenGroups}
               onSendMessages={onOpenSendMessages}
               onSmsIn={onOpenSmsIn}
+              onInternalData={onOpenInternalData}
               onSettings={onOpenSettings}
               onUsers={onOpenSubUsers && can('users.view') ? onOpenSubUsers : undefined}
             />

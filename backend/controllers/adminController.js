@@ -761,6 +761,7 @@ export const getAllUsers = async (req, res) => {
         user_type_id: user.user_type_id || null,
         sms_in_enabled: user.sms_in_enabled === true,
         facebook_connect_enabled: user.facebook_connect_enabled === true,
+        internal_data_enabled: user.internal_data_enabled === true,
         createdAt: user.createdAt,
         updatedAt: user.updatedAt,
         custom_limits: user.custom_limits,
@@ -813,6 +814,7 @@ export const getUserDetails = async (req, res) => {
         allowed_bot_ids: (user.allowed_bot_ids || []).map(id => id.toString()),
         sms_in_enabled: user.sms_in_enabled === true,
         facebook_connect_enabled: user.facebook_connect_enabled === true,
+        internal_data_enabled: user.internal_data_enabled === true,
         tab_overrides: user.tab_overrides || {},
         custom_limits: user.custom_limits,
         limits_in_effect: limits,
@@ -838,7 +840,7 @@ export const getUserDetails = async (req, res) => {
 export const updateUser = async (req, res) => {
   try {
     const { userId } = req.params;
-    const { name, email, phone, password, status, account_type, custom_limits, dialog360_bot_id, user_type_id, manager_id, allowed_bot_ids, sms_in_enabled, facebook_connect_enabled, tab_overrides } = req.body;
+    const { name, email, phone, password, status, account_type, custom_limits, dialog360_bot_id, user_type_id, manager_id, allowed_bot_ids, sms_in_enabled, facebook_connect_enabled, internal_data_enabled, tab_overrides } = req.body;
     
     console.log('[Admin] Updating user:', userId, 'with data:', { ...req.body, password: password ? '***' : undefined });
     
@@ -879,6 +881,7 @@ export const updateUser = async (req, res) => {
     if (Array.isArray(allowed_bot_ids)) user.allowed_bot_ids = allowed_bot_ids;
     if (sms_in_enabled !== undefined) user.sms_in_enabled = sms_in_enabled === true;
     if (facebook_connect_enabled !== undefined) user.facebook_connect_enabled = facebook_connect_enabled === true;
+    if (internal_data_enabled !== undefined) user.internal_data_enabled = internal_data_enabled === true;
 
     // Per-customer tab visibility overrides (tri-state: true/false/null). See plan:
     // perCustomerTabManagementOverride. Only whitelisted keys are accepted, each coerced
@@ -961,6 +964,7 @@ export const updateUser = async (req, res) => {
         allowed_bot_ids: (user.allowed_bot_ids || []).map(id => id.toString()),
         sms_in_enabled: user.sms_in_enabled === true,
         facebook_connect_enabled: user.facebook_connect_enabled === true,
+        internal_data_enabled: user.internal_data_enabled === true,
         tab_overrides: user.tab_overrides || {},
         custom_limits: user.custom_limits,
         limits_in_effect: limits,

@@ -6,6 +6,86 @@ export interface ContactFieldDef {
   createdAt?: string;
 }
 
+export type InternalDataFieldType = 'string' | 'number' | 'date' | 'boolean' | 'email' | 'phone' | 'json';
+export type InternalDataSourceType = 'google_sheet' | 'excel_url' | 'manual';
+export type InternalDataSyncMode = 'replace' | 'upsert' | 'append';
+export type InternalDataOutputFormat = 'json_array' | 'single_object' | 'fields_only' | 'key_value' | 'csv' | 'xml';
+
+export interface InternalDataField {
+  key: string;
+  label: string;
+  type: InternalDataFieldType;
+  required?: boolean;
+  order?: number;
+}
+
+export interface InternalDataSyncConfig {
+  enabled: boolean;
+  source_type: 'google_sheet' | 'excel_url' | null;
+  source_url: string;
+  interval_minutes: number;
+  mode: InternalDataSyncMode;
+  unique_key_field: string;
+  last_synced_at: string | null;
+  last_sync_status: 'success' | 'error' | null;
+  last_sync_error: string;
+  next_sync_at: string | null;
+}
+
+export interface InternalDataApiConfig {
+  enabled: boolean;
+  key: string;
+  total_calls: number;
+  last_called_at: string | null;
+}
+
+export interface InternalDataTable {
+  _id: string;
+  user_id: string;
+  name: string;
+  description?: string;
+  slug: string;
+  source_type: InternalDataSourceType;
+  fields: InternalDataField[];
+  sync: InternalDataSyncConfig;
+  api: InternalDataApiConfig;
+  recordCount: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface InternalDataRow {
+  _id: string;
+  table_id: string;
+  user_id: string;
+  values: Record<string, any>;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface InternalDataSyncLog {
+  id: string;
+  collectionId: string;
+  timestamp: string;
+  trigger: 'manual' | 'scheduled' | 'initial_upload';
+  status: 'success' | 'failed';
+  recordsProcessed: number;
+  recordsAdded: number;
+  recordsUpdated: number;
+  recordsDeleted: number;
+  durationMs: number;
+  message: string;
+  errorDetails?: string;
+}
+
+export interface InternalDataStats {
+  totalCollections: number;
+  totalRecords: number;
+  totalEndpoints: number;
+  totalApiCalls: number;
+  activeSchedules: number;
+}
+
 export enum NodeType {
   // Inputs
   INPUT_TEXT = 'input_text',

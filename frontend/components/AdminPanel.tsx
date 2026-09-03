@@ -7,7 +7,7 @@ import {
   CreditCard, MoreVertical, X, Star, Globe, Lock, Copy, List, Phone, Clock,
   ChevronDown, ChevronUp, ToggleLeft, ToggleRight, XCircle, MessageSquare, Menu,
   User as UserIcon, ExternalLink, Sliders, Image as ImageIcon, Layers,
-  UserCheck, Headphones, UserMinus, RefreshCcw, Inbox, History
+  UserCheck, Headphones, UserMinus, RefreshCcw, Inbox, History, Database
 } from 'lucide-react';
 import UserTypesManager from './UserTypesManager';
 import { FileUploader } from './FileUploader';
@@ -32,6 +32,7 @@ interface User {
   user_type_id?: { _id: string; name: string; system_role: string } | null;
   sms_in_enabled?: boolean;
   facebook_connect_enabled?: boolean;
+  internal_data_enabled?: boolean;
   tab_overrides?: {
     bots?: boolean | null;
     sessions?: boolean | null;
@@ -3093,6 +3094,25 @@ const openRestoreConversations = async () => {
                                             <div className={`w-full px-4 py-3 rounded-xl border font-bold text-sm flex justify-between items-center ${selectedUser.facebook_connect_enabled ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-slate-50 text-slate-400 border-slate-100'}`}>
                                                 {selectedUser.facebook_connect_enabled ? 'מורשה' : 'ללא הרשאה (ברירת מחדל)'}
                                                 {selectedUser.facebook_connect_enabled ? <CheckCircle size={14} /> : <EyeOff size={14} />}
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-400 mb-2 flex items-center gap-1"><Database size={12} /> לשונית ניהול דטה פנימי</label>
+                                        {isEditing ? (
+                                            <label className="w-full flex items-center gap-3 p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm cursor-pointer select-none">
+                                                <input
+                                                    type="checkbox"
+                                                    className="w-4 h-4 accent-sky-600 cursor-pointer"
+                                                    checked={editForm.internal_data_enabled === true}
+                                                    onChange={e => setEditForm(prev => ({ ...prev, internal_data_enabled: e.target.checked }))}
+                                                />
+                                                <span className="font-bold text-slate-700">הצג ללקוח את לשונית "ניהול דטה פנימי"</span>
+                                            </label>
+                                        ) : (
+                                            <div className={`w-full px-4 py-3 rounded-xl border font-bold text-sm flex justify-between items-center ${selectedUser.internal_data_enabled ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-slate-50 text-slate-400 border-slate-100'}`}>
+                                                {selectedUser.internal_data_enabled ? 'מוצג ללקוח' : 'מוסתר (ברירת מחדל)'}
+                                                {selectedUser.internal_data_enabled ? <CheckCircle size={14} /> : <EyeOff size={14} />}
                                             </div>
                                         )}
                                     </div>
