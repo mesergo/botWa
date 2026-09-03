@@ -694,6 +694,36 @@ const FlowBuilder: React.FC = () => {
     setEdges((eds) => eds.filter((e) => !(e.source === nodeId && e.sourceHandle === handleId)));
   }, []);
 
+  // Remaps a single index according to the classic splice-move rule (remove at
+  // `from`, reinsert at `to`), used to keep an edge's sourceHandle in sync when
+  // its option row is dragged to a new position.
+  const remapMovedIndex = (idx: number, from: number, to: number): number => {
+    if (idx === from) return to;
+    if (from < to && idx > from && idx <= to) return idx - 1;
+    if (from > to && idx >= to && idx < from) return idx + 1;
+    return idx;
+  };
+
+  // Reorders an option/branch row from `fromIndex` to `toIndex` (drag-and-drop).
+  // Only touches edges — the caller (node component) is responsible for moving
+  // the parallel data arrays (options/optionOperators/etc.) via onChange.
+  const onReorderOption = useCallback((nodeId: string, fromIndex: number, toIndex: number, prefix: string = 'option-') => {
+    if (fromIndex === toIndex) return;
+    dirtyRef.current = true;
+    const re = new RegExp(`^${prefix}(\\d+)$`);
+    setEdges((eds) =>
+      eds.map((e) => {
+        if (e.source !== nodeId) return e;
+        const match = e.sourceHandle?.match(re);
+        if (!match) return e;
+        const idx = parseInt(match[1], 10);
+        const newIdx = remapMovedIndex(idx, fromIndex, toIndex);
+        if (newIdx === idx) return e;
+        return { ...e, sourceHandle: `${prefix}${newIdx}` };
+      })
+    );
+  }, []);
+
   const bindNodeCallbacks = useCallback((node: Node): Node => ({
     ...node,
     data: { 
@@ -703,9 +733,11 @@ const FlowBuilder: React.FC = () => {
       onRemoveOption: (optionIndex: number) => onRemoveOption(node.id, optionIndex),
       onRemoveConditionOption: (index: number) => onRemoveConditionOption(node.id, index),
       onDeleteEdge: (handleId: string) => onDeleteEdge(node.id, handleId),
+      onReorderOption: (fromIndex: number, toIndex: number) => onReorderOption(node.id, fromIndex, toIndex),
+      onReorderConditionOption: (fromIndex: number, toIndex: number) => onReorderOption(node.id, fromIndex, toIndex, 'option-cond-'),
       token,
     }
-  }), [onNodeDataChange, onDeleteNode, onRemoveOption, onRemoveConditionOption, onDeleteEdge, token]);
+  }), [onNodeDataChange, onDeleteNode, onRemoveOption, onRemoveConditionOption, onDeleteEdge, onReorderOption, token]);
 
 
   // Centralized session-expiry handler — called from any place that gets 401/403
