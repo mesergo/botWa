@@ -111,7 +111,7 @@ const BotSettingsModal: React.FC<BotSettingsModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[100] p-6" dir="rtl">
+    <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[100] p-6">
       <div className="bg-white w-full max-w-md rounded-[2.5rem] shadow-2xl border border-slate-100">
         {/* Header */}
         <div className="px-8 py-6 border-b border-slate-100 flex items-center justify-between">
@@ -189,7 +189,7 @@ const BotSettingsModal: React.FC<BotSettingsModalProps> = ({
                     {savingBotEndpoint ? 'שומר...' : 'שמור'}
                   </button>
                   <div className="flex flex-1 items-center bg-slate-50 border border-slate-200 rounded-2xl overflow-hidden">
-                    <span className="px-3 py-3 text-sm text-slate-500 bg-slate-100 border-l border-slate-200 shrink-0 font-mono">dialog360/</span>
+                    <span className="px-3 py-3 text-sm text-slate-500 bg-slate-100 border-e border-slate-200 shrink-0 font-mono">dialog360/</span>
                     <input
                       className="flex-1 px-3 py-3 bg-transparent text-sm outline-none font-mono"
                       value={editBotEndpoint}

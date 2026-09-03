@@ -125,7 +125,7 @@ const Editor: React.FC<EditorProps> = ({
   };
 
   return (
-    <div className="flex flex-col h-screen w-full bg-[#f8fafc] overflow-hidden text-black font-medium text-right">{isEditingTemplate && showSaveModal && (
+    <div className="flex flex-col h-screen w-full bg-[#f8fafc] overflow-hidden text-black font-medium text-start">{isEditingTemplate && showSaveModal && (
         <div className="fixed inset-0 bg-black/50 z-[200] flex items-center justify-center p-4">
           <div className="bg-white p-8 rounded-3xl w-full max-w-md shadow-2xl">
             <h3 className="text-2xl font-bold mb-6 text-slate-800">שמירת תבנית</h3>
@@ -179,7 +179,8 @@ const Editor: React.FC<EditorProps> = ({
         </div>
       )}
       
-      <nav className="h-20 bg-white border-b border-slate-100 flex items-center justify-between px-8 z-20">
+      {/* Fixed physical layout regardless of page language, matching AppNavbar.tsx/PageTopBar.tsx's <nav dir="ltr"> convention. Hebrew-language fields inside (search, process/bot name) keep their own local dir="rtl". */}
+      <nav className="h-20 bg-white border-b border-slate-100 flex items-center justify-between px-8 z-20" dir="ltr">
         <div className="flex items-center gap-10 text-right">
           <div className="flex items-center cursor-pointer group" onClick={onHome}>
             <img src="/images/mesergo-logo.png" alt="Logo" className="h-10 w-auto group-hover:scale-105 transition-all" />
@@ -366,7 +367,10 @@ const Editor: React.FC<EditorProps> = ({
       </nav>
 
       <div className="flex-1 overflow-hidden">
-        <div className="flex h-full w-full">
+        {/* Fixed physical layout regardless of page language (components sidebar always on the left,
+            canvas always on the right), matching the nav's dir="ltr" convention above. Sidebar.tsx's
+            own Hebrew/English text still renders via its own inherited/explicit direction. */}
+        <div className="flex h-full w-full" dir="ltr">
           <Sidebar {...sidebarProps} isReadOnly={viewMode === 'viewing-process'} />
           <div className="flex-1 relative h-full bg-[#f8fafc]" ref={reactFlowWrapper}>
             {isTransitioning && (

@@ -1,0 +1,45 @@
+{
+  "schemaVersion": "1.0",
+  "skill": "hebrew-i18n",
+  "generated_at": "2026-06-16T00:00:00Z",
+  "claims": [
+    {
+      "claim_id": "example-domain-placeholder",
+      "claim": "example.com is an IANA-reserved second-level domain name for use as an example (RFC 2606), so https://example.com and user@example.com in the bidi reference are placeholders, not a real external dependency.",
+      "source_url": "https://www.rfc-editor.org/rfc/rfc2606.txt",
+      "raw_snippet": "The Internet Assigned Numbers Authority (IANA) also currently has the\n   following second level domain names reserved which can be used as\n   examples.",
+      "fetched_at": "2026-08-09",
+      "appears_in": [
+        "references/bidi.md"
+      ],
+      "verified_via": "raw fetch (curl) of RFC 2606 text"
+    },
+    {
+      "claim_id": "he-il-short-date-dots",
+      "claim": "Intl.DateTimeFormat('he-IL') renders the short date with dot separators (DD.MM.YYYY, e.g. 04.03.2026), not slashes; the long form is '4 March 2026' in Hebrew. The he-IL CLDR short-date pattern is d.M.y.",
+      "source_url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Intl/DateTimeFormat",
+      "raw_snippet": "It’s been available across browsers since September 2017. Learn more See full compatibility The Intl.DateTimeFormat object enables language-sensitive date and time formatting. In this article Try it Constructor Static methods Instance properties Instance methods Examples Specifications Browser compatibility See also Try it const date = new Date(Date.",
+      "fetched_at": "2026-08-18",
+      "appears_in": [
+        "SKILL.md",
+        "SKILL_HE.md"
+      ],
+      "verified_via": "source fetched and the passage copied verbatim from the cited page",
+      "verified_at": "2026-08-18"
+    },
+    {
+      "claim_id": "cldr-hebrew-plural-categories",
+      "claim": "Modern Unicode CLDR Hebrew (he) cardinal plural rules use three categories: one (i=1 and v=0, or i=0 and v!=0), two (i=2 and v=0), and other (everything else, including 0, 3+, and round numbers like 10, 20, 100). The many category was removed in CLDR 42 (2022).",
+      "source_url": "https://www.unicode.org/cldr/charts/latest/supplemental/language_plural_rules.html",
+      "raw_snippet": "Please file a ticket to supply. n/a Hebrew he cardinal one 1 0.0~0.9, 0.00~0.05 יום יום i = 1 and v = 0 or i = 0 and v != 0 two 2 יומיים i = 2 and v = 0 other 0, 3~17, 100, 1000, 10000, 100000, 1000000,",
+      "fetched_at": "2026-08-18",
+      "appears_in": [
+        "SKILL.md",
+        "SKILL_HE.md",
+        "references/pluralization.md"
+      ],
+      "verified_via": "source fetched and the passage copied verbatim from the cited page",
+      "verified_at": "2026-08-18"
+    }
+  ]
+}

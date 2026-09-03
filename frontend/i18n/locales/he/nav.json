@@ -1,0 +1,84 @@
+{
+  "pages": {
+    "home": "דף הבית",
+    "overview": "סקירה כללית",
+    "bots": "הבוטים שלי",
+    "sessions": "שיחות",
+    "contacts": "אנשי קשר",
+    "groups": "קבוצות",
+    "sendMessages": "שליחת הודעות",
+    "smsIn": "SMS נכנס",
+    "settings": "הגדרות",
+    "users": "משתמשים",
+    "adminPanel": "פאנל ניהול",
+    "systemAdmin": "ניהול מערכת"
+  },
+  "mobileMenu": {
+    "open": "פתח תפריט ניווט",
+    "close": "סגור תפריט ניווט"
+  },
+  "topBar": {
+    "greeting": "שלום, {{name}}"
+  },
+  "profile": {
+    "fullName": "שם מלא",
+    "email": "אימייל",
+    "phone": "טלפון",
+    "subscription": "סוג מנוי",
+    "notSet": "לא הוגדר",
+    "editPhone": "עדכון מספר טלפון",
+    "savePhoneError": "שגיאה בשמירת הטלפון",
+    "logout": "יציאה",
+    "accountType": {
+      "Trial": "ניסיוני",
+      "Premium": "פרימיום",
+      "Basic": "בסיסי"
+    }
+  },
+  "impersonation": {
+    "banner": "מצב התחזות - אתה רואה את המערכת כמשתמש: {{name}}",
+    "exit": "חזור למצב מנהל",
+    "switchAccount": "החלף חשבון",
+    "connectedAs": "מחובר : {{name}}"
+  },
+  "home": {
+    "welcome": "ברוך הבא",
+    "defaultUser": "משתמש",
+    "accountBadge": "חשבון {{type}}",
+    "menu": "תפריט",
+    "logout": "התנתק",
+    "title": "לוח בקרה",
+    "quickNav": "ניווט מהיר",
+    "tiles": {
+      "bots": {
+        "label": "הבוטים שלי",
+        "description": "נהל, ערוך וצור בוטים חדשים"
+      },
+      "chats": {
+        "label": "השיחות שלי",
+        "description": "צפה ונהל שיחות פעילות"
+      },
+      "contacts": {
+        "label": "אנשי קשר",
+        "description": "נהל את רשימת אנשי הקשר"
+      },
+      "smsIn": {
+        "label": "SMS נכנס",
+        "description": "הודעות SMS נכנסות וניתוב קווים"
+      },
+      "settings": {
+        "label": "הגדרות",
+        "description": "הגדרות חשבון ופרופיל"
+      }
+    }
+  },
+  "stats": {
+    "title": "סקירה כללית",
+    "sessionsToday": "שיחות היום",
+    "sessionsThisMonth": "{{total}} החודש",
+    "messagesToday": "הודעות שנשלחו היום",
+    "messagesWeekMonth": "{{week}} השבוע · {{month}} החודש",
+    "contacts": "אנשי קשר",
+    "bots": "בוטים"
+  }
+}

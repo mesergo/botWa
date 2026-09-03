@@ -530,7 +530,6 @@ export const linkNumberForCustomer = async (req, res) => {
   }
 };
 
-
 // POST /api/admin/users/:userId/connected-numbers/link-dialog360
 // Admin-only: link an already-activated Dialog360 WhatsApp number to a SPECIFIC
 // customer's account (no ownership/self-service token required — admin acts

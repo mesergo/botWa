@@ -478,7 +478,7 @@ const SendMessagesPage: React.FC<SendMessagesPageProps> = ({
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   return (
-    <div className="h-screen w-screen bg-[#f8fafc] flex flex-col font-medium text-right overflow-hidden" dir="rtl">
+    <div className="h-screen w-screen bg-[#f8fafc] flex flex-col font-medium text-start overflow-hidden">
       <ImpersonationBanner currentUser={currentUser} onStopImpersonation={onStopImpersonation} token={token} onSwitchAccount={onSwitchAccount} />
       <MigrationNoticeBanner />
 
@@ -640,9 +640,8 @@ const SendMessagesPage: React.FC<SendMessagesPageProps> = ({
 
       {activeBroadcast && activeBroadcast.status !== 'completed' && activeBroadcast.status !== 'failed' && (
         <div
-          className="fixed left-6 z-[70] bg-white border border-slate-200 shadow-2xl rounded-2xl p-4 w-80"
+          className="fixed end-6 z-[70] bg-white border border-slate-200 shadow-2xl rounded-2xl p-4 w-80"
           style={{ bottom: '1.5rem' }}
-          dir="rtl"
         >
           <div className="flex items-center gap-3 mb-3">
             <div className="w-10 h-10 rounded-2xl bg-blue-100 text-blue-600 flex items-center justify-center flex-shrink-0">
@@ -678,11 +677,10 @@ const SendMessagesPage: React.FC<SendMessagesPageProps> = ({
 
       {completionToast && (
         <div
-          className={`fixed left-6 z-[70] shadow-2xl rounded-2xl p-4 w-80 bg-white ${
+          className={`fixed end-6 z-[70] shadow-2xl rounded-2xl p-4 w-80 bg-white ${
             completionToast.status === 'completed' ? 'border border-green-200' : 'border border-red-200'
           }`}
           style={{ bottom: '1.5rem' }}
-          dir="rtl"
         >
           <div className="flex items-start gap-3">
             <div className={`w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0 ${

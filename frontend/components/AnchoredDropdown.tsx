@@ -10,7 +10,13 @@ interface AnchoredDropdownProps {
   anchorRef: React.RefObject<HTMLElement | null>;
   open: boolean;
   onClose: () => void;
-  /** Which edge of the anchor the dropdown's edge aligns to. Default 'left'. */
+  /**
+   * Which *physical* edge of the anchor the dropdown's matching edge aligns to. Default 'left'.
+   * This is intentionally physical (not logical start/end): the dropdown is positioned with
+   * `position: fixed` from measured viewport coordinates, and every current call site anchors a
+   * control that sits at a fixed physical corner of a `dir="ltr"` top bar, so the correct edge is
+   * the same in Hebrew and English.
+   */
   align?: 'left' | 'right';
   className?: string;
   children: React.ReactNode;
@@ -88,7 +94,6 @@ const AnchoredDropdown: React.FC<AnchoredDropdownProps> = ({ anchorRef, open, on
   return createPortal(
     <div
       ref={dropdownRef}
-      dir="rtl"
       style={{ position: 'fixed', top: position.top, left: position.left, zIndex: 9999 }}
       className={`w-72 max-h-[80vh] overflow-y-auto bg-white rounded-2xl shadow-xl border border-slate-100 py-2 ${className}`}
     >

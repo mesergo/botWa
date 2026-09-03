@@ -6,6 +6,7 @@
 import React, { useState } from 'react';
 import { Client } from '../types';
 import { Plus, Trash2, Edit2, Check, X, ShieldAlert, Building, Mail, Phone, Calendar, User, Bot, Loader2 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 interface ClientsManagerProps {
   clients: Client[];
@@ -25,6 +26,7 @@ export default function ClientsManager({
   readOnly = false,
   loading = false,
 }: ClientsManagerProps) {
+  const { t } = useTranslation('smsIn');
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 
@@ -94,11 +96,11 @@ export default function ClientsManager({
   };
 
   return (
-    <div className="space-y-6 text-right">
+    <div className="space-y-6 text-start">
       {/* Overview Head */}
       <div className="flex flex-wrap justify-between items-center gap-4">
         <div>
-          <h2 className="text-xl font-black text-slate-900">ניהול לקוחות קצה</h2>
+          <h2 className="text-xl font-black text-slate-900">{t('clients.title')}</h2>
         </div>
         {!readOnly && (
           <button
@@ -106,7 +108,7 @@ export default function ClientsManager({
             className="bg-sky-600 hover:bg-sky-500 text-white rounded-2xl px-4 py-2.5 text-sm font-bold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
           >
             {showAddForm ? <X size={15} /> : <Plus size={15} />}
-            <span>{showAddForm ? 'סגור טופס' : 'הוסף לקוח חדש'}</span>
+            <span>{showAddForm ? t('clients.closeForm') : t('clients.addNew')}</span>
           </button>
         )}
       </div>
@@ -114,31 +116,31 @@ export default function ClientsManager({
       {/* Add Form Container */}
       {!readOnly && showAddForm && (
         <form onSubmit={handleSubmit} className="bg-white border border-indigo-100 rounded-xl p-5 shadow-xs space-y-4 max-w-2xl">
-          <h3 className="font-bold text-slate-900 text-sm border-b pb-2 mb-2">פרטי לקוח חדש</h3>
+          <h3 className="font-bold text-slate-900 text-sm border-b pb-2 mb-2">{t('clients.newDetails')}</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">שם חברה / לקוח <span className="text-red-500">*</span></label>
+              <label className="block text-xs font-bold text-slate-700 mb-1">{t('clients.fields.company')} <span className="text-red-500">*</span></label>
               <input
                 type="text"
                 required
-                placeholder="לדוגמה: פיצה דלוקס, WIGBOX..."
+                placeholder={t('clients.placeholders.company')}
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 className="w-full text-xs border border-slate-200 rounded-lg p-2.5 focus:ring-1 focus:ring-sky-500 focus:border-sky-500 bg-white"
               />
             </div>
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">איש קשר</label>
+              <label className="block text-xs font-bold text-slate-700 mb-1">{t('clients.fields.contact')}</label>
               <input
                 type="text"
-                placeholder="שם איש קשר..."
+                placeholder={t('clients.placeholders.contact')}
                 value={contactPerson}
                 onChange={(e) => setContactPerson(e.target.value)}
                 className="w-full text-xs border border-slate-200 rounded-lg p-2.5 focus:ring-1 focus:ring-sky-500 focus:border-sky-500 bg-white"
               />
             </div>
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">טלפון ליצירת קשר</label>
+              <label className="block text-xs font-bold text-slate-700 mb-1">{t('clients.fields.phone')}</label>
               <input
                 type="text"
                 placeholder="05x-xxxxxxx..."
@@ -148,21 +150,21 @@ export default function ClientsManager({
               />
             </div>
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">אימייל</label>
+              <label className="block text-xs font-bold text-slate-700 mb-1">{t('clients.fields.email')}</label>
               <input
                 type="email"
                 placeholder="email@example.com..."
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full text-xs border border-slate-200 rounded-lg p-2.5 focus:ring-1 focus:ring-sky-500 focus:border-sky-500 bg-white text-left"
+                className="w-full text-xs border border-slate-200 rounded-lg p-2.5 focus:ring-1 focus:ring-sky-500 focus:border-sky-500 bg-white text-end"
                 dir="ltr"
               />
             </div>
           </div>
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">הערות ותיאור הלקוח</label>
+            <label className="block text-xs font-bold text-slate-700 mb-1">{t('clients.fields.notesDescription')}</label>
             <textarea
-              placeholder="רשום פרטים רלוונטיים על הלקוח, הגבלות, שימוש וכדומה..."
+              placeholder={t('clients.placeholders.notes')}
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               rows={2}
@@ -175,13 +177,13 @@ export default function ClientsManager({
               onClick={resetForm}
               className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-lg transition-colors cursor-pointer"
             >
-              איפוס
+              {t('clients.reset')}
             </button>
             <button
               type="submit"
               className="px-5 py-2 bg-sky-600 hover:bg-sky-500 text-white font-semibold rounded-lg shadow-xs hover:shadow-md transition-colors cursor-pointer"
             >
-              שמור לקוח
+              {t('clients.saveClient')}
             </button>
           </div>
         </form>
@@ -190,7 +192,7 @@ export default function ClientsManager({
       {loading && (
         <div className="flex items-center justify-center gap-2 py-16 text-slate-400">
           <Loader2 className="animate-spin" size={22} />
-          <span className="text-sm font-medium">טוען לקוחות מ-MongoDB...</span>
+          <span className="text-sm font-medium">{t('clients.loading')}</span>
         </div>
       )}
 
@@ -207,19 +209,19 @@ export default function ClientsManager({
                 {isEditing ? (
                   <div className="space-y-4">
                     <div className="flex justify-between items-center border-b pb-2">
-                      <span className="text-xs font-bold text-sky-600">עריכת לקוח</span>
+                      <span className="text-xs font-bold text-sky-600">{t('clients.editing')}</span>
                       <div className="flex gap-1.5">
                         <button
                           onClick={() => saveEdit(client.id)}
                           className="p-1 bg-emerald-100 hover:bg-emerald-200 text-emerald-800 rounded cursor-pointer"
-                          title="שמור"
+                          title={t('clients.save')}
                         >
                           <Check size={14} />
                         </button>
                         <button
                           onClick={() => setEditingId(null)}
                           className="p-1 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded cursor-pointer"
-                          title="ביטול"
+                          title={t('clients.cancel')}
                         >
                           <X size={14} />
                         </button>
@@ -228,7 +230,7 @@ export default function ClientsManager({
 
                     <div className="space-y-3">
                       <div>
-                        <label className="block text-[10px] font-bold text-slate-500 mb-0.5">שם לקוח</label>
+                        <label className="block text-[10px] font-bold text-slate-500 mb-0.5">{t('clients.fields.clientName')}</label>
                         <input
                           type="text"
                           value={editName}
@@ -237,7 +239,7 @@ export default function ClientsManager({
                         />
                       </div>
                       <div>
-                        <label className="block text-[10px] font-bold text-slate-500 mb-0.5">איש קשר</label>
+                        <label className="block text-[10px] font-bold text-slate-500 mb-0.5">{t('clients.fields.contact')}</label>
                         <input
                           type="text"
                           value={editContact}
@@ -247,7 +249,7 @@ export default function ClientsManager({
                       </div>
                       <div className="grid grid-cols-2 gap-2">
                         <div>
-                          <label className="block text-[10px] font-bold text-slate-500 mb-0.5">טלפון</label>
+                          <label className="block text-[10px] font-bold text-slate-500 mb-0.5">{t('clients.fields.phoneShort')}</label>
                           <input
                             type="text"
                             value={editPhone}
@@ -256,7 +258,7 @@ export default function ClientsManager({
                           />
                         </div>
                         <div>
-                          <label className="block text-[10px] font-bold text-slate-500 mb-0.5">אימייל</label>
+                          <label className="block text-[10px] font-bold text-slate-500 mb-0.5">{t('clients.fields.email')}</label>
                           <input
                             type="text"
                             value={editEmail}
@@ -266,7 +268,7 @@ export default function ClientsManager({
                         </div>
                       </div>
                       <div>
-                        <label className="block text-[10px] font-bold text-slate-500 mb-0.5">הערות</label>
+                        <label className="block text-[10px] font-bold text-slate-500 mb-0.5">{t('clients.fields.notes')}</label>
                         <textarea
                           value={editNotes}
                           onChange={(e) => setEditNotes(e.target.value)}
@@ -292,14 +294,14 @@ export default function ClientsManager({
                             <button
                               onClick={() => startEdit(client)}
                               className="p-1 hover:bg-slate-100 text-slate-500 hover:text-slate-700 rounded transition-colors cursor-pointer"
-                              title="ערוך לקוח"
+                              title={t('clients.editClient')}
                             >
                               <Edit2 size={13} />
                             </button>
                             <button
                               onClick={() => onDelete(client.id)}
                               className="p-1 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded transition-colors cursor-pointer"
-                              title="מחק לקוח"
+                              title={t('clients.deleteClient')}
                             >
                               <Trash2 size={13} />
                             </button>
@@ -311,7 +313,7 @@ export default function ClientsManager({
                               ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
                               : 'bg-slate-100 text-slate-500 border border-slate-200'
                           }`}>
-                            {client.status === 'active' ? 'פעיל' : client.status}
+                            {client.status === 'active' ? t('clients.active') : client.status}
                           </span>
                         )}
                       </div>
@@ -319,20 +321,20 @@ export default function ClientsManager({
                       <div className="mt-3.5 space-y-2 text-xs">
                         <div className="flex items-center gap-2 text-slate-600">
                           <User size={13} className="text-slate-400" />
-                          <span>איש קשר: <span className="font-medium text-slate-800">{client.contactPerson}</span></span>
+                          <span>{t('clients.fields.contact')}: <span className="font-medium text-slate-800">{client.contactPerson}</span></span>
                         </div>
                         <div className="flex items-center gap-2 text-slate-600">
                           <Phone size={13} className="text-slate-400" />
-                          <span>טלפון: <span className="font-mono text-slate-800">{client.phone}</span></span>
+                          <span>{t('clients.fields.phoneShort')}: <span className="font-mono text-slate-800">{client.phone}</span></span>
                         </div>
                         <div className="flex items-center gap-2 text-slate-600">
                           <Mail size={13} className="text-slate-400" />
-                          <span>אימייל: <span className="font-mono text-slate-800 text-left" dir="ltr">{client.email}</span></span>
+                          <span>{t('clients.fields.email')}: <span className="font-mono text-slate-800 text-end" dir="ltr">{client.email}</span></span>
                         </div>
                         {typeof client.botCount === 'number' && (
                           <div className="flex items-center gap-2 text-slate-600">
                             <Bot size={13} className="text-slate-400" />
-                            <span>בוטים: <span className="font-medium text-slate-800">{client.botCount}</span></span>
+                            <span>{t('clients.bots')}: <span className="font-medium text-slate-800">{client.botCount}</span></span>
                           </div>
                         )}
 
@@ -347,7 +349,7 @@ export default function ClientsManager({
                     <div className="mt-4 pt-2.5 border-t border-slate-100 flex justify-between items-center text-[10px] text-slate-400">
                       <span className="flex items-center gap-1">
                         <Calendar size={11} />
-                        {client.createdAt ? `נוצר ב-${client.createdAt}` : '—'}
+                        {client.createdAt ? t('clients.createdAt', { date: client.createdAt }) : '—'}
                       </span>
                       <span className="font-mono text-[9px] text-slate-300 truncate max-w-[40%]" title={client.id}>
                         ID: {client.id}
@@ -362,11 +364,11 @@ export default function ClientsManager({
           {clients.length === 0 && (
             <div className="col-span-2 text-center py-12 bg-white rounded-xl border border-dashed border-slate-300 text-slate-400">
               <ShieldAlert className="mx-auto text-slate-300 mb-2" size={36} />
-              <p className="text-sm font-semibold">לא נמצאו לקוחות.</p>
+              <p className="text-sm font-semibold">{t('clients.empty.title')}</p>
               <p className="text-xs text-slate-400 mt-1">
                 {readOnly
-                  ? 'אין חשבונות משתמשים במערכת, או שאין הרשאת אדמין לטעינה.'
-                  : 'לחץ על הכפתור "הוסף לקוח חדש" בצד שמאל למעלה כדי להתחיל.'}
+                  ? t('clients.empty.readOnly')
+                  : t('clients.empty.editable')}
               </p>
             </div>
           )}

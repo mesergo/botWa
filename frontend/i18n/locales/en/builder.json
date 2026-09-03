@@ -1,0 +1,72 @@
+{
+  "palette": {
+    "groups": {
+      "input": "Input (user)",
+      "output": "Output (bot)",
+      "actions": "System actions"
+    },
+    "items": {
+      "inputText": "Text field",
+      "inputDate": "Date/time picker",
+      "inputFile": "File upload",
+      "outputText": "Text message",
+      "outputMedia": "Media message",
+      "outputLink": "External link",
+      "outputMenu": "Selection menu",
+      "api": "API call",
+      "wait": "Wait",
+      "timeRouting": "Route by time/date/day",
+      "groupMembership": "Add/remove from group",
+      "agents": "Agents",
+      "setParameter": "Set parameter",
+      "returnToMainMenu": "Return to main menu"
+    }
+  },
+  "sidebar": {
+    "tabs": {
+      "versions": "Versions",
+      "components": "Components"
+    },
+    "myProcesses": "My processes",
+    "noProcesses": "No processes",
+    "view": "View",
+    "delete": "Delete",
+    "publishNewVersion": "Publish new version",
+    "versionHistory": "Version history",
+    "noSavedVersions": "No saved versions",
+    "restoreVersion": "Restore this version",
+    "unlockVersion": "Unlock",
+    "lockVersion": "Lock version",
+    "deleteVersion": "Delete version",
+    "restorableVersions": "({{count}}) restore versions",
+    "restoreArchivedVersion": "Restore version ({{price}}₪)",
+    "footer": {
+      "readOnly": "View-only mode",
+      "dragComponents": "Drag components onto the flow",
+      "manageVersions": "Manage versions and backups"
+    }
+  },
+  "upload": {
+    "file": "File",
+    "failed": "Upload failed",
+    "serverError": "Server error: {{status}}",
+    "fileFailed": "The file upload failed",
+    "uploaded": "File uploaded",
+    "uploading": "Uploading...",
+    "uploadLabel": "Upload {{label}}",
+    "useSample": "Use a sample file",
+    "cancel": "Cancel",
+    "enterUrl": "Enter a URL",
+    "use": "Use"
+  },
+  "personalizedTextarea": {
+    "hint": "Type # to add a personal parameter (name, email, phone and more) that is replaced automatically for each recipient — you can add several different parameters in the same message",
+    "removeParameter": "Remove this parameter",
+    "chooseParameter": "Choose a parameter to insert:",
+    "customFields": "Custom fields:"
+  },
+  "quickInsert": {
+    "autoFill": "Auto-fill",
+    "userNameMissing": "No name is set for this user"
+  }
+}

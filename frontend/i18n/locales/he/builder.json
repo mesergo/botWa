@@ -1,0 +1,72 @@
+{
+  "palette": {
+    "groups": {
+      "input": "קלט (משתמש)",
+      "output": "פלט (בוט)",
+      "actions": "פעולות מערכת"
+    },
+    "items": {
+      "inputText": "שדה טקסט",
+      "inputDate": "בחירת תאריך/שעה",
+      "inputFile": "העלאת קובץ",
+      "outputText": "הודעת טקסט",
+      "outputMedia": "הודעת מדיה",
+      "outputLink": "קישור חיצוני",
+      "outputMenu": "תפריט בחירה",
+      "api": "קריאת API",
+      "wait": "המתנה",
+      "timeRouting": "ניתוב לפי שעה/תאריך/יום",
+      "groupMembership": "הוספה/הסרה מקבוצה",
+      "agents": "נציגים",
+      "setParameter": "הגדרת פרמטר",
+      "returnToMainMenu": "חזרה לתפריט ראשי"
+    }
+  },
+  "sidebar": {
+    "tabs": {
+      "versions": "גרסאות",
+      "components": "רכיבים"
+    },
+    "myProcesses": "התהליכים שלי",
+    "noProcesses": "אין תהליכים",
+    "view": "הצג",
+    "delete": "מחק",
+    "publishNewVersion": "פרסם גרסה חדשה",
+    "versionHistory": "היסטוריית גרסאות",
+    "noSavedVersions": "אין גרסאות שמורות",
+    "restoreVersion": "שחזר גרסה זו",
+    "unlockVersion": "פתח נעילה",
+    "lockVersion": "נעל גרסה",
+    "deleteVersion": "מחק גרסה",
+    "restorableVersions": "({{count}}) שיחזור גרסאות",
+    "restoreArchivedVersion": "שחזר גרסה ({{price}}₪)",
+    "footer": {
+      "readOnly": "מצב צפייה בלבד",
+      "dragComponents": "גרור רכיבים לתזרים",
+      "manageVersions": "נהל גרסאות וגיבויים"
+    }
+  },
+  "upload": {
+    "file": "קובץ",
+    "failed": "העלאה נכשלה",
+    "serverError": "שגיאת שרת: {{status}}",
+    "fileFailed": "העלאת הקובץ נכשלה",
+    "uploaded": "קובץ הועלה",
+    "uploading": "מעלה...",
+    "uploadLabel": "העלה {{label}}",
+    "useSample": "השתמש בקובץ לדוגמה",
+    "cancel": "בטל",
+    "enterUrl": "הזן קישור (URL)",
+    "use": "השתמש"
+  },
+  "personalizedTextarea": {
+    "hint": "הקלד # כדי להוסיף פרמטר אישי (שם, מייל, טלפון ועוד) שיוחלף אוטומטית לכל נמען — ניתן להוסיף כמה פרמטרים שונים באותה הודעה",
+    "removeParameter": "הסר פרמטר זה",
+    "chooseParameter": "בחר פרמטר להוספה:",
+    "customFields": "שדות מותאמים אישית:"
+  },
+  "quickInsert": {
+    "autoFill": "מילוי אוטומטי",
+    "userNameMissing": "לא הוגדר שם למשתמש"
+  }
+}

@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { UserCog, Repeat } from 'lucide-react';
 
 const API_BASE = window.location.hostname === 'localhost'
@@ -25,6 +26,7 @@ interface ImpersonationBannerProps {
 }
 
 const ImpersonationBanner: React.FC<ImpersonationBannerProps> = ({ currentUser, onStopImpersonation, token, onSwitchAccount, hideAccountSwitcher, onAccountsChange }) => {
+  const { t } = useTranslation('nav');
   const [siblingAccounts, setSiblingAccounts] = useState<SiblingAccount[]>([]);
   const [showSwitcher, setShowSwitcher] = useState(false);
 
@@ -46,17 +48,17 @@ const ImpersonationBanner: React.FC<ImpersonationBannerProps> = ({ currentUser, 
 
   if (isImpersonating) {
     return (
-      <div className="bg-gradient-to-r from-orange-500 to-red-500 text-white px-6 py-3 flex items-center justify-between z-30 flex-shrink-0" dir="rtl">
+      <div className="bg-gradient-to-r from-orange-500 to-red-500 text-white px-6 py-3 flex items-center justify-between z-30 flex-shrink-0">
         {onStopImpersonation && (
           <button
             onClick={onStopImpersonation}
             className="bg-white text-orange-600 px-4 py-2 rounded-lg font-bold hover:bg-orange-50 transition-colors"
           >
-            חזור למצב מנהל
+            {t('impersonation.exit')}
           </button>
         )}
         <div className="flex items-center gap-3">
-          <span className="font-bold">מצב התחזות - אתה רואה את המערכת כמשתמש: {currentUser?.name || currentUser?.email}</span>
+          <span className="font-bold">{t('impersonation.banner', { name: currentUser?.name || currentUser?.email })}</span>
           <UserCog className="w-5 h-5" />
         </div>
       </div>
@@ -66,16 +68,16 @@ const ImpersonationBanner: React.FC<ImpersonationBannerProps> = ({ currentUser, 
   if (!onSwitchAccount || siblingAccounts.length === 0 || hideAccountSwitcher) return null;
 
   return (
-    <div className="bg-gradient-to-r from-teal-500 to-blue-500 text-white px-6 py-3 flex items-center justify-between z-30 flex-shrink-0" dir="rtl">
+    <div className="bg-gradient-to-r from-teal-500 to-blue-500 text-white px-6 py-3 flex items-center justify-between z-30 flex-shrink-0">
       <div className="relative">
         <button
           onClick={() => setShowSwitcher(v => !v)}
           className="bg-white text-teal-600 px-4 py-2 rounded-lg font-bold hover:bg-teal-50 transition-colors"
         >
-          החלף חשבון
+          {t('impersonation.switchAccount')}
         </button>
         {showSwitcher && (
-          <div className="absolute top-full mt-2 right-0 bg-white rounded-xl shadow-2xl border border-slate-100 min-w-[220px] z-40 text-right overflow-hidden">
+          <div className="absolute top-full mt-2 start-0 bg-white rounded-xl shadow-2xl border border-slate-100 min-w-[220px] z-40 text-start overflow-hidden">
             {siblingAccounts.map(acc => (
               <button
                 key={acc.id}
@@ -90,7 +92,7 @@ const ImpersonationBanner: React.FC<ImpersonationBannerProps> = ({ currentUser, 
         )}
       </div>
       <div className="flex items-center gap-3">
-        <span className="font-bold">מחובר : {currentUser?.name || currentUser?.email}</span>
+        <span className="font-bold">{t('impersonation.connectedAs', { name: currentUser?.name || currentUser?.email })}</span>
         <Repeat className="w-5 h-5" />
       </div>
     </div>

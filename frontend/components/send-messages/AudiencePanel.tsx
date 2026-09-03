@@ -1,5 +1,6 @@
 import React from 'react';
 import { Search, Users, Layers, Phone } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 type AudienceTab = 'contacts' | 'groups' | 'phones';
 
@@ -62,10 +63,11 @@ const AudiencePanel: React.FC<AudiencePanelProps> = ({
   audienceTab, setAudienceTab,
   previewLoading, previewTotal,
 }) => {
+  const { t } = useTranslation('messages');
   const tabs: { key: AudienceTab; label: string; Icon: React.FC<{ size?: number }>; count: number }[] = [
-    { key: 'contacts', label: 'אנשי קשר', Icon: Users, count: selectedContactIds.size },
-    { key: 'groups',   label: 'קבוצות',   Icon: Layers, count: selectedGroupIds.size },
-    { key: 'phones',   label: 'מספרי טלפון', Icon: Phone, count: manualPhonesList.length },
+    { key: 'contacts', label: t('audience.tabs.contacts'), Icon: Users, count: selectedContactIds.size },
+    { key: 'groups',   label: t('audience.tabs.groups'),   Icon: Layers, count: selectedGroupIds.size },
+    { key: 'phones',   label: t('audience.tabs.phones'), Icon: Phone, count: manualPhonesList.length },
   ];
 
   return (
@@ -75,7 +77,7 @@ const AudiencePanel: React.FC<AudiencePanelProps> = ({
     >
       {/* ── Header + tabs ── */}
       <div className="p-5 border-b border-slate-100 flex-shrink-0">
-        <h2 className="text-lg font-black text-slate-900 mb-3">למי לשלוח</h2>
+        <h2 className="text-lg font-black text-slate-900 mb-3">{t('audience.title')}</h2>
         <div className="flex items-center gap-1 bg-slate-100 rounded-2xl p-1">
           {tabs.map(t => (
             <button
@@ -102,12 +104,12 @@ const AudiencePanel: React.FC<AudiencePanelProps> = ({
           <>
             <div className="p-4 border-b border-slate-100 space-y-2 flex-shrink-0">
               <div className="relative">
-                <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-300" size={15} />
+                <Search className="absolute start-3 top-1/2 -translate-y-1/2 text-slate-300" size={15} />
                 <input
                   value={contactSearch}
                   onChange={e => setContactSearch(e.target.value)}
-                  placeholder="חפש איש קשר..."
-                  className="w-full pr-9 pl-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-4 focus:ring-green-600/10 focus:border-green-600"
+                  placeholder={t('audience.contacts.searchPlaceholder')}
+                  className="w-full ps-9 pe-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-4 focus:ring-green-600/10 focus:border-green-600"
                 />
               </div>
               <div className="flex items-center justify-between text-xs">
@@ -118,13 +120,13 @@ const AudiencePanel: React.FC<AudiencePanelProps> = ({
                     checked={filteredContacts.length > 0 && filteredContacts.every(c => selectedContactIds.has(c._id))}
                     onChange={toggleAllContacts}
                   />
-                  בחר את כל אנשי הקשר ({filteredContacts.length})
+                  {t('audience.contacts.selectAll', { count: filteredContacts.length })}
                 </label>
                 <button
                   onClick={() => setShowSelectedContactsOnly(v => !v)}
                   className="font-bold text-green-600 hover:text-green-800"
                 >
-                  {showSelectedContactsOnly ? 'הצג הכל' : 'הצג מסומנים'}
+                  {showSelectedContactsOnly ? t('audience.showAll') : t('audience.contacts.showSelected')}
                 </button>
               </div>
             </div>
@@ -134,7 +136,7 @@ const AudiencePanel: React.FC<AudiencePanelProps> = ({
                   <div className="animate-spin w-7 h-7 border-4 border-slate-200 border-t-green-500 rounded-full" />
                 </div>
               ) : filteredContacts.length === 0 ? (
-                <p className="text-center py-10 text-sm font-bold text-slate-300">לא נמצאו אנשי קשר</p>
+                <p className="text-center py-10 text-sm font-bold text-slate-300">{t('audience.contacts.empty')}</p>
               ) : (
                 filteredContacts.map(c => (
                   <label
@@ -164,12 +166,12 @@ const AudiencePanel: React.FC<AudiencePanelProps> = ({
           <>
             <div className="p-4 border-b border-slate-100 space-y-2 flex-shrink-0">
               <div className="relative">
-                <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-300" size={15} />
+                <Search className="absolute start-3 top-1/2 -translate-y-1/2 text-slate-300" size={15} />
                 <input
                   value={groupSearch}
                   onChange={e => setGroupSearch(e.target.value)}
-                  placeholder="חפש קבוצה..."
-                  className="w-full pr-9 pl-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-4 focus:ring-green-600/10 focus:border-green-600"
+                  placeholder={t('audience.groups.searchPlaceholder')}
+                  className="w-full ps-9 pe-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-4 focus:ring-green-600/10 focus:border-green-600"
                 />
               </div>
               <div className="flex items-center justify-between text-xs">
@@ -180,13 +182,13 @@ const AudiencePanel: React.FC<AudiencePanelProps> = ({
                     checked={filteredGroups.length > 0 && filteredGroups.every(g => selectedGroupIds.has(g._id))}
                     onChange={toggleAllGroups}
                   />
-                  בחר את כל הקבוצות ({filteredGroups.length})
+                  {t('audience.groups.selectAll', { count: filteredGroups.length })}
                 </label>
                 <button
                   onClick={() => setShowSelectedGroupsOnly(v => !v)}
                   className="font-bold text-green-600 hover:text-green-800"
                 >
-                  {showSelectedGroupsOnly ? 'הצג הכל' : 'הצג קבוצות מסומנות'}
+                  {showSelectedGroupsOnly ? t('audience.showAll') : t('audience.groups.showSelected')}
                 </button>
               </div>
             </div>
@@ -196,7 +198,7 @@ const AudiencePanel: React.FC<AudiencePanelProps> = ({
                   <div className="animate-spin w-7 h-7 border-4 border-slate-200 border-t-green-500 rounded-full" />
                 </div>
               ) : filteredGroups.length === 0 ? (
-                <p className="text-center py-10 text-sm font-bold text-slate-300">לא נמצאו רשימות תפוצה</p>
+                <p className="text-center py-10 text-sm font-bold text-slate-300">{t('audience.groups.empty')}</p>
               ) : (
                 filteredGroups.map(g => (
                   <label
@@ -213,7 +215,7 @@ const AudiencePanel: React.FC<AudiencePanelProps> = ({
                     />
                     <div className="min-w-0">
                       <p className="text-sm font-bold text-slate-900 truncate">{g.name}</p>
-                      <p className="text-xs text-slate-400">{g.contact_count} אנשי קשר</p>
+                      <p className="text-xs text-slate-400">{t('audience.groups.contactCount', { count: g.contact_count })}</p>
                     </div>
                   </label>
                 ))
@@ -225,16 +227,16 @@ const AudiencePanel: React.FC<AudiencePanelProps> = ({
         {audienceTab === 'phones' && (
           <div className="flex-1 flex flex-col p-4">
             <p className="text-xs font-semibold text-slate-500 mb-2">
-              הקלד או הדבק מספרי טלפון — אפשר להפריד בפסיקים, נקודה-פסיק או שורות נפרדות.
+              {t('audience.phones.instructions')}
             </p>
             <textarea
               value={manualPhonesText}
               onChange={e => setManualPhonesText(e.target.value)}
-              placeholder="העתק נתונים והדבק אותם כאן..."
+              placeholder={t('audience.phones.placeholder')}
               className="flex-1 min-h-[200px] w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm outline-none focus:ring-4 focus:ring-green-600/10 focus:border-green-600 resize-none font-mono"
             />
             {manualPhonesList.length > 0 && (
-              <p className="mt-2 text-xs font-bold text-green-600">{manualPhonesList.length} מספרים הוזנו</p>
+              <p className="mt-2 text-xs font-bold text-green-600">{t('audience.phones.entered', { count: manualPhonesList.length })}</p>
             )}
           </div>
         )}
@@ -244,14 +246,18 @@ const AudiencePanel: React.FC<AudiencePanelProps> = ({
       {/* ── Footer: audience summary ── */}
       <div className="p-4 border-t border-slate-100 bg-slate-50/60 flex-shrink-0">
         <p className="text-xs font-bold text-slate-600">
-          {selectedGroupIds.size} קבוצות · {selectedContactIds.size} אנשי קשר · {manualPhonesList.length} מספרים
+          {t('audience.summary', {
+            groups: selectedGroupIds.size,
+            contacts: selectedContactIds.size,
+            phones: manualPhonesList.length,
+          })}
         </p>
         <p className="text-xs font-semibold text-slate-400 mt-1">
           {previewLoading
-            ? 'מחשב נמענים ייחודיים...'
+            ? t('audience.preview.calculating')
             : previewTotal !== null
-              ? `${previewTotal} נמענים סופיים — כפילויות הוסרו אוטומטית`
-              : 'בחר אנשי קשר, קבוצות או מספרים כדי לראות תצוגה מקדימה'}
+              ? t('audience.preview.total', { count: previewTotal })
+              : t('audience.preview.prompt')}
         </p>
       </div>
     </div>

@@ -1157,10 +1157,12 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
   };
 
   const SimulatorUI = (
-    <div className={`flex flex-col h-full bg-white text-right ${isStandalone ? 'w-full' : ''}`}>
+    <div className={`flex flex-col h-full bg-white text-start ${isStandalone ? 'w-full' : ''}`}>
       <input type="file" ref={simulatorFileInputRef} className="hidden" onChange={handleFileSelect} />
-      <div className="p-6 bg-slate-900 text-white flex items-center justify-between shadow-xl flex-row-reverse relative">
-        <div className="flex items-center gap-4 flex-row-reverse">
+      {/* Fixed physical layout regardless of page language (branding left, actions right), matching
+          AppNavbar.tsx/PageTopBar.tsx's <nav dir="ltr"> convention. */}
+      <div className="p-6 bg-slate-900 text-white flex items-center justify-between shadow-xl relative" dir="ltr">
+        <div className="flex items-center gap-4">
           <div className="w-11 h-11 rounded-2xl bg-blue-600 flex items-center justify-center text-white shadow-lg"><Bot size={24} /></div>
           <div className="text-right">
             <h2 className="font-bold text-xs uppercase tracking-widest">MeserGO</h2>
@@ -1250,7 +1252,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
                 <div className={`w-9 h-9 rounded-2xl flex-shrink-0 flex items-center justify-center shadow-md ${msg.sender === 'bot' ? 'bg-white text-black border border-slate-100' : 'bg-blue-600 text-white'}`}>
                   {msg.sender === 'bot' ? <Bot size={18} /> : <User size={18} />}
                 </div>
-                <div className={`p-4 rounded-3xl shadow-sm text-sm font-bold text-right ${msg.sender === 'bot' ? 'bg-white text-black border border-slate-100 rounded-tr-none' : 'bg-blue-600 text-white rounded-tl-none'}`}>
+                <div className={`p-4 rounded-3xl shadow-sm text-sm font-bold text-start ${msg.sender === 'bot' ? 'bg-white text-black border border-slate-100 rounded-ss-none' : 'bg-blue-600 text-white rounded-se-none'}`}>
                   {msg.type === 'text' && <div><WhatsAppText text={msg.content || ''} /></div>}
                   {msg.type === 'image' && (
                     <div>
@@ -1284,14 +1286,14 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
                   )} 
                   {(msg.type === 'menu' || msg.type === 'Options') && (
                     <div className="space-y-4 min-w-[180px]">
-                      <p className="font-bold text-slate-400 text-[10px] uppercase tracking-widest text-right">{msg.content}</p>
+                      <p className="font-bold text-slate-400 text-[10px] uppercase tracking-widest text-start">{msg.content}</p>
                       <div className="flex flex-col gap-2">
                         {msg.options?.map((opt: any, i: number) => {
                           const label = typeof opt === 'string' ? opt : (opt.label || opt.text || String(opt));
                           const value = typeof opt === 'string' ? opt : (opt.value !== undefined ? opt.value : label);
                           const imageUrl = typeof opt === 'object' ? (opt.image_url || msg.optionImages?.[i]) : msg.optionImages?.[i];
                           return (
-                            <button key={i} onClick={() => handleMenuSelect(value, i, value, msg.sourceNodeId)} className="w-full text-right p-3 bg-slate-50 border border-slate-100 rounded-2xl hover:bg-blue-600 hover:text-white transition-all text-xs font-bold uppercase flex items-center gap-3 flex-row-reverse">
+                            <button key={i} onClick={() => handleMenuSelect(value, i, value, msg.sourceNodeId)} className="w-full text-start p-3 bg-slate-50 border border-slate-100 rounded-2xl hover:bg-blue-600 hover:text-white transition-all text-xs font-bold uppercase flex items-center gap-3">
                               {imageUrl && <img src={imageUrl} className="w-8 h-8 rounded-lg object-cover" alt="" />}
                               <span className="flex-1">{label}</span>
                             </button>
@@ -1342,7 +1344,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
           )
         ))}
         {isBotTyping && (
-          <div className="flex gap-2 bg-white border border-slate-100 p-4 rounded-3xl rounded-tr-none shadow-sm w-fit mr-12 ml-auto">
+          <div className="flex gap-2 bg-white border border-slate-100 p-4 rounded-3xl rounded-ss-none shadow-sm w-fit ms-12 me-auto">
             <div className="flex space-x-1.5"><div className="w-2 h-2 bg-blue-600/30 rounded-full animate-bounce"></div><div className="w-2 h-2 bg-blue-600/60 rounded-full animate-bounce [animation-delay:0.2s]"></div><div className="w-2 h-2 bg-blue-600 rounded-full animate-bounce [animation-delay:0.4s]"></div></div>
           </div>
         )}
@@ -1355,7 +1357,9 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
           const _dateTimeMode = _currentNode?.data?.dateTimeMode || 'date';
           const _inputType = _dateTimeMode === 'time' ? 'time' : _dateTimeMode === 'datetime' ? 'datetime-local' : 'date';
           return _isWaitingForDate ? (
-            <div className="flex items-center gap-3 bg-slate-50 rounded-[1.5rem] p-2.5 pr-4 border border-slate-100 flex-row-reverse">
+            // Fixed physical layout regardless of page language (input left, send button right) so the
+            // button's rotated Send icon keeps pointing at the input, matching the header's dir="ltr" convention.
+            <div className="flex items-center gap-3 bg-slate-50 rounded-[1.5rem] p-2.5 pr-4 border border-slate-100" dir="ltr">
               <input
                 type={_inputType}
                 dir="ltr"
@@ -1368,8 +1372,10 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
             </div>
           ) : (
             <div className="relative">
-              <div className="flex items-center gap-3 bg-slate-50 rounded-[1.5rem] p-2.5 pr-6 border border-slate-100 flex-row-reverse">
-                <input 
+              {/* Fixed physical layout regardless of page language (input left, send button right), matching
+                  the header's dir="ltr" convention; the Hebrew-language input keeps its own dir="rtl" below. */}
+              <div className="flex items-center gap-3 bg-slate-50 rounded-[1.5rem] p-2.5 pr-6 border border-slate-100" dir="ltr">
+                <input
                   type="text" 
                   placeholder="הקלד תגובה..." 
                   dir="rtl" 

@@ -379,7 +379,7 @@ const UserTypesManager: React.FC<Props> = ({ token, apiBase }) => {
   );
 
   return (
-    <div className="space-y-4" dir="rtl">
+    <div className="space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -479,7 +479,7 @@ const UserTypesManager: React.FC<Props> = ({ token, apiBase }) => {
             {/* Row header */}
             <div className="flex items-center justify-between p-4">
               <button
-                className="flex items-center gap-3 flex-1 text-right"
+                className="flex items-center gap-3 flex-1 text-start"
                 onClick={() => setExpandedId(isExpanded ? null : ut._id)}
               >
                 <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${ut.is_seeded ? 'bg-violet-100' : 'bg-blue-100'}`}>
@@ -499,12 +499,12 @@ const UserTypesManager: React.FC<Props> = ({ token, apiBase }) => {
                     <span className="text-xs text-slate-400">{ut.system_role}</span>
                   )}
                 </div>
-                <div className="mr-auto">
+                <div className="ms-auto">
                   {isExpanded ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
                 </div>
               </button>
 
-              <div className="flex items-center gap-2 mr-3">
+              <div className="flex items-center gap-2 ms-3">
                 {isExpanded && (
                   <button
                     onClick={() => save(ut._id)}

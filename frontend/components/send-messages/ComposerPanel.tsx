@@ -6,6 +6,7 @@ import {
 import { FileUploader } from '../FileUploader';
 import TemplateBodyParamsEditor from '../TemplateBodyParamsEditor';
 import PersonalizedTextarea from '../shared/PersonalizedTextarea';
+import { useTranslation } from 'react-i18next';
 
 interface SendBot {
   id: string;
@@ -57,6 +58,9 @@ const ComposerPanel: React.FC<ComposerPanelProps> = ({
   mediaType, setMediaType, mediaUrl, setMediaUrl, mediaFilename, setMediaFilename,
   token, sending, canSubmit, onSendNow, onOpenSchedule,
 }) => {
+  const { t } = useTranslation('messages');
+  const mediaLabel = (type: 'image' | 'video' | 'document') => t(`composer.media.types.${type}`);
+
   return (
     <div
       className="lg:col-span-3 bg-white rounded-3xl border border-slate-100 shadow-sm flex flex-col overflow-hidden"
@@ -64,7 +68,7 @@ const ComposerPanel: React.FC<ComposerPanelProps> = ({
     >
       {/* ── Header ── */}
       <div className="p-5 border-b border-slate-100 flex-shrink-0">
-        <h2 className="text-lg font-black text-slate-900">מה תרצה לכתוב</h2>
+        <h2 className="text-lg font-black text-slate-900">{t('composer.title')}</h2>
       </div>
 
       {/* ── Scrollable body ── */}
@@ -74,19 +78,19 @@ const ComposerPanel: React.FC<ComposerPanelProps> = ({
         {sendBotsLoading ? (
           <div className="flex items-center gap-2 text-xs font-semibold text-slate-400">
             <div className="animate-spin w-4 h-4 border-2 border-slate-200 border-t-green-500 rounded-full" />
-            טוען מספרים מחוברים...
+            {t('composer.bots.loading')}
           </div>
         ) : sendBots.length === 0 ? (
           <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs font-bold text-amber-700">
-            ⚠️ לא נמצאו מספרים מחוברים עם endpoint מוגדר.
+            {t('composer.bots.empty')}
           </div>
         ) : sendBots.length === 1 ? (
           <div className="p-3 bg-green-50 border border-green-200 rounded-xl text-xs font-bold text-green-700 flex items-center gap-2">
-            <Phone size={14} /> ישלח מ: {sendBots[0].display_phone_number} ({sendBots[0].name})
+            <Phone size={14} /> {t('composer.bots.sendFrom', { phone: sendBots[0].display_phone_number, name: sendBots[0].name })}
           </div>
         ) : (
           <div>
-            <label className="text-xs font-black text-slate-500 mb-2 block">בחר מספר שממנו תישלח ההודעה:</label>
+            <label className="text-xs font-black text-slate-500 mb-2 block">{t('composer.bots.choose')}</label>
             <div className="space-y-2">
               {sendBots.map(bot => (
                 <label
@@ -116,14 +120,14 @@ const ComposerPanel: React.FC<ComposerPanelProps> = ({
         {/* Template chooser */}
         <div>
           <div className="flex items-center justify-between mb-2">
-            <label className="text-xs font-black text-slate-500">הודעת תבנית (אופציונלי):</label>
+            <label className="text-xs font-black text-slate-500">{t('composer.template.label')}</label>
             {selectedTemplate && (
               <button
                 type="button"
                 onClick={() => { setSelectedTemplate(null); setTemplateParams({}); }}
                 className="text-xs font-bold text-slate-400 hover:text-red-500 flex items-center gap-1"
               >
-                <X size={12} /> בטל תבנית
+                <X size={12} /> {t('composer.template.clear')}
               </button>
             )}
           </div>
@@ -149,8 +153,8 @@ const ComposerPanel: React.FC<ComposerPanelProps> = ({
               {templateParams.header && (
                 <div className="mt-3">
                   <label className="text-xs font-bold text-slate-500 block mb-1">
-                    {templateParams.header.type === 'image' ? '🖼️ תמונה'
-                      : templateParams.header.type === 'video' ? '🎥 וידאו' : '📄 מסמך'}
+                    {templateParams.header.type === 'image' ? `🖼️ ${mediaLabel('image')}`
+                      : templateParams.header.type === 'video' ? `🎥 ${mediaLabel('video')}` : `📄 ${mediaLabel('document')}`}
                   </label>
                   <FileUploader
                     value={templateParams.header.url || ''}
@@ -162,8 +166,7 @@ const ComposerPanel: React.FC<ComposerPanelProps> = ({
                         : templateParams.header.type === 'video' ? 'video/*' : '*/*'
                     }
                     label={
-                      templateParams.header.type === 'image' ? 'תמונה'
-                        : templateParams.header.type === 'video' ? 'וידאו' : 'מסמך'
+                      mediaLabel(templateParams.header.type)
                     }
                     mediaType={templateParams.header.type}
                     token={token || ''}
@@ -188,7 +191,7 @@ const ComposerPanel: React.FC<ComposerPanelProps> = ({
               }}
               className="w-full px-4 py-3 bg-purple-50 hover:bg-purple-100 border-2 border-dashed border-purple-200 text-purple-700 rounded-2xl text-sm font-bold flex items-center justify-center gap-2 transition-colors"
             >
-              <FileText size={16} /> בחר תבנית הודעה
+              <FileText size={16} /> {t('composer.template.choose')}
             </button>
           )}
         </div>
@@ -196,25 +199,25 @@ const ComposerPanel: React.FC<ComposerPanelProps> = ({
         {/* Free text + media (only when no template selected) */}
         {!selectedTemplate && (
           <div>
-            <label className="text-xs font-black text-slate-500 mb-2 block">או הקלד הודעת טקסט חופשית:</label>
+            <label className="text-xs font-black text-slate-500 mb-2 block">{t('composer.freeText.label')}</label>
             <PersonalizedTextarea
               value={messageText}
               onChange={setMessageText}
               contactFields={contactFields}
               rows={3}
-              placeholder={mediaType ? 'כיתוב למדיה (אופציונלי)...' : 'הקלד את ההודעה כאן...'}
+              placeholder={mediaType ? t('composer.freeText.mediaCaptionPlaceholder') : t('composer.freeText.placeholder')}
               className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm outline-none focus:ring-4 focus:ring-green-600/10 focus:border-green-600 resize-none"
             />
 
             <div className="mt-3">
               <div className="flex items-center justify-between mb-2">
-                <label className="text-xs font-black text-slate-500">צירוף מדיה (אופציונלי):</label>
+                <label className="text-xs font-black text-slate-500">{t('composer.media.label')}</label>
                 {(mediaType || mediaUrl) && (
                   <button
                     onClick={() => { setMediaType(null); setMediaUrl(''); setMediaFilename(''); }}
                     className="text-xs font-bold text-slate-400 hover:text-red-500 flex items-center gap-1"
                   >
-                    <X size={12} /> הסר מדיה
+                    <X size={12} /> {t('composer.media.remove')}
                   </button>
                 )}
               </div>
@@ -225,26 +228,26 @@ const ComposerPanel: React.FC<ComposerPanelProps> = ({
                     onClick={() => setMediaType('image')}
                     className="flex flex-col items-center gap-1 p-3 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-2xl text-blue-700 font-bold text-xs transition-colors"
                   >
-                    <ImageIcon size={18} /> תמונה
+                    <ImageIcon size={18} /> {mediaLabel('image')}
                   </button>
                   <button
                     onClick={() => setMediaType('video')}
                     className="flex flex-col items-center gap-1 p-3 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-2xl text-rose-700 font-bold text-xs transition-colors"
                   >
-                    <Video size={18} /> וידאו
+                    <Video size={18} /> {mediaLabel('video')}
                   </button>
                   <button
                     onClick={() => setMediaType('document')}
                     className="flex flex-col items-center gap-1 p-3 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-2xl text-amber-700 font-bold text-xs transition-colors"
                   >
-                    <FileLucide size={18} /> מסמך
+                    <FileLucide size={18} /> {mediaLabel('document')}
                   </button>
                 </div>
               ) : (
                 <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl">
                   <div className="flex items-center gap-2 mb-3 text-xs font-black text-slate-600">
                     <Paperclip size={14} />
-                    {mediaType === 'image' ? 'העלה תמונה' : mediaType === 'video' ? 'העלה וידאו' : 'העלה מסמך'}
+                    {t(`composer.media.upload.${mediaType}`)}
                   </div>
                   <FileUploader
                     value={mediaUrl}
@@ -258,7 +261,7 @@ const ComposerPanel: React.FC<ComposerPanelProps> = ({
                     }}
                     accept={mediaType === 'image' ? 'image/*' : mediaType === 'video' ? 'video/*' : '*/*'}
                     mediaType={mediaType}
-                    label={mediaType === 'image' ? 'תמונה' : mediaType === 'video' ? 'וידאו' : 'מסמך'}
+                    label={mediaLabel(mediaType)}
                     token={token || ''}
                   />
                   {mediaUrl && (
@@ -280,14 +283,14 @@ const ComposerPanel: React.FC<ComposerPanelProps> = ({
           disabled={sending || !canSubmit}
           className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-sm disabled:opacity-50"
         >
-          <Calendar size={15} /> תזמון קבוע
+          <Calendar size={15} /> {t('composer.actions.schedule')}
         </button>
         <button
           onClick={onSendNow}
           disabled={sending || !canSubmit}
           className="flex items-center gap-2 px-6 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-xl font-bold text-sm disabled:opacity-50"
         >
-          <Send size={15} /> {sending ? 'מתחיל שליחה...' : 'שליחה מיידית'}
+          <Send size={15} /> {sending ? t('composer.actions.starting') : t('composer.actions.sendNow')}
         </button>
       </div>
 

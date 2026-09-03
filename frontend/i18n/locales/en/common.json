@@ -1,0 +1,15 @@
+{
+  "language": {
+    "label": "Language",
+    "hebrew": "עברית",
+    "english": "English"
+  },
+  "actions": {
+    "confirm": "Confirm",
+    "change": "Change"
+  },
+  "errors": {
+    "network": "Unable to connect to the server",
+    "networkRetry": "Unable to connect to the server. Please try again later."
+  }
+}
