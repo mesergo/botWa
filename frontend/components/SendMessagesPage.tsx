@@ -94,6 +94,7 @@ const SendMessagesPage: React.FC<SendMessagesPageProps> = ({
   const [manualPhonesText, setManualPhonesText] = useState('');
   const [contactSearch, setContactSearch] = useState('');
   const [groupSearch, setGroupSearch] = useState('');
+  const [excludeGroupId, setExcludeGroupId] = useState('');
   const [showSelectedContactsOnly, setShowSelectedContactsOnly] = useState(false);
   const [showSelectedGroupsOnly, setShowSelectedGroupsOnly] = useState(false);
 
@@ -243,6 +244,7 @@ const SendMessagesPage: React.FC<SendMessagesPageProps> = ({
             contact_ids: Array.from(selectedContactIds),
             group_ids: Array.from(selectedGroupIds),
             phones: manualPhonesList,
+            exclude_group_id: excludeGroupId || undefined,
           }),
         });
         const data = await res.json();
@@ -254,7 +256,7 @@ const SendMessagesPage: React.FC<SendMessagesPageProps> = ({
       }
     }, 500);
     return () => clearTimeout(t);
-  }, [selectedContactIds, selectedGroupIds, manualPhonesList, authHeader, token]);
+  }, [selectedContactIds, selectedGroupIds, manualPhonesList, excludeGroupId, authHeader, token]);
 
   const filteredContacts = useMemo(() => {
     const q = contactSearch.trim().toLowerCase();
@@ -326,6 +328,7 @@ const SendMessagesPage: React.FC<SendMessagesPageProps> = ({
       };
       if (selectedSendBotId) body.bot_id = selectedSendBotId;
       if (scheduledAtMs) body.scheduled_at = scheduledAtMs;
+      if (excludeGroupId) body.exclude_group_id = excludeGroupId;
 
       if (selectedTemplate) {
         body.isTemplate = true;
@@ -369,6 +372,7 @@ const SendMessagesPage: React.FC<SendMessagesPageProps> = ({
         setSelectedContactIds(new Set());
         setSelectedGroupIds(new Set());
         setManualPhonesText('');
+        setExcludeGroupId('');
       } else {
         alert(data.error || 'שגיאה בשליחה');
       }
@@ -585,6 +589,8 @@ const SendMessagesPage: React.FC<SendMessagesPageProps> = ({
                   setAudienceTab={setAudienceTab}
                   previewLoading={previewLoading}
                   previewTotal={previewTotal}
+                  excludeGroupId={excludeGroupId}
+                  setExcludeGroupId={setExcludeGroupId}
                 />
                 <ComposerPanel
                   sendBotsLoading={sendBotsLoading}

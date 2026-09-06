@@ -340,11 +340,11 @@ const BaseNode: React.FC<BaseNodeProps> = ({ id, title, icon, children, type, se
           <Handle
             type="source"
             position={Position.Right}
-            className={`w-5 h-5 border-2 border-white rounded-full -right-[10px] shadow-lg transition-colors duration-200 ${isSourceHovered ? 'bg-red-500' : isHovered ? 'bg-emerald-500' : 'bg-slate-400'} ${isTerminal ? 'hidden' : ''}`}
+            className={`node-exit-handle w-5 h-5 border-2 border-white rounded-full -right-[10px] shadow-lg transition-colors duration-200 ${isSourceHovered ? 'bg-red-500' : isHovered ? 'bg-emerald-500' : 'bg-slate-400'} ${isTerminal ? 'hidden' : ''}`}
           />
           {hasSourceEdge && (
             <div
-              className="absolute -right-[10px] top-1/2 -translate-y-1/2 w-5 h-5 flex items-center justify-center cursor-pointer rounded-full"
+              className="node-exit-handle absolute -right-[10px] top-1/2 -translate-y-1/2 w-5 h-5 flex items-center justify-center cursor-pointer rounded-full"
               style={{ zIndex: 1000 }}
               onMouseEnter={() => setIsSourceHovered(true)}
               onMouseLeave={() => setIsSourceHovered(false)}

@@ -39,6 +39,8 @@ interface EditorProps {
   onNodesChange: any;
   onEdgesChange: any;
   onConnect: any;
+  onConnectStart?: any;
+  onConnectEnd?: any;
   onInit: (instance: ReactFlowInstance) => void;
   onDrop: (event: React.DragEvent) => void;
   onSearchChange: (q: string) => void;
@@ -124,7 +126,7 @@ const HighlightedText: React.FC<{ text: string; query: string }> = ({ text, quer
 const Editor: React.FC<EditorProps> = ({
   selectedBot, nodes, edges, fixedProcesses, versions, currentUser, token, viewMode, activeProcessId,
   searchQuery, searchResults, currentSearchIndex, reactFlowWrapper, nodeTypes, edgeTypes, isSimulatorOpen,
-  onNodesChange, onEdgesChange, onConnect, onInit, onDrop, onSearchChange, onSearchNav, onTidy, onPublish,
+  onNodesChange, onEdgesChange, onConnect, onConnectStart, onConnectEnd, onInit, onDrop, onSearchChange, onSearchNav, onTidy, onPublish,
   onCloseEditor, onHome, onSimulatorOpen, onSimulatorClose, onDuplicate, onChangeTemplate, sidebarProps,
   isEditingTemplate, onSaveTemplate, existingTemplateData, onOpenContacts, onOpenSessions, initialParams, onManageParams, onNodeFocus, onFixedProcessActive, isTransitioning,
   globalSearchResults, onNavigateToProcessResult, onOpenBotSettings, saveStatus, onRenameProcess, onRenameBot,
@@ -417,6 +419,7 @@ const Editor: React.FC<EditorProps> = ({
             <ReactFlow
               nodes={nodes} edges={edges}
               onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect}
+              onConnectStart={onConnectStart} onConnectEnd={onConnectEnd}
               onInit={onInit} onDrop={onDrop}
               onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }}
               nodeTypes={nodeTypes} edgeTypes={edgeTypes}

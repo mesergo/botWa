@@ -1,6 +1,7 @@
 import React from 'react';
 import { Search, Users, Layers, Phone } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import ExcludeGroupSelector from '../shared/ExcludeGroupSelector';
 
 type AudienceTab = 'contacts' | 'groups' | 'phones';
 
@@ -52,6 +53,9 @@ interface AudiencePanelProps {
   // preview
   previewLoading: boolean;
   previewTotal: number | null;
+  // exclude group
+  excludeGroupId: string;
+  setExcludeGroupId: (id: string) => void;
 }
 
 const AudiencePanel: React.FC<AudiencePanelProps> = ({
@@ -62,6 +66,7 @@ const AudiencePanel: React.FC<AudiencePanelProps> = ({
   manualPhonesText, setManualPhonesText, manualPhonesList,
   audienceTab, setAudienceTab,
   previewLoading, previewTotal,
+  excludeGroupId, setExcludeGroupId,
 }) => {
   const { t } = useTranslation('messages');
   const tabs: { key: AudienceTab; label: string; Icon: React.FC<{ size?: number }>; count: number }[] = [
@@ -78,7 +83,7 @@ const AudiencePanel: React.FC<AudiencePanelProps> = ({
       {/* ── Header + tabs ── */}
       <div className="p-5 border-b border-slate-100 flex-shrink-0">
         <h2 className="text-lg font-black text-slate-900 mb-3">{t('audience.title')}</h2>
-        <div className="flex items-center gap-1 bg-slate-100 rounded-2xl p-1">
+        <div className="flex items-center gap-1 bg-slate-100 rounded-2xl p-1 mb-3">
           {tabs.map(t => (
             <button
               key={t.key}
@@ -95,6 +100,11 @@ const AudiencePanel: React.FC<AudiencePanelProps> = ({
             </button>
           ))}
         </div>
+        <ExcludeGroupSelector
+          groups={groups}
+          excludeGroupId={excludeGroupId}
+          setExcludeGroupId={setExcludeGroupId}
+        />
       </div>
 
       {/* ── Scrollable tab content ── */}

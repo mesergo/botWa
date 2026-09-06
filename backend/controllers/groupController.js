@@ -524,7 +524,7 @@ export const sendToGroup = async (req, res) => {
 // Combines individually-picked contacts, whole distribution lists, and manually
 // typed phone numbers into ONE deduplicated recipient set — the same phone can
 // never receive the broadcast twice even if it came in via more than one source.
-async function resolveCustomAudience(userId, { contact_ids = [], phones = [], group_ids = [] } = {}) {
+async function resolveCustomAudience(userId, { contact_ids = [], phones = [], group_ids = [], exclude_group_id = null } = {}) {
   const idSet = new Set((contact_ids || []).map(String));
 
   // 1. Union in every contact belonging to each selected distribution list
@@ -564,7 +564,18 @@ async function resolveCustomAudience(userId, { contact_ids = [], phones = [], gr
 
   // 5. Apply the existing blocklist filter, same as classic group broadcasts
   const blocked = await getBlockedPhones(userId);
-  const contacts = Array.from(byPhone.values()).filter(c => !blocked.has(normalizePhone(c.phone)));
+  let contacts = Array.from(byPhone.values()).filter(c => !blocked.has(normalizePhone(c.phone)));
+
+  // 6. Exclude contacts that belong to a specific group (mirrors sendToGroup's exclude_group_id)
+  if (exclude_group_id) {
+    const excludeGroup = await Group.findOne({ _id: exclude_group_id, user_id: userId });
+    if (excludeGroup && excludeGroup.contact_ids?.length) {
+      const excludeSet = new Set(excludeGroup.contact_ids.map(cid => String(cid)));
+      const before = contacts.length;
+      contacts = contacts.filter(c => !excludeSet.has(String(c._id)));
+      console.log(`[groups.resolveCustomAudience] Excluding group "${excludeGroup.name}" — removed ${before - contacts.length} contacts`);
+    }
+  }
 
   // Build a human-readable audience summary label, e.g. "2 רשימות + 5 אנשי קשר + 3 מספרים"
   const parts = [];
@@ -580,8 +591,8 @@ async function resolveCustomAudience(userId, { contact_ids = [], phones = [], gr
 export const previewCustomAudience = async (req, res) => {
   try {
     const userId = getEffectiveUserId(req);
-    const { contact_ids, phones, group_ids } = req.body || {};
-    const { contacts, audienceSummary } = await resolveCustomAudience(userId, { contact_ids, phones, group_ids });
+    const { contact_ids, phones, group_ids, exclude_group_id } = req.body || {};
+    const { contacts, audienceSummary } = await resolveCustomAudience(userId, { contact_ids, phones, group_ids, exclude_group_id });
     res.json({
       total: contacts.length,
       audience_summary: audienceSummary,
@@ -597,7 +608,7 @@ export const previewCustomAudience = async (req, res) => {
 export const sendCustomBroadcast = async (req, res) => {
   try {
     const userId = getEffectiveUserId(req);
-    const { message, isTemplate, templateData, media, bot_id, scheduled_at, contact_ids, phones, group_ids } = req.body || {};
+    const { message, isTemplate, templateData, media, bot_id, scheduled_at, contact_ids, phones, group_ids, exclude_group_id } = req.body || {};
 
     const hasMedia = media && media.url && media.type;
     if (!isTemplate && !hasMedia && (!message || !String(message).trim())) {
@@ -609,7 +620,7 @@ export const sendCustomBroadcast = async (req, res) => {
       return res.status(400).json({ error: 'scheduled_at must be a future Unix timestamp in milliseconds' });
     }
 
-    const { contacts, audienceSummary, resolvedGroupIds, manualPhones } = await resolveCustomAudience(userId, { contact_ids, phones, group_ids });
+    const { contacts, audienceSummary, resolvedGroupIds, manualPhones } = await resolveCustomAudience(userId, { contact_ids, phones, group_ids, exclude_group_id });
     const msgText = String(message || '').trim();
 
     const broadcast = await GroupBroadcast.create({

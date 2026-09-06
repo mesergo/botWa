@@ -495,11 +495,31 @@ const walkChain = async (startNodeId, nodes, edges, session, flowId, req = null,
       }
 
       case 'output_image': {
+        const mediaType = nodeData.mediaType || 'image';
+
+        if (mediaType === 'contact') {
+          const contactMsg = {
+            type: 'Contact',
+            contactName: replaceParameters(nodeData.contactName || '', params),
+            contactPhone: replaceParameters(nodeData.contactPhone || '', params),
+            created: new Date().toISOString()
+          };
+          messages.push(contactMsg);
+          addToHistory(session, contactMsg, currentNodeId);
+
+          const nextNodeContact = findNextNode(currentNodeId, edges);
+          if (!nextNodeContact) {
+            returnToMenu();
+            return messages;
+          }
+          currentNodeId = nextNodeContact;
+          break;
+        }
+
         let url = replaceParameters(nodeData.url || '', params);
         // Convert base64 to URL if needed
         url = convertBase64ToUrl(url, req);
         
-        const mediaType = nodeData.mediaType || 'image';
         const caption = replaceParameters(nodeData.caption || '', params);
         
         // Send media message with the caption embedded in the same message

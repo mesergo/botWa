@@ -29,7 +29,7 @@ export const FixedProcessNode = (props: any) => {
       <Handle
         type="source"
         position={Position.Right}
-        className="w-3 h-3 bg-purple-500 border-2 border-white rounded-full -right-1.5"
+        className="node-exit-handle w-3 h-3 bg-purple-500 border-2 border-white rounded-full -right-1.5"
       />
     </BaseNode>
   );

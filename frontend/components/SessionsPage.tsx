@@ -1974,6 +1974,15 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                       <ExternalLink size={13} /> פתח מסמך
                     </a>
                   )}
+                  {item.type === 'Contact' && (
+                    <div className="flex items-center gap-2 p-2 bg-purple-100 rounded-xl mb-2">
+                      <User size={14} />
+                      <div className="flex flex-col text-xs">
+                        <span className="font-bold">{item.contactName}</span>
+                        <span className="opacity-70">{item.contactPhone}</span>
+                      </div>
+                    </div>
+                  )}
                   {text && <WhatsAppText text={text} className="leading-snug" />}
                   {Array.isArray(item.template_buttons) && item.template_buttons.length > 0 && (
                     <div className="flex flex-col gap-1 mt-2 pt-2 border-t border-purple-200">
@@ -2055,6 +2064,15 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                       className="flex items-center gap-2 p-2 bg-amber-100 rounded-xl hover:bg-amber-200 transition-colors text-amber-700 text-xs font-bold mb-2">
                       <ExternalLink size={13} /> פתח מסמך
                     </a>
+                  )}
+                  {item.type === 'Contact' && (
+                    <div className="flex items-center gap-2 p-2 bg-amber-100 rounded-xl mb-2">
+                      <User size={14} />
+                      <div className="flex flex-col text-xs">
+                        <span className="font-bold">{item.contactName}</span>
+                        <span className="opacity-70">{item.contactPhone}</span>
+                      </div>
+                    </div>
                   )}
                   {text && <WhatsAppText text={text} className="leading-snug" />}
                   {Array.isArray(item.template_buttons) && item.template_buttons.length > 0 && (
@@ -2142,6 +2160,15 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                     </a>
                     {text && <p className="whitespace-pre-wrap leading-relaxed">{text}</p>}
                   </>
+                )}
+                {item.type === 'Contact' && (
+                  <div className="flex items-center gap-2 p-2 bg-slate-50 rounded-xl mb-1">
+                    <User size={14} />
+                    <div className="flex flex-col text-xs">
+                      <span className="font-bold">{item.contactName}</span>
+                      <span className="opacity-70">{item.contactPhone}</span>
+                    </div>
+                  </div>
                 )}
                 {item.type === 'URL' && (
                   <div>
