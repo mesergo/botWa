@@ -79,7 +79,9 @@
     "templateUpdated": "תבנית עודכנה בהצלחה!",
     "updateTemplateFailed": "שגיאה בעדכון תבנית",
     "saveParamsFailed": "שגיאה בשמירת הפרמטרים",
-    "changeTemplateFailed": "שגיאה בהחלפת התסריט"
+    "changeTemplateFailed": "שגיאה בהחלפת התסריט",
+    "extractProcessFailed": "שגיאה ביצירת התהליך מהרכיבים שנבחרו. אנא נסה שוב.",
+    "extractNameRequired": "נא להזין שם לתהליך החדש"
   },
   "params": {
     "title": "ניהול פרמטרים",
@@ -115,7 +117,19 @@
     "deleteTitle": "אישור מחיקה",
     "deleteWarning": "שים לב: תהליך זה מופיע <0>{{count}}</0> פעמים בסך כל הבוטים. המחיקה תסיר את כל המופעים של <1>{{name}}</1> מכל הבוטים.",
     "deleteConfirmQuestion": "האם אתה בטוח שברצונך למחוק?",
-    "delete": "מחק"
+    "delete": "מחק",
+    "extractCopyTitle": "העתקה לתהליכים שלי",
+    "extractCopyDescription": "הרכיבים שנבחרו יישארו בתסריט ללא שינוי, ויישמר עותק שלהם כתהליך חדש ברשימת \"התהליכים שלי\".",
+    "extractMoveTitle": "העברה לתהליכים שלי",
+    "extractMoveDescription": "הרכיבים שנבחרו יוסרו מהתסריט ויקובצו לתהליך חדש ברשימת \"התהליכים שלי\", ובמקומם יופיע רכיב תהליך יחיד.",
+    "extractNamePlaceholder": "שם התהליך החדש...",
+    "extractConfirmCopy": "העתק",
+    "extractConfirmMove": "העבר",
+    "deleteSelectionTitle": "מחיקת רכיבים נבחרים",
+    "deleteSelectionWarning": "האם למחוק <0>{{count}}</0> רכיבים שנבחרו מהתסריט? לא ניתן לשחזר פעולה זו.",
+    "deleteSelectionConfirm": "מחק רכיבים",
+    "deleting": "מוחק...",
+    "extracting": "יוצר..."
   },
   "changeTemplateModal": {
     "title": "הזהרה",

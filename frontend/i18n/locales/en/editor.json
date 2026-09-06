@@ -79,7 +79,9 @@
     "templateUpdated": "Template updated successfully.",
     "updateTemplateFailed": "Could not update the template",
     "saveParamsFailed": "Could not save the parameters",
-    "changeTemplateFailed": "Could not change the script"
+    "changeTemplateFailed": "Could not change the script",
+    "extractProcessFailed": "Failed to create a process from the selected components. Please try again.",
+    "extractNameRequired": "Please enter a name for the new process"
   },
   "params": {
     "title": "Manage parameters",
@@ -115,7 +117,19 @@
     "deleteTitle": "Confirm deletion",
     "deleteWarning": "Note: this process appears <0>{{count}}</0> times across all bots. Deleting it will remove every instance of <1>{{name}}</1> from all bots.",
     "deleteConfirmQuestion": "Are you sure you want to delete it?",
-    "delete": "Delete"
+    "delete": "Delete",
+    "extractCopyTitle": "Copy to My processes",
+    "extractCopyDescription": "The selected components stay in the script unchanged, and a copy of them is saved as a new process in \"My processes\".",
+    "extractMoveTitle": "Move to My processes",
+    "extractMoveDescription": "The selected components are removed from the script and grouped into a new process in \"My processes\"; a single process component takes their place.",
+    "extractNamePlaceholder": "New process name…",
+    "extractConfirmCopy": "Copy",
+    "extractConfirmMove": "Move",
+    "deleteSelectionTitle": "Delete selected components",
+    "deleteSelectionWarning": "Delete <0>{{count}}</0> selected components from the script? This cannot be undone.",
+    "deleteSelectionConfirm": "Delete components",
+    "deleting": "Deleting…",
+    "extracting": "Creating…"
   },
   "changeTemplateModal": {
     "title": "Warning",

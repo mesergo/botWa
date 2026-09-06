@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
+import dns from 'dns';
 
 // Load environment variables
 dotenv.config();
@@ -10,7 +11,18 @@ async function connectDB() {
   try { 
 
     const isProduction = process.env.NODE_ENV === 'production';
-    
+
+    // Some local ISPs/routers hand out a DNS server that refuses Node's raw SRV
+    // queries (needed to resolve mongodb+srv:// hosts) even though normal A-record
+    // lookups work fine through it — causing "querySrv ECONNREFUSED" even with a
+    // working internet connection. Falling back to public resolvers in dev avoids
+    // depending on whatever DNS server the current network handed out. Left out of
+    // production, where the host's DNS is expected to be reliable and some
+    // providers restrict outbound DNS to internal resolvers only.
+    if (!isProduction) {
+      dns.setServers(['8.8.8.8', '8.8.4.4']);
+    }
+
     console.log('🔌 Connecting to MongoDB...');
     console.log('🌍 Environment:', process.env.NODE_ENV || 'development');
     

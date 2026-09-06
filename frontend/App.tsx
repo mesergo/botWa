@@ -22,7 +22,7 @@ import SendMessagesPage from './components/SendMessagesPage';
 import ActiveContactsQuotaToast from './components/ActiveContactsQuotaToast';
 import { StartNode, InputTextNode, InputDateNode, InputFileNode, OutputTextNode, OutputImageNode, OutputLinkNode, OutputMenuNode, ActionWebServiceNode, ActionWaitNode, ActionTimeRoutingNode, ActionAddToGroupNode, ActionRemoveFromGroupNode, ActionTransferToAgentNode, ActionSetParameterNode, ActionReturnToMainMenuNode, FixedProcessNode, AutomaticResponsesNode } from './components/nodes/CustomNodes';
 import ButtonEdge from './components/edges/ButtonEdge';
-import { CloudUpload, RotateCcw, Plus, AlertTriangle, Copy, X, Lock, Wallet, Sliders, Save } from 'lucide-react';
+import { CloudUpload, RotateCcw, Plus, AlertTriangle, Copy, X, Lock, Wallet, Sliders, Save, Layers } from 'lucide-react';
 import Simulator from './components/Simulator';
 import AdminPanel from './components/AdminPanel';
 import HomePage from './components/HomePage'; 
@@ -298,6 +298,16 @@ const FlowBuilder: React.FC = () => {
 
   const [isProcessModalOpen, setIsProcessModalOpen] = useState(false);
   const [newProcessName, setNewProcessName] = useState('');
+
+  // Canvas multi-select mode: select several nodes at once and bulk copy/move
+  // them into a new "My processes" entry, or delete them together.
+  const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
+  const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
+  const [bulkExtractMode, setBulkExtractMode] = useState<'copy' | 'move' | null>(null);
+  const [bulkExtractName, setBulkExtractName] = useState('');
+  const [isBulkExtracting, setIsBulkExtracting] = useState(false);
+  const [isBulkDeleteModalOpen, setIsBulkDeleteModalOpen] = useState(false);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
 
   // Quota State
   const [quotaError, setQuotaError] = useState<{ type: 'bots' | 'versions', message: string, price: number } | null>(null);
@@ -1959,6 +1969,154 @@ const FlowBuilder: React.FC = () => {
     }
   };
 
+  // ── Canvas multi-select mode ────────────────────────────────────────────────
+  // Toggling it on/off just flips the flag and clears any leftover selection —
+  // the actual box/ctrl-click selection itself is handled natively by ReactFlow.
+  const toggleMultiSelectMode = () => {
+    setIsMultiSelectMode(v => !v);
+    setSelectedNodeIds([]);
+    setNodes(nds => nds.map(n => n.selected ? { ...n, selected: false } : n));
+  };
+
+  const onCanvasSelectionChange = useCallback((params: { nodes: Node[] }) => {
+    setSelectedNodeIds(params.nodes.map(n => n.id));
+  }, []);
+
+  const clearBulkSelection = () => {
+    setSelectedNodeIds([]);
+    setNodes(nds => nds.map(n => n.selected ? { ...n, selected: false } : n));
+  };
+
+  // The start node (or its "automatic responses" equivalent) is never part of a
+  // bulk operation — it can't be deleted or extracted individually either.
+  const getBulkEligibleIds = () => {
+    const idSet = new Set(selectedNodeIds);
+    return nodes
+      .filter(n => idSet.has(n.id) && n.type !== NodeType.START && n.type !== NodeType.AUTOMATIC_RESPONSES)
+      .map(n => n.id);
+  };
+
+  const handleBulkDeleteRequest = () => {
+    if (getBulkEligibleIds().length === 0) return;
+    setIsBulkDeleteModalOpen(true);
+  };
+
+  const confirmBulkDelete = async () => {
+    if (isBulkDeleting) return; // guard against a double click firing this twice
+    setIsBulkDeleting(true);
+    try {
+      const idSet = new Set(getBulkEligibleIds());
+      const remainingNodes = nodes.filter(n => !idSet.has(n.id));
+      const remainingEdges = edges.filter(e => !idSet.has(e.source) && !idSet.has(e.target));
+      setNodes(remainingNodes);
+      setEdges(remainingEdges);
+      // We save this intentional shrink ourselves (forced) right below, so the
+      // generic autosave effect doesn't also need to react to this state change.
+      dirtyRef.current = false;
+      setSelectedNodeIds([]);
+      setIsBulkDeleteModalOpen(false);
+      // A bulk delete legitimately shrinks the flow's widget count — force the
+      // save so the server's stale/shrink guard (meant to catch a stale tab
+      // silently wiping content) doesn't reject this user-confirmed change.
+      await syncFlow(remainingNodes, remainingEdges, activeProcessId, { force: true });
+    } finally {
+      setIsBulkDeleting(false);
+    }
+  };
+
+  const openBulkExtractModal = (mode: 'copy' | 'move') => {
+    if (getBulkEligibleIds().length === 0) return;
+    setBulkExtractMode(mode);
+    setBulkExtractName('');
+  };
+
+  // Extracts the selected nodes into a brand-new "My processes" entry.
+  // 'copy'  — the originals stay on the canvas untouched; the new process is an
+  //           independent snapshot, exactly like any other process created via
+  //           the "+" button (opening/editing it works the same way as always).
+  // 'move'  — the originals are removed from the canvas and replaced by a single
+  //           process node in their place, with boundary edges reconnected to it.
+  const handleConfirmBulkExtract = async () => {
+    const mode = bulkExtractMode;
+    if (!mode || !bulkExtractName.trim() || !selectedBot || !token) return;
+    if (isBulkExtracting) return; // guard against a double click creating the process twice
+    const idSet = new Set(getBulkEligibleIds());
+    const selectedNodesList = nodes.filter(n => idSet.has(n.id));
+    if (selectedNodesList.length === 0) { setBulkExtractMode(null); return; }
+
+    setIsBulkExtracting(true);
+    try {
+      const res = await fetch(`${API_BASE}/processes`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ name: bulkExtractName, flow_id: selectedBot.id })
+      });
+      const newProc = await res.json();
+      if (!newProc.id) { alert(t('editor:alerts.extractProcessFailed')); return; }
+
+      const idMap: Record<string, string> = {};
+      const clonedNodes = selectedNodesList.map(n => {
+        const newId = `${n.type}-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+        idMap[n.id] = newId;
+        return { ...n, id: newId, selected: false };
+      });
+      const internalEdges = edges.filter(e => idSet.has(e.source) && idSet.has(e.target));
+      const clonedEdges = internalEdges.map(e => ({
+        ...e,
+        id: `e-${idMap[e.source]}-${idMap[e.target]}-${Math.random().toString(36).substr(2, 5)}`,
+        source: idMap[e.source],
+        target: idMap[e.target]
+      }));
+
+      // Sync to the brand-new process — bypass the ready-key/shrink guards,
+      // same as the existing "duplicate process" flow above.
+      await syncFlow(clonedNodes, clonedEdges, newProc.id, { force: true });
+      await loadProcesses();
+
+      if (mode === 'move') {
+        const avgX = selectedNodesList.reduce((s, n) => s + n.position.x, 0) / selectedNodesList.length;
+        const avgY = selectedNodesList.reduce((s, n) => s + n.position.y, 0) / selectedNodesList.length;
+        const refNodeId = `${NodeType.FIXED_PROCESS}-${Date.now()}`;
+        const nextNum = nodes.filter(n => n.data.serialId?.startsWith('B')).length + 1;
+        const refNode = bindNodeCallbacks({
+          id: refNodeId,
+          type: NodeType.FIXED_PROCESS,
+          position: { x: avgX, y: avgY },
+          data: { label: bulkExtractName, processId: newProc.id, serialId: `B${nextNum}`, isStandardProcess: true }
+        });
+
+        // Boundary edges (one endpoint inside the selection, one outside) get
+        // reattached to the new process node in place of the removed nodes;
+        // edges fully inside the selection were already cloned above and are dropped here.
+        const remainingEdges = edges
+          .filter(e => !(idSet.has(e.source) && idSet.has(e.target)))
+          .map(e => {
+            if (idSet.has(e.source)) return { ...e, source: refNodeId, id: `e-${refNodeId}-${e.target}-${Math.random().toString(36).substr(2, 5)}` };
+            if (idSet.has(e.target)) return { ...e, target: refNodeId, id: `e-${e.source}-${refNodeId}-${Math.random().toString(36).substr(2, 5)}` };
+            return e;
+          });
+
+        const remainingNodes = nodes.filter(n => !idSet.has(n.id)).concat([refNode]);
+        setNodes(remainingNodes);
+        setEdges(remainingEdges);
+        // Same reasoning as the bulk-delete flow: this shrinks the flow's widget
+        // count on purpose, so save it ourselves (forced) instead of leaving it
+        // to the generic autosave, which would trip the server's shrink guard.
+        dirtyRef.current = false;
+        await syncFlow(remainingNodes, remainingEdges, activeProcessId, { force: true });
+      }
+
+      setSelectedNodeIds([]);
+      setBulkExtractMode(null);
+      setBulkExtractName('');
+    } catch (e) {
+      console.error('Bulk extract failed', e);
+      alert(t('editor:alerts.extractProcessFailed'));
+    } finally {
+      setIsBulkExtracting(false);
+    }
+  };
+
   const handleInitializeFromTemplate = async (templateId: string, values: Record<string, string>) => {
     if (!selectedBot || !token) return;
     try {
@@ -2199,6 +2357,8 @@ const FlowBuilder: React.FC = () => {
     const closingProcessId = activeProcessId;
     setActiveProcessId(null);
     setViewMode('editor');
+    setIsMultiSelectMode(false);
+    setSelectedNodeIds([]);
     loadFlow(selectedBot?.id || null).then(() => {
       requestAnimationFrame(() =>        // React commits new nodes to DOM
         requestAnimationFrame(() =>      // ReactFlow measures node sizes
@@ -2227,6 +2387,8 @@ const FlowBuilder: React.FC = () => {
     await syncFlowRef.current();
     setActiveProcessId(id);
     setViewMode('editing-process');
+    setIsMultiSelectMode(false);
+    setSelectedNodeIds([]);
     loadFlow(selectedBot?.id || null, id).then(() => {
       requestAnimationFrame(() =>
         requestAnimationFrame(() =>
@@ -2245,6 +2407,8 @@ const FlowBuilder: React.FC = () => {
     await syncFlowRef.current();
     setActiveProcessId(id);
     setViewMode('viewing-process');
+    setIsMultiSelectMode(false);
+    setSelectedNodeIds([]);
     loadFlow(selectedBot?.id || null, id).then(() => {
       requestAnimationFrame(() =>
         requestAnimationFrame(() =>
@@ -2973,6 +3137,12 @@ const FlowBuilder: React.FC = () => {
         onRenameProcess={handleRenameProcess}
         onRenameBot={handleRenameBot}
         saveStatus={saveStatus}
+        isMultiSelectMode={isMultiSelectMode}
+        selectedNodeIds={selectedNodeIds}
+        onCanvasSelectionChange={onCanvasSelectionChange}
+        onBulkDelete={handleBulkDeleteRequest}
+        onBulkExtract={openBulkExtractModal}
+        onClearSelection={clearBulkSelection}
         sidebarProps={{
           fixedProcesses,
           versions,
@@ -2989,7 +3159,8 @@ const FlowBuilder: React.FC = () => {
           onRestoreArchivedVersion: (versionId: string, versionPrice: number) => {
             setArchivedVersionToRestore({ id: versionId, price: versionPrice });
             setIsRestoreArchivedModalOpen(true);
-          }
+          },
+          onToggleMultiSelect: toggleMultiSelectMode
         }}
       />
 
@@ -3111,6 +3282,64 @@ const FlowBuilder: React.FC = () => {
             <div className="flex gap-4">
               <button onClick={() => { setIsDeleteModalOpen(false); setProcessToDelete(null); }} className="flex-1 py-4 border border-slate-200 text-slate-400 rounded-2xl font-bold text-xs uppercase tracking-widest hover:bg-slate-50 transition-colors">{t('editor:processModal.cancel')}</button>
               <button onClick={confirmDeleteProcess} className="flex-1 py-4 bg-red-500 text-white rounded-2xl font-bold text-xs uppercase tracking-widest shadow-lg shadow-red-500/20 hover:bg-red-600 transition-colors">{t('editor:processModal.delete')}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isBulkDeleteModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[120] p-6 text-start">
+          <div className="bg-white w-full max-w-sm rounded-[2.5rem] shadow-2xl p-10 animate-in zoom-in duration-200 border border-slate-100">
+            <div className="w-16 h-16 bg-red-50 text-red-500 rounded-3xl flex items-center justify-center mb-6 me-0"><AlertTriangle size={32} /></div>
+            <h3 className="text-2xl font-bold text-slate-900 mb-2 text-start">{t('editor:processModal.deleteSelectionTitle')}</h3>
+            <p className="text-slate-500 text-sm mb-8 font-medium leading-relaxed text-start">
+              <Trans
+                i18nKey="processModal.deleteSelectionWarning"
+                ns="editor"
+                values={{ count: selectedNodeIds.length }}
+                components={[<span key="count" className="text-red-600 font-bold" />]}
+              />
+            </p>
+            <div className="flex gap-4">
+              <button onClick={() => setIsBulkDeleteModalOpen(false)} disabled={isBulkDeleting} className="flex-1 py-4 border border-slate-200 text-slate-400 rounded-2xl font-bold text-xs uppercase tracking-widest hover:bg-slate-50 transition-colors disabled:opacity-50">{t('editor:processModal.cancel')}</button>
+              <button onClick={confirmBulkDelete} disabled={isBulkDeleting} className="flex-1 py-4 bg-red-500 text-white rounded-2xl font-bold text-xs uppercase tracking-widest shadow-lg shadow-red-500/20 hover:bg-red-600 transition-colors disabled:opacity-50">{isBulkDeleting ? t('editor:processModal.deleting') : t('editor:processModal.deleteSelectionConfirm')}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {bulkExtractMode && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[120] p-6 text-start">
+          <div className="bg-white w-full max-w-sm rounded-[2.5rem] shadow-2xl p-10 animate-in zoom-in duration-200 border border-slate-100">
+            <div className={`w-16 h-16 rounded-3xl flex items-center justify-center mb-6 me-0 ${bulkExtractMode === 'copy' ? 'bg-blue-50 text-blue-600' : 'bg-indigo-50 text-indigo-600'}`}>
+              {bulkExtractMode === 'copy' ? <Copy size={32} /> : <Layers size={32} />}
+            </div>
+            <h3 className="text-2xl font-bold text-slate-900 mb-2 text-start">
+              {bulkExtractMode === 'copy' ? t('editor:processModal.extractCopyTitle') : t('editor:processModal.extractMoveTitle')}
+            </h3>
+            <p className="text-slate-400 text-sm mb-8 font-medium leading-relaxed text-start">
+              {bulkExtractMode === 'copy' ? t('editor:processModal.extractCopyDescription') : t('editor:processModal.extractMoveDescription')}
+            </p>
+            <div className="space-y-6">
+              <input
+                className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-blue-600/10 focus:border-blue-600 transition-all text-sm font-bold text-start"
+                placeholder={t('editor:processModal.extractNamePlaceholder')}
+                value={bulkExtractName}
+                onChange={e => setBulkExtractName(e.target.value)}
+                autoFocus
+              />
+              <div className="flex gap-4">
+                <button onClick={() => { setBulkExtractMode(null); setBulkExtractName(''); }} disabled={isBulkExtracting} className="flex-1 py-4 border border-slate-200 text-slate-400 rounded-2xl font-bold text-xs uppercase tracking-widest hover:bg-slate-50 transition-colors disabled:opacity-50">{t('editor:processModal.cancel')}</button>
+                <button
+                  onClick={handleConfirmBulkExtract}
+                  disabled={!bulkExtractName.trim() || isBulkExtracting}
+                  className={`flex-1 py-4 text-white rounded-2xl font-bold text-xs uppercase tracking-widest shadow-lg transition-colors disabled:opacity-50 ${bulkExtractMode === 'copy' ? 'bg-blue-600 hover:bg-blue-700 shadow-blue-600/20' : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-600/20'}`}
+                >
+                  {isBulkExtracting
+                    ? t('editor:processModal.extracting')
+                    : (bulkExtractMode === 'copy' ? t('editor:processModal.extractConfirmCopy') : t('editor:processModal.extractConfirmMove'))}
+                </button>
+              </div>
             </div>
           </div>
         </div>

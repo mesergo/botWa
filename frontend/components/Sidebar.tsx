@@ -1,7 +1,7 @@
 
 import React, { useRef, useEffect, useState } from 'react';
 import { COMPONENT_GROUPS } from '../constants';
-import { Plus, Layers, Edit, Eye, Trash2, CheckCircle2, History, RotateCcw, CloudUpload, Lock, Unlock, Archive, MoreVertical } from 'lucide-react';
+import { Plus, Layers, Edit, Eye, Trash2, CheckCircle2, History, RotateCcw, CloudUpload, Lock, Unlock, Archive, MoreVertical, CheckSquare } from 'lucide-react';
 import { FixedProcess, Version, RestorableVersionsData } from '../types';
 import { useTranslation } from 'react-i18next';
 import { getFormatLocale } from '../i18n';
@@ -21,6 +21,12 @@ interface SidebarProps {
   onOpenPublishModal: () => void;
   onRestoreArchivedVersion?: (versionId: string, versionPrice: number) => void;
   isReadOnly?: boolean;
+  /** Whether canvas multi-select mode is currently active */
+  isMultiSelectMode?: boolean;
+  /** Toggles canvas multi-select mode on/off */
+  onToggleMultiSelect?: () => void;
+  /** Number of nodes currently selected on the canvas (shown as a badge) */
+  selectedCount?: number;
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ 
@@ -37,7 +43,10 @@ const Sidebar: React.FC<SidebarProps> = ({
   onToggleVersionLock,
   onOpenPublishModal,
   onRestoreArchivedVersion,
-  isReadOnly
+  isReadOnly,
+  isMultiSelectMode,
+  onToggleMultiSelect,
+  selectedCount = 0
 }) => {
   const { t, i18n } = useTranslation('builder');
   const activeItemRef = useRef<HTMLDivElement>(null);
@@ -120,19 +129,33 @@ const Sidebar: React.FC<SidebarProps> = ({
   return (
     <aside className="w-64 bg-white border-e border-slate-100 h-full flex flex-col z-10 text-start shadow-[1px_0_10px_rgba(0,0,0,0.02)] transition-all">
       {/* Tab Switcher */}
-      <div className="flex p-2 bg-slate-50/50 border-b border-slate-100">
-        <button 
+      <div className="flex items-center gap-1 p-2 bg-slate-50/50 border-b border-slate-100">
+        <button
           onClick={() => setActiveTab('versions')}
           className={`flex-1 py-2 text-[10px] font-bold uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-2 ${activeTab === 'versions' ? 'bg-white text-indigo-600 shadow-sm border border-slate-100' : 'text-slate-400 hover:text-slate-600'}`}
         >
           <History size={14} /> {t('sidebar.tabs.versions')}
         </button>
-        <button 
+        <button
           onClick={() => setActiveTab('components')}
           className={`flex-1 py-2 text-[10px] font-bold uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-2 ${activeTab === 'components' ? 'bg-white text-blue-600 shadow-sm border border-slate-100' : 'text-slate-400 hover:text-slate-600'}`}
         >
           <Layers size={14} /> {t('sidebar.tabs.components')}
         </button>
+        {!isReadOnly && onToggleMultiSelect && (
+          <button
+            onClick={onToggleMultiSelect}
+            title={isMultiSelectMode ? t('sidebar.exitMultiSelect') : t('sidebar.multiSelect')}
+            className={`relative flex-shrink-0 p-2.5 rounded-xl transition-all ${isMultiSelectMode ? 'bg-emerald-600 text-white shadow-sm' : 'bg-white text-slate-400 border border-slate-100 hover:text-emerald-600 hover:border-emerald-400'}`}
+          >
+            <CheckSquare size={14} />
+            {isMultiSelectMode && selectedCount > 0 && (
+              <span className="absolute -top-1.5 -end-1.5 min-w-[16px] h-4 px-1 flex items-center justify-center rounded-full bg-rose-500 text-white text-[9px] font-bold leading-none">
+                {selectedCount}
+              </span>
+            )}
+          </button>
+        )}
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-8 scrollbar-hide">

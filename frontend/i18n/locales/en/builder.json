@@ -27,6 +27,8 @@
       "versions": "Versions",
       "components": "Components"
     },
+    "multiSelect": "Multi-select",
+    "exitMultiSelect": "Exit multi-select mode",
     "myProcesses": "My processes",
     "noProcesses": "No processes",
     "view": "View",

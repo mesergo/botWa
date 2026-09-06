@@ -27,6 +27,8 @@
       "versions": "גרסאות",
       "components": "רכיבים"
     },
+    "multiSelect": "בחירה מרובה",
+    "exitMultiSelect": "יציאה ממצב בחירה מרובה",
     "myProcesses": "התהליכים שלי",
     "noProcesses": "אין תהליכים",
     "view": "הצג",

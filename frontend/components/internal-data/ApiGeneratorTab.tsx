@@ -22,7 +22,9 @@ export const ApiGeneratorTab: React.FC<ApiGeneratorTabProps> = ({ token, table, 
   const [lookupValue, setLookupValue] = useState<string>('0501234567');
   const [selectedFields, setSelectedFields] = useState<string[]>([]);
   const [method, setMethod] = useState<'GET' | 'POST'>('GET');
-  const [outputFormat, setOutputFormat] = useState<InternalDataOutputFormat>(table.api.response_format || 'single_object');
+  // The generator only ever targets the bot — a call always needs the SetParameter/Return
+  // action shape to be usable by an Action: קריאת API node, so there is no format choice here.
+  const outputFormat: InternalDataOutputFormat = 'bot_actions';
   const [includeApiKeyInUrl, setIncludeApiKeyInUrl] = useState<boolean>(false);
   const [successReturn, setSuccessReturn] = useState<string>(String(table.api.bot_success_return ?? -2));
   const [notFoundReturn, setNotFoundReturn] = useState<string>(String(table.api.bot_not_found_return ?? 0));
@@ -47,7 +49,6 @@ export const ApiGeneratorTab: React.FC<ApiGeneratorTabProps> = ({ token, table, 
 
   useEffect(() => {
     setLookupKey(table.fields.find((f) => f.type === 'phone')?.key || table.fields[0]?.key || 'phone');
-    setOutputFormat(table.api.response_format || 'single_object');
     setSuccessReturn(String(table.api.bot_success_return ?? -2));
     setNotFoundReturn(String(table.api.bot_not_found_return ?? 0));
     setNotFoundMessage(table.api.bot_not_found_message || '❌ לא נמצאה רשומה תואמת');
@@ -332,15 +333,10 @@ export const ApiGeneratorTab: React.FC<ApiGeneratorTabProps> = ({ token, table, 
             </div>
             <div>
               <label className="block text-[11px] text-slate-600 mb-1">פורמט התוצאה החוזרת:</label>
-              <select value={outputFormat} onChange={(e) => setOutputFormat(e.target.value as InternalDataOutputFormat)} className="w-full px-3 py-1.5 text-xs bg-white border border-slate-300 rounded-lg text-slate-800 focus:ring-2 focus:ring-indigo-500">
-                <option value="single_object">אובייקט JSON בודד</option>
-                <option value="json_array">מערך JSON מלא</option>
-                <option value="fields_only">ערכים נקיים בלבד</option>
-                <option value="key_value">מילון מפתחות</option>
-                <option value="csv">קובץ CSV</option>
-                <option value="xml">פורמט XML</option>
-                <option value="bot_actions">Actions לבוט (SetParameter/Return)</option>
-              </select>
+              <div className="w-full px-3 py-1.5 text-xs bg-slate-100 border border-slate-200 rounded-lg text-slate-700 font-semibold flex items-center gap-1.5">
+                <Layers className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                <span>Actions לבוט (SetParameter/Return)</span>
+              </div>
               <button
                 type="button"
                 onClick={handleSaveFormatAsDefault}
@@ -357,28 +353,26 @@ export const ApiGeneratorTab: React.FC<ApiGeneratorTabProps> = ({ token, table, 
                 בלי שמירה, הפורמט חל רק כשהכתובת כוללת <span className="font-mono" dir="ltr">_format</span>.
               </p>
             </div>
-            {outputFormat === 'bot_actions' && (
-              <div className="space-y-2 pt-1">
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="block text-[11px] text-slate-600 mb-1">קוד Return בהצלחה:</label>
-                    <input type="text" value={successReturn} onChange={(e) => setSuccessReturn(e.target.value)} className="w-full px-3 py-1.5 text-xs font-mono bg-white border border-slate-300 rounded-lg text-slate-800 focus:ring-2 focus:ring-indigo-500" dir="ltr" />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] text-slate-600 mb-1">קוד Return כשלא נמצא:</label>
-                    <input type="text" value={notFoundReturn} onChange={(e) => setNotFoundReturn(e.target.value)} className="w-full px-3 py-1.5 text-xs font-mono bg-white border border-slate-300 rounded-lg text-slate-800 focus:ring-2 focus:ring-indigo-500" dir="ltr" />
-                  </div>
+            <div className="space-y-2 pt-1">
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[11px] text-slate-600 mb-1">קוד Return בהצלחה:</label>
+                  <input type="text" value={successReturn} onChange={(e) => setSuccessReturn(e.target.value)} className="w-full px-3 py-1.5 text-xs font-mono bg-white border border-slate-300 rounded-lg text-slate-800 focus:ring-2 focus:ring-indigo-500" dir="ltr" />
                 </div>
                 <div>
-                  <label className="block text-[11px] text-slate-600 mb-1">הודעה כשלא נמצאה רשומה:</label>
-                  <input type="text" value={notFoundMessage} onChange={(e) => setNotFoundMessage(e.target.value)} className="w-full px-3 py-1.5 text-xs bg-white border border-slate-300 rounded-lg text-slate-900 focus:ring-2 focus:ring-indigo-500" />
-                </div>
-                <div>
-                  <label className="block text-[11px] text-slate-600 mb-1">פרמטר message כשנמצאה רשומה (אופציונלי):</label>
-                  <textarea value={successMessage} onChange={(e) => setSuccessMessage(e.target.value)} rows={2} placeholder="ריק = ללא פרמטר message" className="w-full px-3 py-1.5 text-xs bg-white border border-slate-300 rounded-lg text-slate-900 focus:ring-2 focus:ring-indigo-500" />
+                  <label className="block text-[11px] text-slate-600 mb-1">קוד Return כשלא נמצא:</label>
+                  <input type="text" value={notFoundReturn} onChange={(e) => setNotFoundReturn(e.target.value)} className="w-full px-3 py-1.5 text-xs font-mono bg-white border border-slate-300 rounded-lg text-slate-800 focus:ring-2 focus:ring-indigo-500" dir="ltr" />
                 </div>
               </div>
-            )}
+              <div>
+                <label className="block text-[11px] text-slate-600 mb-1">הודעה כשלא נמצאה רשומה:</label>
+                <input type="text" value={notFoundMessage} onChange={(e) => setNotFoundMessage(e.target.value)} className="w-full px-3 py-1.5 text-xs bg-white border border-slate-300 rounded-lg text-slate-900 focus:ring-2 focus:ring-indigo-500" />
+              </div>
+              <div>
+                <label className="block text-[11px] text-slate-600 mb-1">פרמטר message כשנמצאה רשומה (אופציונלי):</label>
+                <textarea value={successMessage} onChange={(e) => setSuccessMessage(e.target.value)} rows={2} placeholder="ריק = ללא פרמטר message" className="w-full px-3 py-1.5 text-xs bg-white border border-slate-300 rounded-lg text-slate-900 focus:ring-2 focus:ring-indigo-500" />
+              </div>
+            </div>
           </div>
 
           <div className="space-y-3 p-4 bg-slate-50 rounded-2xl border border-slate-200">

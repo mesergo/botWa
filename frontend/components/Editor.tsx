@@ -1,20 +1,23 @@
 
-import React, { useRef, useState } from 'react';
-import ReactFlow, { 
-  Background, 
+import React, { useRef, useState, useEffect } from 'react';
+import ReactFlow, {
+  Background,
   BackgroundVariant,
-  Controls, 
-  Edge, 
+  Controls,
+  Edge,
   Node,
   Panel,
   ReactFlowInstance,
-  MarkerType
+  MarkerType,
+  SelectionMode,
+  OnSelectionChangeParams,
+  useStoreApi
 } from 'reactflow';
 
 import Sidebar from './Sidebar';
 import Simulator from './Simulator';
 import { NodeType, FixedProcess, Version, User, BotFlow } from '../types';
-import { Wand2, Search, ChevronUp, ChevronDown, X, Copy, CloudUpload, AlertTriangle, Users, List, Sliders, Settings } from 'lucide-react';
+import { Wand2, Search, ChevronUp, ChevronDown, X, Copy, CloudUpload, AlertTriangle, Users, List, Sliders, Settings, Trash2, FolderInput } from 'lucide-react';
 
 interface EditorProps {
   selectedBot: BotFlow | null;
@@ -76,7 +79,34 @@ interface EditorProps {
   onRenameProcess?: (processId: string, newName: string) => Promise<void>;
   /** Called when user renames the current bot */
   onRenameBot?: (botId: string, newName: string) => Promise<void>;
+  /** Whether canvas multi-select mode is active (toggled from the sidebar) */
+  isMultiSelectMode?: boolean;
+  /** IDs of the nodes currently selected on the canvas */
+  selectedNodeIds?: string[];
+  /** Called whenever the canvas selection changes */
+  onCanvasSelectionChange?: (params: OnSelectionChangeParams) => void;
+  /** Deletes all currently-selected nodes (and their edges) from the canvas */
+  onBulkDelete?: () => void;
+  /** Extracts the current selection into a new "My processes" entry — 'copy' keeps the
+   *  originals in place, 'move' removes them and replaces them with a single process node */
+  onBulkExtract?: (mode: 'copy' | 'move') => void;
+  /** Clears the current canvas selection without leaving multi-select mode */
+  onClearSelection?: () => void;
 }
+
+// ReactFlow only lets a plain click add to the current selection (instead of
+// replacing it) while its "multi-selection" modifier key (Ctrl/Cmd) is held down.
+// Multi-select mode is meant to feel like plain checkboxes — click any component
+// to toggle it in/out, no modifier key needed — so for as long as it's active we
+// force that internal flag on directly, as if the modifier were permanently held.
+const MultiSelectStoreSync: React.FC<{ active: boolean }> = ({ active }) => {
+  const store = useStoreApi();
+  useEffect(() => {
+    store.setState({ multiSelectionActive: active });
+    return () => { store.setState({ multiSelectionActive: false }); };
+  }, [active, store]);
+  return null;
+};
 
 const HighlightedText: React.FC<{ text: string; query: string }> = ({ text, query }) => {
   if (!query || !text) return <>{text}</>;
@@ -97,7 +127,8 @@ const Editor: React.FC<EditorProps> = ({
   onNodesChange, onEdgesChange, onConnect, onInit, onDrop, onSearchChange, onSearchNav, onTidy, onPublish,
   onCloseEditor, onHome, onSimulatorOpen, onSimulatorClose, onDuplicate, onChangeTemplate, sidebarProps,
   isEditingTemplate, onSaveTemplate, existingTemplateData, onOpenContacts, onOpenSessions, initialParams, onManageParams, onNodeFocus, onFixedProcessActive, isTransitioning,
-  globalSearchResults, onNavigateToProcessResult, onOpenBotSettings, saveStatus, onRenameProcess, onRenameBot
+  globalSearchResults, onNavigateToProcessResult, onOpenBotSettings, saveStatus, onRenameProcess, onRenameBot,
+  isMultiSelectMode, selectedNodeIds, onCanvasSelectionChange, onBulkDelete, onBulkExtract, onClearSelection
 }) => {
   const [showSaveModal, setShowSaveModal] = React.useState(false);
   const [isEditingProcessName, setIsEditingProcessName] = useState(false);
@@ -371,7 +402,12 @@ const Editor: React.FC<EditorProps> = ({
             canvas always on the right), matching the nav's dir="ltr" convention above. Sidebar.tsx's
             own Hebrew/English text still renders via its own inherited/explicit direction. */}
         <div className="flex h-full w-full" dir="ltr">
-          <Sidebar {...sidebarProps} isReadOnly={viewMode === 'viewing-process'} />
+          <Sidebar
+            {...sidebarProps}
+            isReadOnly={viewMode === 'viewing-process'}
+            isMultiSelectMode={isMultiSelectMode}
+            selectedCount={selectedNodeIds?.length || 0}
+          />
           <div className="flex-1 relative h-full bg-[#f8fafc]" ref={reactFlowWrapper}>
             {isTransitioning && (
               <div className="absolute inset-0 z-[200] flex items-center justify-center bg-[#f8fafc]">
@@ -379,17 +415,66 @@ const Editor: React.FC<EditorProps> = ({
               </div>
             )}
             <ReactFlow
-              nodes={nodes} edges={edges} 
+              nodes={nodes} edges={edges}
               onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect}
               onInit={onInit} onDrop={onDrop}
               onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }}
-              nodeTypes={nodeTypes} edgeTypes={edgeTypes} 
-              fitView 
+              nodeTypes={nodeTypes} edgeTypes={edgeTypes}
+              fitView
               fitViewOptions={{ padding: 6.0 }}
               proOptions={{ hideAttribution: true }}
+              selectionOnDrag={isMultiSelectMode && viewMode !== 'viewing-process'}
+              selectionMode={SelectionMode.Partial}
+              panOnDrag={isMultiSelectMode && viewMode !== 'viewing-process' ? [1, 2] : true}
+              onSelectionChange={onCanvasSelectionChange}
             >
+              <MultiSelectStoreSync active={!!isMultiSelectMode && viewMode !== 'viewing-process'} />
               <Background variant={BackgroundVariant.Dots} color="#b9bdc1ff" gap={20} size={2} />
               <Controls className="!bg-white !shadow-xl !rounded-2xl !border-slate-100" />
+              {isMultiSelectMode && viewMode !== 'viewing-process' && (
+                <Panel position="top-center">
+                  <div className="mt-4 flex items-center gap-3 bg-white border border-slate-100 shadow-2xl rounded-2xl px-4 py-2.5">
+                    <span className="text-[11px] font-bold text-slate-500 whitespace-nowrap">
+                      {(selectedNodeIds?.length || 0) > 0
+                        ? `${selectedNodeIds!.length} רכיבים נבחרו`
+                        : 'לחץ על רכיבים או גרור לסימון מספר רכיבים'}
+                    </span>
+                    {(selectedNodeIds?.length || 0) > 0 && (
+                      <>
+                        <div className="h-6 w-px bg-slate-100" />
+                        <button
+                          onClick={() => onBulkExtract?.('copy')}
+                          title="העתק לתהליכים שלי"
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 text-slate-600 rounded-xl text-[11px] font-bold hover:bg-blue-50 hover:text-blue-600 transition-all"
+                        >
+                          <Copy size={13} /> העתקה
+                        </button>
+                        <button
+                          onClick={() => onBulkExtract?.('move')}
+                          title="העבר לתהליכים שלי"
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 text-slate-600 rounded-xl text-[11px] font-bold hover:bg-indigo-50 hover:text-indigo-600 transition-all"
+                        >
+                          <FolderInput size={13} /> העברה
+                        </button>
+                        <button
+                          onClick={onBulkDelete}
+                          title="מחק רכיבים נבחרים"
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 text-rose-500 rounded-xl text-[11px] font-bold hover:bg-rose-50 transition-all"
+                        >
+                          <Trash2 size={13} /> מחיקה
+                        </button>
+                        <button
+                          onClick={onClearSelection}
+                          title="בטל בחירה"
+                          className="flex items-center gap-1.5 p-1.5 text-slate-300 hover:text-slate-600 rounded-xl transition-all"
+                        >
+                          <X size={14} />
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </Panel>
+              )}
               <Panel position="bottom-right">
                 <div className="flex flex-col items-end gap-3 mb-6 mr-6">
                   {viewMode === 'main' ? (
