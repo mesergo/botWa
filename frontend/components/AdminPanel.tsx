@@ -1664,8 +1664,9 @@ const openRestoreConversations = async () => {
   };
 
   const filteredUsers = users.filter(user => {
-    // Exclude sub-users (reps/rep_managers linked to a parent) from the top-level list
-    if ((user.role === 'rep' || user.role === 'rep_manager') && user.manager_id) return false;
+    // Exclude sub-users (any account linked to a parent via manager_id — reps, rep_managers,
+    // or plain "user"-type sub-accounts created from the Sub-Users tab) from the top-level list.
+    if (user.manager_id) return false;
 
     const matchesSearch = 
       user.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -1681,9 +1682,10 @@ const openRestoreConversations = async () => {
     return matchesSearch;
   });
 
-  // Returns sub-users linked to a given parent user id
+  // Returns sub-users linked to a given parent user id (any role — rep, rep_manager, or
+  // plain "user"-type sub-accounts created from the Sub-Users tab)
   const getSubUsers = (parentId: string) =>
-    users.filter(u => (u.role === 'rep' || u.role === 'rep_manager') && u.manager_id === parentId);
+    users.filter(u => u.manager_id === parentId);
 
   // Render Component
   return (
@@ -2384,6 +2386,15 @@ const openRestoreConversations = async () => {
                                       </a>
                                       {text && <p className="whitespace-pre-wrap leading-relaxed">{text}</p>}
                                     </>
+                                  )}
+                                  {item.type === 'Contact' && (
+                                    <div className="flex items-center gap-1.5 mb-2">
+                                      <UserIcon size={12} />
+                                      <div className="flex flex-col text-[11px]">
+                                        <span className="font-bold">{item.contactName}</span>
+                                        <span className="opacity-70">{item.contactPhone}</span>
+                                      </div>
+                                    </div>
                                   )}
                                   {(item.type === 'Audio' || isAudioUrl) && (item.url || text) && (
                                     <>

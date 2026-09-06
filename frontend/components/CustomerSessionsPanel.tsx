@@ -497,6 +497,15 @@ const CustomerSessionsPanel: React.FC<CustomerSessionsPanelProps> = ({ token, ap
                               {text && <p className="whitespace-pre-wrap leading-relaxed">{text}</p>}
                             </>
                           )}
+                          {item.type === 'Contact' && (
+                            <div className="flex items-center gap-1.5 mb-2">
+                              <UserIcon size={12} />
+                              <div className="flex flex-col text-[11px]">
+                                <span className="font-bold">{item.contactName}</span>
+                                <span className="opacity-70">{item.contactPhone}</span>
+                              </div>
+                            </div>
+                          )}
                           {(item.type === 'Audio' || isAudioUrl) && (item.url || text) && (
                             <>
                               <p className="text-[10px] font-semibold mb-1 opacity-70">🎙️ הקלטה</p>

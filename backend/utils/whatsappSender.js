@@ -164,6 +164,7 @@ const MEDIA_SEND_DELAY = {
   image: 3000,
   video: 3000,
   document: 3000,
+  contact: 600,
 };
 
 /**
@@ -220,7 +221,7 @@ export const pushMessagesToWhatsApp = async (phone, messages, user = null, bot =
         const respJson = JSON.parse(respText);
         wamid = respJson?.messages?.[0]?.id || null;
       } catch {}
-      const kind = body.image ? 'image' : body.video ? 'video' : body.file ? 'file' : body.buttons ? 'buttons' : 'text';
+      const kind = body.image ? 'image' : body.video ? 'video' : body.file ? 'file' : body.contact ? 'contact' : body.buttons ? 'buttons' : 'text';
       console.log(`[WA-PUSH] ✅ Sent ${kind} to ${normalizedPhone}${wamid ? ' | wamid=' + wamid.substring(0, 20) + '…' : ''}`);
       return { success: true, wamid };
     } catch (err) {
@@ -366,6 +367,19 @@ export const pushMessagesToWhatsApp = async (phone, messages, user = null, bot =
         const { success: docOk, wamid: docWamid } = await sendOne({ file: msg.url, filename: msg.filename || 'file', text: msg.text || '' });
         if (docOk) { anySuccess = true; if (docWamid) wamidPerMsg[i] = docWamid; }
         await _sleep(MEDIA_SEND_DELAY.document);
+        break;
+      }
+
+      case 'Contact': {
+        await flushTextBuffer();
+        const contactPayload = [{
+          name: { formatted_name: msg.contactName || '', first_name: msg.contactName || '' },
+          phones: [{ phone: normalizePhone(msg.contactPhone || ''), type: 'CELL' }]
+        }];
+        console.log(`[WA-PUSH] 👤 Sending CONTACT | name=${msg.contactName} | phone=${msg.contactPhone}`);
+        const { success: contactOk, wamid: contactWamid } = await sendOne({ contact: contactPayload });
+        if (contactOk) { anySuccess = true; if (contactWamid) wamidPerMsg[i] = contactWamid; }
+        await _sleep(MEDIA_SEND_DELAY.contact);
         break;
       }
 

@@ -266,11 +266,14 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
                       msg.type === 'Image' ? 'image' : 
                       msg.type === 'Video' ? 'video' : 
                       msg.type === 'Document' ? 'document' : 
+                      msg.type === 'Contact' ? 'contact' : 
                       msg.type === 'URL' ? 'link' : 
                       msg.type === 'Options' ? 'menu' : 'text',
                 content: msg.text || '',
                 url: msg.url,
-                options: msg.options
+                options: msg.options,
+                contactName: msg.contactName,
+                contactPhone: msg.contactPhone
               };
               
               // Add message directly to UI without re-saving to history
@@ -469,7 +472,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
       const typeMap: Record<string, string> = {
         text: 'Text', image: 'Image', video: 'Video', document: 'Document',
         link: 'URL', menu: 'Options', carousel: 'Carousel', input_text: 'Text',
-        input_date: 'Text', input_file: 'Text'
+        input_date: 'Text', input_file: 'Text', contact: 'Contact'
       };
       const historyEntry: Record<string, any> = {
         type: typeMap[msg.type] || msg.type,
@@ -479,6 +482,8 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
         text: interpolatedContentNoNull,
         url: msg.url,
         options: interpolatedOptions,
+        contactName: msg.contactName,
+        contactPhone: msg.contactPhone,
         originSimulatorId: simulatorIdRef.current // Mark message as originated from this simulator
       };
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -814,6 +819,11 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
         await new Promise(r => setTimeout(r, 500));
         if (cancelled()) return;
         const mediaType = node.data.mediaType || 'image';
+        if (mediaType === 'contact') {
+          addMessage({ sender: 'bot', type: 'contact', contactName: node.data.contactName || '', contactPhone: node.data.contactPhone || '' });
+          setIsBotTyping(false);
+          return processNext(findNextNodeId(nodeId, instance), instance, depth + 1, stack);
+        }
         const messageType = mediaType === 'video' ? 'video' : mediaType === 'pdf' ? 'document' : 'image';
         // התמונה והכיתוב נשלחים כהודעה אחת בלבד (כמו בפועל בוואטסאפ)
         addMessage({ sender: 'bot', type: messageType, url: node.data.url, content: node.data.caption && node.data.caption.trim() ? node.data.caption : undefined });
@@ -1273,6 +1283,15 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
                         <span>פתח מסמך PDF</span>
                       </a>
                       {msg.content && <div className="mt-2"><WhatsAppText text={msg.content} /></div>}
+                    </div>
+                  )}
+                  {msg.type === 'contact' && (
+                    <div className="flex items-center gap-2 p-3 bg-slate-50 rounded-xl">
+                      <User size={20} />
+                      <div className="flex flex-col">
+                        <span className="font-bold">{msg.contactName}</span>
+                        <span className="opacity-70 text-xs">{msg.contactPhone}</span>
+                      </div>
                     </div>
                   )}
                   {msg.type === 'link' && (

@@ -29,11 +29,12 @@ export const requireApiKey = (req, res, next) => {
 };
 
 // Returns the effective owner user ID:
-// For rep roles (rep / rep_manager / rep_bot), returns their manager's ID so they see the manager's data.
-// For all other roles, returns the authenticated user's own ID.
+// For any sub-account linked to a parent (manager_id set) — reps, rep_managers, rep_bots,
+// or plain "user"-type sub-accounts created from the Sub-Users tab — returns the manager's
+// ID so they share the manager's data (bots, sessions, groups, contacts, etc.).
+// Top-level company owners have no manager_id, so this always returns their own ID.
 export const getEffectiveUserId = (req) => {
-  const role = req.user?.role;
-  if ((role === 'rep' || role === 'rep_manager' || role === 'rep_bot') && req.user?.manager_id) {
+  if (req.user?.manager_id) {
     return req.user.manager_id;
   }
   return req.userId;

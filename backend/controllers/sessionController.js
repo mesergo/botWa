@@ -254,8 +254,18 @@ const buildCase2TriggerMessages = async (session, startNodeId) => {
         break;
       }
       case 'output_image': {
-        const url = replaceRuntimeParameters(nodeData.url || '', params);
         const mediaType = nodeData.mediaType || 'image';
+        if (mediaType === 'contact') {
+          messages.push({
+            type: 'Contact',
+            contactName: replaceRuntimeParameters(nodeData.contactName || '', params),
+            contactPhone: replaceRuntimeParameters(nodeData.contactPhone || '', params),
+            created: new Date().toISOString()
+          });
+          currentNodeId = findNextEdgeTarget(edges, currentNodeId);
+          break;
+        }
+        const url = replaceRuntimeParameters(nodeData.url || '', params);
         const caption = replaceRuntimeParameters(nodeData.caption || '', params);
         messages.push({
           type: mediaType === 'video' ? 'Video' : mediaType === 'pdf' ? 'Document' : 'Image',

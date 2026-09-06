@@ -2289,6 +2289,38 @@ const FlowBuilder: React.FC = () => {
   });
   }, []);
 
+  // Lets the user drop a connection anywhere on the target node's body (not just precisely
+  // on its small entry-handle circle) to link the two components together.
+  const connectingHandleRef = useRef<{ nodeId: string; handleId: string | null; handleType: 'source' | 'target' } | null>(null);
+
+  const onConnectStart = useCallback((_event: any, params: { nodeId: string | null; handleId: string | null; handleType: 'source' | 'target' | null }) => {
+    if (!params.nodeId || !params.handleType) { connectingHandleRef.current = null; return; }
+    connectingHandleRef.current = { nodeId: params.nodeId, handleId: params.handleId, handleType: params.handleType };
+  }, []);
+
+  const onConnectEnd = useCallback((event: MouseEvent | TouchEvent) => {
+    const connecting = connectingHandleRef.current;
+    connectingHandleRef.current = null;
+    // Only extend behavior for dragging out of a source (exit) handle.
+    if (!connecting || connecting.handleType !== 'source') return;
+
+    const point = 'changedTouches' in event ? event.changedTouches[0] : event;
+    const dropEl = document.elementFromPoint(point.clientX, point.clientY) as HTMLElement | null;
+    if (!dropEl) return;
+    // If the drop landed exactly on a handle, React Flow's own onConnect already created the edge.
+    if (dropEl.closest('.react-flow__handle')) return;
+
+    const nodeEl = dropEl.closest('.react-flow__node') as HTMLElement | null;
+    const targetNodeId = nodeEl?.getAttribute('data-id');
+    if (!targetNodeId || targetNodeId === connecting.nodeId) return;
+
+    const targetNode = nodes.find(n => n.id === targetNodeId);
+    // Skip node types that render no entry (target) handle.
+    if (!targetNode || targetNode.type === NodeType.START || targetNode.type === NodeType.AUTOMATIC_RESPONSES) return;
+
+    onConnect({ source: connecting.nodeId, sourceHandle: connecting.handleId, target: targetNodeId, targetHandle: null } as any);
+  }, [nodes, onConnect]);
+
   const onDrop = useCallback((event: React.DragEvent) => {
     event.preventDefault();
     if (!reactFlowWrapper.current || !reactFlowInstance) return;
@@ -2509,6 +2541,8 @@ const FlowBuilder: React.FC = () => {
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
+          onConnectStart={onConnectStart}
+          onConnectEnd={onConnectEnd}
           onInit={setReactFlowInstance}
           onDrop={onDrop}
           onSearchChange={setSearchQuery}
@@ -2949,6 +2983,8 @@ const FlowBuilder: React.FC = () => {
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
+        onConnectStart={onConnectStart}
+        onConnectEnd={onConnectEnd}
         onInit={setReactFlowInstance}
         onDrop={onDrop}
         onSearchChange={setSearchQuery}

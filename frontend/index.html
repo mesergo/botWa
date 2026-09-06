@@ -20,6 +20,21 @@
         /* Hide scrollbars for a cleaner look */
         .scrollbar-hide::-webkit-scrollbar { display: none; }
         .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+        /* Thin highlight frame around an exit (source) handle circle on hover.
+           Implemented as a ::before ring instead of `outline` so the highlighted
+           area is real generated content of the handle element — clicks landing
+           anywhere inside the ring are still hit-tested against the handle itself
+           (pseudo-elements have no separate event target), letting users start a
+           connection from anywhere within the visible frame, not just the small dot. */
+        .node-exit-handle { position: absolute; }
+        .node-exit-handle:hover::before {
+            content: '';
+            position: absolute;
+            inset: -4px;
+            border: 2px solid #10b981;
+            border-radius: 9999px;
+            pointer-events: auto;
+        }
     </style>
 <script type="importmap">
 {

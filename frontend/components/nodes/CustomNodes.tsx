@@ -632,11 +632,11 @@ const DeletableHandle = ({ nodeId, handleId, style, onDelete }: { nodeId: string
         position={Position.Right}
         id={handleId}
         style={style}
-        className={`w-5 h-5 border-2 border-white rounded-full shadow-lg transition-colors duration-200 ${hovered && hasEdge ? 'bg-red-500' : 'bg-slate-400'}`}
+        className={`node-exit-handle w-5 h-5 border-2 border-white rounded-full shadow-lg transition-colors duration-200 ${hovered && hasEdge ? 'bg-red-500' : 'bg-slate-400'}`}
       />
       <div
         style={overlayStyle}
-        className={`flex items-center justify-center rounded-full nodrag ${hasEdge ? 'cursor-pointer' : 'pointer-events-none'}`}
+        className={`node-exit-handle flex items-center justify-center rounded-full nodrag ${hasEdge ? 'cursor-pointer' : 'pointer-events-none'}`}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
         onClick={hasEdge ? deleteEdge : undefined}
@@ -1006,11 +1006,11 @@ export const StartNode = (props: any) => {
       <Handle
         type="source"
         position={Position.Right}
-        className={`w-5 h-5 border-2 border-white rounded-full -right-[10px] shadow-lg transition-colors duration-200 ${isSourceHovered ? 'bg-red-500' : 'bg-slate-400'}`}
+        className={`node-exit-handle w-5 h-5 border-2 border-white rounded-full -right-[10px] shadow-lg transition-colors duration-200 ${isSourceHovered ? 'bg-red-500' : 'bg-slate-400'}`}
       />
       {hasSourceEdge && (
         <div
-          className="absolute -right-[10px] top-1/2 -translate-y-1/2 w-5 h-5 flex items-center justify-center cursor-pointer rounded-full"
+          className="node-exit-handle absolute -right-[10px] top-1/2 -translate-y-1/2 w-5 h-5 flex items-center justify-center cursor-pointer rounded-full"
           style={{ zIndex: 1000 }}
           onMouseEnter={() => setIsSourceHovered(true)}
           onMouseLeave={() => setIsSourceHovered(false)}
@@ -1211,6 +1211,7 @@ export const OutputImageNode = (props: any) => {
       case 'image': return <ImageIcon size={14} className="inline" />;
       case 'video': return <PlayCircle size={14} className="inline" />;
       case 'pdf': return <ExternalLink size={14} className="inline" />;
+      case 'contact': return <UserCheck size={14} className="inline" />;
       default: return <ImageIcon size={14} className="inline" />;
     }
   };
@@ -1244,6 +1245,7 @@ export const OutputImageNode = (props: any) => {
             <option value="image">תמונה</option>
             <option value="video">וידאו</option>
             <option value="pdf">PDF</option>
+            <option value="contact">איש קשר</option>
           </select>
           <div className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
             <ChevronDown size={16} />
@@ -1254,6 +1256,28 @@ export const OutputImageNode = (props: any) => {
         </div>
       </InputFieldWrapper>
      
+      {mediaType === 'contact' ? (
+        <>
+          <InputFieldWrapper label="שם איש קשר">
+            <SearchableInput
+              value={props.data.contactName}
+              onChange={(v: string) => props.data.onChange({ contactName: v })}
+              placeholder="ישראל ישראלי"
+              searchQuery={props.data.searchQuery}
+              isCurrentMatch={props.data.isCurrentMatch}
+            />
+          </InputFieldWrapper>
+          <InputFieldWrapper label="טלפון איש קשר">
+            <SearchableInput
+              value={props.data.contactPhone}
+              onChange={(v: string) => props.data.onChange({ contactPhone: v })}
+              placeholder="0501234567"
+              searchQuery={props.data.searchQuery}
+              isCurrentMatch={props.data.isCurrentMatch}
+            />
+          </InputFieldWrapper>
+        </>
+      ) : (
       <InputFieldWrapper label="אופן העלאה">
         <div className="flex gap-1.5 mb-3 bg-slate-100/80 p-1.5 rounded-lg border border-slate-200/60">
           <button
@@ -1346,7 +1370,9 @@ export const OutputImageNode = (props: any) => {
         )}
         <input type="file" ref={fileInputRef} className="hidden" accept={getAcceptTypes()} onChange={handleFileUpload} disabled={isUploading} />
       </InputFieldWrapper>
+      )}
      
+      {mediaType !== 'contact' && (
       <InputFieldWrapper label="טקסט (אופציונלי)">
         <SearchableInput
           value={props.data.caption}
@@ -1357,6 +1383,7 @@ export const OutputImageNode = (props: any) => {
           isTextArea={true}
         />
       </InputFieldWrapper>
+      )}
     </BaseNode>
   );
 };

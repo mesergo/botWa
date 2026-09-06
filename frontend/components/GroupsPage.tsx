@@ -12,6 +12,7 @@ import { TemplateHeaderMediaField } from './TemplateHeaderMediaField';
 import ImportContactsModal from './ImportContactsModal';
 import TemplateBodyParamsEditor from './TemplateBodyParamsEditor';
 import PersonalizedTextarea from './shared/PersonalizedTextarea';
+import ExcludeGroupSelector from './shared/ExcludeGroupSelector';
 import { usePermission } from '../hooks/usePermission';
 import PageTopBar from './PageTopBar';
 import AppNav from './AppNav';
@@ -1654,26 +1655,12 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
               </p>
 
               {/* Exclude group selector */}
-              {regularGroups.filter(g => g._id !== selectedGroup._id).length > 0 && (
-                <div className="mb-4 p-4 bg-orange-50 border border-orange-200 rounded-2xl">
-                  <label className="text-xs font-black text-orange-700 mb-2 block">החרגת קבוצה (אופציונלי):</label>
-                  <select
-                    value={excludeGroupId}
-                    onChange={e => setExcludeGroupId(e.target.value)}
-                    className="w-full px-3 py-2 bg-white border border-orange-200 rounded-xl text-sm outline-none focus:border-orange-500"
-                  >
-                    <option value="">ללא החרגה — שלח לכולם</option>
-                    {regularGroups.filter(g => g._id !== selectedGroup._id).map(g => (
-                      <option key={g._id} value={g._id}>{g.name} ({g.contact_count} אנשי קשר)</option>
-                    ))}
-                  </select>
-                  {excludeGroupId && (
-                    <p className="text-xs text-orange-600 font-semibold mt-2">
-                      ⛔ אנשי קשר שנמצאים ב-&quot;{regularGroups.find(g => g._id === excludeGroupId)?.name}&quot; לא יקבלו את ההודעה.
-                    </p>
-                  )}
-                </div>
-              )}
+              <ExcludeGroupSelector
+                groups={regularGroups.filter(g => g._id !== selectedGroup._id)}
+                excludeGroupId={excludeGroupId}
+                setExcludeGroupId={setExcludeGroupId}
+                className="mb-4"
+              />
 
               {/* Bot / phone number selector */}
               {sendBotsLoading ? (

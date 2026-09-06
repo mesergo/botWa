@@ -125,8 +125,12 @@ export interface NodeData {
   url?: string;
   urlVariable?: string;   // variable name whose value is used as the URL (e.g. "link_var")
   linkLabel?: string;
-  mediaType?: 'image' | 'video' | 'pdf';
+  mediaType?: 'image' | 'video' | 'pdf' | 'contact';
   caption?: string;
+  /** For output_image with mediaType='contact': contact card name */
+  contactName?: string;
+  /** For output_image with mediaType='contact': contact card phone */
+  contactPhone?: string;
   waitTime?: number;
   options?: string[];
   optionOperators?: string[];
@@ -329,7 +333,7 @@ export interface CarouselItem {
 export interface ChatMessage {
   id: string;
   sender: 'bot' | 'user';
-  type: 'text' | 'image' | 'video' | 'document' | 'link' | 'menu' | 'input_text' | 'input_date' | 'input_file' | 'carousel' | 'Options' | 'separator';
+  type: 'text' | 'image' | 'video' | 'document' | 'contact' | 'link' | 'menu' | 'input_text' | 'input_date' | 'input_file' | 'carousel' | 'Options' | 'separator';
   content?: string;
   url?: string;
   options?: string[];
@@ -339,4 +343,7 @@ export interface ChatMessage {
   timestamp: Date;
   sourceNodeId?: string;
   dateTimeMode?: 'date' | 'time' | 'datetime';
+  /** For type='contact' */
+  contactName?: string;
+  contactPhone?: string;
 }
