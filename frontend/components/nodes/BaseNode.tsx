@@ -1,7 +1,7 @@
 
 import React, { memo, useState, useEffect, useRef } from 'react';
 import { Handle, NodeToolbar, Position, useReactFlow, useEdges, useNodes } from 'reactflow';
-import { Trash2, X, ChevronRight, ChevronLeft } from 'lucide-react';
+import { Trash2, X, ChevronRight, ChevronLeft, Check } from 'lucide-react';
 import { NodeType } from '../../types';
 
 const NODE_TYPE_LABELS: Record<string, string> = {
@@ -263,7 +263,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({ id, title, icon, children, type, se
       </NodeToolbar>
     
     <div
-      className={`${isMediaNode ? 'min-w-[380px] max-w-[450px]' : 'min-w-[280px]'} ${nodeClassName ?? ''} bg-white border-2 rounded-[2.5rem] shadow-[0_15px_40px_-10px_rgba(0,0,0,0.06)] transition-all duration-400 ${
+      className={`relative ${isMediaNode ? 'min-w-[380px] max-w-[450px]' : 'min-w-[280px]'} ${nodeClassName ?? ''} bg-white border-2 rounded-[2.5rem] shadow-[0_15px_40px_-10px_rgba(0,0,0,0.06)] transition-all duration-400 ${
         isFlashing
           ? 'ring-4 ring-green-300/40 !border-green-300'
           : isSimulatorActive
@@ -288,6 +288,13 @@ const BaseNode: React.FC<BaseNodeProps> = ({ id, title, icon, children, type, se
         }));
       }}
     >
+      {/* Clear selection checkmark — the ring highlight below is subtle at a glance,
+          especially once several nodes are selected during a bulk (copy/move/delete) action */}
+      {selected && (
+        <div className="absolute -left-3 -top-3 w-7 h-7 rounded-full bg-indigo-600 border-2 border-white shadow-lg flex items-center justify-center z-10">
+          <Check size={15} className="text-white" strokeWidth={3} />
+        </div>
+      )}
       {/* Top indicator bar with rounded corners to match the parent */}
       <div className={`h-1.5 w-full ${theme.bar} rounded-t-[2.5rem]`} />
       

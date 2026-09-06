@@ -304,7 +304,9 @@ const FlowBuilder: React.FC = () => {
   const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
   const [bulkExtractMode, setBulkExtractMode] = useState<'copy' | 'move' | null>(null);
+  const [bulkExtractTarget, setBulkExtractTarget] = useState<'new' | 'existing'>('new');
   const [bulkExtractName, setBulkExtractName] = useState('');
+  const [bulkExtractExistingId, setBulkExtractExistingId] = useState<string>('');
   const [isBulkExtracting, setIsBulkExtracting] = useState(false);
   const [isBulkDeleteModalOpen, setIsBulkDeleteModalOpen] = useState(false);
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
@@ -2027,32 +2029,67 @@ const FlowBuilder: React.FC = () => {
   const openBulkExtractModal = (mode: 'copy' | 'move') => {
     if (getBulkEligibleIds().length === 0) return;
     setBulkExtractMode(mode);
+    setBulkExtractTarget('new');
     setBulkExtractName('');
+    setBulkExtractExistingId('');
   };
 
-  // Extracts the selected nodes into a brand-new "My processes" entry.
-  // 'copy'  — the originals stay on the canvas untouched; the new process is an
-  //           independent snapshot, exactly like any other process created via
-  //           the "+" button (opening/editing it works the same way as always).
+  // Processes the selection can be merged into — excludes the process currently
+  // open in the editor itself, since a "move" there would insert a process node
+  // that references its own containing process (infinite recursion at runtime).
+  const bulkExtractExistingOptions = fixedProcesses.filter(p => p.id.toString() !== activeProcessId?.toString());
+
+  // Extracts the selected nodes into a "My processes" entry — either a brand-new
+  // one, or merged into one the user already has:
+  // 'copy'  — the originals stay on the canvas untouched; the target process
+  //           just gains a snapshot of them (a new one behaves exactly like any
+  //           other process created via the "+" button; an existing one simply
+  //           gets the extra nodes appended to whatever it already had).
   // 'move'  — the originals are removed from the canvas and replaced by a single
   //           process node in their place, with boundary edges reconnected to it.
   const handleConfirmBulkExtract = async () => {
     const mode = bulkExtractMode;
-    if (!mode || !bulkExtractName.trim() || !selectedBot || !token) return;
-    if (isBulkExtracting) return; // guard against a double click creating the process twice
+    if (!mode || !selectedBot || !token) return;
+    if (bulkExtractTarget === 'new' && !bulkExtractName.trim()) return;
+    if (bulkExtractTarget === 'existing' && !bulkExtractExistingId) return;
+    if (isBulkExtracting) return; // guard against a double click creating/saving this twice
     const idSet = new Set(getBulkEligibleIds());
     const selectedNodesList = nodes.filter(n => idSet.has(n.id));
     if (selectedNodesList.length === 0) { setBulkExtractMode(null); return; }
 
     setIsBulkExtracting(true);
     try {
-      const res = await fetch(`${API_BASE}/processes`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ name: bulkExtractName, flow_id: selectedBot.id })
-      });
-      const newProc = await res.json();
-      if (!newProc.id) { alert(t('editor:alerts.extractProcessFailed')); return; }
+      let targetProcessId: string;
+      let targetProcessName: string;
+      let existingNodes: Node[] = [];
+      let existingEdges: Edge[] = [];
+
+      if (bulkExtractTarget === 'existing') {
+        const existingProc = fixedProcesses.find(p => p.id.toString() === bulkExtractExistingId);
+        if (!existingProc) { setBulkExtractMode(null); return; }
+        targetProcessId = existingProc.id.toString();
+        targetProcessName = existingProc.name;
+        try {
+          const flowRes = await fetch(`${API_BASE}/flow?standard_process_id=${targetProcessId}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          if (flowRes.ok) {
+            const flowData = await flowRes.json();
+            existingNodes = flowData.nodes || [];
+            existingEdges = flowData.edges || [];
+          }
+        } catch { /* falls back to appending onto an empty process — still a valid save */ }
+      } else {
+        const res = await fetch(`${API_BASE}/processes`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          body: JSON.stringify({ name: bulkExtractName, flow_id: selectedBot.id })
+        });
+        const newProc = await res.json();
+        if (!newProc.id) { alert(t('editor:alerts.extractProcessFailed')); return; }
+        targetProcessId = newProc.id.toString();
+        targetProcessName = bulkExtractName;
+      }
 
       const idMap: Record<string, string> = {};
       const clonedNodes = selectedNodesList.map(n => {
@@ -2068,10 +2105,16 @@ const FlowBuilder: React.FC = () => {
         target: idMap[e.target]
       }));
 
-      // Sync to the brand-new process — bypass the ready-key/shrink guards,
-      // same as the existing "duplicate process" flow above.
-      await syncFlow(clonedNodes, clonedEdges, newProc.id, { force: true });
+      const mergedNodes = existingNodes.concat(clonedNodes);
+      const mergedEdges = existingEdges.concat(clonedEdges);
+
+      // Sync to the target process — bypass the ready-key/shrink guards, same as
+      // the existing "duplicate process" flow above (it isn't the flow currently
+      // loaded in the editor, so the client-side "is this the active flow" guard
+      // would otherwise reject the save).
+      await syncFlow(mergedNodes, mergedEdges, targetProcessId, { force: true });
       await loadProcesses();
+      processNodesCacheRef.current[targetProcessId] = mergedNodes;
 
       if (mode === 'move') {
         const avgX = selectedNodesList.reduce((s, n) => s + n.position.x, 0) / selectedNodesList.length;
@@ -2082,7 +2125,7 @@ const FlowBuilder: React.FC = () => {
           id: refNodeId,
           type: NodeType.FIXED_PROCESS,
           position: { x: avgX, y: avgY },
-          data: { label: bulkExtractName, processId: newProc.id, serialId: `B${nextNum}`, isStandardProcess: true }
+          data: { label: targetProcessName, processId: targetProcessId, serialId: `B${nextNum}`, isStandardProcess: true }
         });
 
         // Boundary edges (one endpoint inside the selection, one outside) get
@@ -2109,6 +2152,7 @@ const FlowBuilder: React.FC = () => {
       setSelectedNodeIds([]);
       setBulkExtractMode(null);
       setBulkExtractName('');
+      setBulkExtractExistingId('');
     } catch (e) {
       console.error('Bulk extract failed', e);
       alert(t('editor:alerts.extractProcessFailed'));
@@ -3321,18 +3365,49 @@ const FlowBuilder: React.FC = () => {
               {bulkExtractMode === 'copy' ? t('editor:processModal.extractCopyDescription') : t('editor:processModal.extractMoveDescription')}
             </p>
             <div className="space-y-6">
-              <input
-                className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-blue-600/10 focus:border-blue-600 transition-all text-sm font-bold text-start"
-                placeholder={t('editor:processModal.extractNamePlaceholder')}
-                value={bulkExtractName}
-                onChange={e => setBulkExtractName(e.target.value)}
-                autoFocus
-              />
+              <div className="flex p-1 bg-slate-100 rounded-2xl">
+                <button
+                  type="button"
+                  onClick={() => setBulkExtractTarget('new')}
+                  disabled={isBulkExtracting}
+                  className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition-all disabled:opacity-50 ${bulkExtractTarget === 'new' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}
+                >
+                  {t('editor:processModal.extractTargetNew')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setBulkExtractTarget('existing')}
+                  disabled={isBulkExtracting || bulkExtractExistingOptions.length === 0}
+                  className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition-all disabled:opacity-50 ${bulkExtractTarget === 'existing' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}
+                >
+                  {t('editor:processModal.extractTargetExisting')}
+                </button>
+              </div>
+              {bulkExtractTarget === 'new' ? (
+                <input
+                  className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-blue-600/10 focus:border-blue-600 transition-all text-sm font-bold text-start"
+                  placeholder={t('editor:processModal.extractNamePlaceholder')}
+                  value={bulkExtractName}
+                  onChange={e => setBulkExtractName(e.target.value)}
+                  autoFocus
+                />
+              ) : (
+                <select
+                  className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-blue-600/10 focus:border-blue-600 transition-all text-sm font-bold text-start"
+                  value={bulkExtractExistingId}
+                  onChange={e => setBulkExtractExistingId(e.target.value)}
+                >
+                  <option value="" disabled>{t('editor:processModal.extractExistingPlaceholder')}</option>
+                  {bulkExtractExistingOptions.map(p => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+              )}
               <div className="flex gap-4">
-                <button onClick={() => { setBulkExtractMode(null); setBulkExtractName(''); }} disabled={isBulkExtracting} className="flex-1 py-4 border border-slate-200 text-slate-400 rounded-2xl font-bold text-xs uppercase tracking-widest hover:bg-slate-50 transition-colors disabled:opacity-50">{t('editor:processModal.cancel')}</button>
+                <button onClick={() => { setBulkExtractMode(null); setBulkExtractName(''); setBulkExtractExistingId(''); }} disabled={isBulkExtracting} className="flex-1 py-4 border border-slate-200 text-slate-400 rounded-2xl font-bold text-xs uppercase tracking-widest hover:bg-slate-50 transition-colors disabled:opacity-50">{t('editor:processModal.cancel')}</button>
                 <button
                   onClick={handleConfirmBulkExtract}
-                  disabled={!bulkExtractName.trim() || isBulkExtracting}
+                  disabled={(bulkExtractTarget === 'new' ? !bulkExtractName.trim() : !bulkExtractExistingId) || isBulkExtracting}
                   className={`flex-1 py-4 text-white rounded-2xl font-bold text-xs uppercase tracking-widest shadow-lg transition-colors disabled:opacity-50 ${bulkExtractMode === 'copy' ? 'bg-blue-600 hover:bg-blue-700 shadow-blue-600/20' : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-600/20'}`}
                 >
                   {isBulkExtracting
