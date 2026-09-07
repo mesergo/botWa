@@ -1,0 +1,11 @@
+{
+  "המנהל שנבחר לא נמצא": "The selected manager was not found",
+  "סוג משתמש לא נמצא": "User type not found",
+  "סוג משתמש לא קיים": "User type does not exist",
+  "שם ואימייל נדרשים": "Name and email are required",
+  "כתובת האימייל כבר קיימת במערכת": "This email address already exists",
+  "הזמנה לא תקינה": "Invalid invitation",
+  "Access denied. Admin privileges required.": "גישה נדחתה. נדרשות הרשאות מנהל",
+  "Access denied.": "גישה נדחתה",
+  "Internal server error": "שגיאת שרת פנימית"
+}

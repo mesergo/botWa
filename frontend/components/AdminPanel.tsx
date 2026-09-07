@@ -16,6 +16,7 @@ import ChatImage from './shared/ChatImage';
 import SmsInApp from './sms-in/SmsInApp';
 import SmsExternalLogTab from './sms-in/SmsExternalLogTab';
 import CustomerSessionsPanel from './CustomerSessionsPanel';
+import ErrorLogTab from './logsAdmin/ErrorLogTab';
 
 interface User {
   id: string;
@@ -118,8 +119,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
   const { i18n } = useTranslation();
   const isRtl = i18n.dir() === 'rtl';
 
-  type AdminTab = 'dashboard' | 'users' | 'user-types' | 'templates' | 'settings' | 'sessions' | 'dialog360' | 'sms-in' | 'sms-external-log' | 'connected-numbers';
-  const VALID_TABS: AdminTab[] = ['dashboard', 'users', 'user-types', 'templates', 'settings', 'sessions', 'dialog360', 'sms-in', 'sms-external-log', 'connected-numbers'];
+  type AdminTab = 'dashboard' | 'users' | 'user-types' | 'templates' | 'settings' | 'sessions' | 'dialog360' | 'sms-in' | 'sms-external-log' | 'connected-numbers' | 'error-log';
+  const VALID_TABS: AdminTab[] = ['dashboard', 'users', 'user-types', 'templates', 'settings', 'sessions', 'dialog360', 'sms-in', 'sms-external-log', 'connected-numbers', 'error-log'];
   const activeTab: AdminTab = (VALID_TABS.includes(tab as AdminTab) ? tab : 'dashboard') as AdminTab;
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const setActiveTab = (t: AdminTab) => {
@@ -1767,6 +1768,7 @@ const openRestoreConversations = async () => {
               { id: 'connected-numbers', label: 'מספרים מחוברים', icon: Phone },
               { id: 'sms-in', label: 'הודעות SMS', icon: Inbox },
               // { id: 'sms-external-log', label: 'SMS פנימי', icon: MessageSquare },
+              { id: 'error-log', label: 'תיעוד שגיאות', icon: AlertTriangle },
               { id: 'templates', label: 'מאגר תבניות בוט', icon: FileText },
               { id: 'settings', label: 'הגדרות מערכת', icon: Settings },
             ].map(item => (
@@ -1836,6 +1838,7 @@ const openRestoreConversations = async () => {
               {activeTab === 'dialog360' && 'הודעות תבנית Dialog360'}
               {activeTab === 'connected-numbers' && 'מספרים מחוברים'}
               {activeTab === 'sms-external-log' && 'SMS פנימי'}
+              {activeTab === 'error-log' && 'תיעוד שגיאות'}
               {activeTab === 'templates' && 'ניהול תבניות'}
               {activeTab === 'settings' && 'הגדרות מערכת'}
             </h2> 
@@ -1847,6 +1850,7 @@ const openRestoreConversations = async () => {
               {activeTab === 'dialog360' && 'צפייה בהודעות תבנית מ-Dialog360'}
               {activeTab === 'connected-numbers' && 'צפייה בכל המספרים המחוברים במערכת, לאיזה משתמש הם שייכים והסטטוס שלהם'}
               {activeTab === 'sms-external-log' && 'הודעות SMS שנרשמו על ידי המערכת החיצונית (maskyoo) לתוך מסד הנתונים שלנו'}
+              {activeTab === 'error-log' && 'כל שגיאה שלקוח נתקל בה בממשק — ניתן לסנן לפי סוג שגיאה ולפי לקוח'}
               {activeTab === 'templates' && 'ניהול ותחזוקת מאגר התבניות הגלובלי'}
               {activeTab === 'settings' && 'הגדרת מגבלות, מחירים ופרמטרים למערכת'}
             </p>
@@ -1889,6 +1893,13 @@ const openRestoreConversations = async () => {
           {activeTab === 'sms-external-log' && (
             <div className="animate-fade-in-up">
               <SmsExternalLogTab token={token} />
+            </div>
+          )}
+
+          {/* ERROR LOG TAB — every error a client hits, admin-only, in its own logsAdmin/ folder */}
+          {activeTab === 'error-log' && (
+            <div className="animate-fade-in-up">
+              <ErrorLogTab token={token} />
             </div>
           )}
 

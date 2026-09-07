@@ -31,6 +31,8 @@ import api360Routes from './routes/api360Routes.js';
 import notificationRoutes from './routes/notificationRoutes.js';
 import deviceRoutes from './routes/deviceRoutes.js';
 import smsInRoutes from './routes/smsInRoutes.js';
+import errorLogRoutes from './logsAdmin/errorLog.routes.js';
+import { responseErrorInterceptor } from './logsAdmin/responseErrorInterceptor.js';
 import { connectSmsDb } from './sms-in/smsDb.js';
 import { seedTemplates } from './controllers/templateController.js';
 import { seedUserTypes } from './scripts/seed-user-types.js';
@@ -65,6 +67,11 @@ app.use(express.json({
     req.rawBody = buf.toString('utf8');
   }
 }));
+
+// Observes every response and persists an ErrorLog entry for any status >= 400
+// — see backend/logsAdmin/responseErrorInterceptor.js for why this gives full
+// error coverage without editing every controller's catch block.
+app.use(responseErrorInterceptor);
 
 // Connect to MongoDB before starting the server
 async function startServer() {
@@ -108,6 +115,7 @@ async function startServer() {
     app.use('/api/360', api360Routes);  // External template-send endpoint (mirrors WA API URL)
     app.use('/api/notifications', notificationRoutes);
     app.use('/api/devices', deviceRoutes);  // Expo push device token registration
+    app.use('/api/admin/error-logs', errorLogRoutes);  // "תיעוד שגיאות" admin tab (list/meta) + frontend error-report ingestion
 
     // Expo push (mobile) — bridges eventBus 'notification:new' to exp.host push
     registerExpoPushNotifier();
