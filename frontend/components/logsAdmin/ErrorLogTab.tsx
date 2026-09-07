@@ -227,7 +227,10 @@ export default function ErrorLogTab({ token }: ErrorLogTabProps) {
                       <AlertTriangle size={16} />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm font-bold text-slate-900 truncate">#{log.seq} · {CATEGORY_LABELS[log.category] || log.category}</p>
+                      <p className="text-sm font-bold text-slate-900 truncate">
+                        #{log.seq} · {CATEGORY_LABELS[log.category] || log.category}
+                        {log.status_code != null && <span className="text-rose-600"> · {log.status_code}</span>}
+                      </p>
                       <p className="text-xs text-slate-500 font-semibold truncate mt-0.5">{log.client_name || 'לא משויך ללקוח'}</p>
                     </div>
                     <span className="text-xs text-slate-400 font-medium whitespace-nowrap">{formatTime(log.createdAt)}</span>
@@ -245,10 +248,11 @@ export default function ErrorLogTab({ token }: ErrorLogTabProps) {
               <div className="min-w-[900px]">
                 <div
                   className="grid gap-3 px-6 py-3 bg-slate-50 border-b border-slate-100 text-xs font-bold text-slate-400 uppercase tracking-wide"
-                  style={{ gridTemplateColumns: '1fr 0.7fr 0.9fr 2fr 2fr 1.2fr' }}
+                  style={{ gridTemplateColumns: '1fr 0.6fr 0.6fr 0.9fr 2fr 2fr 1.2fr' }}
                 >
                   <span>שעה</span>
                   <span>מס' שגיאה</span>
+                  <span>קוד HTTP</span>
                   <span>סוג</span>
                   <span>פירוט (עברית)</span>
                   <span>פירוט (English)</span>
@@ -261,10 +265,11 @@ export default function ErrorLogTab({ token }: ErrorLogTabProps) {
                     className={`grid gap-3 px-6 py-3.5 items-center hover:bg-slate-50/70 transition-colors ${
                       idx !== logs.length - 1 ? 'border-b border-slate-100' : ''
                     }`}
-                    style={{ gridTemplateColumns: '1fr 0.7fr 0.9fr 2fr 2fr 1.2fr' }}
+                    style={{ gridTemplateColumns: '1fr 0.6fr 0.6fr 0.9fr 2fr 2fr 1.2fr' }}
                   >
                     <div className="text-sm text-slate-400 font-medium whitespace-nowrap">{formatTime(log.createdAt)}</div>
                     <div className="text-sm font-black text-slate-900">#{log.seq}</div>
+                    <div className="text-sm font-bold text-rose-600">{log.status_code ?? '—'}</div>
                     <div className="text-sm font-semibold text-slate-700">{CATEGORY_LABELS[log.category] || log.category}</div>
                     <div className="text-sm font-semibold text-slate-700 whitespace-pre-wrap break-words">{log.message_he}</div>
                     <div className="text-sm text-slate-500 whitespace-pre-wrap break-words" dir="ltr">{log.message_en}</div>

@@ -1,6 +1,6 @@
 import jwt from 'jsonwebtoken';
 import ErrorLog from './ErrorLog.model.js';
-import { logError } from './errorLogger.js';
+import { logError, flushFallbackErrorLog } from './errorLogger.js';
 import { SECRET_KEY } from '../middleware/auth.js';
 
 const PAGE_LIMIT = 50;
@@ -9,6 +9,11 @@ const PAGE_LIMIT = 50;
 // Shape mirrors getRemovalConfigLog in adminController.js.
 export const listErrorLogs = async (req, res) => {
   try {
+    // Belt-and-suspenders: normally the mongoose 'connected' event already
+    // replays anything written while the database was down, but if the tab
+    // is opened right as the connection recovers, catch it here too.
+    await flushFallbackErrorLog().catch(() => {});
+
     const page = Math.max(1, parseInt(req.query.page) || 1);
     const skip = (page - 1) * PAGE_LIMIT;
 

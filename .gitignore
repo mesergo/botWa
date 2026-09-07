@@ -37,3 +37,6 @@ botsWa.save
 *.tmp
 temp/
 .env
+
+# Error log fallback (written when the DB is unreachable, replayed on reconnect)
+backend/logsAdmin/*.ndjson

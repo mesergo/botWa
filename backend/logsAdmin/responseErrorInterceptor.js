@@ -1,4 +1,31 @@
+import jwt from 'jsonwebtoken';
 import { logError } from './errorLogger.js';
+
+/**
+ * Best-effort "who was this?" label for the log, even when the request never
+ * carried a *valid* identity — the two most common cases being a wrong-password
+ * login attempt (no token exists yet) and an expired/tampered token (fails
+ * verification, so req.user was never set). Falls back through:
+ *   1. req.user.email — set by authenticateToken when the token verified fine
+ *   2. the token's own `email` claim, decoded WITHOUT verifying the signature
+ *      (label only, never trusted for auth — the request was already rejected)
+ *   3. req.body.email — e.g. a failed /api/auth/login or /register attempt
+ */
+const resolveAttemptedIdentity = (req) => {
+  if (req.user?.email) return req.user.email;
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+  if (token) {
+    try {
+      const decoded = jwt.decode(token);
+      if (decoded?.email) return decoded.email;
+    } catch (_) { /* not a JWT at all — ignore */ }
+  }
+  if (req.body && typeof req.body.email === 'string' && req.body.email.trim()) {
+    return req.body.email.trim();
+  }
+  return null;
+};
 
 /**
  * Global Express middleware — registered once, early, before any route is
@@ -49,7 +76,7 @@ export const responseErrorInterceptor = (req, res, next) => {
       source: `${req.method} ${req.originalUrl}`,
       message,
       clientId: req.userId || null,
-      clientName: req.user?.email || null,
+      clientName: resolveAttemptedIdentity(req),
       statusCode: res.statusCode,
       details: { method: req.method, url: req.originalUrl },
     }).catch(() => {});

@@ -1,6 +1,8 @@
 import fs from 'fs';
+import fsPromises from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import mongoose from 'mongoose';
 import ErrorLog from './ErrorLog.model.js';
 import { nextSequence } from './Counter.model.js';
 
@@ -10,6 +12,15 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const translations = JSON.parse(
   fs.readFileSync(path.join(__dirname, 'errorTranslations.json'), 'utf8')
 );
+
+// Errors that happen *because* the database is unreachable (e.g. every login
+// attempt during an outage) can't be persisted to the ErrorLog collection —
+// that would just fail the same way. Without a fallback they vanish silently
+// and the admin tab shows nothing for the exact incident it exists to catch.
+// So a failed write is appended here instead (one JSON object per line) and
+// replayed into ErrorLog as soon as Mongo reconnects.
+const FALLBACK_FILE = path.join(__dirname, 'fallback-errors.ndjson');
+let flushing = false;
 
 const HEBREW_RE = /[֐-׿]/;
 
@@ -63,23 +74,86 @@ export const logError = async ({
   stack = null,
   details = null,
 } = {}) => {
+  const { message_he, message_en } = deriveBilingual(message);
+  const entry = {
+    category,
+    source,
+    message_he,
+    message_en,
+    client_id: clientId || null,
+    client_name: clientName || null,
+    end_customer_phone: endCustomerPhone || null,
+    status_code: statusCode || null,
+    stack: stack || null,
+    details: details || null,
+  };
   try {
-    const { message_he, message_en } = deriveBilingual(message);
     const seq = await nextSequence('errorLogSeq');
-    await ErrorLog.create({
-      seq,
-      category,
-      source,
-      message_he,
-      message_en,
-      client_id: clientId || null,
-      client_name: clientName || null,
-      end_customer_phone: endCustomerPhone || null,
-      status_code: statusCode || null,
-      stack: stack || null,
-      details: details || null,
-    });
+    await ErrorLog.create({ ...entry, seq });
   } catch (err) {
-    console.error('[ErrorLog] Failed to persist error log entry:', err.message);
+    console.error('[ErrorLog] Failed to persist error log entry — writing to local fallback file instead:', err.message);
+    await appendToFallback(entry);
   }
 };
+
+const appendToFallback = async (entry) => {
+  try {
+    const line = JSON.stringify({ ...entry, _occurredAt: new Date().toISOString() });
+    await fsPromises.appendFile(FALLBACK_FILE, line + '\n', 'utf8');
+  } catch (fsErr) {
+    // Nothing left to fall back to — surface it in the process logs only.
+    console.error('[ErrorLog] Failed to write fallback error log file too:', fsErr.message);
+  }
+};
+
+/**
+ * Replays every entry accumulated in the fallback file (written while Mongo
+ * was unreachable) into the ErrorLog collection, assigning real sequence
+ * numbers now that the database is back. Safe to call opportunistically —
+ * a no-op when the file doesn't exist or is empty, and guarded against
+ * overlapping runs (triggered both by the mongoose 'connected' event and,
+ * as a belt-and-suspenders check, by the admin tab's list endpoint).
+ */
+export const flushFallbackErrorLog = async () => {
+  if (flushing) return;
+  let raw;
+  try {
+    raw = await fsPromises.readFile(FALLBACK_FILE, 'utf8');
+  } catch {
+    return;
+  }
+  const lines = raw.split('\n').map((l) => l.trim()).filter(Boolean);
+  if (!lines.length) return;
+
+  flushing = true;
+  console.log(`[ErrorLog] Flushing ${lines.length} error log entr${lines.length === 1 ? 'y' : 'ies'} recorded while the database was unavailable...`);
+  const stillFailed = [];
+  try {
+    for (const line of lines) {
+      let parsed;
+      try {
+        parsed = JSON.parse(line);
+      } catch {
+        continue; // corrupt line — drop it rather than block the rest
+      }
+      const { _occurredAt, ...entry } = parsed;
+      try {
+        const seq = await nextSequence('errorLogSeq');
+        await ErrorLog.create({ ...entry, seq, details: { ...(entry.details || {}), occurredAt: _occurredAt } });
+      } catch {
+        stillFailed.push(line);
+      }
+    }
+    if (stillFailed.length) {
+      await fsPromises.writeFile(FALLBACK_FILE, stillFailed.join('\n') + '\n', 'utf8');
+    } else {
+      await fsPromises.unlink(FALLBACK_FILE).catch(() => {});
+    }
+  } finally {
+    flushing = false;
+  }
+};
+
+mongoose.connection.on('connected', () => {
+  flushFallbackErrorLog().catch((err) => console.error('[ErrorLog] Fallback flush failed:', err.message));
+});
