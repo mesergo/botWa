@@ -2020,7 +2020,7 @@ const FlowBuilder: React.FC = () => {
       // A bulk delete legitimately shrinks the flow's widget count — force the
       // save so the server's stale/shrink guard (meant to catch a stale tab
       // silently wiping content) doesn't reject this user-confirmed change.
-      await syncFlow(remainingNodes, remainingEdges, activeProcessId, { force: true });
+      await syncFlow(remainingNodes, remainingEdges, activeProcessId as string, { force: true });
     } finally {
       setIsBulkDeleting(false);
     }
@@ -2146,7 +2146,7 @@ const FlowBuilder: React.FC = () => {
         // count on purpose, so save it ourselves (forced) instead of leaving it
         // to the generic autosave, which would trip the server's shrink guard.
         dirtyRef.current = false;
-        await syncFlow(remainingNodes, remainingEdges, activeProcessId, { force: true });
+        await syncFlow(remainingNodes, remainingEdges, activeProcessId as string, { force: true });
       }
 
       setSelectedNodeIds([]);

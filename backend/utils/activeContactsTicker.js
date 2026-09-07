@@ -12,13 +12,13 @@ import { computeActiveContactsCount } from './activeContacts.js';
 
 const TICK_MS = 30 * 60 * 1000; // check for due accounts every 30 min
 const RECHECK_MS = 24 * 60 * 60 * 1000; // recompute each account once per 24h
-const ALERT_DEDUPE_MS = 20 * 60 * 60 * 1000; // don't re-send the office email more than once per ~day
+const ALERT_DEDUPE_MS = 7 * 24 * 60 * 60 * 1000; // don't re-send the office email more than once per ~day
 const BATCH_LIMIT = 200; // cap per tick so a large backlog doesn't block the event loop
 const INITIAL_RUN_DELAY_MS = 60 * 1000; // let the DB connection settle on startup
 
 const sendOfficeQuotaAlertEmail = async (user, count, limit) => {
   // const officeEmail = process.env.OFFICE_ALERT_EMAIL || 'go@mesergo.co.il';
-  const officeEmail = process.env.OFFICE_ALERT_EMAIL || 'margalitw@mesergo.co.il';
+  const officeEmail = process.env.OFFICE_ALERT_EMAIL || 'go@mesergo.co.il';
 
   const emailUsername = process.env.MESERGO_EMAIL_USERNAME || 'admin@chatgo.live';
   const emailToken = process.env.MESERGO_EMAIL_TOKEN || '1aa14226-ceae-4104-ba86-899eca88631d';

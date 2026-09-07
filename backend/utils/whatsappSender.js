@@ -374,7 +374,7 @@ export const pushMessagesToWhatsApp = async (phone, messages, user = null, bot =
         await flushTextBuffer();
         const contactPayload = [{
           name: { formatted_name: msg.contactName || '', first_name: msg.contactName || '' },
-          phones: [{ phone: normalizePhone(msg.contactPhone || ''), type: 'CELL' }]
+          phones: [{ phone: '+' + normalizePhone(msg.contactPhone || ''), type: 'CELL' }]
         }];
         console.log(`[WA-PUSH] 👤 Sending CONTACT | name=${msg.contactName} | phone=${msg.contactPhone}`);
         const { success: contactOk, wamid: contactWamid } = await sendOne({ contact: contactPayload });
