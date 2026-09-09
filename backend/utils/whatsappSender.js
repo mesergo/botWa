@@ -5,6 +5,7 @@
  */
 import crypto from 'crypto';
 import fetch from 'node-fetch';
+import { logError } from '../logsAdmin/errorLogger.js';
 
 const _sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
@@ -214,6 +215,15 @@ export const pushMessagesToWhatsApp = async (phone, messages, user = null, bot =
       console.log(`[WA-PUSH] ⬅️  RESPONSE HTTP ${res.status} | body: ${respText}`);
       if (!res.ok) {
         console.error(`[WA-PUSH] ❌ HTTP ${res.status} | resp: ${respText}`);
+        logError({
+          category: 'whatsapp_send',
+          source: 'whatsappSender.sendOne',
+          message: `WhatsApp send failed with HTTP ${res.status}: ${respText}`,
+          clientId: bot?.user_id || user?._id || null,
+          clientName: user?.email || null,
+          endCustomerPhone: normalizedPhone,
+          statusCode: res.status,
+        }).catch(() => {});
         return { success: false, wamid: null };
       }
       let wamid = null;
@@ -226,6 +236,15 @@ export const pushMessagesToWhatsApp = async (phone, messages, user = null, bot =
       return { success: true, wamid };
     } catch (err) {
       console.error('[WA-PUSH] ❌ Exception:', err.message);
+      logError({
+        category: 'whatsapp_send',
+        source: 'whatsappSender.sendOne',
+        message: err.message,
+        stack: err.stack,
+        clientId: bot?.user_id || user?._id || null,
+        clientName: user?.email || null,
+        endCustomerPhone: normalizedPhone,
+      }).catch(() => {});
       return { success: false, wamid: null };
     }
   };

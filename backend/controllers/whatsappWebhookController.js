@@ -1,5 +1,6 @@
 import BotFlow from '../models/BotFlow.js';
 import { normalizePhone } from '../utils/phone.js';
+import { logError } from '../logsAdmin/errorLogger.js';
 
 /**
  * GET /api/whatsapp/webhook — Meta verification handshake.
@@ -166,5 +167,15 @@ export const receiveWebhook = async (req, res) => {
     console.log(`${'='.repeat(80)}\n`);
   } catch (err) {
     console.error('[WA-Webhook] ❌ Exception while processing webhook:', err);
+    // res.sendStatus(200) already fired above (Meta requires an immediate ack),
+    // so the global response interceptor never sees this failure — log it here.
+    res.locals.errorAlreadyLogged = true;
+    logError({
+      category: 'webhook',
+      source: 'whatsappWebhookController.receiveWebhook',
+      message: err.message,
+      stack: err.stack,
+      details: { body: req.body },
+    }).catch(() => {});
   }
 };
