@@ -399,6 +399,11 @@ const FlowBuilder: React.FC = () => {
   // Tracks whether a real user action occurred since the last save (ignores ReactFlow
   // internal changes like node dimension measurements and selection state).
   const dirtyRef = useRef(false);
+  // Set right before marking dirty from an explicit, user-initiated deletion (e.g. the
+  // trash icon on a single node). Tells the next autosave to send force:true so the
+  // server's shrink/guard checks (meant for accidental/blind saves) don't block a
+  // deletion the user clearly intended. Reset immediately after being consumed.
+  const forceNextSaveRef = useRef(false);
 
   useEffect(() => {
     const handleEdgeDelete = (e: any) => {
@@ -670,6 +675,11 @@ const FlowBuilder: React.FC = () => {
 
   const onDeleteNode = useCallback((id: string) => {
     dirtyRef.current = true;
+    // Deleting a node shrinks the flow's widget count — this is an intentional,
+    // user-initiated action, so the next autosave should force through the
+    // server's shrink/guard checks instead of risking a blocked save (see
+    // confirmBulkDelete, which does the same for multi-select deletes).
+    forceNextSaveRef.current = true;
     setNodes((nds) => nds.filter((node) => node.id !== id));
     setEdges((eds) => eds.filter((edge) => edge.source !== id && edge.target !== id));
   }, []);
@@ -1190,9 +1200,11 @@ const FlowBuilder: React.FC = () => {
       // Using a ref (not useEffect cleanup) so that unrelated re-renders
       // don't accidentally clear a timer that's still counting down.
       if (saveDebounceTimerRef.current) clearTimeout(saveDebounceTimerRef.current);
+      const shouldForce = forceNextSaveRef.current;
+      forceNextSaveRef.current = false;
       saveDebounceTimerRef.current = setTimeout(() => {
         saveDebounceTimerRef.current = null;
-        syncFlowRef.current().then(() => {
+        syncFlowRef.current(undefined, undefined, undefined, { force: shouldForce }).then(() => {
           setSaveStatus('saved');
           if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
           savedTimerRef.current = setTimeout(() => setSaveStatus('idle'), 2500);

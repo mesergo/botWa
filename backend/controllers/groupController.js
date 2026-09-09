@@ -813,43 +813,115 @@ function buildBroadcastHistoryEntry(groupName, broadcastId, flowId, { isTemplate
   return { ...base, type: 'Text', text: renderPersonalizedText(msgText, contact) };
 }
 
-// After a successful broadcast send, reflect the message into each recipient's conversation:
-// - if they already have a BotSession with this bot, push it straight into process_history
-// - otherwise, queue it on Contact.pending_history — drained when their next session opens (chatController.js)
+// After a successful broadcast send, reflect the message into each recipient's conversation.
+// Two-layer match per phone (no parallel open agent+bot sessions for the same contact+bot):
+//   Layer 1 — an OPEN AGENT session (is_agent:true, no age limit) always gets the entry
+//             pushed in-place; a template's postSendMode can flip it back to bot mode
+//             in-place, but a second session is never created.
+//   Layer 2 — no open agent session: fall back to a 20-minute `createdAt` window match
+//             against the latest non-agent, still-active session (mirrors the 360-TEMPLATE
+//             / sendTemplateToPhone pattern in chatController.js/sessionController.js).
+//   Neither found — create a brand-new lean BotSession (mirrors sendTemplateToPhone's
+//             sessionDoc shape) so the broadcast is visible immediately, instead of the
+//             previous "queue on Contact.pending_history until their next session opens"
+//             behavior.
 // Each recipient gets its OWN history entry (not a shared one) so personalized template
 // params (__field:full_name etc.) show the real value for that specific contact.
 async function saveBroadcastToSessions(userId, flowId, broadcastId, groupName, sendOpts, phonesArr, postSendMode = 'no_change') {
   const normalizedPhones = phonesArr.map(p => p.phone);
   if (normalizedPhones.length === 0) return;
 
-  // Find the most recent session per phone for this bot (also grab its current
-  // status, needed to compute per-template post-send mode field updates below)
-  const latestSessions = await BotSession.aggregate([
-    { $match: { user_id: String(userId), flow_id: flowId, sender: { $in: normalizedPhones } } },
-    { $sort: { createdAt: -1 } },
+  const TWENTY_MIN_MS = 20 * 60 * 1000;
+
+  // Sessions come from two different creation paths in this codebase: the bot engine
+  // (Mongoose `BotSession.create`, timestamps:true) gets an auto `createdAt`; agent/
+  // template tools (raw `collection.insertOne` in sendTemplateToPhone / the 360-TEMPLATE
+  // handler) only set `created_at` manually and have no `createdAt` at all. Normalize
+  // both so "most recent"/"within 20 min" comparisons are correct either way.
+  const sortTimeExpr = { $ifNull: ['$createdAt', '$created_at'] };
+
+  // Layer 1 candidates — latest OPEN AGENT session per phone, no age limit.
+  const agentSessions = await BotSession.aggregate([
+    { $match: { user_id: String(userId), flow_id: flowId, sender: { $in: normalizedPhones }, is_agent: true } },
+    { $addFields: { _sortTime: sortTimeExpr } },
+    { $sort: { _sortTime: -1 } },
     { $group: { _id: '$sender', sessionId: { $first: '$_id' }, status: { $first: '$status' } } },
   ]);
-  const sessionInfoByPhone = new Map(latestSessions.map(s => [s._id, { sessionId: s.sessionId, status: s.status }]));
+  const agentSessionByPhone = new Map(agentSessions.map(s => [s._id, { sessionId: s.sessionId, status: s.status }]));
+
+  // Layer 2 candidates — latest non-agent, still-active session per phone (for the
+  // 20-min window fallback match).
+  const nonAgentSessions = await BotSession.aggregate([
+    { $match: { user_id: String(userId), flow_id: flowId, sender: { $in: normalizedPhones }, is_agent: { $ne: true }, is_active: { $ne: false } } },
+    { $addFields: { _sortTime: sortTimeExpr } },
+    { $sort: { _sortTime: -1 } },
+    { $group: { _id: '$sender', sessionId: { $first: '$_id' }, status: { $first: '$status' }, sortTime: { $first: '$_sortTime' } } },
+  ]);
+  const nonAgentSessionByPhone = new Map(nonAgentSessions.map(s => [s._id, s]));
 
   const sessionOps = [];
+  const sessionsToCreate = [];
   const contactOps = [];
 
   for (const p of phonesArr) {
     const entry = buildBroadcastHistoryEntry(groupName, broadcastId, flowId, sendOpts, p.contact);
-    const info = sessionInfoByPhone.get(p.phone);
-    if (info?.sessionId) {
+
+    // Layer 1: open agent conversation — always append in-place, never a new session.
+    const agentInfo = agentSessionByPhone.get(p.phone);
+    if (agentInfo?.sessionId) {
       const update = { $push: { process_history: entry } };
       if (postSendMode !== 'no_change') {
-        const postSendFields = buildPostSendModeFields(postSendMode, info.status);
+        const postSendFields = buildPostSendModeFields(postSendMode, agentInfo.status);
         if (postSendFields) update.$set = postSendFields;
       }
-      sessionOps.push({ updateOne: { filter: { _id: info.sessionId }, update } });
-    } else if (p.contact?._id) {
-      contactOps.push({ updateOne: { filter: { _id: p.contact._id }, update: { $push: { pending_history: entry } } } });
+      sessionOps.push({ updateOne: { filter: { _id: agentInfo.sessionId }, update } });
+      continue;
+    }
+
+    // Layer 2: recent (< 20 min) non-agent session — append in-place.
+    const nonAgentInfo = nonAgentSessionByPhone.get(p.phone);
+    const withinWindow = !!nonAgentInfo?.sortTime && (Date.now() - new Date(nonAgentInfo.sortTime).getTime()) <= TWENTY_MIN_MS;
+    if (withinWindow) {
+      const update = { $push: { process_history: entry } };
+      if (postSendMode !== 'no_change') {
+        const postSendFields = buildPostSendModeFields(postSendMode, nonAgentInfo.status);
+        if (postSendFields) update.$set = postSendFields;
+      }
+      sessionOps.push({ updateOne: { filter: { _id: nonAgentInfo.sessionId }, update } });
+      continue;
+    }
+
+    // Neither found — start a fresh session (mirrors sendTemplateToPhone's sessionDoc
+    // shape). Also drain any older broadcast messages queued on the contact while no
+    // session existed yet, so they appear in chronological order ahead of this one.
+    const pending = Array.isArray(p.contact?.pending_history) ? p.contact.pending_history : [];
+    const initialHistory = pending.length > 0
+      ? [...pending].sort((a, b) => new Date(a.created) - new Date(b.created)).concat(entry)
+      : [entry];
+
+    const sessionDoc = {
+      sender: p.phone,
+      customer_phone: p.phone,
+      user_id: String(userId),
+      flow_id: flowId,
+      is_agent: true,
+      agent_since: new Date(),
+      status: 'waiting',
+      is_active: true,
+      process_history: initialHistory,
+    };
+    if (postSendMode !== 'no_change') {
+      const postSendFields = buildPostSendModeFields(postSendMode, 'waiting');
+      if (postSendFields) Object.assign(sessionDoc, postSendFields);
+    }
+    sessionsToCreate.push(sessionDoc);
+    if (pending.length > 0 && p.contact?._id) {
+      contactOps.push({ updateOne: { filter: { _id: p.contact._id }, update: { $set: { pending_history: [] } } } });
     }
   }
 
   if (sessionOps.length > 0) await BotSession.bulkWrite(sessionOps);
+  if (sessionsToCreate.length > 0) await BotSession.insertMany(sessionsToCreate);
   if (contactOps.length > 0) await Contact.bulkWrite(contactOps);
 }
 
