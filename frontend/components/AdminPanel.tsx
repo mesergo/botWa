@@ -13,6 +13,10 @@ import {
 import UserTypesManager from './UserTypesManager';
 import { FileUploader } from './FileUploader';
 import ChatImage from './shared/ChatImage';
+import TemplateFormModal from './admin/templates/TemplateFormModal';
+import TemplateActionsMenu from './admin/templates/TemplateActionsMenu';
+import { useAdminCustomerTemplates } from './admin/templates/useAdminCustomerTemplates';
+import { buildComponentsPayload, TemplateModalMode } from './admin/templates/types';
 import SmsInApp from './sms-in/SmsInApp';
 import SmsExternalLogTab from './sms-in/SmsExternalLogTab';
 import CustomerSessionsPanel from './CustomerSessionsPanel';
@@ -191,6 +195,18 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
   const [custDialog360Error, setCustDialog360Error] = useState<string | null>(null);
   const [custDialog360Settings, setCustDialog360Settings] = useState<Record<string, 'hidden' | 'manager' | 'agent'>>({});
   const [custDialog360DefaultMedia, setCustDialog360DefaultMedia] = useState<Record<string, { url: string; type: 'image' | 'video' | 'document' }>>({});
+
+  // Add/edit/duplicate/delete modal state for the customer's Dialog360 message templates
+  const [showTemplateModal, setShowTemplateModal] = useState(false);
+  const [templateModalMode, setTemplateModalMode] = useState<TemplateModalMode>('add');
+  const [templateModalSource, setTemplateModalSource] = useState<any | null>(null);
+  const adminCustomerTemplates = useAdminCustomerTemplates({
+    token,
+    onSuccess: (userId) => {
+      setShowTemplateModal(false);
+      fetchCustomerDialog360Templates(userId);
+    }
+  });
 
   // Per-customer connected-numbers tab (read-only admin view)
   const [custConnectedNumbers, setCustConnectedNumbers] = useState<any[]>([]);
@@ -3349,6 +3365,20 @@ const openRestoreConversations = async () => {
 
                     {userDetailTab === 'cust-templates' && (
                       <div className="flex-1 overflow-y-auto p-4 sm:p-8 content-start h-full">
+                        <div className="flex items-center justify-end mb-4">
+                          <button
+                            onClick={() => {
+                              setTemplateModalMode('add');
+                              setTemplateModalSource(null);
+                              adminCustomerTemplates.setError(null);
+                              setShowTemplateModal(true);
+                            }}
+                            className="flex items-center gap-1.5 bg-sky-600 text-white px-3 py-2 rounded-xl text-xs font-bold hover:bg-sky-700 transition-colors whitespace-nowrap shadow-sm"
+                          >
+                            <Plus size={14} />
+                            הוספת תבנית
+                          </button>
+                        </div>
                         {custDialog360Loading ? (
                           <div className="flex items-center justify-center py-20">
                             <div className="text-slate-400 text-center">
@@ -3401,23 +3431,41 @@ const openRestoreConversations = async () => {
                                           <h3 className="text-lg font-bold text-slate-800 group-hover:text-sky-700 transition-colors">
                                             {name}
                                           </h3>
-                                          {(() => {
-                                            const currentVis = custDialog360Settings[name] ?? 'manager';
-                                            const cfg = {
-                                              hidden:  { icon: <EyeOff size={16} />,    title: 'מוסתר לכולם — לחץ כדי לשנות',          cls: 'bg-rose-500 text-white border-rose-500 hover:bg-rose-600' },
-                                              manager: { icon: <UserCheck size={16} />, title: 'מוצג למנהל משמרת — לחץ כדי לשנות',     cls: 'bg-amber-500 text-white border-amber-500 hover:bg-amber-600' },
-                                              agent:   { icon: <Headphones size={16} />, title: 'מוצג גם לנציגים — לחץ כדי לשנות',       cls: 'bg-emerald-500 text-white border-emerald-500 hover:bg-emerald-600' },
-                                            }[currentVis];
-                                            return (
-                                              <button
-                                                onClick={() => cycleCustomerDialog360Visibility(selectedUser.id, template)}
-                                                className={`p-2 rounded-lg transition-colors border ${cfg.cls}`}
-                                                title={cfg.title}
-                                              >
-                                                {cfg.icon}
-                                              </button>
-                                            );
-                                          })()}
+                                          <div className="flex items-center gap-1.5">
+                                            {(() => {
+                                              const currentVis = custDialog360Settings[name] ?? 'manager';
+                                              const cfg = {
+                                                hidden:  { icon: <EyeOff size={16} />,    title: 'מוסתר לכולם — לחץ כדי לשנות',          cls: 'bg-rose-500 text-white border-rose-500 hover:bg-rose-600' },
+                                                manager: { icon: <UserCheck size={16} />, title: 'מוצג למנהל משמרת — לחץ כדי לשנות',     cls: 'bg-amber-500 text-white border-amber-500 hover:bg-amber-600' },
+                                                agent:   { icon: <Headphones size={16} />, title: 'מוצג גם לנציגים — לחץ כדי לשנות',       cls: 'bg-emerald-500 text-white border-emerald-500 hover:bg-emerald-600' },
+                                              }[currentVis];
+                                              return (
+                                                <button
+                                                  onClick={() => cycleCustomerDialog360Visibility(selectedUser.id, template)}
+                                                  className={`p-2 rounded-lg transition-colors border ${cfg.cls}`}
+                                                  title={cfg.title}
+                                                >
+                                                  {cfg.icon}
+                                                </button>
+                                              );
+                                            })()}
+                                            <TemplateActionsMenu
+                                              deleting={adminCustomerTemplates.saving}
+                                              onEdit={() => {
+                                                setTemplateModalMode('edit');
+                                                setTemplateModalSource(template);
+                                                adminCustomerTemplates.setError(null);
+                                                setShowTemplateModal(true);
+                                              }}
+                                              onDuplicate={() => {
+                                                setTemplateModalMode('duplicate');
+                                                setTemplateModalSource(template);
+                                                adminCustomerTemplates.setError(null);
+                                                setShowTemplateModal(true);
+                                              }}
+                                              onDelete={() => adminCustomerTemplates.deleteTemplate(selectedUser.id, name)}
+                                            />
+                                          </div>
                                         </div>
                                         <div className="flex items-center gap-2 flex-wrap">
                                           {language && (
@@ -5363,6 +5411,34 @@ const openRestoreConversations = async () => {
             </div>
           </div>
         </div>
+      )}
+
+      {showTemplateModal && selectedUser && (
+        <TemplateFormModal
+          mode={templateModalMode}
+          sourceTemplate={templateModalSource}
+          token={token || ''}
+          saving={adminCustomerTemplates.saving}
+          serverError={adminCustomerTemplates.error}
+          onClose={() => setShowTemplateModal(false)}
+          onSubmit={({ mode, form, templateId }) => {
+            const components = buildComponentsPayload(form.components);
+            if (mode === 'edit' && templateId) {
+              adminCustomerTemplates.editTemplate(selectedUser.id, {
+                template_id: templateId,
+                category: form.category,
+                components
+              });
+            } else {
+              adminCustomerTemplates.addTemplate(selectedUser.id, {
+                name: form.name,
+                category: form.category,
+                language: form.language,
+                components
+              });
+            }
+          }}
+        />
       )}
 
     </div>
