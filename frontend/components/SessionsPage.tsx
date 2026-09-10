@@ -6,6 +6,7 @@ import MigrationNoticeBanner from './MigrationNoticeBanner';
 import { TemplateHeaderMediaField } from './TemplateHeaderMediaField';
 import QuickInsertMenu from './shared/QuickInsertMenu';
 import ChatImage from './shared/ChatImage';
+import { getMissingTemplateVars } from './shared/templateValidation';
 import { usePermission } from '../hooks/usePermission';
 import PageTopBar from './PageTopBar';
 import ProfileMenuContent from './ProfileMenuContent';
@@ -1037,6 +1038,12 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
               }
             }
           } else if (isTemplate) {
+            const missingVars = getMissingTemplateVars(selectedTemplate, templateParams);
+            if (missingVars.length > 0) {
+              alert(`יש למלא את כל המשתנים בתבנית לפני השליחה (חסר: ${missingVars.map(n => `{{${n}}}`).join(', ')})`);
+              setAgentSending(false);
+              return;
+            }
             requestBody.isTemplate = true;
             requestBody.templateData = {
               id: selectedTemplate.id,
@@ -1216,6 +1223,11 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
       // ── הגבלת תבנית בלבד ללקוח חדש — מבוטל זמנית (ניתן להחזיר ע"י ביטול ההערה) ──
       // if (!selectedTemplate) return;
       if (!selectedTemplate) return; // משאיר כברירת מחדל כי backend תומך רק ב-template-to-phone לסשן חדש
+      const missingVars = getMissingTemplateVars(selectedTemplate, templateParams);
+      if (missingVars.length > 0) {
+        alert(`יש למלא את כל המשתנים בתבנית לפני השליחה (חסר: ${missingVars.map(n => `{{${n}}}`).join(', ')})`);
+        return;
+      }
       const msgText = agentMessage.trim();
       setAgentSending(true);
       setAgentWaFailed(false);
@@ -1310,6 +1322,12 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
         }
       }
     } else if (isTemplate) {
+      const missingVars = getMissingTemplateVars(selectedTemplate, templateParams);
+      if (missingVars.length > 0) {
+        alert(`יש למלא את כל המשתנים בתבנית לפני השליחה (חסר: ${missingVars.map(n => `{{${n}}}`).join(', ')})`);
+        setAgentSending(false);
+        return;
+      }
       // Build template data with user parameters
       requestBody.isTemplate = true;
       requestBody.templateData = {
@@ -1590,6 +1608,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
     });
     return text;
   };
+
 
   // ─────────────────────────────────────────────────────────────────────────
 

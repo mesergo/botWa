@@ -11,6 +11,7 @@ import ComposerPanel from './send-messages/ComposerPanel';
 import BroadcastsView from './send-messages/BroadcastsView';
 import TemplatePickerModal from './send-messages/TemplatePickerModal';
 import ScheduleDialog from './send-messages/ScheduleDialog';
+import { getMissingTemplateVars } from './shared/templateValidation';
 
 interface ContactRecord {
   _id: string;
@@ -314,7 +315,8 @@ const SendMessagesPage: React.FC<SendMessagesPageProps> = ({
 
   const canSubmit = !!(selectedTemplate || mediaUrl || messageText.trim())
     && (selectedContactIds.size > 0 || selectedGroupIds.size > 0 || manualPhonesList.length > 0)
-    && !(sendBots.length > 1 && !selectedSendBotId);
+    && !(sendBots.length > 1 && !selectedSendBotId)
+    && !(selectedTemplate && getMissingTemplateVars(selectedTemplate, templateParams).length > 0);
 
   const submitSend = async (scheduledAtMs?: number) => {
     if (!canSubmit) return;

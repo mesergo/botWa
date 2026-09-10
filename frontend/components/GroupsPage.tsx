@@ -11,6 +11,7 @@ import { FileUploader } from './FileUploader';
 import { TemplateHeaderMediaField } from './TemplateHeaderMediaField';
 import ImportContactsModal from './ImportContactsModal';
 import TemplateBodyParamsEditor from './TemplateBodyParamsEditor';
+import { getMissingTemplateVars } from './shared/templateValidation';
 import PersonalizedTextarea from './shared/PersonalizedTextarea';
 import ExcludeGroupSelector from './shared/ExcludeGroupSelector';
 import { usePermission } from '../hooks/usePermission';
@@ -438,6 +439,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
     const usingTemplate = !!selectedTemplate;
     const usingMedia = !!(mediaType && mediaUrl);
     if (!usingTemplate && !usingMedia && !message) return;
+    if (usingTemplate && getMissingTemplateVars(selectedTemplate, templateParams).length > 0) return;
     setSending(true);
     setSendResult(null);
     try {
@@ -1895,14 +1897,14 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                     );
                     setScheduleDialogOpen(true);
                   }}
-                  disabled={sending || (!selectedTemplate && !mediaUrl && !sendText.trim()) || (sendBots.length > 1 && !selectedSendBotId)}
+                  disabled={sending || (!selectedTemplate && !mediaUrl && !sendText.trim()) || (sendBots.length > 1 && !selectedSendBotId) || (!!selectedTemplate && getMissingTemplateVars(selectedTemplate, templateParams).length > 0)}
                   className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-sm disabled:opacity-50"
                 >
                   <Calendar size={15} /> שלח בתזמון
                 </button>
                 <button
                   onClick={() => submitSend()}
-                  disabled={sending || (!selectedTemplate && !mediaUrl && !sendText.trim()) || (sendBots.length > 1 && !selectedSendBotId)}
+                  disabled={sending || (!selectedTemplate && !mediaUrl && !sendText.trim()) || (sendBots.length > 1 && !selectedSendBotId) || (!!selectedTemplate && getMissingTemplateVars(selectedTemplate, templateParams).length > 0)}
                   className="flex items-center gap-2 px-6 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-xl font-bold text-sm disabled:opacity-50"
                 >
                   <Send size={15} />
