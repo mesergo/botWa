@@ -1002,9 +1002,9 @@ async function processBroadcast(broadcastId, userId, group, contacts, opts) {
     // individual message via the regular single-recipient /send endpoint.
     const textTokens = !isTemplate ? extractTextTokens(msgText) : [];
     const usePersonalizedPhones = textTokens.length > 0;
-
+ 
     if (usePersonalizedPhones) {
-      const { endpoint: singleEndpoint, waToken: singleToken } = buildWACredentials(null, resolvedBot);
+      const { endpoint: singleEndpoint, waToken: singleToken } = await buildWACredentials(null, resolvedBot);
       if (!singleEndpoint) {
         console.error(`${TAG} ❌ Could not resolve single-send endpoint for personalized broadcast — aborting`);
         await GroupBroadcast.findByIdAndUpdate(broadcastId, { status: 'failed', completed_at: new Date() });
