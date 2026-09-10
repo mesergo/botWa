@@ -42,7 +42,7 @@ const TrialExpiredScreen: React.FC<{ userName: string; onLogout: () => void }> =
           <div className="w-20 h-20 bg-red-50 rounded-full flex items-center justify-center">
             <Lock className="w-10 h-10 text-red-500" strokeWidth={2} />
           </div>
-        </div>
+        </div> 
         <h2 className="text-3xl font-black text-slate-800 mb-3">{t('trial.title')}</h2>
         <p className="text-slate-500 mb-2 font-medium">
           <Trans

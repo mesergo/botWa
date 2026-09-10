@@ -17,6 +17,15 @@ const MigrationNoticeBanner: React.FC = () => {
 
   if (dismissed) return null;
 
+  // מציגים את ההודעה רק אם עדיין לא עברנו לדומיין החדש (app.message)
+  try {
+    if (window.location.hostname.startsWith('app.message')) {
+      return null;
+    }
+  } catch {
+    // ignore (e.g. no window in SSR)
+  }
+
   const handleDismiss = () => {
     try {
       localStorage.setItem(DISMISS_KEY, '1');

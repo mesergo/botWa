@@ -15,7 +15,7 @@ import {
   UserMinus, 
   UserCheck,
   Zap,
-  CornerUpLeft
+  CornerUpLeft 
 } from 'lucide-react';
 import { NodeType } from './types';
  
