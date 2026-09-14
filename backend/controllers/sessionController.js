@@ -3017,25 +3017,25 @@ export const sendTemplateToPhone = async (req, res) => {
 
     // Create a BotSession so the contact appears in the sessions list and message is saved
     // (collection is already declared above for the lastSession lookup)
+    // Per-template post-send mode: a brand-new session created by this template
+    // send defaults to BOT mode (postSendMode 'no_change'/'bot'); only an
+    // explicit 'agent' postSendMode switches it to agent/waiting.
     const sessionDoc = {
       sender: normalizedPhone,
       customer_phone: normalizedPhone,
       user_id: getEffectiveUserId(req),
-      is_agent: true,
-      agent_since: now,
-      status: 'waiting',
+      is_agent: false,
+      agent_since: null,
+      status: 'bot',
       is_active: true,
       created_at: now,
       process_history: initialHistory
     };
 
-    // Per-template post-send mode: a brand-new session defaults to agent/waiting
-    // (today's behavior), unless the template is configured to switch to bot mode.
     const postSendMode = await resolveTemplatePostSendMode(getEffectiveUserId(req), templateData.name);
-    if (postSendMode === 'bot') {
-      sessionDoc.is_agent = false;
-      sessionDoc.agent_since = null;
-      sessionDoc.status = 'bot';
+    if (postSendMode === 'agent') {
+      const postSendFields = buildPostSendModeFields('agent', 'bot');
+      if (postSendFields) Object.assign(sessionDoc, postSendFields);
     }
 
     const insertResult = await collection.insertOne(sessionDoc);

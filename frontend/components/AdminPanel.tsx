@@ -21,6 +21,7 @@ import SmsInApp from './sms-in/SmsInApp';
 import SmsExternalLogTab from './sms-in/SmsExternalLogTab';
 import CustomerSessionsPanel from './CustomerSessionsPanel';
 import ErrorLogTab from './logsAdmin/ErrorLogTab';
+import PaymentCountriesSelect from './admin/PaymentCountriesSelect';
 
 interface User {
   id: string;
@@ -250,7 +251,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
   // Payment-country prefixes (972 / 1) editing — shared by both the global tab and the
   // per-customer tab. Keyed by `${userId}:${phone_number_id}` since the global view spans
   // multiple users.
-  const [paymentCountriesDraft, setPaymentCountriesDraft] = useState<Record<string, { il: boolean; us: boolean }>>({});
+  const [paymentCountriesDraft, setPaymentCountriesDraft] = useState<Record<string, string[]>>({});
   const [savingPaymentCountriesKey, setSavingPaymentCountriesKey] = useState<string | null>(null);
   
   // Forms state
@@ -1389,17 +1390,16 @@ const openRestoreConversations = async () => {
     }
   };
 
-  // Returns the current {il, us} checkbox selection for a connected number:
+  // Returns the current list of selected dial-code prefixes for a connected number:
   // prefers an in-progress draft, falling back to the value persisted in the DB.
-  const getPaymentCountriesSelection = (key: string, allowedPaymentCountries?: string): { il: boolean; us: boolean } => {
+  const getPaymentCountriesSelection = (key: string, allowedPaymentCountries?: string): string[] => {
     const draft = paymentCountriesDraft[key];
     if (draft) return draft;
-    const stored = (allowedPaymentCountries || '972').split('|').map(s => s.trim());
-    return { il: stored.includes('972'), us: stored.includes('1') };
+    return (allowedPaymentCountries || '972').split('|').map(s => s.trim()).filter(Boolean);
   };
 
-  const handleTogglePaymentCountry = (key: string, current: { il: boolean; us: boolean }, field: 'il' | 'us') => {
-    setPaymentCountriesDraft(prev => ({ ...prev, [key]: { ...current, [field]: !current[field] } }));
+  const setPaymentCountriesSelection = (key: string, codes: string[]) => {
+    setPaymentCountriesDraft(prev => ({ ...prev, [key]: codes }));
   };
 
   // Saves the payment-country selection for a connected number via the admin
@@ -1407,7 +1407,7 @@ const openRestoreConversations = async () => {
   const handleSavePaymentCountries = async (userId: string, phone_number_id: string, refetch: () => void) => {
     const key = `${userId}:${phone_number_id}`;
     const sel = getPaymentCountriesSelection(key);
-    const allowedPaymentCountries = [sel.il && '972', sel.us && '1'].filter(Boolean).join('|');
+    const allowedPaymentCountries = sel.filter(Boolean).join('|');
     if (!allowedPaymentCountries) {
       alert('יש לבחור לפחות קידומת מדינה אחת');
       return;
@@ -2039,34 +2039,20 @@ const openRestoreConversations = async () => {
                             </div>
                           </div>
 
-                          {/* Payment-country prefixes (972 / 1) allowed for this number */}
-                          <div className="mt-4 pt-4 border-t border-slate-100 flex items-center gap-4 flex-wrap">
-                            <span className="text-[11px] font-bold text-slate-400">קידומות מדינה מותרות לתשלום:</span>
+                          {/* Payment-country prefixes allowed for this number */}
+                          <div className="mt-4 pt-4 border-t border-slate-100 flex items-start gap-3 flex-wrap">
+                            <span className="text-[11px] font-bold text-slate-400 pt-1.5">קידומות מדינה מותרות לתשלום:</span>
                             {(() => {
                               const key = `${n.user_id}:${n.phone_number_id}`;
                               const sel = getPaymentCountriesSelection(key, n.allowedPaymentCountries);
                               const isSaving = savingPaymentCountriesKey === key;
                               const hasDraft = !!paymentCountriesDraft[key];
                               return (
-                                <>
-                                  <label className="flex items-center gap-1.5 text-xs font-bold text-slate-600 cursor-pointer select-none">
-                                    <input
-                                      type="checkbox"
-                                      checked={sel.il}
-                                      onChange={() => handleTogglePaymentCountry(key, sel, 'il')}
-                                      className="w-4 h-4 rounded accent-blue-600"
-                                    />
-                                    🇮🇱 ישראל (972)
-                                  </label>
-                                  <label className="flex items-center gap-1.5 text-xs font-bold text-slate-600 cursor-pointer select-none">
-                                    <input
-                                      type="checkbox"
-                                      checked={sel.us}
-                                      onChange={() => handleTogglePaymentCountry(key, sel, 'us')}
-                                      className="w-4 h-4 rounded accent-blue-600"
-                                    />
-                                    🇺🇸 ארה"ב/קנדה (1)
-                                  </label>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <PaymentCountriesSelect
+                                    selected={sel}
+                                    onChange={codes => setPaymentCountriesSelection(key, codes)}
+                                  />
                                   {hasDraft && (
                                     <button
                                       onClick={() => handleSavePaymentCountries(n.user_id, n.phone_number_id, fetchAllConnectedNumbers)}
@@ -2078,7 +2064,7 @@ const openRestoreConversations = async () => {
                                         : 'שמור'}
                                     </button>
                                   )}
-                                </>
+                                </div>
                               );
                             })()}
                           </div>
@@ -3675,34 +3661,20 @@ const openRestoreConversations = async () => {
                                     </div>
                                   </div>
 
-                                  {/* Payment-country prefixes (972 / 1) allowed for this number */}
-                                  <div className="mt-4 pt-4 border-t border-slate-200/70 flex items-center gap-4 flex-wrap">
-                                    <span className="text-[11px] font-bold text-slate-400">קידומות מדינה מותרות לתשלום:</span>
+                                  {/* Payment-country prefixes allowed for this number */}
+                                  <div className="mt-4 pt-4 border-t border-slate-200/70 flex items-start gap-3 flex-wrap">
+                                    <span className="text-[11px] font-bold text-slate-400 pt-1.5">קידומות מדינה מותרות לתשלום:</span>
                                     {(() => {
                                       const key = `${selectedUser.id}:${n.phone_number_id}`;
                                       const sel = getPaymentCountriesSelection(key, n.allowedPaymentCountries);
                                       const isSaving = savingPaymentCountriesKey === key;
                                       const hasDraft = !!paymentCountriesDraft[key];
                                       return (
-                                        <>
-                                          <label className="flex items-center gap-1.5 text-xs font-bold text-slate-600 cursor-pointer select-none">
-                                            <input
-                                              type="checkbox"
-                                              checked={sel.il}
-                                              onChange={() => handleTogglePaymentCountry(key, sel, 'il')}
-                                              className="w-4 h-4 rounded accent-blue-600"
-                                            />
-                                            🇮🇱 ישראל (972)
-                                          </label>
-                                          <label className="flex items-center gap-1.5 text-xs font-bold text-slate-600 cursor-pointer select-none">
-                                            <input
-                                              type="checkbox"
-                                              checked={sel.us}
-                                              onChange={() => handleTogglePaymentCountry(key, sel, 'us')}
-                                              className="w-4 h-4 rounded accent-blue-600"
-                                            />
-                                            🇺🇸 ארה"ב/קנדה (1)
-                                          </label>
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                          <PaymentCountriesSelect
+                                            selected={sel}
+                                            onChange={codes => setPaymentCountriesSelection(key, codes)}
+                                          />
                                           {hasDraft && (
                                             <button
                                               onClick={() => handleSavePaymentCountries(selectedUser.id, n.phone_number_id, () => fetchCustomerConnectedNumbers(selectedUser.id))}
@@ -3714,7 +3686,7 @@ const openRestoreConversations = async () => {
                                                 : 'שמור'}
                                             </button>
                                           )}
-                                        </>
+                                        </div>
                                       );
                                     })()}
                                   </div>

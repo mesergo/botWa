@@ -909,18 +909,42 @@ async function saveBroadcastToSessions(userId, flowId, broadcastId, groupName, s
       ? [...pending].sort((a, b) => new Date(a.created) - new Date(b.created)).concat(entry)
       : [entry];
 
-    const sessionDoc = {
-      sender: p.phone,
-      customer_phone: p.phone,
-      user_id: String(userId),
-      flow_id: flowId,
-      is_agent: true,
-      agent_since: new Date(),
-      status: 'waiting',
-      is_active: true,
-      process_history: initialHistory,
-    };
-    if (postSendMode !== 'no_change') {
+    // Default for a brand-new session created by this broadcast:
+    // - Plain-text broadcast (no template involved): unchanged historic behavior
+    //   — agent/waiting, since there's no per-template postSendMode concept here.
+    // - Template broadcast: default to BOT mode (postSendMode 'no_change'/'bot');
+    //   only an explicit 'agent' postSendMode switches the new session to
+    //   agent/waiting. This matches sendTemplateToPhone's equivalent no-session
+    //   template send path.
+    const sessionDoc = sendOpts.isTemplate
+      ? {
+          sender: p.phone,
+          customer_phone: p.phone,
+          user_id: String(userId),
+          flow_id: flowId,
+          is_agent: false,
+          agent_since: null,
+          status: 'bot',
+          is_active: true,
+          process_history: initialHistory,
+        }
+      : {
+          sender: p.phone,
+          customer_phone: p.phone,
+          user_id: String(userId),
+          flow_id: flowId,
+          is_agent: true,
+          agent_since: new Date(),
+          status: 'waiting',
+          is_active: true,
+          process_history: initialHistory,
+        };
+    if (sendOpts.isTemplate) {
+      if (postSendMode === 'agent') {
+        const postSendFields = buildPostSendModeFields('agent', 'bot');
+        if (postSendFields) Object.assign(sessionDoc, postSendFields);
+      }
+    } else if (postSendMode !== 'no_change') {
       const postSendFields = buildPostSendModeFields(postSendMode, 'waiting');
       if (postSendFields) Object.assign(sessionDoc, postSendFields);
     }
