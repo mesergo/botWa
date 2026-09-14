@@ -37,6 +37,10 @@ const groupBroadcastSchema = new mongoose.Schema({
   sent: { type: Number, default: 0 },
   failed: { type: Number, default: 0 },
   skipped: { type: Number, default: 0 },
+  // How many contacts were removed from the audience up-front because they belong to the
+  // excluded group (exclude_group_id) — separate from `skipped`, which counts per-contact
+  // send-time skips (blocklist/invalid phone) among the contacts that WERE included.
+  excluded_count: { type: Number, default: 0 },
   errors: { type: Array, default: [] }, // [{phone, status, error}]
   recipients: { type: Array, default: [] }, // [{phone, name, status: 'sent'|'failed'|'skipped'}]
   started_at: { type: Date },

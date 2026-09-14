@@ -298,7 +298,7 @@ export const addMembers = async (req, res) => {
     const idSet = new Set(contact_ids.map(String));
 
     for (const rawPhone of phones) {
-      const phone = String(rawPhone || '').trim();
+      const phone = normalizePhone(rawPhone);
       if (!phone) continue;
       let contact = await Contact.findOne({ user_id: userId, phone });
       if (!contact) {
@@ -459,12 +459,15 @@ export const sendToGroup = async (req, res) => {
     let contacts = await Contact.find({ _id: { $in: group.contact_ids }, user_id: userId });
 
     // Exclude contacts that belong to a specific group
+    let excludedCount = 0;
     if (exclude_group_id) {
       const excludeGroup = await Group.findOne({ _id: exclude_group_id, user_id: userId });
       if (excludeGroup && excludeGroup.contact_ids?.length) {
         const excludeSet = new Set(excludeGroup.contact_ids.map(cid => String(cid)));
+        const before = contacts.length;
         contacts = contacts.filter(c => !excludeSet.has(String(c._id)));
-        console.log(`[groups.sendToGroup] Excluding group "${excludeGroup.name}" — removed ${group.contact_ids.length - contacts.length} contacts`);
+        excludedCount = before - contacts.length;
+        console.log(`[groups.sendToGroup] Excluding group "${excludeGroup.name}" — removed ${excludedCount} contacts`);
       }
     }
     const msgText = String(message || '').trim();
@@ -485,6 +488,7 @@ export const sendToGroup = async (req, res) => {
       sent: 0,
       failed: 0,
       skipped: 0,
+      excluded_count: excludedCount,
       status: scheduledAt ? 'scheduled' : 'queued',
       scheduled_at: scheduledAt ? new Date(scheduledAt) : undefined,
       sent_by: req.user?.email || req.user?.name || '',
@@ -505,6 +509,7 @@ export const sendToGroup = async (req, res) => {
       // Queue info for UI feedback
       queued_behind: willBeQueued,          // true = waiting for another broadcast to finish
       queue_position: queuePosition,         // 1 = next, 2 = after that, etc.
+      excluded_count: excludedCount,
     });
 
     // Scheduled broadcasts are held in DB — the ticker fires them when the time arrives.
@@ -567,13 +572,15 @@ async function resolveCustomAudience(userId, { contact_ids = [], phones = [], gr
   let contacts = Array.from(byPhone.values()).filter(c => !blocked.has(normalizePhone(c.phone)));
 
   // 6. Exclude contacts that belong to a specific group (mirrors sendToGroup's exclude_group_id)
+  let excludedCount = 0;
   if (exclude_group_id) {
     const excludeGroup = await Group.findOne({ _id: exclude_group_id, user_id: userId });
     if (excludeGroup && excludeGroup.contact_ids?.length) {
       const excludeSet = new Set(excludeGroup.contact_ids.map(cid => String(cid)));
       const before = contacts.length;
       contacts = contacts.filter(c => !excludeSet.has(String(c._id)));
-      console.log(`[groups.resolveCustomAudience] Excluding group "${excludeGroup.name}" — removed ${before - contacts.length} contacts`);
+      excludedCount = before - contacts.length;
+      console.log(`[groups.resolveCustomAudience] Excluding group "${excludeGroup.name}" — removed ${excludedCount} contacts`);
     }
   }
 
@@ -584,7 +591,7 @@ async function resolveCustomAudience(userId, { contact_ids = [], phones = [], gr
   if (cleanPhones.length) parts.push(`${cleanPhones.length} מספרים`);
   const audienceSummary = parts.length ? parts.join(' + ') : 'שליחה מותאמת אישית';
 
-  return { contacts, audienceSummary, resolvedGroupIds, manualPhones: cleanPhones };
+  return { contacts, audienceSummary, resolvedGroupIds, manualPhones: cleanPhones, excludedCount };
 }
 
 // POST /api/groups/broadcast-custom/preview — resolve+dedupe the audience, no DB writes
@@ -592,10 +599,11 @@ export const previewCustomAudience = async (req, res) => {
   try {
     const userId = getEffectiveUserId(req);
     const { contact_ids, phones, group_ids, exclude_group_id } = req.body || {};
-    const { contacts, audienceSummary } = await resolveCustomAudience(userId, { contact_ids, phones, group_ids, exclude_group_id });
+    const { contacts, audienceSummary, excludedCount } = await resolveCustomAudience(userId, { contact_ids, phones, group_ids, exclude_group_id });
     res.json({
       total: contacts.length,
       audience_summary: audienceSummary,
+      excluded_count: excludedCount,
       contacts: contacts.map(c => ({ _id: c._id, phone: c.phone, full_name: c.full_name, whatsapp_name: c.whatsapp_name })),
     });
   } catch (err) {
@@ -620,7 +628,7 @@ export const sendCustomBroadcast = async (req, res) => {
       return res.status(400).json({ error: 'scheduled_at must be a future Unix timestamp in milliseconds' });
     }
 
-    const { contacts, audienceSummary, resolvedGroupIds, manualPhones } = await resolveCustomAudience(userId, { contact_ids, phones, group_ids, exclude_group_id });
+    const { contacts, audienceSummary, resolvedGroupIds, manualPhones, excludedCount } = await resolveCustomAudience(userId, { contact_ids, phones, group_ids, exclude_group_id });
     const msgText = String(message || '').trim();
 
     const broadcast = await GroupBroadcast.create({
@@ -641,6 +649,7 @@ export const sendCustomBroadcast = async (req, res) => {
       sent: 0,
       failed: 0,
       skipped: 0,
+      excluded_count: excludedCount,
       status: scheduledAt ? 'scheduled' : 'queued',
       scheduled_at: scheduledAt ? new Date(scheduledAt) : undefined,
       sent_by: req.user?.email || req.user?.name || '',
@@ -658,6 +667,7 @@ export const sendCustomBroadcast = async (req, res) => {
       scheduled_at: scheduledAt || undefined,
       queued_behind: willBeQueued,
       queue_position: queuePosition,
+      excluded_count: excludedCount,
     });
 
     if (!scheduledAt) {

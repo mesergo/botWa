@@ -39,6 +39,7 @@ interface ActiveBroadcast {
   sent: number;
   failed: number;
   skipped: number;
+  excludedCount: number;
   status: 'queued' | 'scheduled' | 'running' | 'completed' | 'failed';
   queuedBehind: boolean;
   queuePosition: number;
@@ -50,6 +51,7 @@ interface BroadcastCompletionToast {
   failed: number;
   skipped: number;
   total: number;
+  excludedCount: number;
   status: 'completed' | 'failed';
 }
 
@@ -360,6 +362,7 @@ const SendMessagesPage: React.FC<SendMessagesPageProps> = ({
           sent: 0,
           failed: 0,
           skipped: 0,
+          excludedCount: data.excluded_count || 0,
           status: data.status || 'queued',
           queuedBehind: data.queued_behind || false,
           queuePosition: data.queue_position || 0,
@@ -402,6 +405,7 @@ const SendMessagesPage: React.FC<SendMessagesPageProps> = ({
             sent: data.sent ?? prev.sent,
             failed: data.failed ?? prev.failed,
             skipped: data.skipped ?? prev.skipped,
+            excludedCount: data.excluded_count ?? prev.excludedCount,
             status: nextStatus,
             queuedBehind: data.status === 'running' ? false : prev.queuedBehind,
             queuePosition: data.status === 'running' ? 0 : prev.queuePosition,
@@ -414,6 +418,7 @@ const SendMessagesPage: React.FC<SendMessagesPageProps> = ({
               failed: next.failed,
               skipped: next.skipped,
               total: data.total ?? next.total,
+              excludedCount: next.excludedCount,
               status: nextStatus,
             });
           }
@@ -704,6 +709,11 @@ const SendMessagesPage: React.FC<SendMessagesPageProps> = ({
                 נשלחו {completionToast.sent} · נכשלו {completionToast.failed} · דולגו {completionToast.skipped}
               </p>
               <p className="text-xs font-semibold text-slate-400 mt-1">סה"כ {completionToast.total} נמענים</p>
+              {completionToast.excludedCount > 0 && (
+                <p className="text-xs font-semibold text-amber-600 mt-1">
+                  ⛔ הוחרגו {completionToast.excludedCount} אנשי קשר בשל הגדרת קבוצה מוחרגת
+                </p>
+              )}
             </div>
             <button
               onClick={() => {

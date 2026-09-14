@@ -126,6 +126,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
     sent: number;
     failed: number;
     skipped: number;
+    excludedCount: number;
     status: 'queued' | 'running' | 'completed' | 'failed';
     groupName: string;
     queuedBehind: boolean; // true = waiting for another broadcast
@@ -133,7 +134,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
   }
   const [activeBroadcasts, setActiveBroadcasts] = useState<ActiveBroadcastEntry[]>([]);
   const [completionToasts, setCompletionToasts] = useState<{
-    id: string; sent: number; failed: number; skipped: number; total: number; groupName: string;
+    id: string; sent: number; failed: number; skipped: number; total: number; excludedCount: number; groupName: string;
   }[]>([]);
 
   // Templates
@@ -474,6 +475,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
           sent: 0,
           failed: 0,
           skipped: 0,
+          excludedCount: data.excluded_count || 0,
           status: 'queued',
           groupName: selectedGroup.name,
           queuedBehind: data.queued_behind || false,
@@ -519,6 +521,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
             sent: data.sent ?? b.sent,
             failed: data.failed ?? b.failed,
             skipped: data.skipped ?? b.skipped,
+            excludedCount: data.excluded_count ?? b.excludedCount,
             status: data.status || b.status,
             // Clear queue indicators once it starts running
             queuedBehind: data.status === 'running' ? false : b.queuedBehind,
@@ -533,6 +536,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
               failed: data.failed || 0,
               skipped: data.skipped || 0,
               total: data.total || 0,
+              excludedCount: data.excluded_count || 0,
               groupName: entry?.groupName || '',
             }]);
             if (activeTab === 'history' && selectedGroup?._id === String(data.group_id)) {
@@ -669,6 +673,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
           sent: data.already_sent || 0,
           failed: 0,
           skipped: 0,
+          excludedCount: 0, // filled in on next poll from the stored broadcast doc
           status: 'queued',
           groupName: broadcastGroupName,
           queuedBehind: data.queue_position > 0,
@@ -2353,6 +2358,11 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                 {ct.skipped > 0 && <> · דולגו: <span className="text-amber-500 font-black">{ct.skipped}</span></>}
               </p>
               <p className="text-xs font-bold text-slate-400 mt-0.5">סה"כ {ct.total} אנשי קשר</p>
+              {ct.excludedCount > 0 && (
+                <p className="text-xs font-semibold text-amber-600 mt-1">
+                  ⛔ הוחרגו {ct.excludedCount} אנשי קשר בשל הגדרת קבוצה מוחרגת
+                </p>
+              )}
             </div>
             <button
               onClick={() => {
