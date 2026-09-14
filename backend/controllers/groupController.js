@@ -1146,7 +1146,7 @@ async function processBroadcast(broadcastId, userId, group, contacts, opts) {
         // Single broadcast = single template = resolve the post-send mode ONCE
         // (not per-recipient).
         const postSendMode = (isTemplate && templateData?.name)
-          ? await resolveTemplatePostSendMode(userId, templateData.name)
+          ? await resolveTemplatePostSendMode(userId, templateData.name, templateData?.postSendModeOverride)
           : 'no_change';
         saveBroadcastToSessions(userId, flowId, broadcastId, group.name, { isTemplate, templateData, msgText, media }, phonesArr, postSendMode)
           .catch(err => console.error(`${TAG} Failed to save broadcast to session histories:`, err));

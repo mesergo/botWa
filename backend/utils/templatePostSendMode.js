@@ -6,9 +6,13 @@ import Dialog360TemplateSetting from '../models/Dialog360TemplateSetting.js';
  *
  * @param {string} userId
  * @param {string} templateName
+ * @param {string} [override] - optional per-send override ('no_change'|'agent'|'bot')
+ *   coming from the client for this specific send only. When it's one of the valid
+ *   values it takes priority over the template's saved default (no DB lookup needed).
  * @returns {Promise<'no_change'|'agent'|'bot'>}
  */
-export async function resolveTemplatePostSendMode(userId, templateName) {
+export async function resolveTemplatePostSendMode(userId, templateName, override) {
+  if (override && ['no_change', 'agent', 'bot'].includes(override)) return override;
   if (!userId || !templateName) return 'no_change';
   const setting = await Dialog360TemplateSetting.findOne({ templateName, userId }).lean();
   return setting?.postSendMode || 'no_change';

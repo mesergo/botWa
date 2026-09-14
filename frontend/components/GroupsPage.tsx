@@ -143,6 +143,11 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
   const [selectedTemplate, setSelectedTemplate] = useState<any | null>(null);
   const [templateParams, setTemplateParams] = useState<any>({});
   const [templateDefaultMedia, setTemplateDefaultMedia] = useState<Record<string, { url: string; type: 'image' | 'video' | 'document' }>>({});
+  // What each template is configured to do to the conversation right after it's sent
+  // ('no_change' | 'agent' | 'bot'), per template name — from Dialog360TemplateSetting.
+  const [templatePostSendMode, setTemplatePostSendMode] = useState<Record<string, 'no_change' | 'agent' | 'bot'>>({});
+  // Per-broadcast override: null = use the template's configured default above.
+  const [sendPostSendModeOverride, setSendPostSendModeOverride] = useState<'no_change' | 'agent' | 'bot' | null>(null);
 
   // Free-form media attachment (when not using a template)
   const [mediaType, setMediaType] = useState<'image' | 'video' | 'document' | null>(null);
@@ -456,6 +461,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
           language: selectedTemplate.language || 'he',
           components: selectedTemplate.components || [],
           params: templateParams,
+          postSendModeOverride: sendPostSendModeOverride || undefined,
         };
       } else if (usingMedia) {
         body.media = { type: mediaType, url: mediaUrl, filename: mediaFilename || undefined };
@@ -484,6 +490,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
         setSendOpen(false);
         setSendText('');
         setSelectedTemplate(null);
+        setSendPostSendModeOverride(null);
         setTemplateParams({});
         setMediaType(null);
         setMediaUrl('');
@@ -596,12 +603,15 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
       const data = await res.json();
       const settingsList = data.success && Array.isArray(data.settings) ? data.settings : [];
       const defaultMediaMap: Record<string, { url: string; type: 'image' | 'video' | 'document' }> = {};
+      const postSendModeMap: Record<string, 'no_change' | 'agent' | 'bot'> = {};
       settingsList.forEach((s: any) => {
         if (s.defaultHeaderMediaUrl && s.defaultHeaderMediaType) {
           defaultMediaMap[s.templateName] = { url: s.defaultHeaderMediaUrl, type: s.defaultHeaderMediaType };
         }
+        postSendModeMap[s.templateName] = s.postSendMode || 'no_change';
       });
       setTemplateDefaultMedia(defaultMediaMap);
+      setTemplatePostSendMode(postSendModeMap);
     } catch (e) {
       console.error('Failed to fetch template default media', e);
     }
@@ -627,8 +637,16 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
 
   const pickTemplate = (template: any) => {
     setSelectedTemplate(template);
+    setSendPostSendModeOverride(null);
     setTemplateParams(initTemplateParams(template));
     setShowTemplatePicker(false);
+  };
+
+  // Human-readable label for a post-send mode value
+  const postSendModeLabel = (mode: 'no_change' | 'agent' | 'bot'): string => {
+    if (mode === 'agent') return 'מעבר למצב נציג';
+    if (mode === 'bot') return 'מעבר למצב בוט';
+    return 'ללא שינוי במצב השיחה';
   };
 
   // ── Broadcast history ───────────────────────────────────────────────────
@@ -813,6 +831,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
     setSendOpen(true);
     setSendResult(null);
     setSelectedTemplate(null);
+    setSendPostSendModeOverride(null);
     setTemplateParams({});
     setSendText('');
     setExcludeGroupId('');
@@ -1721,7 +1740,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                   <label className="text-xs font-black text-slate-500">הודעת תבנית (אופציונלי):</label>
                   {selectedTemplate && (
                     <button
-                      onClick={() => { setSelectedTemplate(null); setTemplateParams({}); }}
+                      onClick={() => { setSelectedTemplate(null); setSendPostSendModeOverride(null); setTemplateParams({}); }}
                       className="text-xs font-bold text-slate-400 hover:text-red-500 flex items-center gap-1"
                     >
                       <X size={12} /> בטל תבנית
@@ -1738,6 +1757,33 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                       </span>
                       <span className="text-xs font-bold text-purple-500">({selectedTemplate.language || 'he'})</span>
                     </div>
+
+                    {/* Post-send conversation mode: indication + one-off override for this broadcast */}
+                    {(() => {
+                      const templateName = selectedTemplate.name || selectedTemplate.elementName || selectedTemplate.template_name || '';
+                      const configuredMode = templatePostSendMode[templateName] || 'no_change';
+                      return (
+                        <div className="flex flex-wrap items-center gap-2 px-3 py-2 bg-indigo-50 border border-indigo-200 rounded-xl text-xs mb-3">
+                          <span className="font-black text-indigo-700 flex-shrink-0">לאחר שליחת התבנית לרשימה:</span>
+                          <select
+                            value={sendPostSendModeOverride ?? '__default__'}
+                            onChange={e => setSendPostSendModeOverride(e.target.value === '__default__' ? null : (e.target.value as 'no_change' | 'agent' | 'bot'))}
+                            className="flex-1 min-w-[180px] px-2 py-1 bg-white border border-indigo-200 rounded-lg text-xs font-semibold text-indigo-700 outline-none focus:ring-2 focus:ring-indigo-400/30"
+                          >
+                            <option value="__default__">ברירת מחדל של התבנית — {postSendModeLabel(configuredMode)}</option>
+                            <option value="agent">מעבר למצב נציג (לשידור זה בלבד)</option>
+                            <option value="bot">מעבר למצב בוט (לשידור זה בלבד)</option>
+                            <option value="no_change">ללא שינוי במצב (לשידור זה בלבד)</option>
+                          </select>
+                          {sendPostSendModeOverride && (
+                            <span className="text-[10px] font-black text-amber-600 bg-amber-100 px-2 py-0.5 rounded-full flex-shrink-0">
+                              שינוי חד-פעמי: {postSendModeLabel(sendPostSendModeOverride)}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })()}
+
                     {/* Body preview */}
                     {(selectedTemplate.components || []).map((comp: any, i: number) => (
                       <div key={i} className="text-xs text-slate-600 mb-1">
@@ -2130,6 +2176,13 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                               }`}>{t.status}</span>
                             )}
                           </div>
+                          {(templatePostSendMode[name] === 'agent' || templatePostSendMode[name] === 'bot') && (
+                            <div className="mb-1">
+                              <span className={`text-[10px] font-black px-1.5 py-0.5 rounded-full ${templatePostSendMode[name] === 'agent' ? 'bg-purple-100 text-purple-700' : 'bg-sky-100 text-sky-700'}`}>
+                                {templatePostSendMode[name] === 'agent' ? '→ מעבר למצב נציג' : '→ מעבר למצב בוט'}
+                              </span>
+                            </div>
+                          )}
                           {body?.text && (
                             <p className="text-xs text-slate-500 line-clamp-2 whitespace-pre-wrap">{body.text}</p>
                           )}

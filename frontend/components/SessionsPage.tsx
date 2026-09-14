@@ -124,6 +124,11 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
   const [selectedTemplate, setSelectedTemplate] = useState<any>(null);
   const [templateSettings, setTemplateSettings] = useState<Record<string, 'hidden' | 'manager' | 'agent'>>({});
   const [templateDefaultMedia, setTemplateDefaultMedia] = useState<Record<string, { url: string; type: 'image' | 'video' | 'document' }>>({});
+  // What the template is configured to do to the conversation right after it's sent
+  // ('no_change' | 'agent' | 'bot'), per template name — from Dialog360TemplateSetting.
+  const [templatePostSendMode, setTemplatePostSendMode] = useState<Record<string, 'no_change' | 'agent' | 'bot'>>({});
+  // Per-send override: null = use the template's configured default above.
+  const [sendPostSendModeOverride, setSendPostSendModeOverride] = useState<'no_change' | 'agent' | 'bot' | null>(null);
 
   // Internal (self-authored) templates dropdown state
   const [internalTemplates, setInternalTemplates] = useState<InternalTemplate[]>([]);
@@ -601,6 +606,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
     setFileUploadError(null);
     setShowTemplates(false);
     setSelectedTemplate(null);
+    setSendPostSendModeOverride(null);
     setTemplateParams({});
     setShowTemplateParamsModal(false);
     setVisibleMsgLimit(50);
@@ -1050,7 +1056,8 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
               name: selectedTemplate.name || selectedTemplate.elementName || selectedTemplate.template_name,
               language: selectedTemplate.language || 'he',
               components: selectedTemplate.components || [],
-              params: templateParams
+              params: templateParams,
+              postSendModeOverride: sendPostSendModeOverride || undefined
             };
           } else if (capturedFile) {
             requestBody.mediaType = capturedFile.type;
@@ -1070,6 +1077,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
               setAgentMessage('');
               setAttachedFile(null);
               setSelectedTemplate(null);
+              setSendPostSendModeOverride(null);
               setTemplateParams({});
               const replyStatus: ConvStatus = msgData.status || (isTemplate ? 'waiting' : 'handling');
               const currentAgentName = currentUser?.name || currentUser?.email || 'נציג';
@@ -1243,7 +1251,8 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
               name: selectedTemplate.name || selectedTemplate.elementName || selectedTemplate.template_name,
               language: selectedTemplate.language || 'he',
               components: selectedTemplate.components || [],
-              params: templateParams
+              params: templateParams,
+              postSendModeOverride: sendPostSendModeOverride || undefined
             }
           })
         });
@@ -1251,6 +1260,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
           const data = await r.json();
           setAgentMessage('');
           setSelectedTemplate(null);
+          setSendPostSendModeOverride(null);
           setTemplateParams({});
           if (data.waSent) {
             // Build session object locally from response — avoids phone normalisation mismatch
@@ -1335,7 +1345,8 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
         name: selectedTemplate.name || selectedTemplate.elementName || selectedTemplate.template_name,
         language: selectedTemplate.language || 'he',
         components: selectedTemplate.components || [],
-        params: templateParams // Add user-provided parameters
+        params: templateParams, // Add user-provided parameters
+        postSendModeOverride: sendPostSendModeOverride || undefined
       };
       console.log('[SessionsPage] Sending template:', requestBody.templateData);
     } else if (currentAttachedFile) {
@@ -1357,6 +1368,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
         setAgentMessage('');
         setAttachedFile(null);
         setSelectedTemplate(null);
+        setSendPostSendModeOverride(null);
         setTemplateParams({});
         const replyStatus: ConvStatus = data.status || (isTemplate ? (currentStatus === 'bot' ? 'waiting' : currentStatus) : 'handling');
         const currentAgentName = currentUser?.name || currentUser?.email || 'נציג';
@@ -1445,14 +1457,17 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
         const settingsList = data.success && Array.isArray(data.settings) ? data.settings : [];
         const settingsMap: Record<string, 'hidden' | 'manager' | 'agent'> = {};
         const defaultMediaMap: Record<string, { url: string; type: 'image' | 'video' | 'document' }> = {};
+        const postSendModeMap: Record<string, 'no_change' | 'agent' | 'bot'> = {};
         settingsList.forEach((s: any) => {
           settingsMap[s.templateName] = s.visibility || (s.showInChat === false ? 'hidden' : 'manager');
           if (s.defaultHeaderMediaUrl && s.defaultHeaderMediaType) {
             defaultMediaMap[s.templateName] = { url: s.defaultHeaderMediaUrl, type: s.defaultHeaderMediaType };
           }
+          postSendModeMap[s.templateName] = s.postSendMode || 'no_change';
         });
         setTemplateSettings(settingsMap);
         setTemplateDefaultMedia(defaultMediaMap);
+        setTemplatePostSendMode(postSendModeMap);
       }
     } catch (err) {
       console.error('Error fetching template settings:', err);
@@ -1464,6 +1479,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
     const templateName = template.name || template.elementName || template.template_name || '';
     setAgentMessage(`/${templateName}`);
     setSelectedTemplate(template);
+    setSendPostSendModeOverride(null);
     setShowTemplates(false);
     
     // Check if template needs parameters
@@ -1529,6 +1545,51 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
     return false;
   };
   
+  // Human-readable label for a post-send mode value
+  const postSendModeLabel = (mode: 'no_change' | 'agent' | 'bot'): string => {
+    if (mode === 'agent') return 'מעבר למצב נציג';
+    if (mode === 'bot') return 'מעבר למצב בוט';
+    return 'ללא שינוי במצב השיחה';
+  };
+
+  // The mode that will actually be applied for the currently selected template:
+  // the per-send override if the user picked one, otherwise the template's saved default.
+  const getEffectivePostSendMode = (template: any): 'no_change' | 'agent' | 'bot' => {
+    if (sendPostSendModeOverride) return sendPostSendModeOverride;
+    const name = template?.name || template?.elementName || template?.template_name || '';
+    return templatePostSendMode[name] || 'no_change';
+  };
+
+  // Small control shown whenever a WhatsApp template is selected for sending — shows what
+  // will happen to the conversation after send (per the template's configured setting) and
+  // lets the agent override it just for this one send.
+  const renderPostSendModeControl = () => {
+    if (!selectedTemplate || selectedTemplate.isInternal) return null;
+    const templateName = selectedTemplate.name || selectedTemplate.elementName || selectedTemplate.template_name || '';
+    const configuredMode = templatePostSendMode[templateName] || 'no_change';
+    const effectiveMode = getEffectivePostSendMode(selectedTemplate);
+    return (
+      <div className="flex flex-wrap items-center gap-2 px-3 py-2 bg-indigo-50 border border-indigo-200 rounded-xl text-xs mb-2">
+        <span className="font-black text-indigo-700 flex-shrink-0">לאחר שליחת התבנית:</span>
+        <select
+          value={sendPostSendModeOverride ?? '__default__'}
+          onChange={e => setSendPostSendModeOverride(e.target.value === '__default__' ? null : (e.target.value as 'no_change' | 'agent' | 'bot'))}
+          className="flex-1 min-w-[180px] px-2 py-1 bg-white border border-indigo-200 rounded-lg text-xs font-semibold text-indigo-700 outline-none focus:ring-2 focus:ring-indigo-400/30"
+        >
+          <option value="__default__">ברירת מחדל של התבנית — {postSendModeLabel(configuredMode)}</option>
+          <option value="agent">מעבר למצב נציג (לשליחה זו בלבד)</option>
+          <option value="bot">מעבר למצב בוט (לשליחה זו בלבד)</option>
+          <option value="no_change">ללא שינוי במצב (לשליחה זו בלבד)</option>
+        </select>
+        {sendPostSendModeOverride && (
+          <span className="text-[10px] font-black text-amber-600 bg-amber-100 px-2 py-0.5 rounded-full flex-shrink-0">
+            שינוי חד-פעמי: {postSendModeLabel(effectiveMode)}
+          </span>
+        )}
+      </div>
+    );
+  };
+
   // Confirm and send template with parameters
   const confirmTemplateParams = () => {
     setShowTemplateParamsModal(false);
@@ -1570,6 +1631,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
 
     setAgentMessage(`/${template.name}`);
     setSelectedTemplate(syntheticTemplate);
+    setSendPostSendModeOverride(null);
     setShowTemplates(false);
 
     const needsParams = checkTemplateNeedsParams(syntheticTemplate);
@@ -3053,6 +3115,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                       לקוח חדש — ניתן לשלוח הודעת תבנית WhatsApp בלבד. הקש <span className="font-black">/</span> לבחירת תבנית.
                     </div>
                   )}
+                  {selectedTemplate && !showTemplateParamsModal && renderPostSendModeControl()}
                   <div className="flex flex-wrap sm:flex-nowrap items-end gap-2 sm:gap-3 relative">
                     {/* Template dropdown */}
                     {showTemplates && selectedPhone && (
@@ -3121,6 +3184,13 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                                           )}
                                         </div>
                                       </div>
+                                      {(templatePostSendMode[name] === 'agent' || templatePostSendMode[name] === 'bot') && (
+                                        <div className="mb-1">
+                                          <span className={`text-[10px] font-black px-1.5 py-0.5 rounded-full ${templatePostSendMode[name] === 'agent' ? 'bg-purple-100 text-purple-700' : 'bg-sky-100 text-sky-700'}`}>
+                                            {templatePostSendMode[name] === 'agent' ? '→ מעבר למצב נציג' : '→ מעבר למצב בוט'}
+                                          </span>
+                                        </div>
+                                      )}
                                       {bodyText && (
                                         <div className="text-xs text-slate-500">{bodyText}</div>
                                       )}
@@ -3795,19 +3865,22 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
             </div>
 
             {/* Footer - Action Buttons */}
-            <div className="px-6 pb-6 pt-4 border-t border-slate-100 flex gap-3 justify-end">
-              <button
-                onClick={() => setShowTemplateParamsModal(false)}
-                className="px-5 py-2.5 rounded-2xl border border-slate-200 text-slate-700 text-sm font-bold hover:bg-slate-50 transition-colors"
-              >
-                ביטול
-              </button>
-              <button
-                onClick={confirmTemplateParams}
-                className="px-5 py-2.5 rounded-2xl bg-sky-500 text-white text-sm font-bold hover:bg-sky-600 transition-colors"
-              >
-                אישור
-              </button>
+            <div className="px-6 pb-6 pt-4 border-t border-slate-100">
+              {renderPostSendModeControl()}
+              <div className="flex gap-3 justify-end">
+                <button
+                  onClick={() => setShowTemplateParamsModal(false)}
+                  className="px-5 py-2.5 rounded-2xl border border-slate-200 text-slate-700 text-sm font-bold hover:bg-slate-50 transition-colors"
+                >
+                  ביטול
+                </button>
+                <button
+                  onClick={confirmTemplateParams}
+                  className="px-5 py-2.5 rounded-2xl bg-sky-500 text-white text-sm font-bold hover:bg-sky-600 transition-colors"
+                >
+                  אישור
+                </button>
+              </div>
             </div>
           </div>
         </div>

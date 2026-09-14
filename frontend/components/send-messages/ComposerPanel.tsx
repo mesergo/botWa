@@ -32,6 +32,11 @@ interface ComposerPanelProps {
   setShowTemplatePicker: (v: boolean) => void;
   contactFields: any[];
   agentName?: string | null;
+  // post-send conversation mode (per template, with one-off override for this send)
+  templatePostSendMode: Record<string, 'no_change' | 'agent' | 'bot'>;
+  sendPostSendModeOverride: 'no_change' | 'agent' | 'bot' | null;
+  setSendPostSendModeOverride: (v: 'no_change' | 'agent' | 'bot' | null) => void;
+  fetchTemplatePostSendMode: () => void;
   // message
   messageText: string;
   setMessageText: (v: string) => void;
@@ -54,12 +59,17 @@ const ComposerPanel: React.FC<ComposerPanelProps> = ({
   sendBotsLoading, sendBots, selectedSendBotId, setSelectedSendBotId,
   selectedTemplate, setSelectedTemplate, templateParams, setTemplateParams,
   templateSampleUrl, templates, fetchTemplates, setShowTemplatePicker, contactFields, agentName,
+  templatePostSendMode, sendPostSendModeOverride, setSendPostSendModeOverride, fetchTemplatePostSendMode,
   messageText, setMessageText,
   mediaType, setMediaType, mediaUrl, setMediaUrl, mediaFilename, setMediaFilename,
   token, sending, canSubmit, onSendNow, onOpenSchedule,
 }) => {
   const { t } = useTranslation('messages');
   const mediaLabel = (type: 'image' | 'video' | 'document') => t(`composer.media.types.${type}`);
+  const postSendModeLabel = (mode: 'no_change' | 'agent' | 'bot'): string =>
+    mode === 'agent' ? t('composer.template.postSendMode.modeLabels.agent')
+      : mode === 'bot' ? t('composer.template.postSendMode.modeLabels.bot')
+      : t('composer.template.postSendMode.modeLabels.noChange');
 
   return (
     <div
@@ -124,7 +134,7 @@ const ComposerPanel: React.FC<ComposerPanelProps> = ({
             {selectedTemplate && (
               <button
                 type="button"
-                onClick={() => { setSelectedTemplate(null); setTemplateParams({}); }}
+                onClick={() => { setSelectedTemplate(null); setTemplateParams({}); setSendPostSendModeOverride(null); }}
                 className="text-xs font-bold text-slate-400 hover:text-red-500 flex items-center gap-1"
               >
                 <X size={12} /> {t('composer.template.clear')}
@@ -141,6 +151,32 @@ const ComposerPanel: React.FC<ComposerPanelProps> = ({
                 </span>
                 <span className="text-xs font-bold text-purple-500">({selectedTemplate.language || 'he'})</span>
               </div>
+
+              {/* Post-send conversation mode: indication + one-off override for this send */}
+              {(() => {
+                const templateName = selectedTemplate.name || selectedTemplate.elementName || selectedTemplate.template_name || '';
+                const configuredMode = templatePostSendMode[templateName] || 'no_change';
+                return (
+                  <div className="flex flex-wrap items-center gap-2 px-3 py-2 bg-indigo-50 border border-indigo-200 rounded-xl text-xs mb-3">
+                    <span className="font-black text-indigo-700 flex-shrink-0">{t('composer.template.postSendMode.label')}</span>
+                    <select
+                      value={sendPostSendModeOverride ?? '__default__'}
+                      onChange={e => setSendPostSendModeOverride(e.target.value === '__default__' ? null : (e.target.value as 'no_change' | 'agent' | 'bot'))}
+                      className="flex-1 min-w-[180px] px-2 py-1 bg-white border border-indigo-200 rounded-lg text-xs font-semibold text-indigo-700 outline-none focus:ring-2 focus:ring-indigo-400/30"
+                    >
+                      <option value="__default__">{t('composer.template.postSendMode.defaultOption', { mode: postSendModeLabel(configuredMode) })}</option>
+                      <option value="agent">{t('composer.template.postSendMode.options.agent')}</option>
+                      <option value="bot">{t('composer.template.postSendMode.options.bot')}</option>
+                      <option value="no_change">{t('composer.template.postSendMode.options.noChange')}</option>
+                    </select>
+                    {sendPostSendModeOverride && (
+                      <span className="text-[10px] font-black text-amber-600 bg-amber-100 px-2 py-0.5 rounded-full flex-shrink-0">
+                        {t('composer.template.postSendMode.overrideBadge', { mode: postSendModeLabel(sendPostSendModeOverride) })}
+                      </span>
+                    )}
+                  </div>
+                );
+              })()}
 
               {(selectedTemplate.components || []).map((comp: any, i: number) => (
                 <div key={i} className="text-xs text-slate-600 mb-1">
@@ -188,6 +224,7 @@ const ComposerPanel: React.FC<ComposerPanelProps> = ({
               onClick={() => {
                 setShowTemplatePicker(true);
                 if (templates.length === 0) fetchTemplates();
+                fetchTemplatePostSendMode();
               }}
               className="w-full px-4 py-3 bg-purple-50 hover:bg-purple-100 border-2 border-dashed border-purple-200 text-purple-700 rounded-2xl text-sm font-bold flex items-center justify-center gap-2 transition-colors"
             >
