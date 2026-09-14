@@ -2797,7 +2797,7 @@ export const sendAgentMessage = async (req, res) => {
     // this specific template is sent (default 'no_change' preserves the
     // behavior computed above).
     if (isTemplate && templateData && waSent) {
-      const postSendMode = await resolveTemplatePostSendMode(getEffectiveUserId(req), templateData.name);
+      const postSendMode = await resolveTemplatePostSendMode(getEffectiveUserId(req), templateData.name, templateData.postSendModeOverride);
       const postSendFields = buildPostSendModeFields(postSendMode, session.status);
       if (postSendFields) {
         update.$set = { ...update.$set, ...postSendFields };
@@ -3031,7 +3031,7 @@ export const sendTemplateToPhone = async (req, res) => {
 
     // Per-template post-send mode: a brand-new session defaults to agent/waiting
     // (today's behavior), unless the template is configured to switch to bot mode.
-    const postSendMode = await resolveTemplatePostSendMode(getEffectiveUserId(req), templateData.name);
+    const postSendMode = await resolveTemplatePostSendMode(getEffectiveUserId(req), templateData.name, templateData.postSendModeOverride);
     if (postSendMode === 'bot') {
       sessionDoc.is_agent = false;
       sessionDoc.agent_since = null;
@@ -3317,7 +3317,7 @@ export const sendAdminMessageToSession = async (req, res) => {
     // (default), preserves today's exact behavior (is_agent/agent_since only,
     // status untouched).
     if (isTemplate && templateData && waSent) {
-      const postSendMode = await resolveTemplatePostSendMode(String(session.user_id || ''), templateData.name);
+      const postSendMode = await resolveTemplatePostSendMode(String(session.user_id || ''), templateData.name, templateData.postSendModeOverride);
       const postSendFields = buildPostSendModeFields(postSendMode, session.status);
       if (postSendFields) {
         Object.assign(adminUpdateSet, postSendFields);

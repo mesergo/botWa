@@ -118,6 +118,8 @@ const SendMessagesPage: React.FC<SendMessagesPageProps> = ({
   const [templateSearch, setTemplateSearch] = useState('');
   const [selectedTemplate, setSelectedTemplate] = useState<any | null>(null);
   const [templateParams, setTemplateParams] = useState<any>({});
+  const [templatePostSendMode, setTemplatePostSendMode] = useState<Record<string, 'no_change' | 'agent' | 'bot'>>({});
+  const [sendPostSendModeOverride, setSendPostSendModeOverride] = useState<'no_change' | 'agent' | 'bot' | null>(null);
 
   const [sendBots, setSendBots] = useState<SendBot[]>([]);
   const [sendBotsLoading, setSendBotsLoading] = useState(false);
@@ -207,8 +209,28 @@ const SendMessagesPage: React.FC<SendMessagesPageProps> = ({
   const pickTemplate = (template: any) => {
     setSelectedTemplate(template);
     setTemplateParams(initTemplateParams(template));
+    setSendPostSendModeOverride(null);
     setShowTemplatePicker(false);
   };
+
+  // Fetch admin-configured post-send mode per template (what happens to the
+  // conversation right after that template is sent).
+  const fetchTemplatePostSendMode = useCallback(async () => {
+    if (!token) return;
+    try {
+      const res = await fetch(`${API_BASE}/dialog360-templates`, { headers: authHeader });
+      if (!res.ok) return;
+      const data = await res.json();
+      const settingsList = data.success && Array.isArray(data.settings) ? data.settings : [];
+      const postSendModeMap: Record<string, 'no_change' | 'agent' | 'bot'> = {};
+      settingsList.forEach((s: any) => {
+        postSendModeMap[s.templateName] = s.postSendMode || 'no_change';
+      });
+      setTemplatePostSendMode(postSendModeMap);
+    } catch (e) {
+      console.error('Failed to fetch template post-send mode', e);
+    }
+  }, [token, authHeader]);
 
   useEffect(() => {
     if (!token) return;
@@ -340,6 +362,7 @@ const SendMessagesPage: React.FC<SendMessagesPageProps> = ({
           language: selectedTemplate.language || 'he',
           components: selectedTemplate.components || [],
           params: templateParams,
+          postSendModeOverride: sendPostSendModeOverride || undefined,
         };
       } else if (mediaType && mediaUrl) {
         body.media = { type: mediaType, url: mediaUrl, filename: mediaFilename || undefined };
@@ -368,6 +391,7 @@ const SendMessagesPage: React.FC<SendMessagesPageProps> = ({
         setMessageText('');
         setSelectedTemplate(null);
         setTemplateParams({});
+        setSendPostSendModeOverride(null);
         setMediaType(null);
         setMediaUrl('');
         setMediaFilename('');
@@ -603,6 +627,10 @@ const SendMessagesPage: React.FC<SendMessagesPageProps> = ({
                   setSelectedTemplate={setSelectedTemplate}
                   templateParams={templateParams}
                   setTemplateParams={setTemplateParams}
+                  templatePostSendMode={templatePostSendMode}
+                  sendPostSendModeOverride={sendPostSendModeOverride}
+                  setSendPostSendModeOverride={setSendPostSendModeOverride}
+                  fetchTemplatePostSendMode={fetchTemplatePostSendMode}
                   templateSampleUrl={templateSampleUrl}
                   templates={templates}
                   fetchTemplates={fetchTemplates}
