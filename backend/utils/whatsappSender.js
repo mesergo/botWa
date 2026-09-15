@@ -6,32 +6,75 @@
 import crypto from 'crypto';
 import fetch from 'node-fetch';
 import { logError } from '../logsAdmin/errorLogger.js';
+import BotFlow from '../models/BotFlow.js';
 
 const _sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 /**
  * Build WhatsApp API credentials from a bot or user object (or fall back to env vars).
- * Priority: bot.endpoint > user.dialog360_bot_id > env vars.
+ * Priority:
+ *   1. bot.endpoint
+ *   2. user.dialog360_bot_id
+ *   3. first BotFlow belonging to the same user (bot.user_id || user._id) that has a
+ *      non-empty endpoint — this covers "new conversation" flows (e.g. sendTemplateToPhone)
+ *      where there is no existing session/bot association yet, so `bot` is null and the
+ *      user itself may not have `dialog360_bot_id` set even though one of their bots does.
+ *   4. process.env.WHATSAPP_ENDPOINT
+ * Logs which step resolved (or failed to resolve) the endpoint, so a "HTTP 502 .../api/null/send"
+ * report can be traced back to exactly why no endpoint was found.
  * @param {Object|null} user - User document with optional dialog360_bot_id
  * @param {Object|null} bot  - BotFlow document with optional endpoint field
- * @returns {{ endpoint: string, waToken: string }}
+ * @returns {Promise<{ endpoint: string|null, waToken: string|null }>}
  */
-export const buildWACredentials = (user = null, bot = null) => {
-  let endpoint, waToken;
+export const buildWACredentials = async (user = null, bot = null) => {
+  let endpoint, waToken, source;
   if (bot && bot.endpoint) {
     const rawEndpoint = bot.endpoint;
     // If stored as bare ID (no slash), prefix with dialog360/
     endpoint = rawEndpoint.includes('/') ? rawEndpoint : `dialog360/${rawEndpoint}`;
     const botIdPart = endpoint.split('/').pop();
     waToken = crypto.createHash('sha1').update(botIdPart + 'moomoo').digest('hex');
+    source = 'bot.endpoint';
   } else if (user && user.dialog360_bot_id) {
     endpoint = `dialog360/${user.dialog360_bot_id}`;
     waToken = crypto.createHash('sha1').update(user.dialog360_bot_id + 'moomoo').digest('hex');
+    source = 'user.dialog360_bot_id';
   } else {
-    endpoint = null;
-    waToken = null;
+    const userId = (bot && bot.user_id) || (user && user._id);
+    let fallbackBot = null;
+    if (userId) {
+      try {
+        fallbackBot = await BotFlow.findOne({
+          user_id: userId.toString(),
+          endpoint: { $exists: true, $ne: '' }
+        }).sort({ created_at: 1 }).select('endpoint').lean();
+      } catch (err) {
+        console.warn(`[WA-CREDENTIALS] ⚠️ BotFlow fallback lookup failed for userId=${userId}: ${err.message}`);
+      }
+    }
+    if (fallbackBot && fallbackBot.endpoint) {
+      const rawEndpoint = fallbackBot.endpoint;
+      endpoint = rawEndpoint.includes('/') ? rawEndpoint : `dialog360/${rawEndpoint}`;
+      const botIdPart = endpoint.split('/').pop();
+      waToken = crypto.createHash('sha1').update(botIdPart + 'moomoo').digest('hex');
+      source = 'BotFlow fallback (other bot of same user)';
+    } else if (process.env.WHATSAPP_ENDPOINT) {
+      endpoint = process.env.WHATSAPP_ENDPOINT;
+      const botIdPart = endpoint.split('/').pop();
+      waToken = crypto.createHash('sha1').update(botIdPart + 'moomoo').digest('hex');
+      source = 'process.env.WHATSAPP_ENDPOINT';
+    } else {
+      endpoint = null;
+      waToken = null;
+      source = null;
+    }
   }
-  return { endpoint, waToken }; 
+  if (!endpoint) {
+    console.error(`[WA-CREDENTIALS] ❌ Could not resolve an endpoint — bot.endpoint=${bot?.endpoint || '(none)'} | user.dialog360_bot_id=${user?.dialog360_bot_id || '(none)'} | userId=${(bot && bot.user_id) || (user && user._id) || '(none)'} | no other bot with an endpoint found | no WHATSAPP_ENDPOINT env var. The send will fail (likely an HTTP 502 from "/api/null/send").`);
+  } else {
+    console.log(`[WA-CREDENTIALS] ✅ endpoint=${endpoint} | resolved via: ${source}`);
+  }
+  return { endpoint, waToken };
 };
 
 /**
@@ -52,7 +95,7 @@ export const buildWACredentials = (user = null, bot = null) => {
  * @returns {Promise<{success:boolean, skipped?:boolean, status?:number, body?:any, error?:string}>}
  */ 
 export const updatePaymentCountriesOnGateway = async ({ user = null, bot = null, phone, allowedPaymentCountries }) => {
-  const { endpoint, waToken } = buildWACredentials(user, bot);
+  const { endpoint, waToken } = await buildWACredentials(user, bot);
   console.log(`[WA-PAYMENT-COUNTRIES] 🔧 buildWACredentials → endpoint=${endpoint || 'null'} bot.endpoint=${bot?.endpoint || 'none'} user.dialog360_bot_id=${user?.dialog360_bot_id || 'none'}`);
   if (!endpoint) {
     console.log('[WA-PAYMENT-COUNTRIES] ⏭️ SKIPPED — no endpoint could be resolved (bot has no endpoint and user has no dialog360_bot_id)');
@@ -188,7 +231,7 @@ const splitText = (text, maxLen = WA_MAX_TEXT) => {
 export const pushMessagesToWhatsApp = async (phone, messages, user = null, bot = null) => {
   if (!messages || !messages.length) return { anySuccess: false, wamidPerMsg: [] };
 
-  const { endpoint, waToken } = buildWACredentials(user, bot);
+  const { endpoint, waToken } = await buildWACredentials(user, bot);
   if (!endpoint) return { anySuccess: false, wamidPerMsg: [] };
 
   const normalizedPhone = normalizePhone(phone);
@@ -199,7 +242,7 @@ export const pushMessagesToWhatsApp = async (phone, messages, user = null, bot =
     const fullPayload = { ...body, phone: normalizedPhone, fromMe: 1 };
     const url = `https://wa.message.co.il/api/${endpoint}/send`;
     console.log(`[WA-PUSH] 📤 REQUEST → ${url}`);
-    console.log(`[WA-PUSH] 📤 TOKEN: ${waToken}`);
+    console.log(`[WA-PUSH] 📤 TOKEN: ${waToken ? waToken.substring(0, 10) + '…' : '(none)'}`);
     console.log(`[WA-PUSH] 📤 PAYLOAD:\n${JSON.stringify(fullPayload, null, 2)}`);
     try {
       const res = await fetch(url, {

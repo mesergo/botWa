@@ -10,12 +10,12 @@ import Contact from '../models/Contact.js';
 import Notification from '../models/Notification.js';
 import fetch from 'node-fetch'; 
 import { getEffectiveUserId, resolvePermissions, hasPermission } from '../middleware/auth.js';
-import { pushMessagesToWhatsApp, debugCheckMediaUrl } from '../utils/whatsappSender.js';
+import { pushMessagesToWhatsApp, debugCheckMediaUrl, buildWACredentials } from '../utils/whatsappSender.js';
 import eventBus from '../utils/eventBus.js';
 import { buildConversationClosedHistoryEntry, buildConversationClosedSetFragment, resolveClosingMessage } from '../utils/conversationActions.js';
 import { normalizePhone } from '../utils/phone.js';
 import { resolveTemplatePostSendMode, buildPostSendModeFields } from '../utils/templatePostSendMode.js';
-
+ 
 const SSE_SECRET_KEY = 'dfghjukiolp;[p0o9i8uytgbhnjmk,l.;p9876543t4rre2asd';
 const CASE1_REMINDER_MINUTES = 30;
 // const CASE1_REMINDER_MINUTES = 2;
@@ -2318,20 +2318,8 @@ export const transferConversation = async (req, res) => {
       try {
         const owner = await User.findById(ownerId);
         // Prefer the bot's own endpoint (from the session's flow_id)
-        const transferBot = session.flow_id ? await BotFlow.findById(session.flow_id).select('endpoint').lean() : null;
-        let waEndpoint, waToken;
-        if (transferBot && transferBot.endpoint) {
-          const rawEndpoint = transferBot.endpoint;
-          waEndpoint = rawEndpoint.includes('/') ? rawEndpoint : `dialog360/${rawEndpoint}`;
-          const botIdPart = waEndpoint.split('/').pop();
-          waToken = crypto.createHash('sha1').update(botIdPart + 'moomoo').digest('hex');
-        } else if (owner?.dialog360_bot_id) {
-          waEndpoint = `dialog360/${owner.dialog360_bot_id}`;
-          waToken = crypto.createHash('sha1').update(owner.dialog360_bot_id + 'moomoo').digest('hex');
-        } else {
-          waEndpoint = null;
-          waToken = null;
-        }
+        const transferBot = session.flow_id ? await BotFlow.findById(session.flow_id).select('endpoint user_id').lean() : null;
+        const { endpoint: waEndpoint, waToken } = await buildWACredentials(owner, transferBot);
         const rawPhone = session.sender || session.customer_phone || '';
         let normalizedPhone = rawPhone.replace(/[^0-9]/g, '');
         normalizedPhone = normalizedPhone.replace(/^972972/, '972');
@@ -2340,15 +2328,20 @@ export const transferConversation = async (req, res) => {
           normalizedPhone = '972' + normalizedPhone;
         }
         if (normalizedPhone && normalizedPhone !== '972') {
-          await fetch(`https://wa.message.co.il/api/${waEndpoint}/send`, {
+          const transferSendUrl = `https://wa.message.co.il/api/${waEndpoint}/send`;
+          const transferBody = { phone: normalizedPhone, text: groupUnavailableMessage, fromMe: 1 };
+          console.log(`[transferConversation] 📤 URL: ${transferSendUrl} | PAYLOAD: ${JSON.stringify(transferBody)}`);
+          const transferWaRes = await fetch(transferSendUrl, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json; charset=utf-8',
               'Accept': 'application/json',
               token: waToken
             },
-            body: JSON.stringify({ phone: normalizedPhone, text: groupUnavailableMessage, fromMe: 1 })
+            body: JSON.stringify(transferBody)
           });
+          const transferRespBody = await transferWaRes.text().catch(() => '');
+          console.log(`[transferConversation] ⬅️  RESPONSE HTTP ${transferWaRes.status} | body: ${transferRespBody}`);
           console.log(`[transferConversation] ⚠️ No one available — sent unavailableMessage to ${normalizedPhone}`);
         }
       } catch (waErr) {
@@ -2511,21 +2504,14 @@ export const sendAgentMessage = async (req, res) => {
     const agentName = senderUser?.name || senderUser?.email || 'נציג';
 
     // Load the bot associated with this session for per-bot endpoint
-    const bot = session.flow_id ? await BotFlow.findById(session.flow_id).select('endpoint').lean() : null;
+    const bot = session.flow_id ? await BotFlow.findById(session.flow_id).select('endpoint user_id').lean() : null;
 
     // Build WhatsApp API endpoint and token
-    let endpoint, waToken;
-    if (bot && bot.endpoint) {
-      const rawEndpoint = bot.endpoint;
-      endpoint = rawEndpoint.includes('/') ? rawEndpoint : `dialog360/${rawEndpoint}`;
-      const botIdPart = endpoint.split('/').pop();
-      waToken = crypto.createHash('sha1').update(botIdPart + 'moomoo').digest('hex');
-    } else if (user && user.dialog360_bot_id) {
-      endpoint = `dialog360/${user.dialog360_bot_id}`;
-      waToken = crypto.createHash('sha1').update(user.dialog360_bot_id + 'moomoo').digest('hex');
-    } else {
-      endpoint = null;
-      waToken = null;
+    const { endpoint, waToken } = await buildWACredentials(user, bot);
+    console.log(`[sendAgentMessage] 🔧 endpoint=${endpoint || 'null'} | sessionId=${id} | flow_id=${session.flow_id || '(none)'}`);
+    if (!endpoint) {
+      console.error(`[sendAgentMessage] ❌ No WhatsApp endpoint could be resolved for session ${id} — aborting instead of sending to ".../api/null/send"`);
+      return res.status(400).json({ error: 'לא הוגדר חיבור WhatsApp עבור שיחה זו. יש להגדיר Bot ID / endpoint בהגדרות הבוט או המשתמש.' });
     }
 
     // Normalize phone: strip non-digits, ensure 972 country code
@@ -2633,7 +2619,7 @@ export const sendAgentMessage = async (req, res) => {
         console.log(`\n${'─'.repeat(60)}`);
         console.log(`[sendAgentMessage] 📤 ATTEMPT ${attempt + 1}/${MAX_TEMPLATE_RETRIES + 1}`);
         console.log(`[sendAgentMessage] 📤 URL:     ${WA_SEND_URL}`);
-        console.log(`[sendAgentMessage] 📤 TOKEN:   ${waToken}`);
+        console.log(`[sendAgentMessage] 📤 TOKEN:   ${waToken ? waToken.substring(0, 10) + '…' : '(none)'}`);
         console.log(`[sendAgentMessage] 📤 PHONE:   ${normalizedPhone}`);
         console.log(`[sendAgentMessage] 📤 PAYLOAD:\n${JSON.stringify(waBody, null, 2)}`);
         console.log(`${'─'.repeat(60)}`);
@@ -2811,7 +2797,7 @@ export const sendAgentMessage = async (req, res) => {
     // this specific template is sent (default 'no_change' preserves the
     // behavior computed above).
     if (isTemplate && templateData && waSent) {
-      const postSendMode = await resolveTemplatePostSendMode(getEffectiveUserId(req), templateData.name);
+      const postSendMode = await resolveTemplatePostSendMode(getEffectiveUserId(req), templateData.name, templateData.postSendModeOverride);
       const postSendFields = buildPostSendModeFields(postSendMode, session.status);
       if (postSendFields) {
         update.$set = { ...update.$set, ...postSendFields };
@@ -2869,21 +2855,13 @@ export const sendTemplateToPhone = async (req, res) => {
       { $or: [{ sender: normalizedPhone }, { customer_phone: normalizedPhone }], user_id: String(user._id) },
       { sort: { created_at: -1 } }
     );
-    const lastBot = lastSession?.flow_id ? await BotFlow.findById(lastSession.flow_id).select('endpoint').lean() : null;
+    const lastBot = lastSession?.flow_id ? await BotFlow.findById(lastSession.flow_id).select('endpoint user_id').lean() : null;
     console.log(`[sendTemplateToPhone] 🔍 last session=${lastSession?._id || '(none)'} | lastBot.endpoint=${lastBot?.endpoint || '(none)'}`);
 
-    let endpoint, waToken;
-    if (lastBot && lastBot.endpoint) {
-      const rawEndpoint = lastBot.endpoint;
-      endpoint = rawEndpoint.includes('/') ? rawEndpoint : `dialog360/${rawEndpoint}`;
-      const botIdPart = endpoint.split('/').pop();
-      waToken = crypto.createHash('sha1').update(botIdPart + 'moomoo').digest('hex');
-    } else if (user.dialog360_bot_id) {
-      endpoint = `dialog360/${user.dialog360_bot_id}`;
-      waToken = crypto.createHash('sha1').update(user.dialog360_bot_id + 'moomoo').digest('hex');
-    } else {
-      endpoint = null;
-      waToken = null;
+    const { endpoint, waToken } = await buildWACredentials(user, lastBot);
+    if (!endpoint) {
+      console.error(`[sendTemplateToPhone] ❌ No WhatsApp endpoint could be resolved for user=${user.email || user._id} phone=${phone} — aborting instead of sending to ".../api/null/send"`);
+      return res.status(400).json({ error: 'לא הוגדר חיבור WhatsApp עבור משתמש זה. יש להגדיר Bot ID / endpoint בהגדרות.' });
     }
 
     console.log(`[sendTemplateToPhone] 📤 phone=${phone} → normalized=${normalizedPhone} | template=${templateData.name} | lang=${templateData.language || 'he'} | endpoint=${endpoint}`);
@@ -2934,17 +2912,26 @@ export const sendTemplateToPhone = async (req, res) => {
 
     let waSent = false;
     let waError = null;
+    const sendUrl = `https://wa.message.co.il/api/${endpoint}/send`;
+    console.log(`\n${'─'.repeat(60)}`);
+    console.log(`[sendTemplateToPhone] 📤 URL:     ${sendUrl}`);
+    console.log(`[sendTemplateToPhone] 📤 TOKEN:   ${waToken ? waToken.substring(0, 10) + '…' : '(none)'}`);
+    console.log(`[sendTemplateToPhone] 📤 PHONE:   ${normalizedPhone}`);
+    console.log(`[sendTemplateToPhone] 📤 PAYLOAD:\n${JSON.stringify(waBody, null, 2)}`);
+    console.log(`${'─'.repeat(60)}`);
     try {
-      const waRes = await fetch(`https://wa.message.co.il/api/${endpoint}/send`, {
+      const waRes = await fetch(sendUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json; charset=utf-8', Accept: 'application/json', token: waToken },
         body: JSON.stringify(waBody)
       });
+      const responseBody = await waRes.text().catch(() => '');
+      console.log(`[sendTemplateToPhone] ⬅️  RESPONSE HTTP ${waRes.status} | body: ${responseBody}`);
       if (waRes.ok) {
         waSent = true;
         console.log(`[sendTemplateToPhone] ✅ WhatsApp OK | phone=${normalizedPhone} | status=${waRes.status}`);
       } else {
-        waError = `HTTP ${waRes.status}: ${await waRes.text()}`;
+        waError = `HTTP ${waRes.status}: ${responseBody}`;
         console.error(`[sendTemplateToPhone] ❌ WhatsApp FAILED | phone=${normalizedPhone} | ${waError}`);
       }
     } catch (waErr) {
@@ -3030,25 +3017,35 @@ export const sendTemplateToPhone = async (req, res) => {
 
     // Create a BotSession so the contact appears in the sessions list and message is saved
     // (collection is already declared above for the lastSession lookup)
+    // Per-template post-send mode: a brand-new session created by this template
+    // send defaults to BOT mode (postSendMode 'no_change'/'bot'); only an
+    // explicit 'agent' postSendMode switches it to agent/waiting.
     const sessionDoc = {
       sender: normalizedPhone,
       customer_phone: normalizedPhone,
       user_id: getEffectiveUserId(req),
-      is_agent: true,
-      agent_since: now,
-      status: 'waiting',
+      is_agent: false,
+      agent_since: null,
+      status: 'bot',
       is_active: true,
       created_at: now,
       process_history: initialHistory
     };
 
-    // Per-template post-send mode: a brand-new session defaults to agent/waiting
-    // (today's behavior), unless the template is configured to switch to bot mode.
+// <<<<<<< HEAD
+//     // Per-template post-send mode: a brand-new session defaults to agent/waiting
+//     // (today's behavior), unless the template is configured to switch to bot mode.
+//     const postSendMode = await resolveTemplatePostSendMode(getEffectiveUserId(req), templateData.name, templateData.postSendModeOverride);
+//     if (postSendMode === 'bot') {
+//       sessionDoc.is_agent = false;
+//       sessionDoc.agent_since = null;
+//       sessionDoc.status = 'bot';
+// =======
     const postSendMode = await resolveTemplatePostSendMode(getEffectiveUserId(req), templateData.name);
-    if (postSendMode === 'bot') {
-      sessionDoc.is_agent = false;
-      sessionDoc.agent_since = null;
-      sessionDoc.status = 'bot';
+    if (postSendMode === 'agent') {
+      const postSendFields = buildPostSendModeFields('agent', 'bot');
+      if (postSendFields) Object.assign(sessionDoc, postSendFields);
+// >>>>>>> m14/09-2
     }
 
     const insertResult = await collection.insertOne(sessionDoc);
@@ -3113,21 +3110,14 @@ export const sendAdminMessageToSession = async (req, res) => {
     const agentName = senderUser?.name || senderUser?.email || 'נציג';
 
     // Load the bot associated with this session for per-bot endpoint
-    const adminMsgBot = session.flow_id ? await BotFlow.findById(session.flow_id).select('endpoint').lean() : null;
+    const adminMsgBot = session.flow_id ? await BotFlow.findById(session.flow_id).select('endpoint user_id').lean() : null;
 
     // Build WhatsApp API endpoint and token — bot.endpoint takes priority
-    let endpoint, waToken;
-    if (adminMsgBot && adminMsgBot.endpoint) {
-      const rawEndpoint = adminMsgBot.endpoint;
-      endpoint = rawEndpoint.includes('/') ? rawEndpoint : `dialog360/${rawEndpoint}`;
-      const botIdPart = endpoint.split('/').pop();
-      waToken = crypto.createHash('sha1').update(botIdPart + 'moomoo').digest('hex');
-    } else if (user.dialog360_bot_id) {
-      endpoint = `dialog360/${user.dialog360_bot_id}`;
-      waToken = crypto.createHash('sha1').update(user.dialog360_bot_id + 'moomoo').digest('hex');
-    } else {
-      endpoint = null;
-      waToken = null;
+    const { endpoint, waToken } = await buildWACredentials(user, adminMsgBot);
+    console.log(`[sendAdminMessageToSession] 🔧 endpoint=${endpoint || 'null'} | sessionId=${sessionId} | flow_id=${session.flow_id || '(none)'}`);
+    if (!endpoint) {
+      console.error(`[sendAdminMessageToSession] ❌ No WhatsApp endpoint could be resolved for session ${sessionId} — aborting instead of sending to ".../api/null/send"`);
+      return res.status(400).json({ error: 'לא הוגדר חיבור WhatsApp עבור שיחה זו. יש להגדיר Bot ID / endpoint בהגדרות הבוט או המשתמש.' });
     }
 
     // Normalize phone: ensure 972 country code
@@ -3221,12 +3211,16 @@ export const sendAdminMessageToSession = async (req, res) => {
 
     let waSent = false;
     let waError = null;
-    
-    console.log(`[sendAdminMessageToSession] 📤 Sending | endpoint=${endpoint} | phone=${normalizedPhone}`);
-    console.log(`[sendAdminMessageToSession] 📤 Body:`, JSON.stringify(waBody, null, 2));
+    const sendUrl = `https://wa.message.co.il/api/${endpoint}/send`;
+    console.log(`\n${'─'.repeat(60)}`);
+    console.log(`[sendAdminMessageToSession] 📤 URL:     ${sendUrl}`);
+    console.log(`[sendAdminMessageToSession] 📤 TOKEN:   ${waToken ? waToken.substring(0, 10) + '…' : '(none)'}`);
+    console.log(`[sendAdminMessageToSession] 📤 PHONE:   ${normalizedPhone}`);
+    console.log(`[sendAdminMessageToSession] 📤 PAYLOAD:\n${JSON.stringify(waBody, null, 2)}`);
+    console.log(`${'─'.repeat(60)}`);
     
     try {
-      const waRes = await fetch(`https://wa.message.co.il/api/${endpoint}/send`, {
+      const waRes = await fetch(sendUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json; charset=utf-8',
@@ -3236,13 +3230,13 @@ export const sendAdminMessageToSession = async (req, res) => {
         body: JSON.stringify(waBody)
       });
       
+      const responseBody = await waRes.text().catch(() => '');
+      console.log(`[sendAdminMessageToSession] ⬅️  RESPONSE HTTP ${waRes.status} | body: ${responseBody}`);
       if (waRes.ok) { 
         waSent = true;
-        let responseBody = '';
-        try { responseBody = await waRes.text(); } catch (_) {}
-        console.log(`[sendAdminMessageToSession] ✅ WhatsApp OK | phone=${normalizedPhone} | status=${waRes.status} | response=${responseBody}`);
+        console.log(`[sendAdminMessageToSession] ✅ WhatsApp OK | phone=${normalizedPhone} | status=${waRes.status}`);
       } else {
-        waError = `HTTP ${waRes.status}: ${await waRes.text()}`;
+        waError = `HTTP ${waRes.status}: ${responseBody}`;
         console.error(`[sendAdminMessageToSession] ❌ WhatsApp FAILED | phone=${normalizedPhone} | ${waError}`);
       }
     } catch (waErr) {
@@ -3333,7 +3327,7 @@ export const sendAdminMessageToSession = async (req, res) => {
     // (default), preserves today's exact behavior (is_agent/agent_since only,
     // status untouched).
     if (isTemplate && templateData && waSent) {
-      const postSendMode = await resolveTemplatePostSendMode(String(session.user_id || ''), templateData.name);
+      const postSendMode = await resolveTemplatePostSendMode(String(session.user_id || ''), templateData.name, templateData.postSendModeOverride);
       const postSendFields = buildPostSendModeFields(postSendMode, session.status);
       if (postSendFields) {
         Object.assign(adminUpdateSet, postSendFields);

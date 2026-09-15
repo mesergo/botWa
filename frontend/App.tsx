@@ -42,7 +42,7 @@ const TrialExpiredScreen: React.FC<{ userName: string; onLogout: () => void }> =
           <div className="w-20 h-20 bg-red-50 rounded-full flex items-center justify-center">
             <Lock className="w-10 h-10 text-red-500" strokeWidth={2} />
           </div>
-        </div>
+        </div> 
         <h2 className="text-3xl font-black text-slate-800 mb-3">{t('trial.title')}</h2>
         <p className="text-slate-500 mb-2 font-medium">
           <Trans
@@ -2284,9 +2284,12 @@ const FlowBuilder: React.FC = () => {
           nodes,
           edges
         })
-      });
+      }); 
       if (res.ok) {
         setCreatingTemplate(false);
+        // Same fix as handleCloseTemplateEditor — avoid leaving viewMode stuck on
+        // 'creating-template' after navigating back into the admin panel.
+        setViewMode('home');
         navigate('/admin/templates');
         alert(t('editor:alerts.templateSaved'));
       } else {
@@ -2331,6 +2334,10 @@ const FlowBuilder: React.FC = () => {
     setIsTemplateParamsModalOpen(false);
     setNodes([]);
     setEdges([]);
+    // Reset viewMode too — otherwise it stays stuck on 'editing-template' and, once the
+    // user later navigates away from /admin (e.g. logo / "חזרה למערכת"), the render logic
+    // falls through to the template Editor branch again with empty nodes/edges/selectedBot.
+    setViewMode('home');
     navigate('/admin/templates');
   };
 

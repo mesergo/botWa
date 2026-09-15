@@ -28,6 +28,11 @@ import {
   previewRestoreConversations,
   restoreConversations
 } from '../controllers/adminController.js';
+import {
+  addUserDialog360Template,
+  editUserDialog360Template,
+  deleteUserDialog360Template
+} from '../controllers/adminDialog360TemplateWriteController.js';
 import { 
   listUserTypes,
   createUserType,
@@ -74,6 +79,11 @@ router.get('/users/:userId/dialog360-templates', requireAdmin, getUserDialog360T
 router.get('/users/:userId/dialog360-template-settings', requireAdmin, getUserDialog360TemplateSettings);
 router.post('/users/:userId/dialog360-template-settings/toggle', requireAdmin, updateUserDialog360TemplateVisibility);
 router.post('/users/:userId/dialog360-template-settings/default-media', requireAdmin, updateUserDialog360TemplateDefaultMedia);
+
+// Per-customer Dialog360 template write actions (add/edit/delete) — admin acting on the customer's behalf
+router.post('/users/:userId/dialog360-templates/add', requireAdmin, addUserDialog360Template);
+router.post('/users/:userId/dialog360-templates/edit', requireAdmin, editUserDialog360Template);
+router.post('/users/:userId/dialog360-templates/delete', requireAdmin, deleteUserDialog360Template);
 
 // Per-customer connected WhatsApp numbers (read-only admin view)
 router.get('/users/:userId/connected-numbers', requireAdmin, getUserConnectedNumbers);

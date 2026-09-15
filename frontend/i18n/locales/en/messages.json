@@ -43,7 +43,22 @@
     "template": {
       "label": "Template message (optional):",
       "clear": "Clear template",
-      "choose": "Choose a message template"
+      "choose": "Choose a message template",
+      "postSendMode": {
+        "label": "After the message is sent:",
+        "defaultOption": "Template default — {{mode}}",
+        "options": {
+          "agent": "Switch to agent mode (this send only)",
+          "bot": "Switch to bot mode (this send only)",
+          "noChange": "No status change (this send only)"
+        },
+        "overrideBadge": "One-time override: {{mode}}",
+        "modeLabels": {
+          "agent": "Switch to agent mode",
+          "bot": "Switch to bot mode",
+          "noChange": "No conversation status change"
+        }
+      }
     },
     "freeText": {
       "label": "Or type a free-text message:",

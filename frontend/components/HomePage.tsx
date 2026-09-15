@@ -39,7 +39,7 @@ interface SideNavItem {
 }
 
 const SIDE_NAV: SideNavItem[] = [
-  { id: 'home',     labelKey: 'pages.overview',     Icon: LayoutDashboard, color: 'text-blue-600' },
+  { id: 'home',     labelKey: 'pages.home',         Icon: LayoutDashboard, color: 'text-blue-600' },
   { id: 'bots',     labelKey: 'pages.bots',         Icon: Bot,             color: 'text-blue-600',    permission: 'bots.view_tab' },
   { id: 'chats',    labelKey: 'pages.sessions',     Icon: MessageSquare,   color: 'text-emerald-600', permission: 'sessions.view' },
   { id: 'sms_in',   labelKey: 'pages.smsIn',        Icon: Inbox,           color: 'text-sky-600',     permission: 'sms_in.view' },
@@ -213,7 +213,7 @@ const HomePage: React.FC<HomePageProps> = ({
       <div className="flex flex-1 min-h-0 flex-col lg:flex-row lg:overflow-hidden">
 
       {/* ── Sidebar ── */}
-      <aside className="hidden lg:flex w-64 bg-white border-e border-slate-100 flex-col flex-shrink-0">
+      <aside className="hidden lg:flex w-64 bg-white border-e border-slate-100 flex-col flex-shrink-0 min-h-0">
 
         {/* Logo */}
         <div className="h-16 flex items-center px-6 border-b border-slate-100">
@@ -226,21 +226,20 @@ const HomePage: React.FC<HomePageProps> = ({
         </div>
 
         {/* Profile */}
-        <div className="flex flex-col items-center pt-10 px-6 pb-6 border-b border-slate-100">
-          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-2xl shadow-md select-none mb-4">
+        <div className="flex flex-col items-center pt-4 px-6 pb-3 border-b border-slate-100">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-sm shadow-md select-none mb-2">
             {initial}
           </div>
-          <p className="text-slate-400 text-[10px] font-semibold uppercase tracking-widest mb-1">{t('home.welcome')}</p>
-          <p className="text-slate-900 font-bold text-lg text-center leading-snug">
+          <p className="text-slate-900 font-bold text-xs text-center leading-snug truncate max-w-full">
             {currentUser?.name ?? t('home.defaultUser')}
           </p>
           {currentUser?.email && (
-            <p className="text-slate-400 text-xs mt-1 text-center break-all leading-snug">
+            <p className="text-slate-400 text-[11px] mt-0.5 text-center break-all leading-snug">
               {currentUser.email}
             </p>
           )}
           {accountLabel && (
-            <span className={`inline-block mt-3 px-2.5 py-1 rounded-full text-[11px] font-semibold border ${
+            <span className={`inline-block mt-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
               currentUser?.account_type === 'Premium'
                 ? 'bg-amber-50 text-amber-600 border-amber-100'
                 : currentUser?.account_type === 'Trial'
@@ -253,14 +252,13 @@ const HomePage: React.FC<HomePageProps> = ({
         </div>
 
         {/* Nav items */}
-        <nav className="flex flex-col gap-0.5 px-3 pt-5">
-          <p className="px-3 pb-2 text-[10px] font-semibold text-slate-400 uppercase tracking-widest">{t('home.menu')}</p>
+        <nav className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-0.5 px-3 pt-3">
           {currentUser?.role === 'admin' && onOpenAdminPanel && (
             <button
               onClick={onOpenAdminPanel}
-              className="flex items-center gap-3 px-4 py-3 text-slate-500 hover:bg-slate-50 hover:text-slate-800 rounded-xl font-semibold text-sm transition-all duration-200 w-full group"
+              className="flex items-center gap-3 px-4 py-3.5 text-slate-500 hover:bg-slate-50 hover:text-slate-800 rounded-xl font-bold text-sm transition-all duration-200 w-full group"
             >
-              <Shield size={18} className="flex-shrink-0 text-slate-400 group-hover:text-slate-600" />
+              <Shield size={20} className="flex-shrink-0 text-slate-400 group-hover:text-slate-600" />
               <span className="tracking-tight">{t('pages.systemAdmin')}</span>
             </button>
           )}
@@ -272,7 +270,7 @@ const HomePage: React.FC<HomePageProps> = ({
                 key={id}
                 onClick={handler}
                 disabled={isActive}
-                className={`relative flex items-center gap-3 px-4 py-3 rounded-xl font-semibold text-sm transition-all duration-200 w-full group overflow-hidden ${
+                className={`relative flex items-center gap-3 px-4 py-3.5 rounded-xl font-bold text-sm transition-all duration-200 w-full group overflow-hidden ${
                   isActive
                     ? 'cursor-default'
                     : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'
@@ -293,7 +291,7 @@ const HomePage: React.FC<HomePageProps> = ({
                   />
                 )}
                 <Icon
-                  size={18}
+                  size={20}
                   className={`flex-shrink-0 transition-colors ${isActive ? '' : 'text-slate-400 group-hover:text-slate-600'}`}
                 />
                 <span className="tracking-tight">{t(labelKey)}</span>
@@ -303,16 +301,14 @@ const HomePage: React.FC<HomePageProps> = ({
         </nav>
 
         {/* Logout */}
-        <div className="mt-auto px-1 pb-6">
-          <div className="px-3">
-            <button
-              onClick={onLogout}
-              className="flex items-center gap-2.5 px-4 py-2.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-colors text-sm font-medium w-full"
-            >
-              <LogOut size={15} />
-              {t('home.logout')}
-            </button>
-          </div>
+        <div className="px-4 pb-6 pt-2 flex-shrink-0">
+          <button
+            onClick={onLogout}
+            className="flex items-center gap-2.5 px-4 py-2.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-colors text-sm font-medium w-full"
+          >
+            <LogOut size={15} />
+            {t('home.logout')}
+          </button>
         </div>
       </aside>
 

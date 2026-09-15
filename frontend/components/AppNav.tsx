@@ -157,20 +157,20 @@ const AppNav: React.FC<AppNavProps> = ({
 
   const renderProfileSection = () => (
     <>
-      <div className="flex flex-col items-center pt-8 px-6 pb-6 border-b border-slate-100 flex-shrink-0">
-        <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-xl shadow-md select-none mb-3">
+      <div className="flex flex-col items-center pt-4 px-6 pb-3 border-b border-slate-100 flex-shrink-0">
+        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-sm shadow-md select-none mb-2">
           {initial}
         </div>
-        <p className="text-slate-900 font-bold text-sm text-center leading-snug truncate max-w-full">
+        <p className="text-slate-900 font-bold text-xs text-center leading-snug truncate max-w-full">
           {currentUser?.name ?? 'משתמש'}
         </p>
         {currentUser?.email && (
-          <p className="text-slate-400 text-xs mt-1 text-center break-all leading-snug">
+          <p className="text-slate-400 text-[11px] mt-0.5 text-center break-all leading-snug">
             {currentUser.email}
           </p>
         )}
         {accountLabel && (
-          <span className={`inline-block mt-2 px-2.5 py-1 rounded-full text-[11px] font-semibold border ${
+          <span className={`inline-block mt-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
             currentUser?.account_type === 'Premium'
               ? 'bg-amber-50 text-amber-600 border-amber-100'
               : currentUser?.account_type === 'Trial'

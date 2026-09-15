@@ -14,6 +14,7 @@ import ProfileMenuContent from './ProfileMenuContent';
 import AnchoredDropdown from './AnchoredDropdown';
 import LanguageSwitcher from './LanguageSwitcher';
 import SmsInApp from './sms-in/SmsInApp';
+import PaymentCountriesSelect from './admin/PaymentCountriesSelect';
 
 const API_BASE = window.location.hostname === 'localhost'
   ? 'http://localhost:3001/api'
@@ -299,8 +300,8 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
   const [removingPnid, setRemovingPnid] = useState<string | null>(null);
   const [phpCreatingPnid, setPhpCreatingPnid] = useState<string | null>(null);
   const [phpCreateResults, setPhpCreateResults] = useState<Record<string, { success: boolean; logs: string[]; webhook?: string | null; endpoint?: string | null }>>({});
-  // Payment-country prefixes per connected number (972 = ישראל, 1 = ארה"ב/קנדה)
-  const [paymentCountriesDraft, setPaymentCountriesDraft] = useState<Record<string, { il: boolean; us: boolean }>>({});
+  // Payment-country prefixes per connected number, e.g. ["972", "1"]
+  const [paymentCountriesDraft, setPaymentCountriesDraft] = useState<Record<string, string[]>>({});
   const [savingPaymentCountriesPnid, setSavingPaymentCountriesPnid] = useState<string | null>(null);
   // Dialog360 add-number form
   const [d360FormOpen, setD360FormOpen] = useState(false);
@@ -661,23 +662,22 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
     }
   };
 
-  // Returns the current {il, us} checkbox selection for a connected number:
+  // Returns the current list of selected dial-code prefixes for a connected number:
   // prefers an in-progress draft, falling back to the value persisted in the DB.
-  const getPaymentCountriesSelection = (n: ConnectedNumber): { il: boolean; us: boolean } => {
+  const getPaymentCountriesSelection = (n: ConnectedNumber): string[] => {
     const draft = paymentCountriesDraft[n.phone_number_id];
     if (draft) return draft;
-    const stored = (n.allowedPaymentCountries || '972').split('|').map(s => s.trim());
-    return { il: stored.includes('972'), us: stored.includes('1') };
+    return (n.allowedPaymentCountries || '972').split('|').map(s => s.trim()).filter(Boolean);
   };
 
-  const handleTogglePaymentCountry = (phone_number_id: string, current: { il: boolean; us: boolean }, key: 'il' | 'us') => {
-    setPaymentCountriesDraft(prev => ({ ...prev, [phone_number_id]: { ...current, [key]: !current[key] } }));
+  const setPaymentCountriesSelection = (phone_number_id: string, codes: string[]) => {
+    setPaymentCountriesDraft(prev => ({ ...prev, [phone_number_id]: codes }));
   };
 
   const handleSavePaymentCountries = async (n: ConnectedNumber) => {
     if (!token) return;
     const sel = getPaymentCountriesSelection(n);
-    const allowedPaymentCountries = [sel.il && '972', sel.us && '1'].filter(Boolean).join('|');
+    const allowedPaymentCountries = sel.filter(Boolean).join('|');
     if (!allowedPaymentCountries) {
       alert(t('errors.selectAtLeastOneCountry'));
       return;
@@ -1763,33 +1763,19 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                             </div>
                           </div>
 
-                          {/* Payment-country prefixes (972 / 1) allowed for this number */}
-                          <div className="mt-4 pt-4 border-t border-slate-200/70 flex items-center gap-4 flex-wrap">
-                            <span className="text-[11px] font-bold text-slate-400">{t('settings.numbers.paymentCountriesLabel')}</span>
+                          {/* Payment-country prefixes allowed for this number */}
+                          <div className="mt-4 pt-4 border-t border-slate-200/70 flex items-start gap-3 flex-wrap">
+                            <span className="text-[11px] font-bold text-slate-400 pt-1.5">{t('settings.numbers.paymentCountriesLabel')}</span>
                             {(() => {
                               const sel = getPaymentCountriesSelection(n);
                               const isSaving = savingPaymentCountriesPnid === n.phone_number_id;
                               const hasDraft = !!paymentCountriesDraft[n.phone_number_id];
                               return (
-                                <>
-                                  <label className="flex items-center gap-1.5 text-xs font-bold text-slate-600 cursor-pointer select-none">
-                                    <input
-                                      type="checkbox"
-                                      checked={sel.il}
-                                      onChange={() => handleTogglePaymentCountry(n.phone_number_id, sel, 'il')}
-                                      className="w-4 h-4 rounded accent-blue-600"
-                                    />
-                                    {t('settings.numbers.countryIsrael')}
-                                  </label>
-                                  <label className="flex items-center gap-1.5 text-xs font-bold text-slate-600 cursor-pointer select-none">
-                                    <input
-                                      type="checkbox"
-                                      checked={sel.us}
-                                      onChange={() => handleTogglePaymentCountry(n.phone_number_id, sel, 'us')}
-                                      className="w-4 h-4 rounded accent-blue-600"
-                                    />
-                                    {t('settings.numbers.countryUs')}
-                                  </label>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <PaymentCountriesSelect
+                                    selected={sel}
+                                    onChange={codes => setPaymentCountriesSelection(n.phone_number_id, codes)}
+                                  />
                                   {hasDraft && (
                                     <button
                                       onClick={() => handleSavePaymentCountries(n)}
@@ -1801,7 +1787,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                                         : t('settings.numbers.save')}
                                     </button>
                                   )}
-                                </>
+                                </div>
                               );
                             })()}
                           </div>

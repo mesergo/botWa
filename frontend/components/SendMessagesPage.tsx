@@ -39,6 +39,7 @@ interface ActiveBroadcast {
   sent: number;
   failed: number;
   skipped: number;
+  excludedCount: number;
   status: 'queued' | 'scheduled' | 'running' | 'completed' | 'failed';
   queuedBehind: boolean;
   queuePosition: number;
@@ -50,6 +51,7 @@ interface BroadcastCompletionToast {
   failed: number;
   skipped: number;
   total: number;
+  excludedCount: number;
   status: 'completed' | 'failed';
 }
 
@@ -118,6 +120,8 @@ const SendMessagesPage: React.FC<SendMessagesPageProps> = ({
   const [templateSearch, setTemplateSearch] = useState('');
   const [selectedTemplate, setSelectedTemplate] = useState<any | null>(null);
   const [templateParams, setTemplateParams] = useState<any>({});
+  const [templatePostSendMode, setTemplatePostSendMode] = useState<Record<string, 'no_change' | 'agent' | 'bot'>>({});
+  const [sendPostSendModeOverride, setSendPostSendModeOverride] = useState<'no_change' | 'agent' | 'bot' | null>(null);
 
   const [sendBots, setSendBots] = useState<SendBot[]>([]);
   const [sendBotsLoading, setSendBotsLoading] = useState(false);
@@ -207,8 +211,28 @@ const SendMessagesPage: React.FC<SendMessagesPageProps> = ({
   const pickTemplate = (template: any) => {
     setSelectedTemplate(template);
     setTemplateParams(initTemplateParams(template));
+    setSendPostSendModeOverride(null);
     setShowTemplatePicker(false);
   };
+
+  // Fetch admin-configured post-send mode per template (what happens to the
+  // conversation right after that template is sent).
+  const fetchTemplatePostSendMode = useCallback(async () => {
+    if (!token) return;
+    try {
+      const res = await fetch(`${API_BASE}/dialog360-templates`, { headers: authHeader });
+      if (!res.ok) return;
+      const data = await res.json();
+      const settingsList = data.success && Array.isArray(data.settings) ? data.settings : [];
+      const postSendModeMap: Record<string, 'no_change' | 'agent' | 'bot'> = {};
+      settingsList.forEach((s: any) => {
+        postSendModeMap[s.templateName] = s.postSendMode || 'no_change';
+      });
+      setTemplatePostSendMode(postSendModeMap);
+    } catch (e) {
+      console.error('Failed to fetch template post-send mode', e);
+    }
+  }, [token, authHeader]);
 
   useEffect(() => {
     if (!token) return;
@@ -340,6 +364,7 @@ const SendMessagesPage: React.FC<SendMessagesPageProps> = ({
           language: selectedTemplate.language || 'he',
           components: selectedTemplate.components || [],
           params: templateParams,
+          postSendModeOverride: sendPostSendModeOverride || undefined,
         };
       } else if (mediaType && mediaUrl) {
         body.media = { type: mediaType, url: mediaUrl, filename: mediaFilename || undefined };
@@ -360,6 +385,7 @@ const SendMessagesPage: React.FC<SendMessagesPageProps> = ({
           sent: 0,
           failed: 0,
           skipped: 0,
+          excludedCount: data.excluded_count || 0,
           status: data.status || 'queued',
           queuedBehind: data.queued_behind || false,
           queuePosition: data.queue_position || 0,
@@ -368,6 +394,7 @@ const SendMessagesPage: React.FC<SendMessagesPageProps> = ({
         setMessageText('');
         setSelectedTemplate(null);
         setTemplateParams({});
+        setSendPostSendModeOverride(null);
         setMediaType(null);
         setMediaUrl('');
         setMediaFilename('');
@@ -402,6 +429,7 @@ const SendMessagesPage: React.FC<SendMessagesPageProps> = ({
             sent: data.sent ?? prev.sent,
             failed: data.failed ?? prev.failed,
             skipped: data.skipped ?? prev.skipped,
+            excludedCount: data.excluded_count ?? prev.excludedCount,
             status: nextStatus,
             queuedBehind: data.status === 'running' ? false : prev.queuedBehind,
             queuePosition: data.status === 'running' ? 0 : prev.queuePosition,
@@ -414,6 +442,7 @@ const SendMessagesPage: React.FC<SendMessagesPageProps> = ({
               failed: next.failed,
               skipped: next.skipped,
               total: data.total ?? next.total,
+              excludedCount: next.excludedCount,
               status: nextStatus,
             });
           }
@@ -603,6 +632,10 @@ const SendMessagesPage: React.FC<SendMessagesPageProps> = ({
                   setSelectedTemplate={setSelectedTemplate}
                   templateParams={templateParams}
                   setTemplateParams={setTemplateParams}
+                  templatePostSendMode={templatePostSendMode}
+                  sendPostSendModeOverride={sendPostSendModeOverride}
+                  setSendPostSendModeOverride={setSendPostSendModeOverride}
+                  fetchTemplatePostSendMode={fetchTemplatePostSendMode}
                   templateSampleUrl={templateSampleUrl}
                   templates={templates}
                   fetchTemplates={fetchTemplates}
@@ -704,6 +737,11 @@ const SendMessagesPage: React.FC<SendMessagesPageProps> = ({
                 נשלחו {completionToast.sent} · נכשלו {completionToast.failed} · דולגו {completionToast.skipped}
               </p>
               <p className="text-xs font-semibold text-slate-400 mt-1">סה"כ {completionToast.total} נמענים</p>
+              {completionToast.excludedCount > 0 && (
+                <p className="text-xs font-semibold text-amber-600 mt-1">
+                  ⛔ הוחרגו {completionToast.excludedCount} אנשי קשר בשל הגדרת קבוצה מוחרגת
+                </p>
+              )}
             </div>
             <button
               onClick={() => {
