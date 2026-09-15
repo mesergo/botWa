@@ -1,0 +1,808 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>הקמת חשבון עסקי</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap">
+<style>
+  :root {
+    --brand: #1877C2;
+    --brand-ink: #0F5FA0;
+    --yellow: #F5D21A;
+    --teal: #12B5A5;
+    --teal-soft: #E6F7F4;
+    --wa: #25D366;
+    --wa-ink: #0E7A3C;
+
+    --bg: #EEF2F6;
+    --surface: #FFFFFF;
+    --surface-2: #F7F9FB;
+    --text: #1A1A2E;
+    --subtext: #6B7280;
+    --border: #E5E7EB;
+    --hairline: #EDF1F5;
+    --error: #C0392B;
+
+    --brand-wash: rgba(24,119,194,.08);
+    --brand-line: rgba(24,119,194,.22);
+    --yellow-wash: rgba(245,210,26,.16);
+    --shadow: 0 1px 2px rgba(20,40,80,.05), 0 10px 34px rgba(20,40,80,.09);
+    --shadow-soft: 0 1px 2px rgba(20,40,80,.04), 0 4px 14px rgba(20,40,80,.05);
+    --radius: 10px;
+    --radius-lg: 16px;
+  }
+  :root:not([data-theme="light"]) {
+    @media (prefers-color-scheme: dark) {
+      --bg: #0A0F18;
+      --surface: #141C28;
+      --surface-2: #0F1622;
+      --text: #E8EDF3;
+      --subtext: #94A1B2;
+      --border: #263143;
+      --hairline: #1E2836;
+      --brand-wash: rgba(46,142,214,.14);
+      --brand-line: rgba(46,142,214,.34);
+      --yellow-wash: rgba(245,210,26,.12);
+      --teal-soft: rgba(18,181,165,.14);
+      --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 34px rgba(0,0,0,.42);
+      --shadow-soft: 0 1px 2px rgba(0,0,0,.35), 0 4px 14px rgba(0,0,0,.3);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0A0F18;
+    --surface: #141C28;
+    --surface-2: #0F1622;
+    --text: #E8EDF3;
+    --subtext: #94A1B2;
+    --border: #263143;
+    --hairline: #1E2836;
+    --brand-wash: rgba(46,142,214,.14);
+    --brand-line: rgba(46,142,214,.34);
+    --yellow-wash: rgba(245,210,26,.12);
+    --teal-soft: rgba(18,181,165,.14);
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 34px rgba(0,0,0,.42);
+    --shadow-soft: 0 1px 2px rgba(0,0,0,.35), 0 4px 14px rgba(0,0,0,.3);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    direction: rtl;
+    background:
+      radial-gradient(1200px 600px at 90% -10%, var(--brand-wash), transparent 60%),
+      var(--bg);
+    color: var(--text);
+    font-family: 'Heebo', 'Segoe UI', Arial, sans-serif;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px 16px;
+  }
+  .mono { font-family: 'JetBrains Mono', 'Consolas', monospace; direction: ltr; unicode-bidi: embed; }
+
+  /* ---------- shell ---------- */
+  .app {
+    width: 100%;
+    max-width: 468px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 22px;
+    box-shadow: var(--shadow);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    min-height: min(720px, calc(100dvh - 48px));
+  }
+
+  /* ---------- header ---------- */
+  .head {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px; padding: 16px 20px 12px;
+  }
+  .brand { display: flex; align-items: center; gap: 9px; }
+  .brand .name { font-weight: 800; font-size: 16px; letter-spacing: -.2px; }
+  .exit {
+    background: none; border: 0; color: var(--subtext); font: inherit;
+    font-size: 13px; font-weight: 700; cursor: pointer; padding: 6px; border-radius: 8px;
+  }
+  .exit:hover { color: var(--text); }
+
+  .logo { position: relative; width: 30px; height: 30px; flex-shrink: 0; }
+  .logo .eye { position: absolute; left: 0; bottom: 0; width: 25px; height: 25px; border-radius: 50%; background: var(--brand); display: grid; place-items: center; }
+  .logo .white { width: 15.5px; height: 15.5px; border-radius: 50%; background: #fff; display: grid; place-items: center; }
+  .logo .iris { position: relative; width: 12.5px; height: 12.5px; border-radius: 50%; background: #4A4A4A; }
+  .logo .hi { position: absolute; top: 1.5px; right: 1.5px; width: 4px; height: 4px; border-radius: 50%; background: #fff; }
+  .logo .dot { position: absolute; top: 0; right: 0; width: 7px; height: 7px; border-radius: 50%; background: var(--yellow); }
+
+  .processtitle { padding: 0 20px 12px; font-size: 20px; font-weight: 800; letter-spacing: -.3px; }
+  .progress { padding: 0 20px 14px; }
+  .track { height: 6px; border-radius: 999px; background: var(--border); overflow: hidden; }
+  .fill {
+    height: 100%; border-radius: 999px;
+    background: linear-gradient(90deg, var(--brand), #3E9BE0);
+    transition: width .45s cubic-bezier(.4,0,.2,1);
+  }
+  .steplabel { font-size: 12px; color: var(--subtext); margin-top: 6px; font-variant-numeric: tabular-nums; }
+
+  /* ---------- step body ---------- */
+  .body { flex: 1; overflow-y: auto; padding: 8px 24px 4px; }
+  .stepicon {
+    width: 58px; height: 58px; border-radius: 18px; margin: 6px auto 16px;
+    background: var(--brand-wash); display: grid; place-items: center;
+    color: var(--brand); border: 1px solid var(--brand-line);
+  }
+  .stepicon svg { width: 28px; height: 28px; }
+  h1.title { font-size: 22px; font-weight: 800; margin: 0 0 8px; letter-spacing: -.3px; text-wrap: balance; }
+  p.subtitle { color: var(--subtext); font-size: 15px; margin: 0 0 4px; }
+  .stack { display: flex; flex-direction: column; gap: 12px; margin-top: 18px; }
+
+  .enter { animation: enter .4s cubic-bezier(.2,.7,.3,1) both; }
+  @keyframes enter { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  @media (prefers-reduced-motion: reduce) {
+    .enter { animation: none; }
+    .fill { transition: none; }
+  }
+
+  /* ---------- choice cards ---------- */
+  .choice {
+    display: flex; align-items: center; gap: 12px; text-align: right;
+    background: var(--surface); border: 1.5px solid var(--border);
+    border-radius: 14px; padding: 14px; cursor: pointer; width: 100%; font: inherit;
+    transition: border-color .15s, background .15s, transform .05s;
+  }
+  .choice:hover { border-color: var(--brand-line); }
+  .choice:active { transform: scale(.995); }
+  .choice.sel { border-color: var(--teal); background: var(--teal-soft); }
+  .choice .cIcon {
+    width: 40px; height: 40px; border-radius: 10px; flex-shrink: 0;
+    display: grid; place-items: center; background: var(--brand-wash); color: var(--brand);
+  }
+  .choice.sel .cIcon { background: var(--brand); color: #fff; }
+  .choice .cText { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+  .choice .cTitle { font-weight: 700; font-size: 15px; }
+  .choice .cDesc { font-size: 13px; color: var(--subtext); line-height: 1.45; }
+  .choice .cMark { color: var(--border); flex-shrink: 0; }
+  .choice.sel .cMark { color: var(--teal); }
+  .choice svg { width: 20px; height: 20px; }
+  .choice .cMark svg { width: 22px; height: 22px; }
+
+  /* ---------- notice / guide / note ---------- */
+  .notice {
+    background: var(--brand-wash); border: 1px solid var(--brand-line);
+    border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 8px;
+  }
+  .notice .nHead { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 14px; }
+  .notice .nHead svg { width: 18px; height: 18px; color: var(--brand); flex-shrink: 0; }
+  .notice ul { margin: 0; padding: 0 22px 0 0; }
+  .notice li { font-size: 14px; }
+  .notice.wa { background: rgba(37,211,102,.09); border-color: rgba(37,211,102,.32); }
+  .notice.wa .nHead svg { color: var(--wa-ink); }
+
+  .guide {
+    margin-top: 6px; background: var(--surface-2); border: 1px solid var(--border);
+    border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 14px;
+  }
+  .guide h3 { margin: 0; font-size: 15px; font-weight: 700; }
+  .gnote { margin: 0; font-size: 14px; color: var(--subtext); line-height: 1.5; }
+  .savedbadge {
+    display: flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 700;
+    color: var(--teal); background: var(--teal-soft); border-radius: 10px; padding: 10px 12px;
+  }
+  .savedbadge svg { width: 18px; height: 18px; flex-shrink: 0; }
+  .gstep { display: flex; align-items: flex-start; gap: 12px; }
+  .gnum {
+    width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0;
+    background: var(--brand); color: #fff; display: grid; place-items: center;
+    font-weight: 700; font-size: 13px;
+  }
+  .gstep span { font-size: 14px; line-height: 1.5; padding-top: 2px; }
+  .savednote {
+    display: flex; gap: 8px; align-items: flex-start;
+    background: var(--yellow-wash); border-radius: 10px; padding: 12px; font-size: 13px;
+  }
+  .savednote svg { width: 16px; height: 16px; flex-shrink: 0; margin-top: 3px; color: #B8860B; }
+
+  /* ---------- use-case sub-question (agents) ---------- */
+  .agentsbox {
+    margin-top: 6px; background: var(--surface-2); border: 1px solid var(--border);
+    border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 12px;
+  }
+  .agentsbox h3 { margin: 0; font-size: 15px; font-weight: 700; }
+  .chiprow { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip {
+    border: 1.5px solid var(--border); background: var(--surface); border-radius: 999px;
+    padding: 9px 16px; font: inherit; font-size: 14px; font-weight: 700; color: var(--subtext); cursor: pointer;
+  }
+  .chip:hover { border-color: var(--brand-line); }
+  .chip.sel { border-color: var(--teal); background: var(--teal-soft); color: var(--teal); }
+
+  /* ---------- secondary button ---------- */
+  .btn2 {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    width: 100%; border: 1.5px solid var(--brand); color: var(--brand);
+    background: var(--surface); border-radius: var(--radius); padding: 13px;
+    font: inherit; font-weight: 700; font-size: 15px; cursor: pointer;
+  }
+  .btn2:hover { background: var(--brand-wash); }
+  .btn2 svg { width: 18px; height: 18px; }
+  .btn2.g { border-color: var(--border); color: var(--text); }
+  .gmark { width: 18px; height: 18px; border-radius: 50%; background: conic-gradient(#EA4335 0 25%,#FBBC05 0 50%,#34A853 0 75%,#4285F4 0); flex-shrink: 0; }
+  .connected { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 10px; color: var(--teal); font-weight: 700; }
+  .connected svg { width: 22px; height: 22px; }
+  .err { color: var(--error); font-size: 13px; text-align: center; margin: 4px 0 0; }
+
+  /* ---------- virtual numbers ---------- */
+  .vn {
+    display: flex; align-items: center; gap: 12px; width: 100%; text-align: right;
+    background: var(--surface); border: 1.5px solid var(--border); border-radius: 12px;
+    padding: 14px; cursor: pointer; font: inherit; transition: border-color .15s, background .15s;
+  }
+  .vn:hover { border-color: var(--brand-line); }
+  .vn.sel { border-color: var(--teal); background: var(--teal-soft); }
+  .vn .radio { width: 20px; height: 20px; border-radius: 50%; border: 2px solid var(--border); flex-shrink: 0; display: grid; place-items: center; }
+  .vn.sel .radio { border-color: var(--teal); }
+  .vn.sel .radio::after { content: ""; width: 10px; height: 10px; border-radius: 50%; background: var(--teal); }
+  .vn .num { flex: 1; display: flex; flex-direction: column; }
+  .vn .digits { font-size: 17px; font-weight: 600; letter-spacing: .5px; }
+  .vn .region { font-size: 12px; color: var(--subtext); }
+  .vn .price { font-size: 13px; font-weight: 700; color: var(--brand); font-variant-numeric: tabular-nums; }
+  .loading { text-align: center; color: var(--subtext); padding: 30px 0; font-size: 14px; }
+  .spinner { width: 26px; height: 26px; border: 3px solid var(--border); border-top-color: var(--brand); border-radius: 50%; margin: 0 auto 10px; animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ---------- tips (done) ---------- */
+  .tip {
+    display: flex; align-items: center; gap: 12px;
+    background: var(--surface-2); border: 1px solid var(--border); border-radius: 14px; padding: 14px;
+  }
+  .tip .tIcon { width: 40px; height: 40px; border-radius: 10px; background: var(--brand-wash); color: var(--brand); display: grid; place-items: center; flex-shrink: 0; }
+  .tip .tIcon svg { width: 20px; height: 20px; }
+  .tip .tTitle { font-weight: 700; font-size: 15px; }
+  .tip .tDesc { font-size: 13px; color: var(--subtext); line-height: 1.45; }
+
+  /* ---------- footer ---------- */
+  .foot {
+    display: flex; align-items: center; gap: 12px;
+    padding: 14px 20px; border-top: 1px solid var(--border); background: var(--surface);
+  }
+  .back {
+    background: none; border: 0; color: var(--subtext); font: inherit; font-weight: 700;
+    font-size: 15px; cursor: pointer; padding: 12px; border-radius: 8px;
+  }
+  .back:hover { color: var(--text); }
+  .next {
+    flex: 1; background: var(--brand); color: #fff; border: 0; border-radius: var(--radius);
+    padding: 15px; font: inherit; font-weight: 700; font-size: 16px; cursor: pointer;
+    transition: filter .15s, opacity .15s;
+  }
+  .next:hover:not(:disabled) { filter: brightness(1.06); }
+  .next:disabled { opacity: .4; cursor: not-allowed; }
+
+  /* ---------- pause / continue-later bar ---------- */
+  .pausebar {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    padding: 12px 20px 16px; background: var(--surface); text-align: center;
+  }
+  .pausebar svg { width: 16px; height: 16px; color: var(--subtext); flex-shrink: 0; }
+  .pauselink {
+    background: none; border: 0; color: var(--brand); font: inherit;
+    font-size: 13.5px; font-weight: 700; cursor: pointer; padding: 4px 2px;
+  }
+  .pauselink:hover { text-decoration: underline; text-underline-offset: 3px; }
+
+  :focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; border-radius: 6px; }
+
+  /* ---------- success overlay ---------- */
+  .done-screen { text-align: center; padding: 20px 0; }
+  .done-badge {
+    width: 84px; height: 84px; border-radius: 50%; margin: 10px auto 18px;
+    background: var(--teal-soft); color: var(--teal); display: grid; place-items: center;
+    animation: pop .5s cubic-bezier(.2,.9,.3,1.2) both;
+  }
+  .done-badge svg { width: 46px; height: 46px; }
+  @keyframes pop { from { transform: scale(.4); opacity: 0; } to { transform: none; opacity: 1; } }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="head">
+    <div class="brand">
+      <div class="logo" aria-hidden="true">
+        <div class="dot"></div>
+        <div class="eye"><div class="white"><div class="iris"><div class="hi"></div></div></div></div>
+      </div>
+      <span class="name">מסר גו</span>
+    </div>
+    <button class="exit" id="exitBtn" type="button">התחלה מחדש</button>
+  </div>
+
+  <div class="processtitle">הקמת החשבון העסקי שלך</div>
+
+  <div class="progress">
+    <div class="track"><div class="fill" id="fill" style="width:14%"></div></div>
+    <div class="steplabel" id="steplabel"></div>
+  </div>
+
+  <div class="body" id="body"></div>
+
+  <div class="foot">
+    <button class="back" id="backBtn" type="button">חזרה</button>
+    <button class="next" id="nextBtn" type="button">המשך</button>
+  </div>
+
+  <div class="pausebar" id="pausebar">
+    <button class="pauselink" id="pauseBtn" type="button">רשמו אותי, אמשיך את תהליך החיבור אח״כ</button>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var STORAGE_KEY = "mesergo.onboarding.web.v1";
+
+  var NUMBERS = [
+    { id: "vn-1", display: "077-000-1122", region: "ישראל", price: 39 },
+    { id: "vn-2", display: "077-000-2233", region: "ישראל", price: 39 },
+    { id: "vn-3", display: "072-000-3344", region: "ישראל", price: 39 },
+    { id: "vn-4", display: "072-000-4455", region: "ישראל", price: 49 },
+    { id: "vn-5", display: "073-000-5566", region: "ישראל", price: 49 }
+  ];
+
+  // ---- icons (inline, currentColor) ----
+  var I = {
+    rocket: '<path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M4.5 16.5c-1.5 1.3-2 5-2 5s3.7-.5 5-2c.7-.8.7-2 0-2.8a2 2 0 0 0-3 0zM12 15l-3-3a22 22 0 0 1 8-11c3 0 5 2 5 5a22 22 0 0 1-11 8zM9 12H4s.5-2.8 2-4a3 3 0 0 1 3 0M12 15v5s2.8-.5 4-2a3 3 0 0 0 0-3"/>',
+    facebook: '<path fill="currentColor" d="M22 12a10 10 0 1 0-11.6 9.9v-7H7.9V12h2.5V9.8c0-2.5 1.5-3.9 3.8-3.9 1.1 0 2.2.2 2.2.2v2.5h-1.3c-1.2 0-1.6.8-1.6 1.6V12h2.8l-.4 2.9h-2.4v7A10 10 0 0 0 22 12"/>',
+    shield: '<path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M12 3l7 3v5c0 4.5-3 8.5-7 10-4-1.5-7-5.5-7-10V6zM9 12l2 2 4-4"/>',
+    business: '<path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M3 21h18M4 21V8l6-4 6 4M20 21V11M8 21v-4h4v4M8 11h.01M12 11h.01M8 14h.01M12 14h.01"/>',
+    plus: '<path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18M12 8v8M8 12h8"/>',
+    phone: '<path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M5 3h4l2 5-3 2a14 14 0 0 0 6 6l2-3 5 2v4a2 2 0 0 1-2 2A17 17 0 0 1 3 5a2 2 0 0 1 2-2"/>',
+    check2: '<path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M2 12l5 5M8 15l5-5M13 17l8-9"/>',
+    whatsapp: '<path fill="currentColor" d="M12 2a10 10 0 0 0-8.6 15l-1.3 4.7 4.8-1.3A10 10 0 1 0 12 2m0 2a8 8 0 0 1 6.8 12.2l.9 2.7-2.8-.7A8 8 0 1 1 12 4m-3 3.5c-.2 0-.5 0-.7.4-.3.4-1 1-1 2.3s1 2.7 1.2 2.9c.1.2 2 3 4.8 4.1 2.3.9 2.8.7 3.3.7.5-.1 1.6-.7 1.9-1.3.2-.6.2-1.2.1-1.3-.1-.1-.3-.2-.6-.4-.3-.1-1.6-.8-1.9-.9-.2-.1-.4-.1-.6.1s-.7.9-.8 1c-.2.2-.3.2-.6.1-.3-.2-1.2-.5-2.3-1.4-.9-.8-1.4-1.7-1.6-2-.2-.3 0-.5.1-.6l.5-.5c.1-.2.2-.3.3-.5s0-.4 0-.5c-.1-.2-.6-1.5-.8-2-.2-.5-.4-.4-.6-.4z"/>',
+    cart: '<path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M3 4h2l2.4 12.4A2 2 0 0 0 9.3 18h8.4a2 2 0 0 0 2-1.6L21 8H6M9 22a1 1 0 1 0 0-2 1 1 0 0 0 0 2M18 22a1 1 0 1 0 0-2 1 1 0 0 0 0 2"/>',
+    keypad: '<path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M7 4h.01M12 4h.01M17 4h.01M7 9h.01M12 9h.01M17 9h.01M7 14h.01M12 14h.01M17 14h.01M12 19h.01"/>',
+    google: '', // rendered via .gmark
+    network: '<path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M12 8a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5M5 21a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5M19 21a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5M12 8v4M12 12l-5 4M12 12l5 4"/>',
+    sparkles: '<path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M12 3l1.8 4.5L18 9l-4.2 1.5L12 15l-1.8-4.5L6 9l4.2-1.5zM19 14l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8zM5 13l.6 1.6L7 15l-1.4.6L5 17l-.6-1.4L3 15l1.4-.4z"/>',
+    checkc: '<path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18M8.5 12l2.5 2.5L16 9"/>',
+    alert: '<path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18M12 8v5M12 16h.01"/>',
+    open: '<path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M14 4h6v6M20 4l-9 9M18 13v5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h5"/>',
+    bookmark: '<path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1"/>',
+    docs: '<path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M8 4h7l4 4v10a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2M15 4v4h4M9 13h6M9 17h4"/>',
+    send: '<path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M21 3L3 10.5 10 13m11-10L10 13m11-10L14 21l-4-8"/>',
+    bots: '<path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M12 3v3M7 8h10a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2M9 13h.01M15 13h.01M3 12v3M21 12v3"/>',
+    apps: '<path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z"/>',
+    chat: '<path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M4 5h16a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H9l-4 4v-4H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1M8 10h.01M12 10h.01M16 10h.01"/>',
+    chip: '<path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M7 7h10v10H7zM9 3v2M15 3v2M9 19v2M15 19v2M3 9h2M3 15h2M19 9h2M19 15h2"/>',
+    megaphone: '<path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M4 10v4a1 1 0 0 0 1 1h3l7 4V5L8 9H5a1 1 0 0 0-1 1M18 8a4 4 0 0 1 0 8"/>'
+  };
+  function svg(name) { return '<svg viewBox="0 0 24 24" aria-hidden="true">' + (I[name] || "") + '</svg>'; }
+
+  // ---- state ----
+  var state = load();
+  var selectedVn = null;      // transient selection on the virtual-number step
+  var loadingNumbers = false; // simulates the network fetch
+  var pausedView = false;     // "register me, continue later" confirmation screen
+
+  function defaults() {
+    return {
+      stepId: "intro",
+      completed: false,
+      answers: { useCases: [], agentCount: null, fbStatus: null, numberStatus: null, virtualNumber: null, googleConnected: false, fbConnected: false }
+    };
+  }
+  function load() {
+    try {
+      var raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return defaults();
+      var p = JSON.parse(raw);
+      var d = defaults();
+      return { stepId: p.stepId || "intro", completed: !!p.completed, answers: Object.assign(d.answers, p.answers || {}) };
+    } catch (e) { return defaults(); }
+  }
+  function save() { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) {} }
+
+  function order() {
+    var s = ["intro", "usecases", "facebook", "number"];
+    if (state.answers.numberStatus === "none") s.push("virtual");
+    s.push("google", "connect", "done");
+    return s;
+  }
+  function setAnswer(patch) { Object.assign(state.answers, patch); save(); render(); }
+  function go(step) { state.stepId = step; save(); render(); }
+  function next() { var o = order(), i = o.indexOf(state.stepId); go(o[Math.min(i + 1, o.length - 1)]); }
+  function back() { var o = order(), i = o.indexOf(state.stepId); go(o[Math.max(i - 1, 0)]); }
+
+  // ---- step builders: each returns { icon, title, subtitle, html, next:{label,enabled,onClick}, showBack } ----
+  var steps = {
+    intro: function () {
+      var items = ["חשבון פייסבוק ביזנס", "מספר טלפון ייעודי לוואטסאפ העסקי", "חיבור מול Google ופייסבוק"];
+      var rows = items.map(function (t) {
+        return '<div class="tip"><div class="tIcon" style="background:var(--teal-soft);color:var(--teal)">' + svg("checkc") + '</div><div><div class="tTitle">' + t + "</div></div></div>";
+      }).join("");
+      return {
+        icon: "rocket",
+        title: "בוא נחבר את הוואטסאפ העסקי שלך",
+        subtitle: "עוד כמה צעדים קצרים ותהיה מוכן לשלוח הודעות ובוטים דרך וואטסאפ הרשמי (WhatsApp Business Platform).",
+        html: '<div class="stack">' + rows + "</div>",
+        showBack: false,
+        next: { label: "מתחילים", enabled: true, onClick: next }
+      };
+    },
+
+    usecases: function () {
+      var cases = state.answers.useCases || [];
+      var has = function (k) { return cases.indexOf(k) !== -1; };
+      var opts = [
+        { k: "conversations", icon: "chat", t: "שיחות עם לקוחות", d: "מענה אישי לפניות בזמן אמת" },
+        { k: "bot", icon: "chip", t: "בוט למענה אוטומטי", d: "תשובות אוטומטיות לשאלות נפוצות, 24/7" },
+        { k: "broadcast", icon: "megaphone", t: "הפצת הודעות ללקוחות", d: "שליחה יזומה של עדכונים, מבצעים ותזכורות" }
+      ];
+      var cards = opts.map(function (o) { return useCaseCard(o, has(o.k)); }).join("");
+      var agents = "";
+      if (has("conversations")) {
+        var aopts = [
+          { k: "solo", l: "רק אני" }, { k: "2_5", l: "2–5 נציגים" },
+          { k: "6_20", l: "6–20 נציגים" }, { k: "20plus", l: "מעל 20 נציגים" }
+        ];
+        agents = '<div class="agentsbox enter"><h3>כמה נציגים יענו ללקוחות?</h3><div class="chiprow">' +
+          aopts.map(function (a) {
+            return '<button class="chip' + (state.answers.agentCount === a.k ? " sel" : "") + '" data-agent="' + a.k + '">' + a.l + "</button>";
+          }).join("") +
+          "</div></div>";
+      }
+      var canNext = cases.length > 0 && (!has("conversations") || !!state.answers.agentCount);
+      return {
+        icon: "apps",
+        title: "איזה שירות אתה מצפה מהוואטסאפ?",
+        subtitle: "מה השימושים העיקריים שלך? אפשר לבחור כמה שרוצים — זה יעזור לנו להתאים לך את המערכת.",
+        html: '<div class="stack">' + cards + "</div>" + agents,
+        showBack: true,
+        next: { label: "המשך", enabled: canNext, onClick: next }
+      };
+    },
+
+    facebook: function () {
+      var fb = state.answers.fbStatus;
+      var opts = [
+        { k: "verified", icon: "shield", t: "יש לי חשבון מאומת", d: "מתחיל עם עד 1,000 הודעות יוצאות ביום" },
+        { k: "unverified", icon: "business", t: "יש לי חשבון (לא מאומת)", d: "מוגבל ל-250 הודעות יוצאות ביום בהתחלה" },
+        { k: "none", icon: "plus", t: "אין לי עדיין", d: "נראה לך איך פותחים — וההתקדמות תישמר" }
+      ];
+      var cards = opts.map(function (o) { return choiceCard(o, fb === o.k, "fbStatus"); }).join("");
+      var guide = "";
+      if (fb === "none" && !state.answers.googleConnected) {
+        // אין חשבון פייסבוק → קודם נרשמים עם Google כדי לשמור את המקום ולחזור בהמשך.
+        guide = '<div class="guide enter">' +
+          "<h3>שמור את ההתקדמות שלך</h3>" +
+          '<p class="gnote">כדי לפתוח חשבון פייסבוק ביזנס תצטרך לצאת מכאן לרגע. התחבר עם Google ונשמור בדיוק את המקום שבו אתה נמצא — תוכל לחזור ולהמשיך מכאן בכל עת.</p>' +
+          '<button class="btn2 g" id="fbGoogleSave"><span class="gmark"></span> התחבר עם Google לשמירת ההתקדמות</button>' +
+          "</div>";
+      } else if (fb === "none") {
+        guide = '<div class="guide enter">' +
+          '<div class="savedbadge">' + svg("checkc") + " ההתקדמות נשמרה לחשבון Google שלך</div>" +
+          "<h3>איך פותחים חשבון פייסבוק ביזנס</h3>" +
+          guideSteps([
+            "היכנס ל-business.facebook.com והתחבר עם חשבון הפייסבוק שלך.",
+            "צור תיק עסקי (Business Portfolio) חדש עם שם העסק, האימייל והכתובת.",
+            "(מומלץ) הגש את העסק לאימות כדי להעלות את מגבלת ההודעות."
+          ]) +
+          '<button class="btn2" data-open="https://business.facebook.com/">' + svg("open") + " פתח את פייסבוק ביזנס</button>" +
+          savedNote("שמרנו את המקום שלך — חזור והמשך מכאן אחרי שתפתח את החשבון.") +
+          "</div>";
+      }
+      return {
+        icon: "facebook",
+        title: "חשבון פייסבוק ביזנס",
+        subtitle: "כדי להשתמש בוואטסאפ הרשמי צריך חשבון Facebook Business. חשבון מאומת מתחיל במגבלת הודעות גבוהה יותר.",
+        html: '<div class="stack">' + cards + "</div>" + guide,
+        showBack: true,
+        // כשאין חשבון פייסבוק — ממשיכים רק אחרי שנרשמנו עם Google (ההתקדמות נשמרה).
+        next: { label: "המשך", enabled: !!fb && (fb !== "none" || state.answers.googleConnected), onClick: next }
+      };
+    },
+
+    number: function () {
+      var num = state.answers.numberStatus;
+      var notice = '<div class="notice wa"><div class="nHead">' + svg("whatsapp") + "שים לב — בוואטסאפ הרשמי:</div>" +
+        "<ul><li>אין קבוצות (כמו בוואטסאפ הרגיל)</li><li>אין אפשרות להעלות סטטוסים</li></ul></div>";
+      var opts = [
+        { k: "clean", icon: "check2", t: "יש לי מספר פנוי", d: "מספר שאין עליו וואטסאפ כלל" },
+        { k: "hasWhatsapp", icon: "whatsapp", t: "יש לי מספר — אבל יש עליו וואטסאפ", d: "צריך למחוק/לנתק את הוואטסאפ מהמספר" },
+        { k: "none", icon: "cart", t: "אין לי מספר", d: "נציע לך מספר וירטואלי לרכישה" }
+      ];
+      var cards = opts.map(function (o) { return choiceCard(o, num === o.k, "numberStatus"); }).join("");
+      var guide = "";
+      if (num === "hasWhatsapp") {
+        guide = '<div class="guide enter">' +
+          "<h3>איך מנתקים וואטסאפ ממספר קיים</h3>" +
+          guideSteps([
+            "פתח וואטסאפ במכשיר עם המספר → הגדרות → חשבון.",
+            'בחר "מחיקת החשבון" והזן את המספר לאישור.',
+            "המתן מספר דקות עד שהמספר משתחרר, ואז חזור לכאן."
+          ]) +
+          savedNote("המספר חייב להיות מנותק מוואטסאפ לפני החיבור למערכת הרשמית.") +
+          "</div>";
+      }
+      return {
+        icon: "phone",
+        title: "מספר לוואטסאפ העסקי",
+        subtitle: "צריך מספר טלפון ייעודי שאין עליו וואטסאפ פעיל. מספר שיש עליו וואטסאפ רגיל צריך לנתק תחילה.",
+        html: '<div class="stack">' + notice + cards + "</div>" + guide,
+        showBack: true,
+        next: { label: "המשך", enabled: !!num, onClick: next }
+      };
+    },
+
+    virtual: function () {
+      var html;
+      if (loadingNumbers) {
+        html = '<div class="loading"><div class="spinner"></div>טוען מספרים פנויים...</div>';
+      } else {
+        html = '<div class="stack">' + NUMBERS.map(function (n) {
+          var sel = selectedVn === n.id ? " sel" : "";
+          return '<button class="vn' + sel + '" data-vn="' + n.id + '">' +
+            '<span class="radio"></span>' +
+            '<span class="num"><span class="digits mono">' + n.display + '</span><span class="region">' + n.region + "</span></span>" +
+            '<span class="price">₪' + n.price + " לחודש</span></button>";
+        }).join("") + "</div>";
+      }
+      return {
+        icon: "keypad",
+        title: "בחירת מספר וירטואלי",
+        subtitle: "בחר אחד מהמספרים הפנויים. המספר יוקצה לוואטסאפ העסקי שלך.",
+        html: html,
+        showBack: true,
+        next: {
+          label: "רכישת המספר", enabled: !!selectedVn && !loadingNumbers,
+          onClick: function () {
+            var n = NUMBERS.filter(function (x) { return x.id === selectedVn; })[0];
+            setAnswer({ virtualNumber: n ? n.display : null });
+            next();
+          }
+        }
+      };
+    },
+
+    google: function () {
+      var c = state.answers.googleConnected;
+      var body = c
+        ? '<div class="connected">' + svg("checkc") + " מחובר ל-Google</div>"
+        : '<button class="btn2 g" id="gBtn"><span class="gmark"></span> התחבר עם Google</button>';
+      return {
+        icon: "google",
+        title: "התחברות עם Google",
+        subtitle: "נתחבר עם חשבון Google שלך כדי לאבטח את החשבון ולשמור את ההגדרות.",
+        html: '<div class="stack">' + body + "</div>",
+        showBack: true,
+        next: { label: "המשך", enabled: c, onClick: next }
+      };
+    },
+
+    connect: function () {
+      var c = state.answers.fbConnected;
+      var note = '<div class="notice"><div class="nHead">' + svg("alert") + "לפני שמתחילים</div>" +
+        "<ul><li>ייפתח חלון של פייסבוק/מטא — אשר את ההרשאות ובחר את חשבון הוואטסאפ העסקי.</li></ul></div>";
+      var body = c
+        ? '<div class="connected">' + svg("checkc") + " החיבור הושלם</div>"
+        : '<button class="btn2" id="fbBtn">' + svg("facebook") + " התחל חיבור מול פייסבוק</button>";
+      return {
+        icon: "network",
+        title: "חיבור מול פייסבוק",
+        subtitle: "עכשיו נחבר את חשבון הוואטסאפ העסקי שלך דרך פייסבוק (Embedded Signup של מטא).",
+        html: '<div class="stack">' + note + body + "</div>",
+        showBack: true,
+        next: { label: "המשך", enabled: c, onClick: next }
+      };
+    },
+
+    done: function () {
+      if (state.completed) {
+        return {
+          done: true,
+          html: '<div class="done-screen enter"><div class="done-badge">' + svg("checkc") + "</div>" +
+            '<h1 class="title" style="text-align:center">המערכת מוכנה! 🎉</h1>' +
+            '<p class="subtitle" style="text-align:center">הוואטסאפ העסקי שלך מחובר. אפשר להתחיל לעבוד עם תבניות, בוטים ושליחת הודעות.</p></div>',
+          showBack: false,
+          next: null
+        };
+      }
+      var tips = [
+        { icon: "docs", t: "תבניות הודעה", d: "צור תבניות מאושרות לשליחה יזומה ללקוחות." },
+        { icon: "send", t: "הודעה ראשונה", d: "שלח הודעת בדיקה כדי לוודא שהכול עובד." },
+        { icon: "bots", t: "בוטים ואוטומציות", d: "הגדר מענה אוטומטי לפניות נפוצות." }
+      ];
+      var rows = tips.map(function (x) {
+        return '<div class="tip"><div class="tIcon">' + svg(x.icon) + '</div><div><div class="tTitle">' + x.t + '</div><div class="tDesc">' + x.d + "</div></div></div>";
+      }).join("");
+      return {
+        icon: "sparkles",
+        title: "הכול מוכן! 🎉",
+        subtitle: "הוואטסאפ העסקי שלך מחובר. הנה כמה צעדים ראשונים כדי להתחיל:",
+        html: '<div class="stack">' + rows + "</div>",
+        showBack: true,
+        next: { label: "כניסה למערכת", enabled: true, onClick: function () { state.completed = true; save(); render(); } }
+      };
+    }
+  };
+
+  // ---- html helpers ----
+  function choiceCard(o, sel, field) {
+    return '<button class="choice' + (sel ? " sel" : "") + '" data-set="' + field + '" data-val="' + o.k + '">' +
+      '<span class="cIcon">' + svg(o.icon) + "</span>" +
+      '<span class="cText"><span class="cTitle">' + o.t + '</span><span class="cDesc">' + o.d + "</span></span>" +
+      '<span class="cMark">' + svg(sel ? "checkc" : "") + (sel ? "" : '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/></svg>') + "</span>" +
+      "</button>";
+  }
+  function useCaseCard(o, sel) {
+    var mark = sel
+      ? '<svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="5" fill="var(--teal)"/><path d="M7 12l3.2 3.2L17 8.4" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+      : '<svg viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="5" fill="none" stroke="currentColor" stroke-width="2"/></svg>';
+    return '<button class="choice' + (sel ? " sel" : "") + '" data-uc="' + o.k + '">' +
+      '<span class="cIcon">' + svg(o.icon) + "</span>" +
+      '<span class="cText"><span class="cTitle">' + o.t + '</span><span class="cDesc">' + o.d + "</span></span>" +
+      '<span class="cMark">' + mark + "</span></button>";
+  }
+  function guideSteps(arr) {
+    return arr.map(function (s, i) {
+      return '<div class="gstep"><span class="gnum">' + (i + 1) + "</span><span>" + s + "</span></div>";
+    }).join("");
+  }
+  function savedNote(txt) { return '<div class="savednote">' + svg("bookmark") + "<span>" + txt + "</span></div>"; }
+
+  // ---- render ----
+  var bodyEl = document.getElementById("body");
+  var fillEl = document.getElementById("fill");
+  var stepLabelEl = document.getElementById("steplabel");
+  var backBtn = document.getElementById("backBtn");
+  var nextBtn = document.getElementById("nextBtn");
+  var footEl = nextBtn.parentNode;
+  var pausebarEl = document.getElementById("pausebar");
+
+  // "רשמו אותי, אמשיך אח״כ" — נרשמים עם Google, שומרים את המקום, ומציגים מסך אישור.
+  function pauseAndSave() {
+    if (!state.answers.googleConnected) {
+      window.open("https://accounts.google.com/", "_blank", "noopener");
+      state.answers.googleConnected = true;
+    }
+    save();
+    pausedView = true;
+    render();
+  }
+  function pausedScreen() {
+    return '<div class="done-screen enter"><div class="done-badge" style="background:var(--brand-wash);color:var(--brand)">' + svg("bookmark") + "</div>" +
+      '<h1 class="title" style="text-align:center">נרשמת! שמרנו את המקום שלך</h1>' +
+      '<p class="subtitle" style="text-align:center">אין בעיה לעצור כאן. נרשמת עם Google ושמרנו בדיוק את השלב שבו אתה נמצא — חזור בכל עת (מהקישור הזה או מהאפליקציה) כדי להמשיך את החיבור מאותה נקודה.</p></div>';
+  }
+
+  function render() {
+    // מסך "נרשמת — נמשיך אח״כ"
+    if (pausedView) {
+      bodyEl.innerHTML = pausedScreen();
+      bodyEl.scrollTop = 0;
+      footEl.style.display = "flex";
+      backBtn.style.visibility = "hidden";
+      nextBtn.textContent = "המשך עכשיו";
+      nextBtn.disabled = false;
+      nextBtn.onclick = function () { pausedView = false; render(); };
+      pausebarEl.style.display = "none";
+      return;
+    }
+
+    var o = order();
+    var idx = Math.max(0, o.indexOf(state.stepId));
+    var total = o.length;
+    var s = steps[state.stepId]();
+
+    // progress
+    fillEl.style.width = ((idx + 1) / total * 100) + "%";
+    stepLabelEl.textContent = "שלב " + (idx + 1) + " מתוך " + total;
+
+    // body
+    var head = s.done ? "" :
+      '<div class="stepicon">' + svg(s.icon) + "</div>" +
+      '<h1 class="title">' + s.title + "</h1>" +
+      '<p class="subtitle">' + s.subtitle + "</p>";
+    bodyEl.innerHTML = '<div class="enter">' + head + s.html + "</div>";
+    bodyEl.scrollTop = 0;
+
+    // footer
+    if (s.done && !s.next) { footEl.style.display = "none"; }
+    else {
+      footEl.style.display = "flex";
+      backBtn.style.visibility = s.showBack ? "visible" : "hidden";
+      nextBtn.textContent = s.next.label;
+      nextBtn.disabled = !s.next.enabled;
+      nextBtn.onclick = s.next.enabled ? s.next.onClick : null;
+    }
+
+    // "רשמו אותי, אמשיך אח״כ" — מוצג בכל שלב פרט לשלב הסיום.
+    pausebarEl.style.display = (state.stepId === "done") ? "none" : "flex";
+
+    wire();
+  }
+
+  function wire() {
+    // choice cards
+    Array.prototype.forEach.call(bodyEl.querySelectorAll("[data-set]"), function (el) {
+      el.addEventListener("click", function () {
+        var patch = {}; patch[el.getAttribute("data-set")] = el.getAttribute("data-val");
+        setAnswer(patch);
+      });
+    });
+    // use-case multi-select toggle
+    Array.prototype.forEach.call(bodyEl.querySelectorAll("[data-uc]"), function (el) {
+      el.addEventListener("click", function () {
+        var k = el.getAttribute("data-uc");
+        var cases = (state.answers.useCases || []).slice();
+        var i = cases.indexOf(k);
+        if (i === -1) cases.push(k); else cases.splice(i, 1);
+        var patch = { useCases: cases };
+        if (k === "conversations" && i !== -1) patch.agentCount = null; // ביטול שיחות מנקה נציגים
+        setAnswer(patch);
+      });
+    });
+    // agent-count single-select
+    Array.prototype.forEach.call(bodyEl.querySelectorAll("[data-agent]"), function (el) {
+      el.addEventListener("click", function () { setAnswer({ agentCount: el.getAttribute("data-agent") }); });
+    });
+    // external open links
+    Array.prototype.forEach.call(bodyEl.querySelectorAll("[data-open]"), function (el) {
+      el.addEventListener("click", function () { window.open(el.getAttribute("data-open"), "_blank", "noopener"); });
+    });
+    // virtual number pick
+    Array.prototype.forEach.call(bodyEl.querySelectorAll("[data-vn]"), function (el) {
+      el.addEventListener("click", function () { selectedVn = el.getAttribute("data-vn"); render(); });
+    });
+    // google connect (main step)
+    var gBtn = document.getElementById("gBtn");
+    if (gBtn) gBtn.addEventListener("click", function () {
+      window.open("https://accounts.google.com/", "_blank", "noopener");
+      setAnswer({ googleConnected: true });
+    });
+    // google sign-in to save progress (facebook "no account" branch)
+    var fbGoogleSave = document.getElementById("fbGoogleSave");
+    if (fbGoogleSave) fbGoogleSave.addEventListener("click", function () {
+      window.open("https://accounts.google.com/", "_blank", "noopener");
+      setAnswer({ googleConnected: true });
+    });
+    // facebook connect
+    var fbBtn = document.getElementById("fbBtn");
+    if (fbBtn) fbBtn.addEventListener("click", function () {
+      window.open("https://business.facebook.com/wa/manage/", "_blank", "noopener");
+      setAnswer({ fbConnected: true });
+    });
+  }
+
+  // simulate a short fetch whenever the virtual step is shown fresh
+  var lastStep = null;
+  var _origRender = render;
+  render = function () {
+    if (state.stepId === "virtual" && lastStep !== "virtual" && !state.answers.virtualNumber) {
+      loadingNumbers = true;
+      _origRender();
+      lastStep = "virtual";
+      setTimeout(function () { loadingNumbers = false; _origRender(); }, 650);
+      return;
+    }
+    lastStep = state.stepId;
+    _origRender();
+  };
+
+  document.getElementById("exitBtn").addEventListener("click", function () {
+    state = defaults(); selectedVn = null; pausedView = false; save(); render();
+  });
+  backBtn.addEventListener("click", back);
+  document.getElementById("pauseBtn").addEventListener("click", pauseAndSave);
+
+  render();
+})();
+</script>
+</body>
+</html>

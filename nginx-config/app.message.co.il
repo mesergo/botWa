@@ -37,6 +37,16 @@ server {
         access_log off;
     }
 
+    # ========= /reg onboarding page (reg_mesergo) =========
+    # Standalone static page, independent from the frontend SPA build.
+    location ^~ /reg/ {
+        alias /home/message-app/htdocs/app.message.co.il/reg_mesergo/;
+        try_files $uri $uri/ /reg/index.html;
+    }
+    location = /reg {
+        return 301 /reg/;
+    }
+
     # ========= Static assets =========
     location /assets/ {
         try_files $uri =404;

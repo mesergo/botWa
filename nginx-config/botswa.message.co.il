@@ -21,6 +21,17 @@ server {
     access_log /var/log/nginx/botswa.message.co.il-access.log;
     error_log /var/log/nginx/botswa.message.co.il-error.log;
 
+    # ========= /reg onboarding page (reg_mesergo) =========
+    # Served directly on this domain too, from the same folder as app.message.co.il —
+    # everything else still redirects to app.message.co.il below.
+    location ^~ /reg/ {
+        alias /home/message-app/htdocs/app.message.co.il/reg_mesergo/;
+        try_files $uri $uri/ /reg/index.html;
+    }
+    location = /reg {
+        return 301 /reg/;
+    }
+
     location / {
         return 308 https://app.message.co.il$request_uri;
     }
