@@ -63,6 +63,7 @@ export const toggleShowInChat = async (req, res) => {
     const userId = getEffectiveUserId(req);
     
     if (!templateName) {
+      res.locals.errorAlreadyLogged = true;
       return res.status(400).json({ error: 'templateName is required' });
     }
 
@@ -110,6 +111,7 @@ export const setDefaultMedia = async (req, res) => {
     const userId = getEffectiveUserId(req);
 
     if (!templateName) {
+      res.locals.errorAlreadyLogged = true;
       return res.status(400).json({ error: 'templateName is required' });
     }
     if (url && !['image', 'video', 'document'].includes(mediaType)) {
@@ -145,6 +147,7 @@ export const updatePostSendMode = async (req, res) => {
     const userId = getEffectiveUserId(req);
 
     if (!templateName) {
+      res.locals.errorAlreadyLogged = true;
       return res.status(400).json({ error: 'templateName is required' });
     }
     if (!['no_change', 'agent', 'bot'].includes(postSendMode)) {

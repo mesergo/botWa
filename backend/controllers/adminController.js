@@ -232,7 +232,10 @@ export const updateUserDialog360TemplateVisibility = async (req, res) => {
   try {
     const { userId } = req.params;
     const { templateName, templateId, language, category, status, visibility } = req.body;
-    if (!templateName) return res.status(400).json({ error: 'templateName is required' });
+    if (!templateName) {
+      res.locals.errorAlreadyLogged = true;
+      return res.status(400).json({ error: 'templateName is required' });
+    }
 
     const effectiveVisibility = ['hidden', 'manager', 'agent'].includes(visibility) ? visibility : 'manager';
     const update = {
@@ -261,7 +264,10 @@ export const updateUserDialog360TemplateDefaultMedia = async (req, res) => {
   try {
     const { userId } = req.params;
     const { templateName, templateId, url, mediaType } = req.body;
-    if (!templateName) return res.status(400).json({ error: 'templateName is required' });
+    if (!templateName) {
+      res.locals.errorAlreadyLogged = true;
+      return res.status(400).json({ error: 'templateName is required' });
+    }
     if (url && !['image', 'video', 'document'].includes(mediaType)) {
       return res.status(400).json({ error: 'mediaType must be one of: image, video, document' });
     }

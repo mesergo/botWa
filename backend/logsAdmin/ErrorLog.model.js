@@ -18,7 +18,7 @@ const errorLogSchema = new mongoose.Schema({
   message_he: String,
   message_en: String,
   client_id: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null, index: true },
-  client_name: String, // denormalized snapshot (email/business name), nullable
+  client_name: String, // denormalized snapshot of the client's account name, nullable
   end_customer_phone: String, // nullable — set for whatsapp_send/webhook errors
   status_code: Number,
   stack: String,

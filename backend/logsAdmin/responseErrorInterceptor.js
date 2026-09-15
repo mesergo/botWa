@@ -1,28 +1,45 @@
 import jwt from 'jsonwebtoken';
+import User from '../models/User.js';
 import { logError } from './errorLogger.js';
 
 /**
  * Best-effort "who was this?" label for the log, even when the request never
  * carried a *valid* identity — the two most common cases being a wrong-password
  * login attempt (no token exists yet) and an expired/tampered token (fails
- * verification, so req.user was never set). Falls back through:
- *   1. req.user.email — set by authenticateToken when the token verified fine
- *   2. the token's own `email` claim, decoded WITHOUT verifying the signature
+ * verification, so req.user was never set). Resolves to the user's NAME
+ * (not email) wherever a matching User record can be found. Falls back through:
+ *   1. req.userId / req.user.id — set by authenticateToken when the token verified fine
+ *   2. the token's own `id` claim, decoded WITHOUT verifying the signature
  *      (label only, never trusted for auth — the request was already rejected)
- *   3. req.body.email — e.g. a failed /api/auth/login or /register attempt
+ *   3. req.body.email — e.g. a failed /api/auth/login or /register attempt;
+ *      looked up to a name when it matches a real account, otherwise the
+ *      email itself is used as a last-resort label
  */
-const resolveAttemptedIdentity = (req) => {
-  if (req.user?.email) return req.user.email;
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
-  if (token) {
+const resolveAttemptedIdentity = async (req) => {
+  let userId = req.userId || req.user?.id || null;
+  if (!userId) {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+    if (token) {
+      try {
+        const decoded = jwt.decode(token);
+        userId = decoded?.id || null;
+      } catch (_) { /* not a JWT at all — ignore */ }
+    }
+  }
+  if (userId) {
     try {
-      const decoded = jwt.decode(token);
-      if (decoded?.email) return decoded.email;
-    } catch (_) { /* not a JWT at all — ignore */ }
+      const user = await User.findById(userId).select('name').lean();
+      if (user?.name) return user.name;
+    } catch (_) { /* invalid id shape — ignore */ }
   }
   if (req.body && typeof req.body.email === 'string' && req.body.email.trim()) {
-    return req.body.email.trim();
+    const email = req.body.email.trim();
+    try {
+      const user = await User.findOne({ email }).select('name').lean();
+      if (user?.name) return user.name;
+    } catch (_) { /* ignore */ }
+    return email;
   }
   return null;
 };
@@ -61,7 +78,7 @@ export const responseErrorInterceptor = (req, res, next) => {
     return originalSend(body);
   };
 
-  res.on('finish', () => {
+  res.on('finish', async () => {
     if (res.statusCode < 400 || res.locals.errorAlreadyLogged) return;
 
     let message = `HTTP ${res.statusCode}`;
@@ -71,12 +88,14 @@ export const responseErrorInterceptor = (req, res, next) => {
       message = capturedBody;
     }
 
+    const clientName = await resolveAttemptedIdentity(req).catch(() => null);
+
     logError({
       category: res.statusCode === 401 || res.statusCode === 403 ? 'auth' : 'api',
       source: `${req.method} ${req.originalUrl}`,
       message,
       clientId: req.userId || null,
-      clientName: resolveAttemptedIdentity(req),
+      clientName,
       statusCode: res.statusCode,
       details: { method: req.method, url: req.originalUrl },
     }).catch(() => {});

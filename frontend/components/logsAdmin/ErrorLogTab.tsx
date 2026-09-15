@@ -167,7 +167,7 @@ export default function ErrorLogTab({ token }: ErrorLogTabProps) {
               list="error-log-clients"
               value={clientFilter}
               onChange={(e) => setClientFilter(e.target.value)}
-              placeholder="חיפוש לפי שם/אימייל לקוח"
+              placeholder="חיפוש לפי שם לקוח"
               className="w-full text-sm px-3 py-2.5 border border-slate-200 rounded-2xl bg-slate-50 focus:bg-white focus:outline-none focus:ring-4 focus:ring-sky-600/10 focus:border-sky-600 transition-all font-medium"
             />
             <datalist id="error-log-clients">

@@ -23,6 +23,7 @@ export const createInternalTemplate = async (req, res) => {
     const userId = getEffectiveUserId(req);
 
     if (!name || !body) {
+      res.locals.errorAlreadyLogged = true;
       return res.status(400).json({ error: 'name and body are required' });
     }
     if (mediaUrl && !['image', 'video', 'document'].includes(mediaType)) {
@@ -53,6 +54,7 @@ export const updateInternalTemplate = async (req, res) => {
     const userId = getEffectiveUserId(req);
 
     if (!name || !body) {
+      res.locals.errorAlreadyLogged = true;
       return res.status(400).json({ error: 'name and body are required' });
     }
     if (mediaUrl && !['image', 'video', 'document'].includes(mediaType)) {

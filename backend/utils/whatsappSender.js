@@ -220,7 +220,7 @@ export const pushMessagesToWhatsApp = async (phone, messages, user = null, bot =
           source: 'whatsappSender.sendOne',
           message: `WhatsApp send failed with HTTP ${res.status}: ${respText}`,
           clientId: bot?.user_id || user?._id || null,
-          clientName: user?.email || null,
+          clientName: user?.name || null,
           endCustomerPhone: normalizedPhone,
           statusCode: res.status,
         }).catch(() => {});
@@ -242,7 +242,7 @@ export const pushMessagesToWhatsApp = async (phone, messages, user = null, bot =
         message: err.message,
         stack: err.stack,
         clientId: bot?.user_id || user?._id || null,
-        clientName: user?.email || null,
+        clientName: user?.name || null,
         endCustomerPhone: normalizedPhone,
       }).catch(() => {});
       return { success: false, wamid: null };

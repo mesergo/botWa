@@ -1,5 +1,6 @@
 import jwt from 'jsonwebtoken';
 import ErrorLog from './ErrorLog.model.js';
+import User from '../models/User.js';
 import { logError, flushFallbackErrorLog } from './errorLogger.js';
 import { SECRET_KEY } from '../middleware/auth.js';
 
@@ -78,7 +79,10 @@ export const reportClientError = async (req, res) => {
       try {
         const decoded = jwt.verify(token, SECRET_KEY);
         clientId = decoded?.id || null;
-        clientName = decoded?.email || null;
+        if (clientId) {
+          const user = await User.findById(clientId).select('name').lean();
+          clientName = user?.name || null;
+        }
       } catch (_) { /* anonymous/expired token — log without attribution */ }
     }
 
