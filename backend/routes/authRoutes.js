@@ -1,5 +1,5 @@
 import express from 'express';
-import { register, login, getApiToken, checkEmail, listAccountsForEmail, googleAuth, getTemplates, updateDialog360Credentials, getProfile, updateProfile, updateAvailability, logout, getUserRemovalConfig, updateUserRemovalConfig, getMyAccounts, switchAccount, verifyInviteToken, registerFromInvite, registerFromInviteGoogle, startPhoneAuth, verifyPhoneAuth } from '../controllers/authController.js';
+import { register, login, getApiToken, checkEmail, listAccountsForEmail, googleAuth, getTemplates, updateDialog360Credentials, getProfile, updateProfile, updateAvailability, logout, getUserRemovalConfig, updateUserRemovalConfig, getMyAccounts, switchAccount, verifyInviteToken, registerFromInvite, registerFromInviteGoogle, startPhoneAuth, verifyPhoneAuth, getOnboardingStatus, updateOnboardingStatus } from '../controllers/authController.js';
 import { authenticate } from '../middleware/auth.js';
 
 const router = express.Router();
@@ -25,5 +25,7 @@ router.get('/removal-config', authenticate, getUserRemovalConfig); // Get auto-r
 router.put('/removal-config', authenticate, updateUserRemovalConfig); // Update per-user override
 router.get('/my-accounts', authenticate, getMyAccounts); // Sibling accounts sharing this email (switch-account banner)
 router.post('/switch-account', authenticate, switchAccount); // Self-service switch to a sibling account
+router.get('/onboarding', authenticate, getOnboardingStatus); // /reg wizard: read saved step + answers
+router.patch('/onboarding', authenticate, updateOnboardingStatus); // /reg wizard: save current step + answers
 
 export default router; 

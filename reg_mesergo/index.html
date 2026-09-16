@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap">
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
   :root {
     --brand: #1877C2;
@@ -355,6 +356,20 @@
     { id: "vn-5", display: "073-000-5566", region: "ישראל", price: 49 }
   ];
 
+  // ---- real account + server-side progress sync ----
+  // Same origin as the main app (served at /reg on app.message.co.il), so this reuses
+  // the exact same localStorage keys/token format the dashboard's App.tsx reads —
+  // signing in here logs the visitor straight into the real dashboard too.
+  var API_BASE = window.location.hostname === "localhost"
+    ? "http://localhost:3001/api"
+    : window.location.origin + "/api";
+  var GOOGLE_CLIENT_ID = "266548688904-n1qrelk64op0usdbf52ae2gupcjld0vv.apps.googleusercontent.com";
+  var authToken = null;
+  try { authToken = localStorage.getItem("flowbot_token"); } catch (e) {}
+  var googleReady = false;
+  var pendingGoogleContext = null; // "main" | "fbsave" | "pause" — which button triggered the current sign-in
+  var authError = "";
+
   // ---- icons (inline, currentColor) ----
   var I = {
     rocket: '<path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M4.5 16.5c-1.5 1.3-2 5-2 5s3.7-.5 5-2c.7-.8.7-2 0-2.8a2 2 0 0 0-3 0zM12 15l-3-3a22 22 0 0 1 8-11c3 0 5 2 5 5a22 22 0 0 1-11 8zM9 12H4s.5-2.8 2-4a3 3 0 0 1 3 0M12 15v5s2.8-.5 4-2a3 3 0 0 0 0-3"/>',
@@ -384,11 +399,119 @@
   };
   function svg(name) { return '<svg viewBox="0 0 24 24" aria-hidden="true">' + (I[name] || "") + '</svg>'; }
 
+  // ---- real Google sign-in (Google Identity Services) ----
+  // Mirrors frontend/components/RegisterPage.tsx: render the official Google button
+  // (reliable, real user-gesture popup) rather than a custom button + prompt(), which
+  // FedCM/browser heuristics can silently skip.
+  function initGoogle() {
+    if (googleReady || !window.google) return;
+    window.google.accounts.id.initialize({
+      client_id: GOOGLE_CLIENT_ID,
+      callback: function (response) { handleGoogleCredential(response.credential); }
+    });
+    googleReady = true;
+    renderPendingGoogleButtons();
+  }
+  function renderGoogleButton(containerId) {
+    var el = document.getElementById(containerId);
+    if (!el || !googleReady) return;
+    el.innerHTML = "";
+    window.google.accounts.id.renderButton(el, { theme: "outline", size: "large", width: 280, locale: "he", text: "signup_with" });
+  }
+  // Called after every render() — (re)draws whichever google-btn-* container is
+  // currently in the DOM. At most one exists at a time by construction (see
+  // pauseAndSave), so the context each sets is unambiguous for the shared callback below.
+  function renderPendingGoogleButtons() {
+    if (document.getElementById("google-btn-main")) { pendingGoogleContext = "main"; renderGoogleButton("google-btn-main"); }
+    if (document.getElementById("google-btn-fbsave")) { pendingGoogleContext = "fbsave"; renderGoogleButton("google-btn-fbsave"); }
+    if (document.getElementById("google-btn-pause")) { pendingGoogleContext = "pause"; renderGoogleButton("google-btn-pause"); }
+  }
+  (function loadGoogle() {
+    var s = document.querySelector('script[src*="accounts.google.com/gsi"]');
+    if (!s) return;
+    if (window.google) { initGoogle(); return; }
+    s.addEventListener("load", initGoogle);
+  })();
+
+  // Real sign-in/sign-up: creates or logs into an actual account (backend POST /auth/google),
+  // then stores the same flowbot_token/flowbot_user the main dashboard reads — this is what
+  // makes "resume later" and the dashboard's onboarding banner real instead of a local mock.
+  function handleGoogleCredential(credential) {
+    authError = "";
+    fetch(API_BASE + "/auth/google", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ credential: credential })
+    })
+      .then(function (res) { return res.json().then(function (data) { return { ok: res.ok, data: data }; }); })
+      .then(function (r) {
+        if (r.ok && r.data.token) {
+          try {
+            localStorage.setItem("flowbot_token", r.data.token);
+            localStorage.setItem("flowbot_user", JSON.stringify(r.data.user));
+            window.dispatchEvent(new Event("flowbot-auth-change"));
+          } catch (e) {}
+          authToken = r.data.token;
+          var ctx = pendingGoogleContext;
+          pendingGoogleContext = null;
+          setAnswer({ googleConnected: true }); // save()+render(); save() also pushes progress to the server now that authToken is set
+          if (ctx === "pause") {
+            pauseGoogleMode = false;
+            pausedView = true;
+            save();
+            render();
+          }
+        } else {
+          authError = (r.data && r.data.error) || "ההתחברות נכשלה, נסה שוב";
+          render();
+        }
+      })
+      .catch(function () {
+        authError = "שגיאת רשת, נסה שוב";
+        render();
+      });
+  }
+
+  // Pushes the wizard's current step + answers to the server, so the dashboard's
+  // onboarding banner (and a return visit on any device) can resume from the exact
+  // spot the visitor left off on. No-op while anonymous (no real account yet).
+  function syncToBackend() {
+    if (!authToken) return;
+    fetch(API_BASE + "/auth/onboarding", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + authToken },
+      body: JSON.stringify({ current_step: state.stepId, answers: state.answers, completed: state.completed })
+    }).catch(function () {});
+  }
+  // Pulls saved progress from the server on load (e.g. arriving via the dashboard's
+  // "להשלמת התהליך" banner) so the wizard reopens at the right step, cross-device.
+  function restoreFromBackend() {
+    if (!authToken) return Promise.resolve();
+    return fetch(API_BASE + "/auth/onboarding", { headers: { Authorization: "Bearer " + authToken } })
+      .then(function (res) {
+        if (res.status === 401 || res.status === 403) {
+          authToken = null;
+          try { localStorage.removeItem("flowbot_token"); localStorage.removeItem("flowbot_user"); } catch (e) {}
+          return null;
+        }
+        return res.ok ? res.json() : null;
+      })
+      .then(function (data) {
+        if (!data) return;
+        state.stepId = data.current_step || state.stepId;
+        state.completed = !!data.completed;
+        state.answers = Object.assign(defaults().answers, data.answers || {});
+        save();
+      })
+      .catch(function () {});
+  }
+
   // ---- state ----
   var state = load();
   var selectedVn = null;      // transient selection on the virtual-number step
   var loadingNumbers = false; // simulates the network fetch
   var pausedView = false;     // "register me, continue later" confirmation screen
+  var pauseGoogleMode = false; // true | "hint" — pausebar is showing its own Google button / a pointer to one already on screen
 
   function defaults() {
     return {
@@ -406,7 +529,10 @@
       return { stepId: p.stepId || "intro", completed: !!p.completed, answers: Object.assign(d.answers, p.answers || {}) };
     } catch (e) { return defaults(); }
   }
-  function save() { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) {} }
+  function save() {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) {}
+    syncToBackend();
+  }
 
   function order() {
     var s = ["intro", "usecases", "facebook", "number"];
@@ -482,7 +608,8 @@
         guide = '<div class="guide enter">' +
           "<h3>שמור את ההתקדמות שלך</h3>" +
           '<p class="gnote">כדי לפתוח חשבון פייסבוק ביזנס תצטרך לצאת מכאן לרגע. התחבר עם Google ונשמור בדיוק את המקום שבו אתה נמצא — תוכל לחזור ולהמשיך מכאן בכל עת.</p>' +
-          '<button class="btn2 g" id="fbGoogleSave"><span class="gmark"></span> התחבר עם Google לשמירת ההתקדמות</button>' +
+          '<div id="google-btn-fbsave" style="display:flex;justify-content:center;"></div>' +
+          (authError ? '<p class="err">' + authError + "</p>" : "") +
           "</div>";
       } else if (fb === "none") {
         guide = '<div class="guide enter">' +
@@ -574,7 +701,8 @@
       var c = state.answers.googleConnected;
       var body = c
         ? '<div class="connected">' + svg("checkc") + " מחובר ל-Google</div>"
-        : '<button class="btn2 g" id="gBtn"><span class="gmark"></span> התחבר עם Google</button>';
+        : '<div id="google-btn-main" style="display:flex;justify-content:center;"></div>' +
+          (authError ? '<p class="err">' + authError + "</p>" : "");
       return {
         icon: "google",
         title: "התחברות עם Google",
@@ -610,7 +738,7 @@
             '<h1 class="title" style="text-align:center">המערכת מוכנה! 🎉</h1>' +
             '<p class="subtitle" style="text-align:center">הוואטסאפ העסקי שלך מחובר. אפשר להתחיל לעבוד עם תבניות, בוטים ושליחת הודעות.</p></div>',
           showBack: false,
-          next: null
+          next: authToken ? { label: "כניסה לדשבורד", enabled: true, onClick: function () { window.location.href = "/"; } } : null
         };
       }
       var tips = [
@@ -665,15 +793,42 @@
   var footEl = nextBtn.parentNode;
   var pausebarEl = document.getElementById("pausebar");
 
-  // "רשמו אותי, אמשיך אח״כ" — נרשמים עם Google, שומרים את המקום, ומציגים מסך אישור.
+  // "רשמו אותי, אמשיך אח״כ" — נרשמים עם Google (חשבון אמיתי), שומרים את המקום בשרת, ומציגים מסך אישור.
   function pauseAndSave() {
-    if (!state.answers.googleConnected) {
-      window.open("https://accounts.google.com/", "_blank", "noopener");
-      state.answers.googleConnected = true;
+    if (authToken) {
+      // Already a real account — nothing more to connect, just confirm the pause.
+      pausedView = true;
+      save();
+      render();
+      return;
     }
-    save();
-    pausedView = true;
+    // A Google-sign-in button for this exact purpose is already visible on these two
+    // steps — avoid rendering a second, colliding one; just point at it instead.
+    var stepAlreadyShowsGoogleButton =
+      state.stepId === "google" ||
+      (state.stepId === "facebook" && state.answers.fbStatus === "none");
+    pauseGoogleMode = stepAlreadyShowsGoogleButton ? "hint" : true;
     render();
+  }
+  // Renders the pausebar's content: the normal link, or (while awaiting a real
+  // Google sign-in to create the account) its own button / a pointer to the one
+  // already on screen. Re-wires its own listeners each time since innerHTML is replaced.
+  function renderPausebar() {
+    if (pauseGoogleMode === "hint") {
+      pausebarEl.innerHTML =
+        '<span style="font-size:12.5px;color:var(--subtext)">התחבר עם Google למעלה כדי לשמור את ההתקדמות</span>' +
+        '<button class="pauselink" id="cancelPauseBtn" type="button">ביטול</button>';
+    } else if (pauseGoogleMode === true) {
+      pausebarEl.innerHTML =
+        '<div id="google-btn-pause" style="display:flex;justify-content:center;"></div>' +
+        '<button class="pauselink" id="cancelPauseBtn" type="button" style="font-size:12px;">ביטול</button>';
+    } else {
+      pausebarEl.innerHTML = '<button class="pauselink" id="pauseBtn" type="button">רשמו אותי, אמשיך את תהליך החיבור אח״כ</button>';
+    }
+    var pb = document.getElementById("pauseBtn");
+    if (pb) pb.addEventListener("click", pauseAndSave);
+    var cb = document.getElementById("cancelPauseBtn");
+    if (cb) cb.addEventListener("click", function () { pauseGoogleMode = false; render(); });
   }
   function pausedScreen() {
     return '<div class="done-screen enter"><div class="done-badge" style="background:var(--brand-wash);color:var(--brand)">' + svg("bookmark") + "</div>" +
@@ -724,6 +879,7 @@
 
     // "רשמו אותי, אמשיך אח״כ" — מוצג בכל שלב פרט לשלב הסיום.
     pausebarEl.style.display = (state.stepId === "done") ? "none" : "flex";
+    renderPausebar();
 
     wire();
   }
@@ -760,19 +916,11 @@
     Array.prototype.forEach.call(bodyEl.querySelectorAll("[data-vn]"), function (el) {
       el.addEventListener("click", function () { selectedVn = el.getAttribute("data-vn"); render(); });
     });
-    // google connect (main step)
-    var gBtn = document.getElementById("gBtn");
-    if (gBtn) gBtn.addEventListener("click", function () {
-      window.open("https://accounts.google.com/", "_blank", "noopener");
-      setAnswer({ googleConnected: true });
-    });
-    // google sign-in to save progress (facebook "no account" branch)
-    var fbGoogleSave = document.getElementById("fbGoogleSave");
-    if (fbGoogleSave) fbGoogleSave.addEventListener("click", function () {
-      window.open("https://accounts.google.com/", "_blank", "noopener");
-      setAnswer({ googleConnected: true });
-    });
-    // facebook connect
+    // real Google sign-in buttons (main "google" step + facebook "no account" branch +
+    // pausebar), rendered by the GIS SDK into whichever google-btn-* container exists now.
+    renderPendingGoogleButtons();
+    // facebook connect — still simulated: real Meta Embedded Signup needs its own SDK
+    // popup + app id, out of scope here (see whatsappRegistrationRoutes.js for the real flow).
     var fbBtn = document.getElementById("fbBtn");
     if (fbBtn) fbBtn.addEventListener("click", function () {
       window.open("https://business.facebook.com/wa/manage/", "_blank", "noopener");
@@ -796,12 +944,13 @@
   };
 
   document.getElementById("exitBtn").addEventListener("click", function () {
-    state = defaults(); selectedVn = null; pausedView = false; save(); render();
+    state = defaults(); selectedVn = null; pausedView = false; pauseGoogleMode = false; save(); render();
   });
   backBtn.addEventListener("click", back);
-  document.getElementById("pauseBtn").addEventListener("click", pauseAndSave);
 
-  render();
+  // If already signed in (returning via the dashboard's "להשלמת התהליך" banner, or a
+  // direct repeat visit), pull the saved step/answers from the server before first paint.
+  restoreFromBackend().then(render);
 })();
 </script>
 </body>

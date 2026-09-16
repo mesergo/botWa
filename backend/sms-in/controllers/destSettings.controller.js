@@ -1,4 +1,5 @@
 import SmsDestSetting from '../../models/SmsDestSetting.js';
+import { getSmsCollection } from '../smsDb.js';
 
 function toClientShape(doc) {
   const assignedId = doc.assignedClientId || null;
@@ -13,6 +14,9 @@ function toClientShape(doc) {
     isActive: !!doc.isActive,
     notes: doc.notes || '',
     createdAt: doc.createdAt || null,
+    // Set by the /reg wizard's request-number call — cleared once a rep actually
+    // assigns the line (see upsertDestSetting below). Only meaningful when unassigned.
+    pendingCustomerName: assignedId ? '' : (doc.pendingCustomerName || ''),
   };
 }
 
@@ -101,6 +105,8 @@ export async function upsertDestSetting(req, res) {
         webhookUrl: webhookUrl || '',
         isActive: !!isActive,
         notes: notes || '',
+        // A rep completing the real assignment clears the /reg wizard's "pending" marker.
+        ...(clientId ? { pendingCustomerName: '' } : {}),
       },
       { upsert: true, new: true, setDefaultsOnInsert: true }
     ).lean();
@@ -109,6 +115,50 @@ export async function upsertDestSetting(req, res) {
   } catch (err) {
     console.error('[sms-in] upsertDestSetting error:', err);
     res.status(500).json({ error: err.message || 'Failed to save dest setting' });
+  }
+}
+
+// Flat monthly price shown for every available number in the /reg onboarding wizard.
+// The dest-settings schema has no price/region field — this is a single system-wide
+// constant, not per-number data, per product decision (no region breakdown either).
+const ONBOARDING_NUMBER_PRICE = 39;
+
+/**
+ * GET /api/sms-in/available-numbers
+ * Public (no auth) — powers the virtual-number picker in the /reg onboarding wizard,
+ * where the visitor has no account yet.
+ *
+ * "Real" numbers = every dest that has actually received SMS traffic, queried live
+ * from the external ilbot DB (SMS_MONGODB_URI, see backend/sms-in/smsDb.js) — confirmed
+ * against admin data this is the authoritative numbers inventory, NOT sms_dest_settings
+ * (which only has rows for numbers someone manually configured/assigned).
+ * "Available" = not already assigned AND not already picked by someone else pending
+ * a rep's manual assignment (SmsDestSetting.assignedClientId / pendingCustomerName).
+ */
+export async function getAvailableNumbers(req, res) {
+  try {
+    const smsColl = await getSmsCollection();
+    if (!smsColl) {
+      return res.status(503).json({ error: 'sms_db_unavailable', numbers: [] });
+    }
+    const rawDests = await smsColl.distinct('dest');
+    const allDests = Array.from(new Set(rawDests.map((d) => String(d || '').trim()).filter(Boolean)));
+
+    const settings = await SmsDestSetting.find({ dest: { $in: allDests } })
+      .select('dest assignedClientId pendingCustomerName')
+      .lean();
+    const takenDests = new Set(
+      settings.filter((s) => s.assignedClientId || s.pendingCustomerName).map((s) => s.dest)
+    );
+
+    const available = allDests.filter((d) => !takenDests.has(d)).sort().slice(0, 20);
+
+    res.json({
+      numbers: available.map((number) => ({ number, price: ONBOARDING_NUMBER_PRICE })),
+    });
+  } catch (err) {
+    console.error('[sms-in] getAvailableNumbers error:', err);
+    res.status(500).json({ error: err.message || 'Failed to load available numbers' });
   }
 }
 
@@ -152,6 +202,7 @@ export async function bulkAssignDestSettings(req, res) {
             assignedClientName: assignedClientName || '',
             isActive: true,
             notes: 'נוסף משיוך מספרים מרוכז',
+            pendingCustomerName: '',
             updatedAt: new Date(),
           },
           // bulkWrite bypasses mongoose timestamps middleware, so stamp createdAt

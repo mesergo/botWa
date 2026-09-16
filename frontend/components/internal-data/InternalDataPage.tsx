@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Database } from 'lucide-react';
 import ImpersonationBanner from '../ImpersonationBanner';
+import OnboardingBanner from '../OnboardingBanner';
 import MigrationNoticeBanner from '../MigrationNoticeBanner';
 import AppNav from '../AppNav';
 import PageTopBar from '../PageTopBar';
@@ -52,6 +53,7 @@ const InternalDataPage: React.FC<InternalDataPageProps> = ({
   return (
     <div className="h-screen w-screen bg-[#f8fafc] flex flex-col font-medium text-right overflow-hidden" dir="rtl">
       <ImpersonationBanner currentUser={currentUser} onStopImpersonation={onStopImpersonation} token={token} onSwitchAccount={onSwitchAccount} />
+      <OnboardingBanner currentUser={currentUser} />
       <MigrationNoticeBanner />
 
       <PageTopBar

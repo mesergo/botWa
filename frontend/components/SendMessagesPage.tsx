@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Send, X, CheckCircle2, Clock, AlertTriangle } from 'lucide-react';
 import ImpersonationBanner from './ImpersonationBanner';
+import OnboardingBanner from './OnboardingBanner';
 import MigrationNoticeBanner from './MigrationNoticeBanner';
 import { usePermission } from '../hooks/usePermission';
 import AppNav from './AppNav';
@@ -516,6 +517,7 @@ const SendMessagesPage: React.FC<SendMessagesPageProps> = ({
   return (
     <div className="h-screen w-screen bg-[#f8fafc] flex flex-col font-medium text-start overflow-hidden">
       <ImpersonationBanner currentUser={currentUser} onStopImpersonation={onStopImpersonation} token={token} onSwitchAccount={onSwitchAccount} />
+      <OnboardingBanner currentUser={currentUser} />
       <MigrationNoticeBanner />
 
       <PageTopBar

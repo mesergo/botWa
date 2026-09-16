@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import ImpersonationBanner from './ImpersonationBanner';
+import OnboardingBanner from './OnboardingBanner';
 import MigrationNoticeBanner from './MigrationNoticeBanner';
 import PageTopBar from './PageTopBar';
 import AppNav from './AppNav';
@@ -417,6 +418,7 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
   return (
     <div className="h-screen w-screen bg-[#f8fafc] flex flex-col font-medium text-start overflow-hidden">
       <ImpersonationBanner currentUser={currentUser} onStopImpersonation={onStopImpersonation} token={token} onSwitchAccount={onSwitchAccount} />
+      <OnboardingBanner currentUser={currentUser} />
       <MigrationNoticeBanner />
 
       <PageTopBar

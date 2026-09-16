@@ -20,5 +20,6 @@ export function normalizeDestSetting(raw: Partial<DestSetting> & { dest: string 
     isActive: raw.isActive ?? false,
     notes: raw.notes,
     createdAt: raw.createdAt,
+    pendingCustomerName: raw.pendingCustomerName ?? '',
   };
 }

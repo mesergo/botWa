@@ -23,6 +23,7 @@
 import fetch from 'node-fetch';
 import User from '../models/User.js';
 import BotFlow from '../models/BotFlow.js';
+import SmsDestSetting from '../models/SmsDestSetting.js';
 import { getUserLimits } from '../utils/limits.js';
 import { updatePaymentCountriesOnGateway } from '../utils/whatsappSender.js';
 
@@ -369,6 +370,52 @@ export const linkNumber = async (req, res) => {
     });
   } catch (err) {
     console.error(`${tag} exception:`, err);
+    return res.status(500).json({ error: err.message });
+  }
+};
+
+/**
+ * POST /api/whatsapp-registration/request-number
+ * Body: { number }
+ * Called by the /reg onboarding wizard right after a new customer signs in with
+ * Google, if they picked a virtual number earlier in the wizard (from the SMS-in
+ * dest-settings pool — see backend/sms-in/controllers/destSettings.controller.js).
+ * This does NOT assign the line (SmsDestSetting.assignedClientId stays null) — a
+ * rep completes that manually. It only records the request on the user's own
+ * account so Settings → מספרים מחוברים can show "בהמתנה לשיוך" while they wait.
+ */
+export const requestPendingNumber = async (req, res) => {
+  const userId = req.user?.id;
+  const { number } = req.body || {};
+  if (!number || typeof number !== 'string') return res.status(400).json({ error: 'missing_number' });
+
+  try {
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ error: 'user_not_found' });
+
+    const alreadyRequested = (user.connected_numbers || []).some(
+      n => n.provider === 'internal_sms' && n.display_phone_number === number
+    );
+    if (!alreadyRequested) {
+      user.connected_numbers.push({
+        phone_number_id: `pending:${number}`,
+        display_phone_number: number,
+        provider: 'internal_sms',
+        whatsapp_status: 'pending_assignment',
+        registered: false,
+      });
+      await user.save();
+
+      // Mark the line itself so the "שיוך קווים" admin tab shows "בהמתנה לשיוך" with
+      // the customer's name — does NOT set assignedClientId (rep assigns manually).
+      await SmsDestSetting.findOneAndUpdate(
+        { dest: number },
+        { dest: number, pendingCustomerName: user.name || '' },
+        { upsert: true, setDefaultsOnInsert: true }
+      );
+    }
+    return res.json({ success: true });
+  } catch (err) {
     return res.status(500).json({ error: err.message });
   }
 };

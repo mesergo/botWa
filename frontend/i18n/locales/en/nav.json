@@ -42,6 +42,10 @@
     "switchAccount": "Switch account",
     "connectedAs": "Signed in as: {{name}}"
   },
+  "onboarding": {
+    "banner": "Your setup isn't finished yet — a few short steps and you'll be ready",
+    "resumeButton": "Complete setup"
+  },
   "home": {
     "welcome": "Welcome",
     "defaultUser": "User",

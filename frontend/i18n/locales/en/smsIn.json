@@ -318,6 +318,8 @@
       "emptyLines": "No lines to display — load messages from the database or wait for inbound messages",
       "statusDisabled": "Disabled",
       "unassigned": "Unassigned",
+      "pendingAssignment": "Pending assignment",
+      "assignButton": "Assign",
       "editButton": "Edit"
     },
     "autoNotes": "Added automatically from inbound messages",

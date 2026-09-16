@@ -10,7 +10,8 @@ import {
   markRegistered,
   removeConnectedNumber,
   createPhpAccount,
-  updatePaymentCountries
+  updatePaymentCountries,
+  requestPendingNumber
 } from '../controllers/whatsappRegistrationController.js';
 
 const router = express.Router();
@@ -26,6 +27,10 @@ router.post('/fetch-and-activate', authenticateJwtOrApiToken, fetchAndActivate);
 
 // Stage 3: link an activated number to the user's account (no bot yet).
 router.post('/link-number', authenticateJwtOrApiToken, linkNumber);
+
+// /reg onboarding wizard: record a picked virtual number as "pending assignment"
+// (no Meta call, no auto-assignment — a rep completes it manually).
+router.post('/request-number', authenticateJwtOrApiToken, requestPendingNumber);
 
 // Settings UI: list / assign / unassign connected numbers.
 router.get('/connected-numbers', authenticateJwtOrApiToken, listConnectedNumbers);

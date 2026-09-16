@@ -994,6 +994,10 @@ export const getProfile = async (req, res) => {
       flows_count,
       active_contacts_count: user.active_contacts_count || 0,
       active_contacts_quota_exceeded: user.active_contacts_quota_exceeded === true,
+      onboarding: {
+        completed: user.onboarding?.completed === true,
+        current_step: user.onboarding?.current_step || 'intro',
+      },
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1108,6 +1112,58 @@ export const updateDialog360Credentials = async (req, res) => {
       dialog360_bot_id: user.dialog360_bot_id
     });
     
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// ── Onboarding wizard progress (/reg) ────────────────────────────────────────
+// GET /api/auth/onboarding
+// Lets the /reg wizard resume the caller at the exact step they left off on
+// (server-side, so it works across devices/browsers — not just localStorage).
+export const getOnboardingStatus = async (req, res) => {
+  try {
+    const user = await User.findById(req.userId).select('onboarding');
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    res.json({
+      completed: user.onboarding?.completed === true,
+      current_step: user.onboarding?.current_step || 'intro',
+      answers: user.onboarding?.answers || {},
+      updated_at: user.onboarding?.updated_at || null
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// PATCH /api/auth/onboarding
+// Body: { current_step?: string, answers?: object, completed?: boolean } — partial update,
+// called by the /reg wizard on every step change so progress survives a lost session.
+export const updateOnboardingStatus = async (req, res) => {
+  try {
+    const user = await User.findById(req.userId);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const { current_step, answers, completed } = req.body || {};
+    const next = {
+      completed: user.onboarding?.completed === true,
+      current_step: user.onboarding?.current_step || 'intro',
+      answers: user.onboarding?.answers || {},
+    };
+    if (typeof current_step === 'string' && current_step) next.current_step = current_step;
+    if (answers && typeof answers === 'object' && !Array.isArray(answers)) next.answers = answers;
+    if (typeof completed === 'boolean') next.completed = completed;
+
+    user.onboarding = { ...next, updated_at: new Date() };
+    user.markModified('onboarding');
+    await user.save();
+
+    res.json({
+      completed: user.onboarding.completed,
+      current_step: user.onboarding.current_step,
+      answers: user.onboarding.answers,
+      updated_at: user.onboarding.updated_at
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

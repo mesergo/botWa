@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Plus, Bot, ArrowLeft, ArrowRight, Trash2, Calendar, LogOut, Shield, UserCog, Users, List, Settings, Save, User as UserIcon, Phone, Mail, Star, Copy, Check, Wifi, Gauge, MessageSquare, MessageCircle, Globe, Layers, CheckCircle, Eye, EyeOff, X, Menu, Image as ImageIcon, FileText, Link as LinkIcon, Unlink, UserMinus, AlertTriangle, RefreshCcw, ToggleLeft, ToggleRight, Zap, GitFork, Edit2 } from 'lucide-react';
 import ImpersonationBanner from './ImpersonationBanner';
+import OnboardingBanner from './OnboardingBanner';
 import MigrationNoticeBanner from './MigrationNoticeBanner';
 import { BotFlow, User } from '../types';
 import SubUsersTab from './SubUsersTab';
@@ -286,7 +287,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
     has_token360?: boolean;
     assigned_bot_id?: string | null;
     connected_at?: string;
-    provider?: 'facebook' | 'dialog360';
+    provider?: 'facebook' | 'dialog360' | 'internal_sms';
     link?: string;
     allowedPaymentCountries?: string;
   }
@@ -1058,6 +1059,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
     <div className="h-screen w-screen bg-[#f8fafc] flex flex-col font-medium text-start overflow-hidden">
       {/* Impersonation Banner */}
       <ImpersonationBanner currentUser={currentUser} onStopImpersonation={onStopImpersonation} token={token} onSwitchAccount={onSwitchAccount} />
+      <OnboardingBanner currentUser={currentUser} />
       <MigrationNoticeBanner />
       
       <nav className="h-20 bg-white border-b border-slate-100 flex items-center justify-between px-4 md:px-10 z-20" dir="ltr">
@@ -1559,6 +1561,21 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                       const listLogs = activateListLogs[n.phone_number_id] || [];
                       return (
                         <div key={n.phone_number_id} className="border border-slate-100 rounded-2xl p-5 bg-slate-50/50">
+                          {n.provider === 'internal_sms' ? (
+                            /* Picked in the /reg onboarding wizard — not a real WhatsApp/Meta
+                               registration, and NOT auto-assigned. A rep completes the actual
+                               line assignment manually (see backend/sms-in/controllers/destSettings.controller.js). */
+                            <div className="flex items-center gap-3 flex-wrap">
+                              <span className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-amber-100 text-amber-700 border border-amber-200 flex items-center gap-1">
+                                <AlertTriangle size={10} /> בהמתנה לשיוך
+                              </span>
+                              <span className="text-base font-black text-slate-800" dir="ltr">
+                                {n.display_phone_number || n.phone_number_id}
+                              </span>
+                              <span className="text-xs text-slate-500">{currentUser?.name}</span>
+                            </div>
+                          ) : (
+                          <>
                           <div className="flex items-start justify-between gap-6 flex-wrap">
                             <div className="flex-1 min-w-[220px]">
                               <div className="flex items-center gap-3 flex-wrap mb-3">
@@ -1822,6 +1839,8 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                                 </div>
                               )}
                             </div>
+                          )}
+                          </>
                           )}
                         </div>
                       );

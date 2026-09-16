@@ -23,6 +23,9 @@ export interface DestSetting {
   notes?: string;
   /** When the line assignment row was first created — used to sort newest-first */
   createdAt?: string;
+  /** Set when a customer picked this line in the /reg onboarding wizard and hasn't
+   *  been assigned yet by a rep — only meaningful while assignedClients is empty. */
+  pendingCustomerName?: string;
 }
 
 export interface Client {

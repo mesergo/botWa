@@ -325,6 +325,7 @@ export interface User {
   active_contacts_count?: number;
   active_contacts_quota_exceeded?: boolean;
   limits_in_effect?: { maxActiveContacts?: number; [k: string]: any };
+  onboarding?: { completed: boolean; current_step: string };
 }
 
 export interface CarouselItem {

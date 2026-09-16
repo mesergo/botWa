@@ -1910,6 +1910,11 @@ export default function SmsInApp({
                                     <span className="text-slate-700 font-semibold truncate block">
                                       {ds.assignedClientName || resolveClientLabel(ds.assignedClients[0])}
                                     </span>
+                                  ) : ds.pendingCustomerName ? (
+                                    <div className="flex flex-col gap-0.5">
+                                      <span className="text-rose-600 font-bold text-xs">{t('app.routing.pendingAssignment')}</span>
+                                      <span className="text-slate-500 text-xs truncate">{ds.pendingCustomerName}</span>
+                                    </div>
                                   ) : (
                                     <span className="text-rose-500 italic font-semibold">{t('app.routing.unassigned')}</span>
                                   )}
@@ -1936,13 +1941,24 @@ export default function SmsInApp({
                                   <span className="text-slate-500 truncate block font-medium">{ds.notes || '—'}</span>
                                 </td>
                                 <td className="px-4 py-3 text-center">
-                                  <button
-                                    onClick={() => setEditingDestSetting(ds)}
-                                    className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs py-2 px-3 rounded-2xl transition-colors cursor-pointer inline-flex items-center gap-1"
-                                  >
-                                    <Link2 size={12} />
-                                    {t('app.routing.editButton')}
-                                  </button>
+                                  <div className="flex items-center justify-center gap-2">
+                                    {!ds.assignedClients[0] && ds.pendingCustomerName && (
+                                      <button
+                                        onClick={() => setEditingDestSetting(ds)}
+                                        className="bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs py-2 px-3 rounded-2xl transition-colors cursor-pointer inline-flex items-center gap-1"
+                                      >
+                                        <Link2 size={12} />
+                                        {t('app.routing.assignButton')}
+                                      </button>
+                                    )}
+                                    <button
+                                      onClick={() => setEditingDestSetting(ds)}
+                                      className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs py-2 px-3 rounded-2xl transition-colors cursor-pointer inline-flex items-center gap-1"
+                                    >
+                                      <Link2 size={12} />
+                                      {t('app.routing.editButton')}
+                                    </button>
+                                  </div>
                                 </td>
                               </tr>
                             ))}

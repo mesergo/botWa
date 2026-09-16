@@ -2,7 +2,7 @@ import express from 'express';
 import { getMessages, getAdminMessages, createMessage, getDests, getAdminDests } from '../sms-in/controllers/messages.controller.js';
 import { getStatus } from '../sms-in/controllers/status.controller.js';
 import { getClients } from '../sms-in/controllers/clients.controller.js';
-import { getDestSettings, getAdminDestSettings, upsertDestSetting, bulkAssignDestSettings } from '../sms-in/controllers/destSettings.controller.js';
+import { getDestSettings, getAdminDestSettings, upsertDestSetting, bulkAssignDestSettings, getAvailableNumbers } from '../sms-in/controllers/destSettings.controller.js';
 import { createExternalLog, getAdminExternalLogs } from '../sms-in/controllers/externalLog.controller.js';
 import { authenticateToken, requireAdmin, optionalAuthToken, requireApiKey } from '../middleware/auth.js';
 
@@ -23,6 +23,8 @@ router.post('/external-log', requireApiKey, createExternalLog);
 // Management panel — full "maskyoo" copy log (DB-verified admin)
 router.get('/admin/external-log', authenticateToken, requireAdmin, getAdminExternalLogs);
 router.get('/clients', authenticateToken, requireAdmin, getClients);
+// Public — /reg onboarding wizard's virtual-number picker (no account yet, so no auth)
+router.get('/available-numbers', getAvailableNumbers);
 router.get('/dest-settings', authenticateToken, getDestSettings);
 router.get('/admin/dest-settings', authenticateToken, requireAdmin, getAdminDestSettings);
 router.put('/dest-settings/:dest', authenticateToken, requireAdmin, upsertDestSetting);

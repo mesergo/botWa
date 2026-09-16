@@ -115,7 +115,16 @@ const userSchema = new mongoose.Schema({
   invite_created_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   invite_status: { type: String, enum: ['pending', 'accepted', 'expired', 'cancelled'], default: null },
   registration_completed_at: { type: Date, default: null },
-}, { 
+  // Progress through the /reg self-service onboarding wizard (reg_mesergo). Lets the
+  // dashboard show a "complete your setup" banner and resume the wizard at the exact
+  // step the user left off on, from any device (server-side, not just localStorage).
+  onboarding: {
+    completed: { type: Boolean, default: false },
+    current_step: { type: String, default: 'intro' },
+    answers: { type: mongoose.Schema.Types.Mixed, default: {} },
+    updated_at: { type: Date, default: null }
+  },
+}, {
   timestamps: true,
   collection: 'User'
 });

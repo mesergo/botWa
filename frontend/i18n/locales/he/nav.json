@@ -42,6 +42,10 @@
     "switchAccount": "החלף חשבון",
     "connectedAs": "מחובר : {{name}}"
   },
+  "onboarding": {
+    "banner": "יש לך תהליך הרשמה שטרם הושלם — כמה צעדים קצרים ותהיה מוכן",
+    "resumeButton": "להשלמת התהליך"
+  },
   "home": {
     "welcome": "ברוך הבא",
     "defaultUser": "משתמש",

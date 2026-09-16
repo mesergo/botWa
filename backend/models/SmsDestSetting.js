@@ -9,6 +9,11 @@ const smsDestSettingSchema = new mongoose.Schema(
     webhookUrl: { type: String, default: '' },
     isActive: { type: Boolean, default: false },
     notes: { type: String, default: '' },
+    // Set by the /reg onboarding wizard when a new customer picks this line
+    // (request-number in whatsappRegistrationController.js) — NOT an assignment,
+    // just a marker so the "שיוך קווים" admin tab can show "בהמתנה לשיוך" with the
+    // customer's name until a rep manually completes the real assignment.
+    pendingCustomerName: { type: String, default: '' },
   },
   {
     timestamps: true,

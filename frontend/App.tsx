@@ -10,6 +10,7 @@ import { usePermission } from './hooks/usePermission';
 import Dashboard from './components/Dashboard';
 import AuthScreen from './components/AuthScreen';
 import RegisterPage from './components/RegisterPage';
+import RegPage from './components/RegPage';
 import Editor from './components/Editor';
 import TemplateSelection from './components/TemplateSelection';
 import TemplateForm from './components/TemplateForm';
@@ -204,6 +205,7 @@ const FlowBuilder: React.FC = () => {
             active_contacts_count: profile.active_contacts_count,
             active_contacts_quota_exceeded: profile.active_contacts_quota_exceeded === true,
             limits_in_effect: profile.limits_in_effect,
+            ...(profile.onboarding ? { onboarding: profile.onboarding } : {}),
           } as User;
           try {
             const storage = localStorage.getItem('flowbot_token') ? localStorage : sessionStorage;
@@ -2621,6 +2623,12 @@ const FlowBuilder: React.FC = () => {
   const isRegisterPage = new URLSearchParams(window.location.search).get('register') === '1';
   if (isRegisterPage) {
     return <RegisterPage />;
+  }
+
+  // Real onboarding wizard, a genuine page in this app now (see frontend/components/RegPage.tsx) —
+  // rendered before every other gate below since a brand-new visitor has no account yet.
+  if (location.pathname === '/reg' || location.pathname.startsWith('/reg/')) {
+    return <RegPage />;
   }
 
   if (sessionExpired) {

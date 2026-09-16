@@ -318,6 +318,8 @@
       "emptyLines": "אין קווים להצגה — טען הודעות ממסד הנתונים או המתן להודעות נכנסות",
       "statusDisabled": "מנוטרל",
       "unassigned": "לא משויך",
+      "pendingAssignment": "בהמתנה לשיוך",
+      "assignButton": "שייך",
       "editButton": "עריכה"
     },
     "autoNotes": "נוסף אוטומטית מהודעות נכנסות",

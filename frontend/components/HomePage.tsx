@@ -6,6 +6,7 @@ import { usePermission } from '../hooks/usePermission';
 import { getFormatLocale } from '../i18n';
 import DashboardStats from './DashboardStats';
 import ImpersonationBanner from './ImpersonationBanner';
+import OnboardingBanner from './OnboardingBanner';
 import MigrationNoticeBanner from './MigrationNoticeBanner';
 import LanguageSwitcher from './LanguageSwitcher';
 
@@ -208,6 +209,7 @@ const HomePage: React.FC<HomePageProps> = ({
   return (
     <div className="h-screen bg-slate-50 flex flex-col overflow-y-auto lg:overflow-hidden">
       <ImpersonationBanner currentUser={currentUser} onStopImpersonation={onStopImpersonation} token={token} onSwitchAccount={onSwitchAccount} />
+      <OnboardingBanner currentUser={currentUser} />
       <MigrationNoticeBanner />
 
       <div className="flex flex-1 min-h-0 flex-col lg:flex-row lg:overflow-hidden">
