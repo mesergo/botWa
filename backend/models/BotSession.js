@@ -74,4 +74,9 @@ botSessionSchema.index({
 });
 botSessionSchema.index({ 'reminder_case2.last_customer_message_at': 1 });
 
+// Sparse multikey index for looking up the owning session by a bot/agent-sent
+// message's WhatsApp message id (wamid), used by the delivery-status webhook
+// (see backend/controllers/statusWebhookController.js).
+botSessionSchema.index({ 'process_history.wamid': 1 }, { sparse: true });
+
 export default mongoose.model('BotSession', botSessionSchema);
