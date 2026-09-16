@@ -13,6 +13,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import crypto from 'crypto';
+import qs from 'qs';
 import { reconstructTimeRoutingBranches, isTimeRoutingBranchOption, findMatchedBranchIndex } from '../utils/timeRouting.js';
 import { handleWebService, findMatchingOption } from '../utils/webserviceHandler.js';
 import { normalizePhone } from '../utils/phone.js';
@@ -2546,7 +2547,15 @@ export const sendTemplateExternal = async (req, res) => {
   try {
     const { wa_id } = req.params;
     const isGet = req.method === 'GET';
-    const source = isGet ? req.query : (req.body || {});
+    // For GET requests, re-parse the raw query string with `qs` so bracket
+    // notation (params[0]=..., header[0][0][link]=...) resolves into real
+    // arrays/objects. Express's own req.query (global 'simple' parser under
+    // Express 5) does NOT understand bracket keys, which silently dropped
+    // these external-API params. Scoped to this route only — req.query and
+    // every other route in the app are completely unaffected.
+    const source = isGet
+      ? qs.parse(req.originalUrl.split('?')[1] || '')
+      : (req.body || {});
     const { phone, template, token } = source;
 
     console.log(`\n${'═'.repeat(80)}`);
