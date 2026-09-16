@@ -1,6 +1,6 @@
 ﻿import React, { useState, useEffect, useRef } from 'react';
 import { WhatsAppText } from '../utils/whatsappFormat';
-import { Clock, MessageSquare, Search, Bot, User, Phone, List, Users, ExternalLink, X, Headphones, RefreshCw, Settings, UserCog, Layers, Plus, UserPlus, Check, Paperclip, ChevronRight, ChevronLeft, Bell, MoreVertical, Ban, Megaphone, Repeat } from 'lucide-react';
+import { Clock, MessageSquare, Search, Bot, User, Phone, List, Users, ExternalLink, X, Headphones, RefreshCw, Settings, UserCog, Layers, Plus, UserPlus, Check, CheckCheck, AlertCircle, Paperclip, ChevronRight, ChevronLeft, Bell, MoreVertical, Ban, Megaphone, Repeat } from 'lucide-react';
 import ImpersonationBanner, { SiblingAccount } from './ImpersonationBanner';
 import MigrationNoticeBanner from './MigrationNoticeBanner';
 import { TemplateHeaderMediaField } from './TemplateHeaderMediaField';
@@ -1958,6 +1958,24 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
     }
   };
 
+  /* ─── WhatsApp delivery-status tick, shared by bot and agent bubbles ─── */
+  const renderDeliveryTick = (item: any) => {
+    if (!item.deliveryStatus) return null;
+    const title = item.deliveryStatus === 'failed'
+      ? (item.deliveryError ? JSON.stringify(item.deliveryError) : 'שליחה נכשלה')
+      : item.deliveryStatus === 'read' ? 'נקרא'
+      : item.deliveryStatus === 'delivered' ? 'התקבל אצל הלקוח'
+      : 'נשלח';
+    return (
+      <span title={title} className="inline-flex items-center">
+        {item.deliveryStatus === 'sent' && <Check size={12} className="text-slate-400" />}
+        {item.deliveryStatus === 'delivered' && <CheckCheck size={12} className="text-slate-400" />}
+        {item.deliveryStatus === 'read' && <CheckCheck size={12} className="text-sky-500" />}
+        {item.deliveryStatus === 'failed' && <AlertCircle size={12} className="text-red-500" />}
+      </span>
+    );
+  };
+
   /* ─── render messages for one session ─── */
   const renderSessionMessages = (session: Session) => {
     if (!session.process_history.length) return null;
@@ -2030,7 +2048,12 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 <div className="w-6 h-6 rounded-lg flex items-center justify-center shadow-sm bg-purple-100 border border-purple-200 text-purple-700">
                   <Headphones size={12} />
                 </div>
-                {msgDate && <span className="text-[9px] text-slate-400 font-semibold">{msgDate}</span>}
+                {(msgDate || item.deliveryStatus) && (
+                  <span className="flex items-center gap-0.5 text-[9px] text-slate-400 font-semibold">
+                    {msgDate}
+                    {renderDeliveryTick(item)}
+                  </span>
+                )}
                 {(item.agent_name || item.name) && (item.agent_name || item.name) !== 'נציג' && (
                   <span className="text-[9px] text-purple-400 font-black">{item.agent_name || item.name}</span>
                 )}
@@ -2195,7 +2218,12 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 ${isBot ? 'bg-white border border-slate-100 text-slate-700' : 'bg-sky-500 text-white'}`}>
                 {isBot ? <Bot size={12} /> : <User size={12} />}
               </div>
-              {msgDate && <span className="text-[9px] text-slate-400 font-semibold">{msgDate}</span>}
+              {(msgDate || item.deliveryStatus) && (
+                <span className="flex items-center gap-0.5 text-[9px] text-slate-400 font-semibold">
+                  {msgDate}
+                  {renderDeliveryTick(item)}
+                </span>
+              )}
               {isBot && session.bot_name && (
                 <span className="text-[9px] text-slate-400 font-black">{session.bot_name}</span>
               )}
