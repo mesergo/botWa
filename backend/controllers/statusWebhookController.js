@@ -5,8 +5,36 @@ import eventBus from '../utils/eventBus.js';
 // Rank used to guard against out-of-order webhook delivery: a later webhook
 // reporting an earlier status (e.g. 'sent' arriving after 'read') must never
 // regress the stored status. 'failed' is terminal and always wins.
-const STATUS_RANK = { sent: 1, delivered: 2, read: 3 };
+const STATUS_RANK = { sent: 1, delivered: 2, read: 3 }; 
 const ALLOWED_STATUSES = ['sent', 'delivered', 'read', 'failed'];
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// A 'sent' (and sometimes 'delivered') status webhook can arrive from
+// dialog360.js before our own backend has finished saving the outgoing
+// message's `wamid` onto its BotSession.process_history entry (the WhatsApp
+// send call resolves — and the provider fires its webhook — before
+// pushMessagesToWhatsApp()'s caller gets to persist the wamid, especially
+// for media messages which have a few seconds of post-send delay baked in).
+// Without a retry, that first lookup simply finds nothing and the status is
+// dropped forever — which is why 'read'/'failed' (arriving much later) show
+// up fine while 'sent'/'delivered' often don't. Retrying a few times with a
+// short delay closes this window without needing any change to the send
+// path itself.
+const FIND_SESSION_RETRIES = 6;
+const FIND_SESSION_RETRY_DELAY_MS = 700; // up to ~4.2s total extra wait
+
+const findSessionByWamid = async (wamid) => {
+  for (let attempt = 0; attempt <= FIND_SESSION_RETRIES; attempt++) {
+    const session = await BotSession.findOne(
+      { 'process_history.wamid': wamid },
+      { user_id: 1, sender: 1, customer_phone: 1, 'process_history.$': 1 }
+    );
+    if (session) return session;
+    if (attempt < FIND_SESSION_RETRIES) await sleep(FIND_SESSION_RETRY_DELAY_MS);
+  }
+  return null;
+};
 
 const isAuthorized = (req) => {
   const secret = process.env.WA_STATUS_WEBHOOK_SECRET;
@@ -35,13 +63,10 @@ const applyStatusEntry = async ({ wamid, status, timestamp, errors }) => {
     return { wamid, status, applied: false, reason: 'unknown_status' };
   }
 
-  const session = await BotSession.findOne(
-    { 'process_history.wamid': wamid },
-    { user_id: 1, sender: 1, customer_phone: 1, 'process_history.$': 1 }
-  );
+  const session = await findSessionByWamid(wamid);
 
   if (!session) {
-    console.warn('[status-webhook] no session found for wamid', wamid);
+    console.warn('[status-webhook] no session found for wamid (after retries)', wamid);
     return { wamid, status, applied: false, reason: 'not_found' };
   }
 
@@ -94,15 +119,17 @@ export const updateMessageStatus = async (req, res) => {
       return res.status(200).json({ results: [] });
     }
 
-    const results = [];
-    for (const entry of statuses) {
+    // Applied in parallel — each entry retries independently (see
+    // findSessionByWamid), so running them sequentially would needlessly
+    // stack up their retry delays when a batch contains several statuses.
+    const results = await Promise.all(statuses.map(async (entry) => {
       try {
-        results.push(await applyStatusEntry(entry));
+        return await applyStatusEntry(entry);
       } catch (e) {
         console.error('[status-webhook] failed to apply entry:', e.message);
-        results.push({ wamid: entry?.wamid, applied: false, reason: 'error' });
+        return { wamid: entry?.wamid, applied: false, reason: 'error' };
       }
-    }
+    }));
 
     return res.status(200).json({ results });
   } catch (e) {

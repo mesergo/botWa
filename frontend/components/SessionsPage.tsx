@@ -58,7 +58,7 @@ interface Contact {
 
 interface SessionsPageProps {
   token: string | null;
-  currentUser?: { name?: string; email?: string; role?: string; isImpersonating?: boolean; availability_status?: 'available' | 'unavailable' | 'on_break' } | null;
+  currentUser?: { name?: string; email?: string; role?: string; isImpersonating?: boolean; availability_status?: 'available' | 'unavailable' | 'on_break'; onboarding?: { completed?: boolean; current_step?: string } } | null;
   onBack?: () => void;
   onLogout: () => void;
   onOpenContacts?: (phone?: string) => void;

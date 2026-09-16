@@ -39,7 +39,7 @@ interface DashboardProps {
   onDeleteBot: (id: string) => void;
   onSetDefaultBot: (id: string) => void;
   onLogout: () => void;
-  currentUser?: { id?: string; name?: string; email?: string; role?: string; isImpersonating?: boolean; availability_status?: 'available' | 'unavailable' | 'on_break' } | null;
+  currentUser?: { id?: string; name?: string; email?: string; role?: string; isImpersonating?: boolean; availability_status?: 'available' | 'unavailable' | 'on_break'; onboarding?: { completed?: boolean; current_step?: string } } | null;
   onOpenAdminPanel?: () => void;
   onStopImpersonation?: () => void;
   onSwitchAccount?: (accountId: string) => void;

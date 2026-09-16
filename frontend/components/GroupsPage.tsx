@@ -48,7 +48,7 @@ interface GroupDetail {
 
 interface GroupsPageProps {
   token: string | null;
-  currentUser?: { name?: string; email?: string; role?: string; isImpersonating?: boolean } | null;
+  currentUser?: { name?: string; email?: string; role?: string; isImpersonating?: boolean; onboarding?: { completed?: boolean; current_step?: string } } | null;
   onBack: () => void;
   onLogout: () => void;
   onOpenContacts?: (phone?: string) => void;
