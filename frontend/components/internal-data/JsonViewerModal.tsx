@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { X, Copy, Check, FileJson } from 'lucide-react';
 import { InternalDataRow } from '../../types';
 
@@ -9,6 +10,7 @@ interface JsonViewerModalProps {
 }
 
 export const JsonViewerModal: React.FC<JsonViewerModalProps> = ({ isOpen, onClose, row }) => {
+  const { t } = useTranslation('internalData');
   const [copied, setCopied] = useState(false);
 
   if (!isOpen || !row) return null;
@@ -27,7 +29,7 @@ export const JsonViewerModal: React.FC<JsonViewerModalProps> = ({ isOpen, onClos
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/50">
           <div className="flex items-center gap-2">
             <FileJson className="w-5 h-5 text-sky-600" />
-            <h3 className="text-sm font-bold text-slate-900">רשומה גולמית (JSON)</h3>
+            <h3 className="text-sm font-bold text-slate-900">{t('jsonViewer.title')}</h3>
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -35,7 +37,7 @@ export const JsonViewerModal: React.FC<JsonViewerModalProps> = ({ isOpen, onClos
               className="px-2.5 py-1.5 hover:bg-slate-100 text-slate-700 rounded-lg transition flex items-center gap-1.5 text-xs border border-slate-200 shadow-2xs font-medium"
             >
               {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-              <span>{copied ? 'הועתק!' : 'העתק JSON'}</span>
+              <span>{copied ? t('jsonViewer.copied') : t('jsonViewer.copyJson')}</span>
             </button>
             <button onClick={onClose} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition">
               <X className="w-4 h-4" />

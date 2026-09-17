@@ -122,7 +122,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ token, currentUser, onBack, onI
   // few places that cannot be expressed with logical CSS utilities (off-canvas transform,
   // reading-order arrows).
   const { i18n } = useTranslation();
-  const isRtl = i18n.dir() === 'rtl';
+  // Layout is pinned to RTL always regardless of the selected language.
 
   type AdminTab = 'dashboard' | 'users' | 'user-types' | 'templates' | 'settings' | 'sessions' | 'dialog360' | 'sms-in' | 'sms-external-log' | 'connected-numbers' | 'error-log';
   const VALID_TABS: AdminTab[] = ['dashboard', 'users', 'user-types', 'templates', 'settings', 'sessions', 'dialog360', 'sms-in', 'sms-external-log', 'connected-numbers', 'error-log'];
@@ -1767,7 +1767,7 @@ const openRestoreConversations = async () => {
       )}
       
       {/* Sidebar Navigation */}
-      <aside className={`fixed md:relative inset-y-0 start-0 w-72 max-w-[85vw] h-screen bg-white flex flex-col z-40 border-e border-slate-100 shadow-[4px_0_24px_rgba(0,0,0,0.12)] md:shadow-[4px_0_24px_rgba(0,0,0,0.02)] transform transition-transform duration-300 flex-shrink-0 ${isMobileSidebarOpen ? 'translate-x-0' : `${isRtl ? 'translate-x-full' : '-translate-x-full'} md:translate-x-0`}`}>
+      <aside className={`fixed md:relative inset-y-0 start-0 w-72 max-w-[85vw] h-screen bg-white flex flex-col z-40 border-e border-slate-100 shadow-[4px_0_24px_rgba(0,0,0,0.12)] md:shadow-[4px_0_24px_rgba(0,0,0,0.02)] transform transition-transform duration-300 flex-shrink-0 ${isMobileSidebarOpen ? 'translate-x-0' : 'translate-x-full md:translate-x-0'}`}>
         <div className="p-8 pb-6">
           <div className="flex items-center gap-3 mb-10">
            <div 
@@ -4759,7 +4759,7 @@ const openRestoreConversations = async () => {
                 {createFromBotStep === 'pick-bot' && (
                   <div className="space-y-4">
                     <div className="flex items-center gap-3 mb-4">
-                      <button onClick={() => setCreateFromBotStep('choice')} className="p-2 hover:bg-slate-100 rounded-lg text-slate-400 transition-colors">{isRtl ? <ArrowLeft size={18} /> : <ArrowRight size={18} />}</button>
+                      <button onClick={() => setCreateFromBotStep('choice')} className="p-2 hover:bg-slate-100 rounded-lg text-slate-400 transition-colors"><ArrowLeft size={18} /></button>
                       <p className="text-slate-600 font-bold text-sm">בחר בוט מהמערכת</p>
                     </div>
                     <div className="max-h-72 overflow-y-auto space-y-2 ps-1">
@@ -4795,7 +4795,7 @@ const openRestoreConversations = async () => {
                                     <p className="font-bold text-slate-800 text-sm">{bot.name}</p>
                                     <p className="text-xs text-slate-400">ID: {bot.id.slice(-6)}</p>
                                   </div>
-                                  {isRtl ? <ChevronLeft size={16} className="text-slate-300 group-hover:text-pink-500 transition-colors" /> : <ChevronRight size={16} className="text-slate-300 group-hover:text-pink-500 transition-colors" />}
+                                  <ChevronLeft size={16} className="text-slate-300 group-hover:text-pink-500 transition-colors" />
                                 </div>
                               ))}
                             </div>

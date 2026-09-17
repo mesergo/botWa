@@ -19,6 +19,8 @@ import { usePermission } from '../hooks/usePermission';
 import PageTopBar from './PageTopBar';
 import AppNav from './AppNav';
 import { useContactFields } from '../context/ContactFieldsContext';
+import { useTranslation } from 'react-i18next';
+import { getFormatLocale } from '../i18n';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -78,6 +80,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
   token, currentUser, onBack, onLogout, onOpenContacts, onOpenSessions,onOpenSendMessages,onOpenSmsIn, onOpenInternalData,
   onOpenAdminPanel, onOpenSettings, onOpenSubUsers, onStopImpersonation, onSwitchAccount, onGoHome, embedded = false,
 }) => {
+  const { t } = useTranslation('groups');
   const [groups, setGroups] = useState<GroupSummary[]>([]);
   const [selectedGroup, setSelectedGroup] = useState<GroupDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -197,7 +200,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
   const exportGroupToExcel = () => {
     if (!selectedGroup || selectedGroup.contacts.length === 0) return;
 
-    const baseHeaders = ['טלפון', 'שם מלא', 'שם וואטסאפ', 'מייל'];
+    const baseHeaders = [t('csv.phone'), t('csv.fullName'), t('csv.whatsappName'), t('csv.email')];
     const customHeaders = contactFields.map(f => f.label);
     const headers = [...baseHeaders, ...customHeaders];
 
@@ -498,12 +501,12 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
         setMediaFilename('');
         setExcludeGroupId('');
       } else {
-        alert(data.error || 'שגיאה בשליחה');
+        alert(data.error || t('alerts.sendError'));
       }
     } catch (e: any) {
       console.error('[submitSend] caught error:', e);
-      const msg = e?.message || String(e) || 'שגיאה לא ידועה';
-      alert(`שגיאת רשת: ${msg}\n\nURL: ${API_BASE}/groups/${selectedGroup?._id}/broadcast\n\nפרטים נוספים בקונסול (F12)`);
+      const msg = e?.message || String(e) || t('alerts.unknownError');
+      alert(t('alerts.networkError', { msg, url: `${API_BASE}/groups/${selectedGroup?._id}/broadcast` }));
     } finally {
       setSending(false);
     }
@@ -645,9 +648,9 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
 
   // Human-readable label for a post-send mode value
   const postSendModeLabel = (mode: 'no_change' | 'agent' | 'bot'): string => {
-    if (mode === 'agent') return 'מעבר למצב נציג';
-    if (mode === 'bot') return 'מעבר למצב בוט';
-    return 'ללא שינוי במצב השיחה';
+    if (mode === 'agent') return t('postSendMode.agent');
+    if (mode === 'bot') return t('postSendMode.bot');
+    return t('postSendMode.noChange');
   };
 
   // ── Broadcast history ───────────────────────────────────────────────────
@@ -681,7 +684,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
         headers: authHeader,
       });
       const data = await res.json();
-      if (!res.ok) { alert(data.error || 'שגיאה בהמשך שליחה'); return; }
+      if (!res.ok) { alert(data.error || t('alerts.continueSendError')); return; }
       // Add to active broadcast trackers
       setActiveBroadcasts(prev => [
         ...prev.filter(b => b.id !== broadcastId),
@@ -702,13 +705,13 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
       // Refresh history
       fetchBroadcasts();
     } catch (e: any) {
-      alert('שגיאת רשת: ' + (e?.message || String(e)));
+      alert(t('alerts.networkErrorWithMsg', { msg: e?.message || String(e) }));
        }
   };
 
   const cancelBroadcastHandler = async (e: React.MouseEvent, broadcastId: string) => {
     e.stopPropagation(); // don't open the detail panel
-    if (!window.confirm('לבטל את השידור המתוזמן? הודעות שטרם נשלחו לא יגיעו לנמענים.')) return;
+    if (!window.confirm(t('alerts.cancelScheduledConfirm'))) return;
     setCancellingBroadcastId(broadcastId);
     try {
       const res = await fetch(`${API_BASE}/groups/broadcasts/${broadcastId}/cancel`, {
@@ -719,10 +722,10 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
         setBroadcasts(prev => prev.map(b => b._id === broadcastId ? { ...b, status: 'cancelled' } : b));
       } else {
         const data = await res.json().catch(() => ({}));
-        alert(`שגיאה בביטול: ${data.error || res.status}`);
+        alert(t('alerts.cancelError', { error: data.error || res.status }));
       }
     } catch (e) {
-      alert('שגיאת רשת — נסה שוב');
+      alert(t('alerts.networkErrorRetry'));
     } finally {
       setCancellingBroadcastId(null);
     }
@@ -798,7 +801,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
   };
 
   const copyRecipientsToExcel = () => {
-    const header = 'טלפון\tשם מלא\tשם וואטסאפ\tמייל';
+    const header = `${t('csv.phone')}\t${t('csv.fullName')}\t${t('csv.whatsappName')}\t${t('csv.email')}`;
     const rows = recipientsPreviewList.map(c =>
       `${c.phone}\t${c.full_name ?? ''}\t${c.whatsapp_name ?? ''}\t${c.email ?? ''}`
     );
@@ -811,7 +814,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
 
   const downloadRecipientsAsExcel = () => {
     const escape = (v: string) => `"${(v ?? '').replace(/"/g, '""')}"`;
-    const header = [escape('טלפון'), escape('שם מלא'), escape('שם וואטסאפ'), escape('מייל')].join(',');
+    const header = [escape(t('csv.phone')), escape(t('csv.fullName')), escape(t('csv.whatsappName')), escape(t('csv.email'))].join(',');
     const rows = recipientsPreviewList.map(c =>
       [escape(c.phone), escape(c.full_name ?? ''), escape(c.whatsapp_name ?? ''), escape(c.email ?? '')].join(',')
     );
@@ -915,8 +918,8 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                 <Layers size={20} />
               </div>
               <div>
-                <h2 className="text-lg font-black text-slate-900">רשימות תפוצה</h2>
-                <p className="text-xs font-semibold text-slate-400">{regularGroups.length} רשימות</p>
+                <h2 className="text-lg font-black text-slate-900">{t('sidebar.title')}</h2>
+                <p className="text-xs font-semibold text-slate-400">{t('sidebar.count', { count: regularGroups.length })}</p>
               </div>
             </div>
 
@@ -928,14 +931,14 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                 onChange={e => setNewGroupName(e.target.value)}
                 maxLength={50}
                 onKeyDown={e => { if (e.key === 'Enter') createGroup(); }}
-                placeholder="שם רשימה חדשה..."
+                placeholder={t('sidebar.newListPlaceholder')}
                 className="flex-1 px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-500 transition-all"
               />
               <button
                 onClick={createGroup}
                 disabled={creating || !newGroupName.trim()}
                 className="p-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-colors disabled:opacity-50"
-                title="צור קבוצה"
+                title={t('sidebar.createGroupTitle')}
               >
                 <Plus size={18} />
               </button>
@@ -966,7 +969,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                       </div>
                       <div className="text-start min-w-0">
                         <p className="text-sm font-black text-slate-900 truncate">{blocklist.name}</p>
-                        <p className="text-xs font-semibold text-red-500">לא מקבלים הודעות מאף קבוצה</p>
+                        <p className="text-xs font-semibold text-red-500">{t('sidebar.noMessagesFromAnyGroup')}</p>
                       </div>
                     </div>
                     <span className="text-sm font-black text-red-500 flex-shrink-0">{blocklist.contact_count}</span>
@@ -976,7 +979,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                 {regularGroups.length === 0 ? (
                   <div className="text-center py-10 text-slate-300">
                     <Layers size={48} strokeWidth={1} className="mx-auto mb-3" />
-                    <p className="text-sm font-bold">אין רשימות תפוצה עדיין</p>
+                    <p className="text-sm font-bold">{t('sidebar.noListsYet')}</p>
                   </div>
                 ) : (
                   regularGroups.map(g => (
@@ -1009,7 +1012,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                           ) : (
                             <>
                               <p className="text-sm font-bold text-slate-900 truncate" title={g.name}>{g.name}</p>
-                              <p className="text-xs font-semibold text-slate-400">{g.contact_count} אנשי קשר</p>
+                              <p className="text-xs font-semibold text-slate-400">{t('sidebar.contactCount', { count: g.contact_count })}</p>
                             </>
                           )}
                         </div>
@@ -1053,8 +1056,8 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                     <History size={26} />
                   </div>
                   <div>
-                    <h1 className="text-3xl font-black text-slate-900">שליחות מרוכזות</h1>
-                    <p className="text-slate-400 text-sm font-semibold mt-0.5">כל השליחות לכל רשימות התפוצה — ממוין לפי תאריך</p>
+                    <h1 className="text-3xl font-black text-slate-900">{t('allBroadcasts.title')}</h1>
+                    <p className="text-slate-400 text-sm font-semibold mt-0.5">{t('allBroadcasts.subtitle')}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
@@ -1064,7 +1067,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                     onChange={e => setAllBroadcastsGroupFilter(e.target.value)}
                     className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-sm font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400"
                   >
-                    <option value="">כל הרשימות</option>
+                    <option value="">{t('allBroadcasts.allListsOption')}</option>
                     {regularGroups.map(g => (
                       <option key={g._id} value={g._id}>{g.name}</option>
                     ))}
@@ -1074,7 +1077,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                     disabled={allBroadcastsLoading}
                     className="flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl font-bold text-sm transition-colors disabled:opacity-50"
                   >
-                    <RotateCcw size={15} className={allBroadcastsLoading ? 'animate-spin' : ''} /> רענן
+                    <RotateCcw size={15} className={allBroadcastsLoading ? 'animate-spin' : ''} /> {t('allBroadcasts.refresh')}
                   </button>
                 </div>
               </div>
@@ -1090,20 +1093,20 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                 return filtered.length === 0 ? (
                   <div className="py-24 bg-white border-2 border-dashed border-slate-200 rounded-[2.5rem] flex flex-col items-center justify-center gap-4 text-slate-300">
                     <History size={64} strokeWidth={1} />
-                    <p className="text-xl font-bold">לא נמצאו שליחות</p>
+                    <p className="text-xl font-bold">{t('allBroadcasts.empty')}</p>
                   </div>
                 ) : (
                   <div className="bg-white border border-slate-100 rounded-2xl overflow-hidden shadow-sm">
                     <div className="grid grid-cols-[9rem_1fr_5rem_4rem_4rem_4rem_4rem_5rem_5rem] gap-2 px-6 py-3 bg-slate-50 border-b border-slate-100 text-xs font-bold text-slate-400 uppercase tracking-wide">
-                      <span>תאריך</span>
-                      <span>תוכן</span>
-                      <span>רשימה</span>
-                      <span>סה"כ</span>
-                      <span>נשלחו</span>
-                      <span>נכשלו</span>
-                      <span>דולגו</span>
-                      <span>תזמון</span>
-                      <span>סטטוס</span>
+                      <span>{t('allBroadcasts.colDate')}</span>
+                      <span>{t('allBroadcasts.colContent')}</span>
+                      <span>{t('allBroadcasts.colList')}</span>
+                      <span>{t('allBroadcasts.colTotal')}</span>
+                      <span>{t('allBroadcasts.colSent')}</span>
+                      <span>{t('allBroadcasts.colFailed')}</span>
+                      <span>{t('allBroadcasts.colSkipped')}</span>
+                      <span>{t('allBroadcasts.colSchedule')}</span>
+                      <span>{t('allBroadcasts.colStatus')}</span>
                     </div>
                     {filtered.map((b, idx) => {
                       const isPartial = b.processed > 0 && b.processed < b.total;
@@ -1116,12 +1119,12 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                         >
                           <div className="flex items-center gap-2 text-xs font-bold text-slate-600">
                             <Calendar size={13} className="text-slate-400" />
-                            {new Date(b.createdAt).toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' })}
+                            {new Date(b.createdAt).toLocaleString(getFormatLocale(), { dateStyle: 'short', timeStyle: 'short' })}
                           </div>
                           <div className="min-w-0">
                             {b.is_template ? (
                               <div className="flex items-start gap-2 flex-wrap">
-                                <span className="px-2 py-0.5 bg-purple-100 text-purple-700 rounded-md text-xs font-black flex-shrink-0">תבנית</span>
+                                <span className="px-2 py-0.5 bg-purple-100 text-purple-700 rounded-md text-xs font-black flex-shrink-0">{t('allBroadcasts.templateBadge')}</span>
                                 <span className="text-sm font-bold text-slate-800 break-words">{b.template_name}</span>
                               </div>
                             ) : (
@@ -1144,23 +1147,23 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                             {b.scheduled_at
                               ? (
                                 <div className="flex flex-col gap-0.5">
-                                  <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-md text-xs font-black w-fit">מתוזמן</span>
+                                  <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-md text-xs font-black w-fit">{t('allBroadcasts.scheduledBadge')}</span>
                                   <span className="text-xs font-semibold text-blue-600 whitespace-nowrap">
-                                    {new Date(b.scheduled_at).toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' })}
+                                    {new Date(b.scheduled_at).toLocaleString(getFormatLocale(), { dateStyle: 'short', timeStyle: 'short' })}
                                   </span>
                                 </div>
                               )
-                              : <span className="px-2 py-0.5 bg-slate-100 text-slate-500 rounded-md text-xs font-semibold">מיידי</span>
+                              : <span className="px-2 py-0.5 bg-slate-100 text-slate-500 rounded-md text-xs font-semibold">{t('allBroadcasts.immediateBadge')}</span>
                             }
                           </span>
                           <span>
-                            {b.status === 'cancelled' && <span className="px-2 py-0.5 bg-red-100 text-red-600 rounded-md text-xs font-black">בוטל</span>}
-                            {b.status === 'completed' && <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded-md text-xs font-black">הושלם</span>}
-                            {isStopped && <span className="px-2 py-0.5 bg-orange-100 text-orange-700 rounded-md text-xs font-black">הופסק ({b.processed}/{b.total})</span>}
-                            {!isStopped && b.status === 'running' && <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-md text-xs font-black animate-pulse">רץ</span>}
-                            {!isStopped && b.status === 'queued' && b.processed === 0 && <span className="px-2 py-0.5 bg-slate-100 text-slate-500 rounded-md text-xs font-black">בתור</span>}
-                            {!isStopped && b.status === 'failed' && <span className="px-2 py-0.5 bg-red-100 text-red-700 rounded-md text-xs font-black">נכשל</span>}
-                            {b.status === 'scheduled' && <span className="px-2 py-0.5 bg-blue-50 text-blue-500 rounded-md text-xs font-semibold">ממתין</span>}
+                            {b.status === 'cancelled' && <span className="px-2 py-0.5 bg-red-100 text-red-600 rounded-md text-xs font-black">{t('allBroadcasts.statusCancelled')}</span>}
+                            {b.status === 'completed' && <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded-md text-xs font-black">{t('allBroadcasts.statusCompleted')}</span>}
+                            {isStopped && <span className="px-2 py-0.5 bg-orange-100 text-orange-700 rounded-md text-xs font-black">{t('allBroadcasts.statusStopped', { processed: b.processed, total: b.total })}</span>}
+                            {!isStopped && b.status === 'running' && <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-md text-xs font-black animate-pulse">{t('allBroadcasts.statusRunning')}</span>}
+                            {!isStopped && b.status === 'queued' && b.processed === 0 && <span className="px-2 py-0.5 bg-slate-100 text-slate-500 rounded-md text-xs font-black">{t('allBroadcasts.statusQueued')}</span>}
+                            {!isStopped && b.status === 'failed' && <span className="px-2 py-0.5 bg-red-100 text-red-700 rounded-md text-xs font-black">{t('allBroadcasts.statusFailed')}</span>}
+                            {b.status === 'scheduled' && <span className="px-2 py-0.5 bg-blue-50 text-blue-500 rounded-md text-xs font-semibold">{t('allBroadcasts.statusScheduled')}</span>}
                           </span>
                         </div>
                       );
@@ -1172,8 +1175,8 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
           ) : !selectedGroup ? (
             <div className="h-full flex flex-col items-center justify-center text-slate-300">
               <Layers size={72} strokeWidth={1} />
-              <p className="text-xl font-bold mt-4">בחר רשימת תפוצה</p>
-              <p className="text-sm font-semibold mt-1">או צור רשימה חדשה</p>
+              <p className="text-xl font-bold mt-4">{t('emptyState.chooseList')}</p>
+              <p className="text-sm font-semibold mt-1">{t('emptyState.orCreateNew')}</p>
             </div>
           ) : (
             <div className="max-w-5xl mx-auto">
@@ -1188,8 +1191,8 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                   <div>
                     <h1 className="text-3xl font-black text-slate-900">{selectedGroup.name}</h1>
                     <p className="text-slate-400 text-sm font-semibold mt-0.5">
-                      {selectedGroup.contacts.length} אנשי קשר
-                      {selectedGroup.is_blocklist && ' · לא מקבלים שום הודעה מקבוצות תפוצה'}
+                      {t('detail.contactCount', { count: selectedGroup.contacts.length })}
+                      {selectedGroup.is_blocklist && t('detail.blocklistNoMessages')}
                     </p>
                   </div>
                 </div>
@@ -1198,17 +1201,17 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                   <button
                     onClick={exportGroupToExcel}
                     disabled={selectedGroup.contacts.length === 0}
-                    title="יצא לאקסל"
+                    title={t('detail.exportTitle')}
                     className="flex items-center gap-2 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200 rounded-2xl font-bold text-sm transition-colors disabled:opacity-40"
                   >
-                    <Download size={16} /> יצוא לאקסל
+                    <Download size={16} /> {t('detail.exportButton')}
                   </button>
                   {can('groups.add_contact') && (
                   <button
                     onClick={openAddMembers}
                     className="flex items-center gap-2 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-2xl font-bold text-sm transition-colors"
                   >
-                    <UserPlus size={16} /> הוסף אנשי קשר
+                    <UserPlus size={16} /> {t('detail.addContacts')}
                   </button>
                   )}                  {!selectedGroup.is_blocklist && can('groups.send_message') && (
                     <button
@@ -1216,7 +1219,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                       disabled={selectedGroup.contacts.length === 0}
                       className="flex items-center gap-2 px-5 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-2xl font-bold text-sm transition-colors disabled:opacity-50"
                     >
-                      <Send size={16} /> שלח הודעה לקבוצה
+                      <Send size={16} /> {t('detail.sendMessageToGroup')}
                     </button>
                   )}
                 </div>
@@ -1231,7 +1234,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                       activeTab === 'members' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
                     }`}
                   >
-                    <Users size={16} /> אנשי קשר
+                    <Users size={16} /> {t('detail.tabMembers')}
                   </button>
                   {!selectedGroup.is_blocklist && (
                     <button
@@ -1240,7 +1243,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                         activeTab === 'history' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
                       }`}
                     >
-                      <History size={16} /> דוח שליחות
+                      <History size={16} /> {t('detail.tabHistory')}
                     </button>
                   )}
                   <button
@@ -1249,7 +1252,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                       activeTab === 'removals' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
                     }`}
                   >
-                    <Trash2 size={16} /> דוח מחיקות
+                    <Trash2 size={16} /> {t('detail.tabRemovals')}
                   </button>
                 </div>
                 {activeTab === 'members' && (
@@ -1257,7 +1260,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                     <Search size={15} className="absolute start-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                     <input
                       type="text"
-                      placeholder="חיפוש לפי טלפון, שם או מייל..."
+                      placeholder={t('detail.searchMembers')}
                       value={memberSearch}
                       onChange={e => setMemberSearch(e.target.value)}
                       className="w-full ps-9 pe-4 py-2 bg-white border border-slate-200 rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-300"
@@ -1269,7 +1272,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                     <Search size={15} className="absolute start-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                     <input
                       type="text"
-                      placeholder="חיפוש לפי תוכן, תבנית או ID..."
+                      placeholder={t('detail.searchHistory')}
                       value={historySearch}
                       onChange={e => setHistorySearch(e.target.value)}
                       className="w-full ps-9 pe-4 py-2 bg-white border border-slate-200 rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-300"
@@ -1281,7 +1284,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                     <Search size={15} className="absolute start-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                     <input
                       type="text"
-                      placeholder="חיפוש לפי טלפון, שם או סיבה..."
+                      placeholder={t('detail.searchRemovals')}
                       value={removalsSearch}
                       onChange={e => setRemovalsSearch(e.target.value)}
                       className="w-full ps-9 pe-4 py-2 bg-white border border-slate-200 rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-300"
@@ -1296,23 +1299,23 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
               ) : selectedGroup.contacts.length === 0 ? (
                 <div className="py-24 bg-white border-2 border-dashed border-slate-200 rounded-[2.5rem] flex flex-col items-center justify-center gap-4 text-slate-300">
                   <Users size={64} strokeWidth={1} />
-                  <p className="text-xl font-bold">אין אנשי קשר בקבוצה זו</p>
+                  <p className="text-xl font-bold">{t('detail.membersEmpty')}</p>
                   {can('groups.add_contact') && (
                   <button
                     onClick={openAddMembers}
                     className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-bold text-sm transition-colors mt-2"
                   >
-                    <UserPlus size={16} /> הוסף אנשי קשר ראשונים
+                    <UserPlus size={16} /> {t('detail.addFirstMembers')}
                   </button>
                   )}
                 </div>
               ) : (
                 <div className="bg-white border border-slate-100 rounded-2xl overflow-hidden shadow-sm">
                   <div className="grid grid-cols-[1.6fr_1.5fr_1.3fr_1.6fr_5rem] gap-3 px-6 py-3 bg-slate-50 border-b border-slate-100 text-xs font-bold text-slate-400 uppercase tracking-wide">
-                    <span>טלפון</span>
-                    <span>שם מלא</span>
-                    <span>שם וואטסאפ</span>
-                    <span>מייל</span>
+                    <span>{t('detail.colPhone')}</span>
+                    <span>{t('csv.fullName')}</span>
+                    <span>{t('csv.whatsappName')}</span>
+                    <span>{t('csv.email')}</span>
                     <span></span>
                   </div>
                   {(() => {
@@ -1326,7 +1329,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                         )
                       : selectedGroup.contacts;
                     if (q && filtered.length === 0) return (
-                      <div className="py-10 text-center text-slate-400 text-sm">לא נמצאו תוצאות עבור &ldquo;{memberSearch}&rdquo;</div>
+                      <div className="py-10 text-center text-slate-400 text-sm">{t('allBroadcasts.noResultsFor', { query: memberSearch })}</div>
                     );
                     return filtered.map((c, idx) => (
                     <div key={c._id} className={`grid grid-cols-[1.6fr_1.5fr_1.3fr_1.6fr_5rem] gap-3 px-6 py-3.5 items-center hover:bg-slate-50/70 transition-colors ${idx !== filtered.length - 1 ? 'border-b border-slate-100' : ''}`}>
@@ -1349,7 +1352,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                         {can('groups.remove_contact') && (
                         <button
                           onClick={() => openRemoveMember(c)}
-                          title="הסר מהקבוצה"
+                          title={t('detail.removeFromGroup')}
                           className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
                         >
                           <UserMinus size={16} />
@@ -1371,20 +1374,20 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                 ) : broadcasts.length === 0 ? (
                   <div className="py-24 bg-white border-2 border-dashed border-slate-200 rounded-[2.5rem] flex flex-col items-center justify-center gap-4 text-slate-300">
                     <History size={64} strokeWidth={1} />
-                    <p className="text-xl font-bold">טרם נשלחו הודעות לקבוצה זו</p>
+                    <p className="text-xl font-bold">{t('detail.historyEmpty')}</p>
                   </div>
                 ) : (
                   <div className="bg-white border border-slate-100 rounded-2xl overflow-hidden shadow-sm">
                     <div className="grid grid-cols-[9rem_6rem_1fr_4rem_4rem_4rem_4rem_6rem_5rem_3rem] gap-2 px-6 py-3 bg-slate-50 border-b border-slate-100 text-xs font-bold text-slate-400 uppercase tracking-wide">
-                      <span>תאריך</span>
+                      <span>{t('detail.colDate')}</span>
                       <span>ID</span>
-                      <span>תוכן</span>
-                      <span>סה"כ</span>
-                      <span>נשלחו</span>
-                      <span>נכשלו</span>
-                      <span>דולגו</span>
-                      <span>תזמון</span>
-                      <span>סטטוס</span>
+                      <span>{t('allBroadcasts.colContent')}</span>
+                      <span>{t('allBroadcasts.colTotal')}</span>
+                      <span>{t('allBroadcasts.colSent')}</span>
+                      <span>{t('allBroadcasts.colFailed')}</span>
+                      <span>{t('allBroadcasts.colSkipped')}</span>
+                      <span>{t('allBroadcasts.colSchedule')}</span>
+                      <span>{t('allBroadcasts.colStatus')}</span>
                       <span></span>
                     </div>
                     {(() => {
@@ -1407,7 +1410,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                       >
                         <div className="flex items-center gap-2 text-xs font-bold text-slate-600">
                           <Calendar size={13} className="text-slate-400" />
-                          {new Date(b.createdAt).toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' })}
+                          {new Date(b.createdAt).toLocaleString(getFormatLocale(), { dateStyle: 'short', timeStyle: 'short' })}
                         </div>
                         <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
                           <span className="text-xs font-mono text-slate-400 truncate" title={b._id}>{b._id?.slice(-8)}</span>
@@ -1418,7 +1421,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                               setTimeout(() => setCopiedBroadcastId(null), 2000);
                             }}
                             className="p-0.5 text-slate-300 hover:text-blue-500 transition-colors flex-shrink-0"
-                            title="העתק ID מלא"
+                            title={t('detail.copyFullId')}
                           >
                             {copiedBroadcastId === b._id ? <Check size={11} className="text-emerald-500" /> : <Copy size={11} />}
                           </button>
@@ -1426,7 +1429,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                         <div className="min-w-0">
                           {b.is_template ? (
                             <div className="flex items-start gap-2 flex-wrap">
-                              <span className="px-2 py-0.5 bg-purple-100 text-purple-700 rounded-md text-xs font-black flex-shrink-0">תבנית</span>
+                              <span className="px-2 py-0.5 bg-purple-100 text-purple-700 rounded-md text-xs font-black flex-shrink-0">{t('allBroadcasts.templateBadge')}</span>
                               <span className="text-sm font-bold text-slate-800 break-words">{b.template_name}</span>
                             </div>
                           ) : (
@@ -1441,39 +1444,39 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                           {b.scheduled_at
                             ? (
                               <div className="flex flex-col gap-0.5">
-                                <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-md text-xs font-black w-fit">מתוזמן</span>
+                                <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-md text-xs font-black w-fit">{t('allBroadcasts.scheduledBadge')}</span>
                                 <span className="text-xs font-semibold text-blue-600 whitespace-nowrap">
-                                  {new Date(b.scheduled_at).toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' })}
+                                  {new Date(b.scheduled_at).toLocaleString(getFormatLocale(), { dateStyle: 'short', timeStyle: 'short' })}
                                 </span>
                               </div>
                             )
-                            : <span className="px-2 py-0.5 bg-slate-100 text-slate-500 rounded-md text-xs font-semibold">מיידי</span>
+                            : <span className="px-2 py-0.5 bg-slate-100 text-slate-500 rounded-md text-xs font-semibold">{t('allBroadcasts.immediateBadge')}</span>
                           }
                         </span>
                         <span>
 
-                                                  {b.status === 'cancelled' && <span className="px-2 py-0.5 bg-red-100 text-red-600 rounded-md text-xs font-black">בוטל</span>}
-                          {b.status === 'completed' && <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded-md text-xs font-black">הושלם</span>}
-                          {isStopped && <span className="px-2 py-0.5 bg-orange-100 text-orange-700 rounded-md text-xs font-black">הופסק ({b.processed}/{b.total})</span>}
-                          {!isStopped && b.status === 'running' && <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-md text-xs font-black animate-pulse">רץ</span>}
-                          {!isStopped && b.status === 'queued' && b.processed === 0 && <span className="px-2 py-0.5 bg-slate-100 text-slate-500 rounded-md text-xs font-black">בתור</span>}
-                          {!isStopped && b.status === 'failed' && <span className="px-2 py-0.5 bg-red-100 text-red-700 rounded-md text-xs font-black">נכשל</span>}
-                          {b.status === 'scheduled' && <span className="px-2 py-0.5 bg-blue-50 text-blue-500 rounded-md text-xs font-semibold">ממתין</span>}
+                                                  {b.status === 'cancelled' && <span className="px-2 py-0.5 bg-red-100 text-red-600 rounded-md text-xs font-black">{t('allBroadcasts.statusCancelled')}</span>}
+                          {b.status === 'completed' && <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded-md text-xs font-black">{t('allBroadcasts.statusCompleted')}</span>}
+                          {isStopped && <span className="px-2 py-0.5 bg-orange-100 text-orange-700 rounded-md text-xs font-black">{t('allBroadcasts.statusStopped', { processed: b.processed, total: b.total })}</span>}
+                          {!isStopped && b.status === 'running' && <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-md text-xs font-black animate-pulse">{t('allBroadcasts.statusRunning')}</span>}
+                          {!isStopped && b.status === 'queued' && b.processed === 0 && <span className="px-2 py-0.5 bg-slate-100 text-slate-500 rounded-md text-xs font-black">{t('allBroadcasts.statusQueued')}</span>}
+                          {!isStopped && b.status === 'failed' && <span className="px-2 py-0.5 bg-red-100 text-red-700 rounded-md text-xs font-black">{t('allBroadcasts.statusFailed')}</span>}
+                          {b.status === 'scheduled' && <span className="px-2 py-0.5 bg-blue-50 text-blue-500 rounded-md text-xs font-semibold">{t('allBroadcasts.statusScheduled')}</span>}
                         </span>
                         {isStopped ? (
                           <button
                             onClick={(e) => resumeBroadcastById(b._id, b.group_name || selectedGroup.name, e)}
-                            title="המשך שליחה מהנקודה שנעצרה"
+                            title={t('detail.continueSendFromStoppedPoint')}
                             className="flex items-center gap-1 px-2 py-1 bg-orange-500 hover:bg-orange-600 text-white rounded-lg text-xs font-black transition-colors"
                           >
                             <RotateCcw size={12} />
-                            המשך
+                            {t('detail.continue')}
                           </button>
                         ) : b.status === 'scheduled' ? (
                           <button
                             onClick={(e) => cancelBroadcastHandler(e, b._id)}
                             disabled={cancellingBroadcastId === b._id}
-                            title="בטל שידור מתוזמן"
+                            title={t('detail.cancelScheduledBroadcast')}
                             className="p-1.5 rounded-lg text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors disabled:opacity-40"
                           >
                             {cancellingBroadcastId === b._id
@@ -1492,7 +1495,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                       (b.message?.toLowerCase().includes(historySearch.trim().toLowerCase())) ||
                       (b.template_name?.toLowerCase().includes(historySearch.trim().toLowerCase()))
                     ).length === 0 && (
-                      <div className="py-10 text-center text-slate-400 text-sm">לא נמצאו תוצאות עבור &ldquo;{historySearch}&rdquo;</div>
+                      <div className="py-10 text-center text-slate-400 text-sm">{t('allBroadcasts.noResultsFor', { query: historySearch })}</div>
                     )}
                   </div>
                 )
@@ -1507,16 +1510,16 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                 ) : removals.length === 0 ? (
                   <div className="py-24 bg-white border-2 border-dashed border-slate-200 rounded-[2.5rem] flex flex-col items-center justify-center gap-4 text-slate-300">
                     <Trash2 size={64} strokeWidth={1} />
-                    <p className="text-xl font-bold">לא בוצעו מחיקות בקבוצה זו</p>
+                    <p className="text-xl font-bold">{t('detail.removalsEmpty')}</p>
                   </div>
                 ) : (
                   <div className="bg-white border border-slate-100 rounded-2xl overflow-hidden shadow-sm">
                     <div className="grid grid-cols-[10rem_1.4fr_1.4fr_2fr_1fr] gap-3 px-6 py-3 bg-slate-50 border-b border-slate-100 text-xs font-bold text-slate-400 uppercase tracking-wide">
-                      <span>תאריך</span>
-                      <span>טלפון</span>
-                      <span>שם</span>
-                      <span>סיבת הסרה</span>
-                      <span>בוצע ע"י</span>
+                      <span>{t('detail.colDate')}</span>
+                      <span>{t('detail.colPhone')}</span>
+                      <span>{t('detail.colName')}</span>
+                      <span>{t('detail.colReason')}</span>
+                      <span>{t('detail.colDoneBy')}</span>
                     </div>
                     {(() => {
                       const rq = removalsSearch.trim().toLowerCase();
@@ -1534,11 +1537,11 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                       >
                         <div className="flex items-center gap-2 text-xs font-bold text-slate-600">
                           <Calendar size={13} className="text-slate-400" />
-                          {new Date(r.createdAt).toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' })}
+                          {new Date(r.createdAt).toLocaleString(getFormatLocale(), { dateStyle: 'short', timeStyle: 'short' })}
                         </div>
                         <p className="text-sm font-bold text-slate-900 truncate">{r.phone || <span className="text-slate-300 font-normal">—</span>}</p>
                         <p className="text-sm font-semibold text-slate-700 truncate">{r.full_name || r.whatsapp_name || <span className="text-slate-300 font-normal">—</span>}</p>
-                        <p className="text-sm text-slate-600 truncate" title={r.reason}>{r.reason || <span className="text-slate-300">ללא סיבה</span>}</p>
+                        <p className="text-sm text-slate-600 truncate" title={r.reason}>{r.reason || <span className="text-slate-300">{t('detail.noReason')}</span>}</p>
                         <p className="text-xs font-semibold text-slate-400 truncate">{r.removed_by || '—'}</p>
                       </div>
                     ))}
@@ -1549,7 +1552,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                       (r.reason?.toLowerCase().includes(removalsSearch.trim().toLowerCase())) ||
                       (r.removed_by?.toLowerCase().includes(removalsSearch.trim().toLowerCase()))
                     ).length === 0 && (
-                      <div className="py-10 text-center text-slate-400 text-sm">לא נמצאו תוצאות עבור &ldquo;{removalsSearch}&rdquo;</div>
+                      <div className="py-10 text-center text-slate-400 text-sm">{t('allBroadcasts.noResultsFor', { query: removalsSearch })}</div>
                     )}
                   </div>
                 )
@@ -1576,14 +1579,14 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
         <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col">
             <div className="flex items-center justify-between p-6 border-b border-slate-100">
-              <h2 className="text-xl font-black text-slate-900">הוסף אנשי קשר ל-{selectedGroup.name}</h2>
+              <h2 className="text-xl font-black text-slate-900">{t('addMembers.title', { groupName: selectedGroup.name })}</h2>
               <div className="flex items-center gap-2">
                 {can('contacts.import_excel') && (
                 <button
                   onClick={() => setImportModalOpen(true)}
                   className="flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-sm transition-colors"
                 >
-                  <Upload size={15} /> יבוא מאקסל
+                  <Upload size={15} /> {t('addMembers.importFromExcel')}
                 </button>
                 )}
                 <button onClick={() => setAddModalOpen(false)} className="p-2 text-slate-300 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-colors">
@@ -1599,7 +1602,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                 <input
                   value={contactSearch}
                   onChange={e => setContactSearch(e.target.value)}
-                  placeholder="חפש איש קשר קיים..."
+                  placeholder={t('addMembers.searchExisting')}
                   className="w-full ps-11 pe-4 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl text-sm outline-none focus:ring-4 focus:ring-blue-600/10 focus:border-blue-600"
                 />
               </div>
@@ -1610,7 +1613,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                     <div className="animate-spin w-7 h-7 border-4 border-slate-200 border-t-blue-500 rounded-full" />
                   </div>
                 ) : filteredAddable.length === 0 ? (
-                  <div className="py-10 text-center text-slate-400 text-sm font-semibold">אין אנשי קשר זמינים להוספה</div>
+                  <div className="py-10 text-center text-slate-400 text-sm font-semibold">{t('addMembers.noAvailableContacts')}</div>
                 ) : (
                   filteredAddable.map(c => {
                     const checked = selectedContactIds.has(c._id);
@@ -1637,7 +1640,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
 
               {/* Manual phones */}
               <div>
-                <label className="text-xs font-black text-slate-500 mb-2 block">או הוסף מספרי טלפון ידנית (מופרדים בפסיק או שורה חדשה):</label>
+                <label className="text-xs font-black text-slate-500 mb-2 block">{t('addMembers.orAddManually')}</label>
                 <textarea
                   value={manualPhones}
                   onChange={e => setManualPhones(e.target.value)}
@@ -1653,13 +1656,13 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
               <button
                 onClick={() => setAddModalOpen(false)}
                 className="px-5 py-2.5 text-slate-500 hover:text-slate-700 rounded-xl font-bold text-sm"
-              >ביטול</button>
+              >{t('addMembers.cancel')}</button>
               <button
                 onClick={submitAddMembers}
                 disabled={addingMembers || (selectedContactIds.size === 0 && !manualPhones.trim())}
                 className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-sm disabled:opacity-50"
               >
-                {addingMembers ? 'מוסיף...' : 'הוסף'}
+                {addingMembers ? t('addMembers.adding') : t('addMembers.add')}
               </button>
             </div>
           </div>
@@ -1671,7 +1674,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
         <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
             <div className="flex items-center justify-between p-6 border-b border-slate-100">
-              <h2 className="text-xl font-black text-slate-900">שלח הודעה ל-{selectedGroup.name}</h2>
+              <h2 className="text-xl font-black text-slate-900">{t('sendMessage.title', { groupName: selectedGroup.name })}</h2>
               <button onClick={() => setSendOpen(false)} className="p-2 text-slate-300 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-colors">
                 <X size={20} />
               </button>
@@ -1679,7 +1682,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
 
             <div className="p-6 flex-1 overflow-y-auto">
               <p className="text-sm font-semibold text-slate-500 mb-4">
-                ההודעה תישלח אל {selectedGroup.contacts.length} אנשי קשר. אנשי קשר שנמצאים ברשימת ההסרה יסוננו אוטומטית.
+                {t('sendMessage.willBeSentTo', { count: selectedGroup.contacts.length })}
               </p>
 
               {/* Exclude group selector */}
@@ -1694,19 +1697,19 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
               {sendBotsLoading ? (
                 <div className="mb-4 flex items-center gap-2 text-xs font-semibold text-slate-400">
                   <div className="animate-spin w-4 h-4 border-2 border-slate-200 border-t-blue-500 rounded-full" />
-                  טוען מספרים מחוברים...
+                  {t('sendMessage.loadingConnectedNumbers')}
                 </div>
               ) : sendBots.length === 0 ? (
                 <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs font-bold text-amber-700">
-                  ⚠️ לא נמצאו מספרים מחוברים עם endpoint מוגדר. ודא שהבוט מחובר ויש לו endpoint.
+                  {t('sendMessage.noConnectedNumbers')}
                 </div>
               ) : sendBots.length === 1 ? (
                 <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-xl text-xs font-bold text-green-700 flex items-center gap-2">
-                  <Phone size={14} /> ישלח מ: {sendBots[0].display_phone_number} ({sendBots[0].name})
+                  <Phone size={14} /> {t('sendMessage.willSendFrom', { phone: sendBots[0].display_phone_number, name: sendBots[0].name })}
                 </div>
               ) : (
                 <div className="mb-4">
-                  <label className="text-xs font-black text-slate-500 mb-2 block">בחר מספר שממנו תישלח ההודעה:</label>
+                  <label className="text-xs font-black text-slate-500 mb-2 block">{t('sendMessage.chooseSendNumber')}</label>
                   <div className="space-y-2">
                     {sendBots.map(bot => (
                       <label
@@ -1739,13 +1742,13 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
               {/* Template chooser */}
               <div className="mb-4">
                 <div className="flex items-center justify-between mb-2">
-                  <label className="text-xs font-black text-slate-500">הודעת תבנית (אופציונלי):</label>
+                  <label className="text-xs font-black text-slate-500">{t('sendMessage.templateMessageOptional')}</label>
                   {selectedTemplate && (
                     <button
                       onClick={() => { setSelectedTemplate(null); setSendPostSendModeOverride(null); setTemplateParams({}); }}
                       className="text-xs font-bold text-slate-400 hover:text-red-500 flex items-center gap-1"
                     >
-                      <X size={12} /> בטל תבנית
+                      <X size={12} /> {t('sendMessage.cancelTemplate')}
                     </button>
                   )}
                 </div>
@@ -1766,20 +1769,20 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                       const configuredMode = templatePostSendMode[templateName] || 'no_change';
                       return (
                         <div className="flex flex-wrap items-center gap-2 px-3 py-2 bg-indigo-50 border border-indigo-200 rounded-xl text-xs mb-3">
-                          <span className="font-black text-indigo-700 flex-shrink-0">לאחר שליחת התבנית לרשימה:</span>
+                          <span className="font-black text-indigo-700 flex-shrink-0">{t('sendMessage.afterSendingTemplate')}</span>
                           <select
                             value={sendPostSendModeOverride ?? '__default__'}
                             onChange={e => setSendPostSendModeOverride(e.target.value === '__default__' ? null : (e.target.value as 'no_change' | 'agent' | 'bot'))}
                             className="flex-1 min-w-[180px] px-2 py-1 bg-white border border-indigo-200 rounded-lg text-xs font-semibold text-indigo-700 outline-none focus:ring-2 focus:ring-indigo-400/30"
                           >
-                            <option value="__default__">ברירת מחדל של התבנית — {postSendModeLabel(configuredMode)}</option>
-                            <option value="agent">מעבר למצב נציג (לשידור זה בלבד)</option>
-                            <option value="bot">מעבר למצב בוט (לשידור זה בלבד)</option>
-                            <option value="no_change">ללא שינוי במצב (לשידור זה בלבד)</option>
+                            <option value="__default__">{t('sendMessage.templateDefaultOption', { mode: postSendModeLabel(configuredMode) })}</option>
+                            <option value="agent">{t('sendMessage.postSendAgentOverride')}</option>
+                            <option value="bot">{t('sendMessage.postSendBotOverride')}</option>
+                            <option value="no_change">{t('sendMessage.postSendNoChangeOverride')}</option>
                           </select>
                           {sendPostSendModeOverride && (
                             <span className="text-[10px] font-black text-amber-600 bg-amber-100 px-2 py-0.5 rounded-full flex-shrink-0">
-                              שינוי חד-פעמי: {postSendModeLabel(sendPostSendModeOverride)}
+                              {t('sendMessage.oneTimeChange', { mode: postSendModeLabel(sendPostSendModeOverride) })}
                             </span>
                           )}
                         </div>
@@ -1807,7 +1810,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                       return (
                         <div className="mt-3">
                           <label className="text-xs font-bold text-slate-500 block mb-1">
-                            {templateParams.header.type === 'image' ? '🖼️ תמונה' : templateParams.header.type === 'video' ? '🎥 וידאו' : '📄 מסמך'}
+                            {templateParams.header.type === 'image' ? t('sendMessage.mediaHeaderImage') : templateParams.header.type === 'video' ? t('sendMessage.mediaHeaderVideo') : t('sendMessage.mediaHeaderDocument')}
                           </label>
                           <TemplateHeaderMediaField
                             mediaType={templateParams.header.type}
@@ -1834,33 +1837,33 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                     onClick={() => { setShowTemplatePicker(true); if (templates.length === 0) fetchTemplates(); fetchTemplateDefaultMedia(); }}
                     className="w-full px-4 py-3 bg-purple-50 hover:bg-purple-100 border-2 border-dashed border-purple-200 text-purple-700 rounded-2xl text-sm font-bold flex items-center justify-center gap-2 transition-colors"
                   >
-                    <FileText size={16} /> בחר תבנית הודעה
+                    <FileText size={16} /> {t('sendMessage.chooseTemplateButton')}
                   </button>
                 )}
               </div>
 
               {!selectedTemplate && (
                 <div>
-                  <label className="text-xs font-black text-slate-500 mb-2 block">או הקלד הודעת טקסט חופשית:</label>
+                  <label className="text-xs font-black text-slate-500 mb-2 block">{t('sendMessage.orTypeFreeText')}</label>
                   <PersonalizedTextarea
                     value={sendText}
                     onChange={setSendText}
                     contactFields={contactFields}
                     rows={6}
-                    placeholder={mediaType ? 'כיתוב למדיה (אופציונלי)...' : 'הקלד את ההודעה כאן...'}
+                    placeholder={mediaType ? t('sendMessage.mediaCaptionPlaceholder') : t('sendMessage.textPlaceholder')}
                     className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm outline-none focus:ring-4 focus:ring-green-600/10 focus:border-green-600 resize-none"
                   />
 
                   {/* Media attachment */}
                   <div className="mt-4">
                     <div className="flex items-center justify-between mb-2">
-                      <label className="text-xs font-black text-slate-500">צירוף מדיה (אופציונלי):</label>
+                      <label className="text-xs font-black text-slate-500">{t('sendMessage.attachMediaOptional')}</label>
                       {(mediaType || mediaUrl) && (
                         <button
                           onClick={() => { setMediaType(null); setMediaUrl(''); setMediaFilename(''); }}
                           className="text-xs font-bold text-slate-400 hover:text-red-500 flex items-center gap-1"
                         >
-                          <X size={12} /> הסר מדיה
+                          <X size={12} /> {t('sendMessage.removeMedia')}
                         </button>
                       )}
                     </div>
@@ -1871,26 +1874,26 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                           onClick={() => setMediaType('image')}
                           className="flex flex-col items-center gap-1 p-3 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-2xl text-blue-700 font-bold text-xs transition-colors"
                         >
-                          <ImageIcon size={18} /> תמונה
+                          <ImageIcon size={18} /> {t('sendMessage.image')}
                         </button>
                         <button
                           onClick={() => setMediaType('video')}
                           className="flex flex-col items-center gap-1 p-3 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-2xl text-rose-700 font-bold text-xs transition-colors"
                         >
-                          <Video size={18} /> וידאו
+                          <Video size={18} /> {t('sendMessage.video')}
                         </button>
                         <button
                           onClick={() => setMediaType('document')}
                           className="flex flex-col items-center gap-1 p-3 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-2xl text-amber-700 font-bold text-xs transition-colors"
                         >
-                          <FileLucide size={18} /> מסמך
+                          <FileLucide size={18} /> {t('sendMessage.document')}
                         </button>
                       </div>
                     ) : (
                       <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl">
                         <div className="flex items-center gap-2 mb-3 text-xs font-black text-slate-600">
                           <Paperclip size={14} />
-                          {mediaType === 'image' ? 'העלה תמונה' : mediaType === 'video' ? 'העלה וידאו' : 'העלה מסמך'}
+                          {mediaType === 'image' ? t('sendMessage.uploadImage') : mediaType === 'video' ? t('sendMessage.uploadVideo') : t('sendMessage.uploadDocument')}
                         </div>
                         <FileUploader
                           value={mediaUrl}
@@ -1903,7 +1906,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                           }}
                           accept={mediaType === 'image' ? 'image/*' : mediaType === 'video' ? 'video/*' : '*/*'}
                           mediaType={mediaType}
-                          label={mediaType === 'image' ? 'תמונה' : mediaType === 'video' ? 'וידאו' : 'מסמך'}
+                          label={mediaType === 'image' ? t('sendMessage.image') : mediaType === 'video' ? t('sendMessage.video') : t('sendMessage.document')}
                           token={token || ''}
                         />
                         {mediaUrl && (
@@ -1917,9 +1920,9 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
 
               {sendResult && (
                 <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded-2xl text-sm">
-                  <p className="font-black text-green-800 mb-1">השליחה הושלמה</p>
+                  <p className="font-black text-green-800 mb-1">{t('sendMessage.sendComplete')}</p>
                   <p className="font-semibold text-slate-600">
-                    נשלחו: {sendResult.sent} · נכשלו: {sendResult.failed} · דולגו: {sendResult.skipped} · סה"כ: {sendResult.total}
+                    {t('sendMessage.sendSummary', { sent: sendResult.sent, failed: sendResult.failed, skipped: sendResult.skipped, total: sendResult.total })}
                   </p>
                 </div>
               )}
@@ -1930,14 +1933,14 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                 <button
                   onClick={() => setSendOpen(false)}
                   className="px-5 py-2.5 text-slate-500 hover:text-slate-700 rounded-xl font-bold text-sm"
-                >סגור</button>
+                >{t('sendMessage.close')}</button>
                 <button
                   onClick={openRecipientsPreview}
                   disabled={selectedGroup.contacts.length === 0}
                   className="flex items-center gap-2 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-sm transition-colors disabled:opacity-50"
-                  title="יצוא רשימת נמענים לפני שליחה"
+                  title={t('sendMessage.exportRecipientsListTitle')}
                 >
-                  <List size={15} /> יצוא רשימה
+                  <List size={15} /> {t('sendMessage.exportRecipientsList')}
                 </button>
               </div>
               <div className="flex items-center gap-2">
@@ -1953,7 +1956,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                   disabled={sending || (!selectedTemplate && !mediaUrl && !sendText.trim()) || (sendBots.length > 1 && !selectedSendBotId) || (!!selectedTemplate && getMissingTemplateVars(selectedTemplate, templateParams).length > 0)}
                   className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-sm disabled:opacity-50"
                 >
-                  <Calendar size={15} /> שלח בתזמון
+                  <Calendar size={15} /> {t('sendMessage.sendScheduled')}
                 </button>
                 <button
                   onClick={() => submitSend()}
@@ -1961,7 +1964,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                   className="flex items-center gap-2 px-6 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-xl font-bold text-sm disabled:opacity-50"
                 >
                   <Send size={15} />
-                  {sending ? 'מתחיל שליחה...' : 'שלח במיידי'}
+                  {sending ? t('sendMessage.sendImmediateStarting') : t('sendMessage.sendImmediate')}
                 </button>
               </div>
             </div>
@@ -1977,13 +1980,13 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
               <div>
                 <h2 className="text-xl font-black text-slate-900 flex items-center gap-2">
                   <List size={20} className="text-slate-500" />
-                  רשימת נמענים — {selectedGroup.name}
+                  {t('recipientsPreview.title', { groupName: selectedGroup.name })}
                 </h2>
                 {!recipientsLoading && (
                   <p className="text-sm font-semibold text-slate-400 mt-0.5">
-                    {recipientsPreviewList.length} אנשי קשר יקבלו את ההודעה
+                    {t('recipientsPreview.willReceive', { count: recipientsPreviewList.length })}
                     {selectedGroup.contacts.length - recipientsPreviewList.length > 0 && (
-                      <span className="text-red-400"> · {selectedGroup.contacts.length - recipientsPreviewList.length} יוחרגו (חסימה / קבוצת החרגה)</span>
+                      <span className="text-red-400">{t('recipientsPreview.excludedCount', { count: selectedGroup.contacts.length - recipientsPreviewList.length })}</span>
                     )}
                   </p>
                 )}
@@ -2004,7 +2007,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
               ) : recipientsPreviewList.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-20 text-slate-300">
                   <Users size={48} strokeWidth={1} />
-                  <p className="text-lg font-bold mt-4">אין נמענים — כולם הוחרגו</p>
+                  <p className="text-lg font-bold mt-4">{t('recipientsPreview.noRecipients')}</p>
                 </div>
               ) : (
                 <div className="overflow-x-auto">
@@ -2012,10 +2015,10 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                     <thead className="bg-slate-50 border-b border-slate-100 sticky top-0">
                       <tr>
                         <th className="px-5 py-3 text-start text-xs font-bold text-slate-400 uppercase tracking-wide">#</th>
-                        <th className="px-5 py-3 text-start text-xs font-bold text-slate-400 uppercase tracking-wide">טלפון</th>
-                        <th className="px-5 py-3 text-start text-xs font-bold text-slate-400 uppercase tracking-wide">שם מלא</th>
-                        <th className="px-5 py-3 text-start text-xs font-bold text-slate-400 uppercase tracking-wide">שם וואטסאפ</th>
-                        <th className="px-5 py-3 text-start text-xs font-bold text-slate-400 uppercase tracking-wide">מייל</th>
+                        <th className="px-5 py-3 text-start text-xs font-bold text-slate-400 uppercase tracking-wide">{t('recipientsPreview.colPhone')}</th>
+                        <th className="px-5 py-3 text-start text-xs font-bold text-slate-400 uppercase tracking-wide">{t('recipientsPreview.colFullName')}</th>
+                        <th className="px-5 py-3 text-start text-xs font-bold text-slate-400 uppercase tracking-wide">{t('recipientsPreview.colWhatsappName')}</th>
+                        <th className="px-5 py-3 text-start text-xs font-bold text-slate-400 uppercase tracking-wide">{t('recipientsPreview.colEmail')}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -2036,31 +2039,31 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
 
             <div className="flex items-center justify-between gap-3 p-6 border-t border-slate-100">
               <p className="text-xs font-semibold text-slate-400">
-                הרשימה כוללת החרגת חסומים{excludeGroupId ? ` ו-"${regularGroups.find(g => g._id === excludeGroupId)?.name}"` : ''}.
-                ניתן להדביק ישירות ל-Excel.
+                {t('recipientsPreview.includesExclusionNote', { groupNote: excludeGroupId ? t('recipientsPreview.excludedGroupNote', { groupName: regularGroups.find(g => g._id === excludeGroupId)?.name }) : '' })}
+                {' '}{t('recipientsPreview.pasteToExcelNote')}
               </p>
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => setRecipientsPreviewOpen(false)}
                   className="px-5 py-2.5 text-slate-500 hover:text-slate-700 rounded-xl font-bold text-sm"
-                >סגור</button>
+                >{t('recipientsPreview.close')}</button>
                 <button
                   onClick={copyRecipientsToExcel}
                   disabled={recipientsPreviewList.length === 0}
                   className="flex items-center gap-2 px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-sm transition-colors disabled:opacity-50"
-                  title="העתק לאקסל (TSV)"
+                  title={t('recipientsPreview.copyTsvTitle')}
                 >
                   {copiedRecipients
-                    ? <><Check size={15} className="text-emerald-600" /> הועתק!</>
-                    : <><Copy size={15} /> העתק</>}
+                    ? <><Check size={15} className="text-emerald-600" /> {t('recipientsPreview.copied')}</>
+                    : <><Copy size={15} /> {t('recipientsPreview.copy')}</>}
                 </button>
                 <button
                   onClick={downloadRecipientsAsExcel}
                   disabled={recipientsPreviewList.length === 0}
                   className="flex items-center gap-2 px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-sm transition-colors disabled:opacity-50"
-                  title="הורד קובץ CSV לאקסל"
+                  title={t('recipientsPreview.downloadExcelTitle')}
                 >
-                  <Download size={15} /> הורד Excel ({recipientsPreviewList.length})
+                  <Download size={15} /> {t('recipientsPreview.downloadExcel', { count: recipientsPreviewList.length })}
                 </button>
               </div>
             </div>
@@ -2073,13 +2076,13 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[70] flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm">
             <div className="flex items-center justify-between p-6 border-b border-slate-100">
-              <h2 className="text-lg font-black text-slate-900 flex items-center gap-2"><Calendar size={18} /> שלח בתזמון</h2>
+              <h2 className="text-lg font-black text-slate-900 flex items-center gap-2"><Calendar size={18} /> {t('schedule.title')}</h2>
               <button onClick={() => setScheduleDialogOpen(false)} className="p-2 text-slate-300 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-colors">
                 <X size={20} />
               </button>
             </div>
             <div className="p-6">
-              <label className="text-xs font-black text-slate-500 mb-2 block">בחר תאריך ושעה לשליחה:</label>
+              <label className="text-xs font-black text-slate-500 mb-2 block">{t('schedule.chooseDateTime')}</label>
               <input
                 type="datetime-local"
                 value={scheduleDateTime}
@@ -2093,7 +2096,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
               />
               {scheduleDateTime && (
                 <p className="mt-2 text-xs font-semibold text-slate-500">
-                  ההודעה תישלח ב: {new Date(scheduleDateTime).toLocaleString('he-IL')}
+                  {t('schedule.willBeSentAt', { dateTime: new Date(scheduleDateTime).toLocaleString(getFormatLocale()) })}
                 </p>
               )}
             </div>
@@ -2101,13 +2104,13 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
               <button
                 onClick={() => setScheduleDialogOpen(false)}
                 className="px-5 py-2.5 text-slate-500 hover:text-slate-700 rounded-xl font-bold text-sm"
-              >ביטול</button>
+              >{t('schedule.cancel')}</button>
               <button
                 onClick={() => {
                   if (!scheduleDateTime) return;
                   const ms = new Date(scheduleDateTime).getTime();
                   if (isNaN(ms) || ms <= Date.now()) {
-                    alert('יש לבחור תאריך ושעה עתידיים');
+                    alert(t('alerts.futureDateTimeRequired'));
                     return;
                   }
                   setScheduleDialogOpen(false);
@@ -2116,7 +2119,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                 disabled={!scheduleDateTime || sending}
                 className="flex items-center gap-2 px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-sm disabled:opacity-50"
               >
-                <Calendar size={15} /> אישור — תזמן שליחה
+                <Calendar size={15} /> {t('schedule.confirm')}
               </button>
             </div>
           </div>
@@ -2128,7 +2131,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col">
             <div className="flex items-center justify-between p-6 border-b border-slate-100">
-              <h2 className="text-xl font-black text-slate-900">בחר תבנית</h2>
+              <h2 className="text-xl font-black text-slate-900">{t('templatePicker.title')}</h2>
               <button onClick={() => setShowTemplatePicker(false)} className="p-2 text-slate-300 hover:text-slate-600 hover:bg-slate-100 rounded-xl">
                 <X size={20} />
               </button>
@@ -2139,7 +2142,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                 <input
                   value={templateSearch}
                   onChange={e => setTemplateSearch(e.target.value)}
-                  placeholder="חפש תבנית..."
+                  placeholder={t('templatePicker.searchPlaceholder')}
                   className="w-full ps-11 pe-4 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl text-sm outline-none focus:ring-4 focus:ring-purple-600/10 focus:border-purple-600"
                 />
               </div>
@@ -2149,39 +2152,39 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                   <div className="animate-spin w-8 h-8 border-4 border-slate-200 border-t-purple-500 rounded-full" />
                 </div>
               ) : templates.length === 0 ? (
-                <div className="text-center py-10 text-slate-400 text-sm font-semibold">לא נמצאו תבניות</div>
+                <div className="text-center py-10 text-slate-400 text-sm font-semibold">{t('templatePicker.noTemplatesFound')}</div>
               ) : (
                 <div className="space-y-2">
                   {templates
-                    .filter((t: any) => {
+                    .filter((tpl: any) => {
                       const q = templateSearch.trim().toLowerCase();
                       if (!q) return true;
-                      const name = (t.name || t.elementName || t.template_name || '').toLowerCase();
+                      const name = (tpl.name || tpl.elementName || tpl.template_name || '').toLowerCase();
                       return name.includes(q);
                     })
-                    .map((t: any, i: number) => {
-                      const name = t.name || t.elementName || t.template_name || `template_${i}`;
-                      const body = (t.components || []).find((c: any) => c.type === 'BODY');
+                    .map((tpl: any, i: number) => {
+                      const name = tpl.name || tpl.elementName || tpl.template_name || `template_${i}`;
+                      const body = (tpl.components || []).find((c: any) => c.type === 'BODY');
                       return (
                         <button
                           key={`${name}-${i}`}
-                          onClick={() => pickTemplate(t)}
+                          onClick={() => pickTemplate(tpl)}
                           className="w-full text-start p-4 bg-slate-50 hover:bg-purple-50 border border-slate-200 hover:border-purple-300 rounded-2xl transition-colors"
                         >
                           <div className="flex items-center gap-2 mb-1">
                             <FileText size={14} className="text-purple-500" />
                             <span className="text-sm font-black text-slate-900">{name}</span>
-                            <span className="text-xs font-bold text-slate-400">({t.language || 'he'})</span>
-                            {t.status && (
+                            <span className="text-xs font-bold text-slate-400">({tpl.language || 'he'})</span>
+                            {tpl.status && (
                               <span className={`text-xs font-bold px-2 py-0.5 rounded ${
-                                t.status === 'APPROVED' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
-                              }`}>{t.status}</span>
+                                tpl.status === 'APPROVED' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
+                              }`}>{tpl.status}</span>
                             )}
                           </div>
                           {(templatePostSendMode[name] === 'agent' || templatePostSendMode[name] === 'bot') && (
                             <div className="mb-1">
                               <span className={`text-[10px] font-black px-1.5 py-0.5 rounded-full ${templatePostSendMode[name] === 'agent' ? 'bg-purple-100 text-purple-700' : 'bg-sky-100 text-sky-700'}`}>
-                                {templatePostSendMode[name] === 'agent' ? '→ מעבר למצב נציג' : '→ מעבר למצב בוט'}
+                                {templatePostSendMode[name] === 'agent' ? t('templatePicker.postSendAgentArrow') : t('templatePicker.postSendBotArrow')}
                               </span>
                             </div>
                           )}
@@ -2204,9 +2207,9 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col">
             <div className="flex items-center justify-between p-6 border-b border-slate-100">
               <div>
-                <h2 className="text-xl font-black text-slate-900">פרטי שליחה</h2>
+                <h2 className="text-xl font-black text-slate-900">{t('broadcastDetail.title')}</h2>
                 <p className="text-xs font-bold text-slate-400 mt-1">
-                  {new Date(selectedBroadcast.createdAt).toLocaleString('he-IL')}
+                  {new Date(selectedBroadcast.createdAt).toLocaleString(getFormatLocale())}
                 </p>
               </div>
               <button onClick={() => setSelectedBroadcast(null)} className="p-2 text-slate-300 hover:text-slate-600 hover:bg-slate-100 rounded-xl">
@@ -2218,26 +2221,26 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
               {/* Summary cards */}
               <div className="grid grid-cols-4 gap-3 mb-6">
                 <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl text-center">
-                  <p className="text-xs font-bold text-slate-400 mb-1">סה"כ</p>
+                  <p className="text-xs font-bold text-slate-400 mb-1">{t('broadcastDetail.total')}</p>
                   <p className="text-2xl font-black text-slate-900">{selectedBroadcast.total}</p>
                 </div>
                 <div className="p-4 bg-green-50 border border-green-100 rounded-2xl text-center">
-                  <p className="text-xs font-bold text-green-500 mb-1">נשלחו</p>
+                  <p className="text-xs font-bold text-green-500 mb-1">{t('broadcastDetail.sent')}</p>
                   <p className="text-2xl font-black text-green-700">{selectedBroadcast.sent}</p>
                 </div>
                 <div className="p-4 bg-red-50 border border-red-100 rounded-2xl text-center">
-                  <p className="text-xs font-bold text-red-500 mb-1">נכשלו</p>
+                  <p className="text-xs font-bold text-red-500 mb-1">{t('broadcastDetail.failed')}</p>
                   <p className="text-2xl font-black text-red-700">{selectedBroadcast.failed}</p>
                 </div>
                 <div className="p-4 bg-amber-50 border border-amber-100 rounded-2xl text-center">
-                  <p className="text-xs font-bold text-amber-500 mb-1">דולגו</p>
+                  <p className="text-xs font-bold text-amber-500 mb-1">{t('broadcastDetail.skipped')}</p>
                   <p className="text-2xl font-black text-amber-700">{selectedBroadcast.skipped}</p>
                 </div>
               </div>
 
               {/* Content */}
               <div className="mb-6">
-                <p className="text-xs font-black text-slate-500 mb-2">תוכן ההודעה:</p>
+                <p className="text-xs font-black text-slate-500 mb-2">{t('broadcastDetail.messageContent')}</p>
                 {selectedBroadcast.is_template ? (
                   <div className="p-4 bg-purple-50 border border-purple-200 rounded-2xl">
                     <div className="flex items-center gap-2 mb-2">
@@ -2247,7 +2250,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                     </div>
                     {selectedBroadcast.template_data?.params?.body?.length > 0 && (
                       <div className="text-xs text-slate-600">
-                        <p className="font-bold mb-1">פרמטרים:</p>
+                        <p className="font-bold mb-1">{t('broadcastDetail.params')}</p>
                         <ul className="list-disc ps-4">
                           {selectedBroadcast.template_data.params.body.map((p: string, i: number) => (
                             <li key={i}>{`{{${i + 1}}}: ${p || '—'}`}</li>
@@ -2257,7 +2260,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                     )}
                     {selectedBroadcast.template_data?.params?.header?.url && (
                       <p className="text-xs text-slate-600 mt-2 break-all">
-                        <span className="font-bold">מדיה:</span> {selectedBroadcast.template_data.params.header.url}
+                        <span className="font-bold">{t('broadcastDetail.media')}</span> {selectedBroadcast.template_data.params.header.url}
                       </p>
                     )}
                   </div>
@@ -2271,7 +2274,7 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
               {/* Recipients */}
               {selectedBroadcast.recipients?.length > 0 && (
                 <div>
-                  <p className="text-xs font-black text-slate-500 mb-2">נמענים ({selectedBroadcast.recipients.length}):</p>
+                  <p className="text-xs font-black text-slate-500 mb-2">{t('broadcastDetail.recipients', { count: selectedBroadcast.recipients.length })}</p>
                   <div className="border border-slate-100 rounded-2xl overflow-hidden max-h-72 overflow-y-auto">
                     {selectedBroadcast.recipients.map((r: any, i: number) => (
                       <div key={i} className={`flex items-center justify-between gap-3 px-4 py-2 text-sm ${i !== selectedBroadcast.recipients.length - 1 ? 'border-b border-slate-50' : ''}`}>
@@ -2283,8 +2286,8 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                           {r.name && <span className="text-slate-400 text-xs" dir="ltr">{r.phone}</span>}
                         </div>
                         <div className="flex items-center gap-2">
-                          {r.reason === 'blocklist' && <span className="text-xs font-bold text-amber-600">ברשימת הסרה</span>}
-                          {r.reason === 'invalid_phone' && <span className="text-xs font-bold text-slate-400">טלפון לא תקין</span>}
+                          {r.reason === 'blocklist' && <span className="text-xs font-bold text-amber-600">{t('broadcastDetail.reasonBlocklist')}</span>}
+                          {r.reason === 'invalid_phone' && <span className="text-xs font-bold text-slate-400">{t('broadcastDetail.reasonInvalidPhone')}</span>}
                           {r.error && <span className="text-xs text-red-500 truncate max-w-xs" title={r.error}>{r.error}</span>}
                         </div>
                       </div>
@@ -2307,10 +2310,10 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                   <AlertTriangle size={22} />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <h2 className="text-lg font-black text-slate-900">האם אתה בטוח שברצונך להסיר?</h2>
+                  <h2 className="text-lg font-black text-slate-900">{t('removeConfirm.title')}</h2>
                   <p className="text-sm font-semibold text-slate-500 mt-1 truncate">
                     {removeTarget.full_name || removeTarget.whatsapp_name || removeTarget.phone}
-                    {selectedGroup.is_blocklist ? ' מרשימת ההסרה' : ` מהקבוצה "${selectedGroup.name}"`}
+                    {selectedGroup.is_blocklist ? t('removeConfirm.fromBlocklist') : t('removeConfirm.fromGroupNamed', { groupName: selectedGroup.name })}
                   </p>
                 </div>
               </div> 
@@ -2319,23 +2322,23 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
               {selectedGroup.is_blocklist ? (
                 <>
                   <label className="text-xs font-black text-slate-500 mb-2 block">
-                    סיבת ההסרה <span className="text-red-500">*</span>
+                    {t('removeConfirm.reasonLabel')} <span className="text-red-500">*</span>
                   </label>
                   <textarea
                     value={removeReason}
                     onChange={e => setRemoveReason(e.target.value)}
-                    placeholder="הסבר קצר על סיבת ההסרה..."
+                    placeholder={t('removeConfirm.reasonPlaceholder')}
                     rows={3}
                     autoFocus
                     className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl text-sm outline-none focus:ring-4 focus:ring-red-500/10 focus:border-red-400 resize-none"
                   />
                   {!removeReason.trim() && (
-                    <p className="text-xs font-bold text-red-500 mt-2">יש להזין סיבת הסרה לפני אישור</p>
+                    <p className="text-xs font-bold text-red-500 mt-2">{t('removeConfirm.reasonRequired')}</p>
                   )}
                 </>
               ) : (
                 <p className="text-sm text-slate-600 font-semibold">
-                  פעולה זו תסיר את איש הקשר מהקבוצה. ניתן להוסיף אותו שוב בכל עת.
+                  {t('removeConfirm.actionHint')}
                 </p>
               )}
             </div>
@@ -2344,13 +2347,13 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
                 onClick={closeRemoveMember}
                 disabled={removing}
                 className="px-5 py-2.5 text-slate-500 hover:text-slate-700 rounded-xl font-bold text-sm disabled:opacity-50"
-              >ביטול</button>
+              >{t('removeConfirm.cancel')}</button>
               <button
                 onClick={confirmRemoveMember}
                 disabled={removing || (selectedGroup.is_blocklist && !removeReason.trim())}
                 className="px-6 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold text-sm disabled:opacity-50"
               >
-                {removing ? 'מסיר...' : 'הסר'}
+                {removing ? t('removeConfirm.removing') : t('removeConfirm.remove')}
               </button>
             </div>
           </div>
@@ -2369,13 +2372,13 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
               <Send size={18} />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-black text-slate-900 truncate">שולח ל-{b.groupName}</p>
+              <p className="text-sm font-black text-slate-900 truncate">{t('toasts.sendingTo', { groupName: b.groupName })}</p>
               <p className="text-xs font-bold text-slate-400">
                 {b.status === 'queued' && b.queuedBehind
-                  ? `⏳ ממתין בתור (מיקום ${b.queuePosition})`
+                  ? t('toasts.queuedAtPosition', { position: b.queuePosition })
                   : b.status === 'queued'
-                  ? 'מתחיל...'
-                  : `${b.processed} מתוך ${b.total}`}
+                  ? t('toasts.starting')
+                  : t('toasts.processedOfTotal', { processed: b.processed, total: b.total })}
               </p>
             </div>
             <div className="animate-spin w-5 h-5 border-2 border-blue-200 border-t-blue-500 rounded-full flex-shrink-0" />
@@ -2406,16 +2409,16 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
               <CheckCircle2 size={20} />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-black text-slate-900">השליחה ל-{ct.groupName} הושלמה</p>
+              <p className="text-sm font-black text-slate-900">{t('toasts.sendToCompleted', { groupName: ct.groupName })}</p>
               <p className="text-xs font-semibold text-slate-500 mt-1">
-                נשלחו בהצלחה: <span className="text-green-600 font-black">{ct.sent}</span>
-                {ct.failed > 0 && <> · נכשלו: <span className="text-red-500 font-black">{ct.failed}</span></>}
-                {ct.skipped > 0 && <> · דולגו: <span className="text-amber-500 font-black">{ct.skipped}</span></>}
+                {t('toasts.sentSuccessfully', { count: ct.sent })}
+                {ct.failed > 0 && <>{t('toasts.failedCount', { count: ct.failed })}</>}
+                {ct.skipped > 0 && <>{t('toasts.skippedCount', { count: ct.skipped })}</>}
               </p>
-              <p className="text-xs font-bold text-slate-400 mt-0.5">סה"כ {ct.total} אנשי קשר</p>
+              <p className="text-xs font-bold text-slate-400 mt-0.5">{t('toasts.totalContacts', { count: ct.total })}</p>
               {ct.excludedCount > 0 && (
                 <p className="text-xs font-semibold text-amber-600 mt-1">
-                  ⛔ הוחרגו {ct.excludedCount} אנשי קשר בשל הגדרת קבוצה מוחרגת
+                  {t('toasts.excludedContacts', { count: ct.excludedCount })}
                 </p>
               )}
             </div>

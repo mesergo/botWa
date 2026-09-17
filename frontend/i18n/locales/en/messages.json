@@ -142,6 +142,29 @@
       "blocklist": "On the removal list",
       "invalidPhone": "Invalid phone number",
       "error": "Error: {{error}}"
-    }
-  }
+    }  },
+  "page": {
+    "title": "Send Messages",
+    "subtitle": "Combine contacts, groups and phone numbers into one send — no duplicates",
+    "tabs": {
+      "send": "Send Messages"
+    },
+    "progress": {
+      "sendingTitle": "Sending message",
+      "scheduled": "Message scheduled to be sent",
+      "queuedBehind": "Waiting in queue (position {{position}})...",
+      "starting": "Starting send...",
+      "processed": "{{processed}}/{{total}} processed"
+    },
+    "completion": {
+      "completed": "Send completed",
+      "failed": "Send failed",
+      "summary": "Sent {{sent}} · Failed {{failed}} · Skipped {{skipped}}",
+      "recipients": "Total {{count}} recipients",
+      "excluded": "⛔ Excluded {{count}} contacts due to excluded group setting"
+    },
+    "errors": {
+      "sendFailed": "Error sending message",
+      "networkError": "Network error: {{msg}}"
+    }  }
 }

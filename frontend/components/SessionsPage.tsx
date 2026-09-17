@@ -90,8 +90,8 @@ const WhatsAppIcon = ({ size = 12, className = '' }: { size?: number; className?
 
 const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack, onLogout, onOpenContacts, onOpenGroups, onOpenSendMessages, onOpenAdminPanel,onOpenSmsIn, onOpenSettings, onOpenSubUsers, onStopImpersonation, onSwitchAccount, onUpdateAvailability, onGoHome, initialPhone, initialBotPhone,onOpenInternalData }) => {
   // UI direction follows the active language (he -> rtl, en -> ltr).
-  const { i18n } = useTranslation();
-  const isRtl = i18n.dir() === 'rtl';
+  const { i18n, t } = useTranslation('sessions');
+  // Layout is pinned to RTL always regardless of the selected language.
 
   // Contacts panel state
   const [contacts, setContacts] = useState<Contact[]>([]);
@@ -268,9 +268,9 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
       });
       if (r.ok) return { ok: true };
       const data = await r.json().catch(() => ({}));
-      return { ok: false, message: data.message || 'שגיאה ביצירת איש קשר' };
+      return { ok: false, message: data.message || t('errors.createContactFailed') };
     } catch {
-      return { ok: false, message: 'שגיאת רשת' };
+      return { ok: false, message: t('errors.network') };
     }
   }, [token]);
 
@@ -291,9 +291,9 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
       });
       if (r.ok) return { ok: true };
       const data = await r.json().catch(() => ({}));
-      return { ok: false, message: data.message || 'שגיאה ביצירת איש קשר' };
+      return { ok: false, message: data.message || t('errors.createContactFailed') };
     } catch {
-      return { ok: false, message: 'שגיאת רשת' };
+      return { ok: false, message: t('errors.network') };
     }
   }, [token]);
 
@@ -506,7 +506,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
       });
       if (!r.ok) {
         const err = await r.json().catch(() => ({}));
-        alert(err.error || 'לא ניתן לבצע פעולה על התזכורת');
+        alert(err.error || t('errors.reminderActionFailed'));
         return;
       }
 
@@ -546,7 +546,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
       fetchContacts();
     } catch (e) {
       console.error('Failed to apply reminder action', e);
-      alert('שגיאת רשת בביצוע פעולה');
+      alert(t('errors.reminderActionNetwork'));
     } finally {
       setNotifActionLoading(prev => ({ ...prev, [notif._id]: null }));
     }
@@ -647,9 +647,9 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
   }, [phoneSessions]);
 
   const formatDate = (dateStr: string | null) => {
-    if (!dateStr) return 'לא ידוע';
+    if (!dateStr) return t('dateLabels.unknown');
     const d = new Date(dateStr);
-    if (isNaN(d.getTime())) return 'לא ידוע';
+    if (isNaN(d.getTime())) return t('dateLabels.unknown');
     return d.toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
   };
 
@@ -683,10 +683,10 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
       return d.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
     }
     if (d >= startOfYesterday) {
-      return 'אתמול';
+      return t('dateLabels.yesterday');
     }
     if (d >= startOfWeek) {
-      const days = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
+      const days = t('dateLabels.weekdays', { returnObjects: true }) as string[];
       return days[d.getDay()];
     }
     return d.toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit', year: '2-digit' });
@@ -706,11 +706,11 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
   // ── Conversation status helpers ───────────────────────────────────────────
   type ConvStatus = 'bot' | 'waiting' | 'handling' | 'closed' | 'resolved';
   const STATUS_LABELS: Record<ConvStatus, string> = {
-    bot: 'בוט',
-    waiting: 'ממתין למענה',
-    handling: 'בטיפול',
-    closed: 'סיום שיחה',
-    resolved: 'טופל'
+    bot: t('status.bot'),
+    waiting: t('status.waiting'),
+    handling: t('status.handling'),
+    closed: t('status.closed'),
+    resolved: t('status.resolved')
   };
   const STATUS_STYLES: Record<ConvStatus, string> = {
     bot: 'bg-sky-100 text-sky-700 border-sky-200',
@@ -747,9 +747,9 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
         const data = await r.json().catch(() => ({}));
         const sysEntry = data.historyEntry || {
           type: 'System',
-          text: 'השיחה סומנה כטופלה',
+          text: t('systemMessages.markedHandled'),
           sender: 'system',
-          name: 'מערכת',
+          name: t('systemMessages.systemName'),
           event: 'conversation_resolved',
           created: new Date().toISOString()
         };
@@ -779,9 +779,9 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
         const data = await r.json().catch(() => ({}));
         const sysEntry = data.historyEntry || {
           type: 'System',
-          text: 'השיחה הסתיימה',
+          text: t('systemMessages.conversationEnded'),
           sender: 'system',
-          name: 'מערכת',
+          name: t('systemMessages.systemName'),
           event: 'conversation_closed',
           created: new Date().toISOString()
         };
@@ -823,18 +823,18 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
           myGroupIds: data.myGroupIds || null
         });
       } else {
-        setTransferError('שגיאה בטעינת יעדי העברה');
+        setTransferError(t('errors.transferTargetsLoadFailed'));
       }
     } catch (e) {
       console.error('Failed to load transfer targets', e);
-      setTransferError('שגיאת רשת');
+      setTransferError(t('errors.network'));
     }
   };
 
   const submitTransfer = async () => {
     const sid = phoneSessions.length > 0 ? phoneSessions[phoneSessions.length - 1].id : null;
-    if (!sid) { setTransferError('אין שיחה פעילה להעברה'); return; }
-    if (!transferTargetId) { setTransferError('יש לבחור יעד להעברה'); return; }
+    if (!sid) { setTransferError(t('errors.noActiveSessionToTransfer')); return; }
+    if (!transferTargetId) { setTransferError(t('errors.chooseTransferTarget')); return; }
 
     // For admin / rep_manager, the "קבוצה" tab may also include a specific
     // rep selection within that group. When a specific rep is chosen we send
@@ -862,7 +862,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
       });
       const data = await r.json().catch(() => ({}));
       if (!r.ok) {
-        setTransferError(data.error || 'שגיאה בהעברת השיחה');
+        setTransferError(data.error || t('errors.transferFailed'));
         return;
       }
       // Update local state to reflect new status
@@ -889,7 +889,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
       }
     } catch (e) {
       console.error('Failed to transfer conversation', e);
-      setTransferError('שגיאת רשת');
+      setTransferError(t('errors.network'));
     } finally {
       setTransferLoading(false);
     }
@@ -898,20 +898,20 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
   // ── New conversation handler ────────────────────────────────────────────────
 
   const validatePhoneInput = (phone: string): string | null => {
-    if (!phone.trim()) return 'יש להזין מספר טלפון';
+    if (!phone.trim()) return t('validation.phoneRequired');
     const stripped = phone.replace(/[\s\-\(\)]/g, '');
     const hasPlus = stripped.startsWith('+');
     const withoutPlus = hasPlus ? stripped.slice(1) : stripped;
-    if (!/^\d+$/.test(withoutPlus)) return 'מספר טלפון יכול להכיל ספרות, +, מקף, רווחים וסוגריים בלבד';
-    if (withoutPlus.length < 10) return 'מספר טלפון קצר מדי (מינימום 10 ספרות, לדוגמה: 0501234567)';
-    if (withoutPlus.length > 15) return 'מספר טלפון ארוך מדי (מקסימום 15 ספרות)';
-    // מספר בן 10 ספרות חייב להתחיל ב-0 (פורמט מקומי, לדוגמה 0501234567)
-    // מספר בינלאומי (11+ ספרות) מתחיל בקידומת מדינה — חייב להתחיל בספרה 1-9 שאינה 0
+    if (!/^\d+$/.test(withoutPlus)) return t('validation.phoneInvalidChars');
+    if (withoutPlus.length < 10) return t('validation.phoneTooShort');
+    if (withoutPlus.length > 15) return t('validation.phoneTooLong');
+    // A 10-digit number must start with 0 (local format, e.g. 0501234567)
+    // An international number (11+ digits) starts with a country code — must start with a non-zero digit 1-9
     if (withoutPlus.length === 10 && !withoutPlus.startsWith('0')) {
-      return 'מספר בן 10 ספרות חייב להתחיל ב-0 (לדוגמה: 0501234567)';
+      return t('validation.phoneLocalMustStartWithZero');
     }
     if (withoutPlus.length > 10 && withoutPlus.startsWith('0')) {
-      return 'מספר בינלאומי לא מתחיל ב-0 — הזן קידומת מדינה (לדוגמה: 972501234567)';
+      return t('validation.phoneInternationalMustNotStartWithZero');
     }
     return null;
   };
@@ -925,12 +925,12 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
     const sanitized = newConvPhone.replace(/[+\-\s()]/g, '');
     const digits = sanitized.replace(/\D/g, '');
     if (digits.length < 10) {
-      setNewConvError('מספר טלפון קצר מדי (מינימום 10 ספרות)');
+      setNewConvError(t('newConversation.phoneTooShort'));
       return;
     }
     const exists = contacts.some(c => c.phone.replace(/[+\-\s()]/g, '') === sanitized);
     if (exists) {
-      setNewConvError('איש קשר קיים במערכת');
+      setNewConvError(t('newConversation.contactExists'));
       return;
     }
     setNewConvLoading(true);
@@ -941,7 +941,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
       setSelectedPhone(sanitized);
       fetchContacts();
     } else {
-      setNewConvError(result.message || 'שגיאה ביצירת איש קשר');
+      setNewConvError(result.message || t('errors.createContactFailed'));
     }
     setNewConvLoading(false);
   };
@@ -1047,7 +1047,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
           } else if (isTemplate) {
             const missingVars = getMissingTemplateVars(selectedTemplate, templateParams);
             if (missingVars.length > 0) {
-              alert(`יש למלא את כל המשתנים בתבנית לפני השליחה (חסר: ${missingVars.map(n => `{{${n}}}`).join(', ')})`);
+              alert(t('chat.missingTemplateVars', { vars: missingVars.map(n => `{{${n}}}`).join(', ') }));
               setAgentSending(false);
               return;
             }
@@ -1114,11 +1114,11 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
             } else {
               const errData = await msgResponse.json().catch(() => ({}));
               console.error('Failed to send message after activating agent', msgResponse.status, errData);
-              alert(errData.error || `שגיאה בשליחת ההודעה (קוד ${msgResponse.status})`);
+              alert(errData.error || t('chat.sendMessageError', { status: msgResponse.status }));
             }
           } catch (msgError) {
             console.error('Failed to send message after activating agent', msgError);
-            alert('שגיאת רשת בשליחת ההודעה');
+            alert(t('chat.sendMessageNetwork'));
           } finally {
             setAgentSending(false);
           }
@@ -1126,11 +1126,11 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
       } else {
         const errData = await r.json().catch(() => ({}));
         console.error('Failed to set agent mode', r.status, errData);
-        alert(errData.error || `שגיאה במעבר למצב נציג (קוד ${r.status})`);
+        alert(errData.error || t('chat.setAgentModeError', { status: r.status }));
       }
     } catch (e) {
       console.error('Failed to set agent mode', e);
-      alert('שגיאת רשת במעבר למצב נציג');
+      alert(t('chat.setAgentModeNetwork'));
     }
   };
 
@@ -1169,17 +1169,17 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
     const MAX_DOC   = 50 * MB;  // server limit
 
     if (isImage && file.size > MAX_IMAGE) {
-      setFileUploadError(`תמונות מוגבלות ל-5MB (הקובץ: ${(file.size / MB).toFixed(1)}MB)`);
+      setFileUploadError(t('chat.uploadImageTooLarge', { size: (file.size / MB).toFixed(1) }));
       if (fileUploadRef.current) fileUploadRef.current.value = '';
       return;
     }
     if (isVideo && file.size > MAX_VIDEO) {
-      setFileUploadError(`סרטונים מוגבלים ל-16MB בגלל הגבלת WhatsApp (הקובץ: ${(file.size / MB).toFixed(1)}MB). נסה לדחוס את הסרטון או שלח קישור.`);
+      setFileUploadError(t('chat.uploadVideoTooLarge', { size: (file.size / MB).toFixed(1) }));
       if (fileUploadRef.current) fileUploadRef.current.value = '';
       return;
     }
     if (!isImage && !isVideo && file.size > MAX_DOC) {
-      setFileUploadError(`קבצים מוגבלים ל-50MB (הקובץ: ${(file.size / MB).toFixed(1)}MB)`);
+      setFileUploadError(t('chat.uploadDocTooLarge', { size: (file.size / MB).toFixed(1) }));
       if (fileUploadRef.current) fileUploadRef.current.value = '';
       return;
     }
@@ -1202,10 +1202,10 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
         setAttachedFile({ type: fileType, url: data.url, name: file.name });
       } else {
         const err = await res.json().catch(() => ({}));
-        setFileUploadError(err.error || `שגיאה בהעלאה (${res.status})`);
+        setFileUploadError(err.error || t('chat.uploadFailed', { status: res.status }));
       }
     } catch (err) {
-      setFileUploadError('שגיאת רשת — לא ניתן להעלות את הקובץ');
+      setFileUploadError(t('chat.uploadNetworkError'));
       console.error('Upload failed', err);
     } finally {
       setFileUploading(false);
@@ -1234,7 +1234,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
       if (!selectedTemplate) return; // משאיר כברירת מחדל כי backend תומך רק ב-template-to-phone לסשן חדש
       const missingVars = getMissingTemplateVars(selectedTemplate, templateParams);
       if (missingVars.length > 0) {
-        alert(`יש למלא את כל המשתנים בתבנית לפני השליחה (חסר: ${missingVars.map(n => `{{${n}}}`).join(', ')})`);
+        alert(t('chat.missingTemplateVars', { vars: missingVars.map(n => `{{${n}}}`).join(', ') }));
         return;
       }
       const msgText = agentMessage.trim();
@@ -1335,7 +1335,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
     } else if (isTemplate) {
       const missingVars = getMissingTemplateVars(selectedTemplate, templateParams);
       if (missingVars.length > 0) {
-        alert(`יש למלא את כל המשתנים בתבנית לפני השליחה (חסר: ${missingVars.map(n => `{{${n}}}`).join(', ')})`);
+        alert(t('chat.missingTemplateVars', { vars: missingVars.map(n => `{{${n}}}`).join(', ') }));
         setAgentSending(false);
         return;
       }
@@ -1548,9 +1548,9 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
   
   // Human-readable label for a post-send mode value
   const postSendModeLabel = (mode: 'no_change' | 'agent' | 'bot'): string => {
-    if (mode === 'agent') return 'מעבר למצב נציג';
-    if (mode === 'bot') return 'מעבר למצב בוט';
-    return 'ללא שינוי במצב השיחה';
+    if (mode === 'agent') return t('postSendMode.agent');
+    if (mode === 'bot') return t('postSendMode.bot');
+    return t('postSendMode.noChange');
   };
 
   // The mode that will actually be applied for the currently selected template:
@@ -1571,20 +1571,20 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
     const effectiveMode = getEffectivePostSendMode(selectedTemplate);
     return (
       <div className="flex flex-wrap items-center gap-2 px-3 py-2 bg-indigo-50 border border-indigo-200 rounded-xl text-xs mb-2">
-        <span className="font-black text-indigo-700 flex-shrink-0">לאחר שליחת התבנית:</span>
+        <span className="font-black text-indigo-700 flex-shrink-0">{t('postSendMode.afterSendingTemplate')}</span>
         <select
           value={sendPostSendModeOverride ?? '__default__'}
           onChange={e => setSendPostSendModeOverride(e.target.value === '__default__' ? null : (e.target.value as 'no_change' | 'agent' | 'bot'))}
           className="flex-1 min-w-[180px] px-2 py-1 bg-white border border-indigo-200 rounded-lg text-xs font-semibold text-indigo-700 outline-none focus:ring-2 focus:ring-indigo-400/30"
         >
-          <option value="__default__">ברירת מחדל של התבנית — {postSendModeLabel(configuredMode)}</option>
-          <option value="agent">מעבר למצב נציג (לשליחה זו בלבד)</option>
-          <option value="bot">מעבר למצב בוט (לשליחה זו בלבד)</option>
-          <option value="no_change">ללא שינוי במצב (לשליחה זו בלבד)</option>
+          <option value="__default__">{t('postSendMode.defaultOfTemplate', { label: postSendModeLabel(configuredMode) })}</option>
+          <option value="agent">{t('postSendMode.agentThisSendOnly')}</option>
+          <option value="bot">{t('postSendMode.botThisSendOnly')}</option>
+          <option value="no_change">{t('postSendMode.noChangeThisSendOnly')}</option>
         </select>
         {sendPostSendModeOverride && (
           <span className="text-[10px] font-black text-amber-600 bg-amber-100 px-2 py-0.5 rounded-full flex-shrink-0">
-            שינוי חד-פעמי: {postSendModeLabel(effectiveMode)}
+            {t('postSendMode.oneTimeChange', { label: postSendModeLabel(effectiveMode) })}
           </span>
         )}
       </div>
@@ -1695,9 +1695,9 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
 
   // ── Availability badge (reps / rep_managers) ────────────────────────────
   const AVAILABILITY_OPTIONS: { value: 'available' | 'unavailable' | 'on_break'; label: string; dot: string; text: string; bg: string }[] = [
-    { value: 'available',   label: 'זמין',    dot: 'bg-emerald-500', text: 'text-emerald-700', bg: 'bg-emerald-50' },
-    { value: 'on_break',    label: 'בהפסקה',  dot: 'bg-amber-500',   text: 'text-amber-700',   bg: 'bg-amber-50' },
-    { value: 'unavailable', label: 'לא זמין', dot: 'bg-slate-400',   text: 'text-slate-600',   bg: 'bg-slate-100' },
+    { value: 'available',   label: t('availability.available'), dot: 'bg-emerald-500', text: 'text-emerald-700', bg: 'bg-emerald-50' },
+    { value: 'on_break',    label: t('availability.onBreak'),  dot: 'bg-amber-500',   text: 'text-amber-700',   bg: 'bg-amber-50' },
+    { value: 'unavailable', label: t('availability.unavailable'), dot: 'bg-slate-400',   text: 'text-slate-600',   bg: 'bg-slate-100' },
   ];
   const [availabilityOpen, setAvailabilityOpen] = useState(false);
   const [availabilitySaving, setAvailabilitySaving] = useState(false);
@@ -1745,10 +1745,10 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
       const groupsRes = await fetch(`${API_BASE}/groups`, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      if (!groupsRes.ok) throw new Error('שגיאה בטעינת הקבוצות');
+      if (!groupsRes.ok) throw new Error(t('errors.groupsLoadFailed'));
       const groupsData = await groupsRes.json();
       const blocklist = (groupsData.groups || []).find((g: any) => g.is_blocklist);
-      if (!blocklist) throw new Error('לא נמצאה רשימת הסרה במערכת');
+      if (!blocklist) throw new Error(t('errors.blocklistNotFound'));
       const addRes = await fetch(`${API_BASE}/groups/${blocklist._id}/members`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -1756,13 +1756,13 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
       });
       if (!addRes.ok) {
         const err = await addRes.json().catch(() => ({}));
-        throw new Error(err.error || 'שגיאה בהוספה לרשימת הסרה');
+        throw new Error(err.error || t('errors.blocklistAddFailed'));
       }
       setBlocklistSuccess(true);
       setTimeout(() => setBlocklistSuccess(false), 4000);
     } catch (e: any) {
       console.error('Failed to add to blocklist', e);
-      alert(e.message || 'שגיאה בהוספה לרשימת הסרה');
+      alert(e.message || t('errors.blocklistAddFailed'));
     } finally {
       setAddingToBlocklist(false);
     }
@@ -1799,12 +1799,12 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
   };
 
   const runAdvancedSearch = async () => {
-    if (advancedQuery.trim().length < 2) { setAdvancedSearchError('יש להזין לפחות 2 תווים לחיפוש'); return; }
+    if (advancedQuery.trim().length < 2) { setAdvancedSearchError(t('advancedSearch.queryTooShort')); return; }
     if (advancedFrom && advancedTo) {
       const from = new Date(advancedFrom);
       const to = new Date(advancedTo + 'T23:59:59');
-      if (from >= to) { setAdvancedDateError('תאריך התחלה חייב להיות לפני תאריך סיום'); return; }
-      if ((to.getTime() - from.getTime()) > 184 * 24 * 60 * 60 * 1000) { setAdvancedDateError('טווח תאריכים מקסימלי הוא 6 חודשים'); return; }
+      if (from >= to) { setAdvancedDateError(t('advancedSearch.dateRangeInvalid')); return; }
+      if ((to.getTime() - from.getTime()) > 184 * 24 * 60 * 60 * 1000) { setAdvancedDateError(t('advancedSearch.dateRangeTooWide')); return; }
     }
     setAdvancedDateError(null);
     setAdvancedSearchError(null);
@@ -1816,9 +1816,9 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
       const r = await fetch(`${API_BASE}/sessions/search-messages?${params}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      if (!r.ok) { const e = await r.json().catch(() => ({})); setAdvancedSearchError(e.error || `שגיאה ${r.status}`); return; }
+      if (!r.ok) { const e = await r.json().catch(() => ({})); setAdvancedSearchError(e.error || t('advancedSearch.genericError', { status: r.status })); return; }
       setAdvancedResults(await r.json());
-    } catch { setAdvancedSearchError('שגיאת רשת'); }
+    } catch { setAdvancedSearchError(t('advancedSearch.network')); }
     finally { setAdvancedSearchLoading(false); }
   };
 
@@ -1963,10 +1963,10 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
   const renderDeliveryTick = (item: any) => {
     if (!item.deliveryStatus) return null;
     const title = item.deliveryStatus === 'failed'
-      ? (item.deliveryError ? JSON.stringify(item.deliveryError) : 'שליחה נכשלה')
-      : item.deliveryStatus === 'read' ? 'נקרא'
-      : item.deliveryStatus === 'delivered' ? 'התקבל אצל הלקוח'
-      : 'נשלח';
+      ? (item.deliveryError ? JSON.stringify(item.deliveryError) : t('messageList.deliveryFailed'))
+      : item.deliveryStatus === 'read' ? t('messageList.read')
+      : item.deliveryStatus === 'delivered' ? t('messageList.deliveredToCustomer')
+      : t('messageList.sent');
     return (
       <span title={title} className="inline-flex items-center">
         {item.deliveryStatus === 'sent' && <Check size={12} className="text-slate-400" />}
@@ -2033,7 +2033,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 ? 'bg-slate-100 border-slate-300 text-slate-600'
                 : 'bg-amber-50 border-amber-200 text-amber-700'}`}>
               {isClosed && <X size={12} />}
-              <span>{text || 'הודעת מערכת'}</span>
+              <span>{text || t('messageList.systemMessageDefault')}</span>
               {msgDate && <span className="text-slate-400 font-semibold">· {msgDate}</span>}
             </div>
           </div>
@@ -2064,7 +2064,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                   {item.type === 'Image' && item.url && (
                     <img
                       src={item.url}
-                      alt="תמונה"
+                      alt={t('messageList.imageAlt')}
                       className="rounded-xl max-w-[200px] h-auto mb-2"
                       onLoad={() => console.log('[Chat][Image][agent] ✅ loaded:', item.url)}
                       onError={() => console.error('[Chat][Image][agent] ❌ FAILED to load image. url=', item.url, '| full item=', item)}
@@ -2076,7 +2076,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                   {item.type === 'Document' && item.url && (
                     <a href={item.url} target="_blank" rel="noopener noreferrer"
                       className="flex items-center gap-2 p-2 bg-purple-100 rounded-xl hover:bg-purple-200 transition-colors text-purple-700 text-xs font-bold mb-2">
-                      <ExternalLink size={13} /> פתח מסמך
+                      <ExternalLink size={13} /> {t('messageList.openDocument')}
                     </a>
                   )}
                   {item.type === 'Contact' && (
@@ -2113,7 +2113,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 </div>
                 {item.wa_sent === false && (
                   <div className="flex items-center gap-1.5 px-1 flex-wrap">
-                    <span className="text-[9px] text-red-500 font-black">⚠️ לא נשלח ללקוח</span>
+                    <span className="text-[9px] text-red-500 font-black">⚠️ {t('messageList.notSentToCustomer')}</span>
                     {item.wa_error && (
                       <span className="text-[9px] text-red-400">
                         ({item.wa_error.length > 50 ? item.wa_error.slice(0, 50) + '…' : item.wa_error})
@@ -2122,10 +2122,10 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                     <button
                       onClick={() => resendMessage(session.id, item)}
                       className="flex items-center gap-0.5 text-[9px] text-blue-500 hover:text-blue-700 font-black border border-blue-300 rounded px-1.5 py-0.5 hover:bg-blue-50 transition-colors"
-                      title="שלח מחדש"
+                      title={t('messageList.resend')}
                     >
                       <RefreshCw size={9} />
-                      שלח מחדש
+                      {t('messageList.resend')}
                     </button>
                   </div>
                 )}
@@ -2148,14 +2148,14 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
               </div>
               <div className="flex flex-col gap-0.5 items-end">
                 <div className="px-3 py-1.5 rounded-2xl text-sm font-semibold shadow-sm text-start bg-amber-50 border border-amber-200 text-amber-900 rounded-ss-none">
-                  <p className="text-[9px] text-amber-500 font-black mb-0.5 uppercase tracking-widest">📢 שידור: {item.broadcast_group || item.name || 'רשימת תפוצה'}</p>
+                  <p className="text-[9px] text-amber-500 font-black mb-0.5 uppercase tracking-widest">📢 {t('messageList.broadcastLabel', { name: item.broadcast_group || item.name || t('messageList.broadcastListFallback') })}</p>
                   {item.template_name && (
-                    <p className="text-[9px] text-amber-400 font-bold mb-1">תבנית: {item.template_name}</p>
+                    <p className="text-[9px] text-amber-400 font-bold mb-1">{t('messageList.templateLabel', { name: item.template_name })}</p>
                   )}
                   {item.type === 'Image' && item.url && (
                     <img
                       src={item.url}
-                      alt="תמונה"
+                      alt={t('messageList.imageAlt')}
                       className="rounded-xl max-w-[200px] h-auto mb-2"
                       onLoad={() => console.log('[Chat][Image][broadcast] ✅ loaded:', item.url)}
                       onError={() => console.error('[Chat][Image][broadcast] ❌ FAILED to load image. url=', item.url, '| full item=', item)}
@@ -2167,7 +2167,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                   {item.type === 'Document' && item.url && (
                     <a href={item.url} target="_blank" rel="noopener noreferrer"
                       className="flex items-center gap-2 p-2 bg-amber-100 rounded-xl hover:bg-amber-200 transition-colors text-amber-700 text-xs font-bold mb-2">
-                      <ExternalLink size={13} /> פתח מסמך
+                      <ExternalLink size={13} /> {t('messageList.openDocument')}
                     </a>
                   )}
                   {item.type === 'Contact' && (
@@ -2240,7 +2240,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 )}
                 {(item.type === 'Audio' || isAudioUrl) && (item.url || text) && (
                   <>
-                    <p className="text-[10px] font-semibold mb-1 opacity-70">🎙️ הקלטה</p>
+                    <p className="text-[10px] font-semibold mb-1 opacity-70">🎙️ {t('messageList.recording')}</p>
                     <audio src={item.url || text} controls className="max-w-[220px] mb-1" />
                   </>
                 )}
@@ -2248,7 +2248,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                   <>
                     <img
                       src={item.url}
-                      alt="תמונה"
+                      alt={t('messageList.imageAlt')}
                       className="rounded-xl max-w-[200px] h-auto mb-1"
                       onLoad={() => console.log('[Chat][Image][bot/user] ✅ loaded:', item.url)}
                       onError={() => console.error('[Chat][Image][bot/user] ❌ FAILED to load image. url=', item.url, '| full item=', item)}
@@ -2266,7 +2266,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                   <>
                     <a href={item.url} target="_blank" rel="noopener noreferrer"
                       className="flex items-center gap-2 p-2 bg-slate-50 rounded-xl hover:bg-slate-100 transition-colors text-sky-600 text-xs font-bold mb-2">
-                      <ExternalLink size={13} /> פתח מסמך
+                      <ExternalLink size={13} /> {t('messageList.openDocument')}
                     </a>
                     {text && <p className="whitespace-pre-wrap leading-relaxed">{text}</p>}
                   </>
@@ -2317,7 +2317,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                           {card.url && (
                             <a href={card.url} target="_blank" rel="noopener noreferrer"
                               className="mt-1.5 flex items-center gap-1 text-[10px] text-sky-600 font-bold hover:underline">
-                              <ExternalLink size={9} /> פתח
+                              <ExternalLink size={9} /> {t('messageList.openLink')}
                             </a>
                           )}
                           {Array.isArray(card.options) && card.options.length > 0 && (
@@ -2373,12 +2373,12 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 <RepPushNotifications token={token} />
               ) : null}
               {showAvailability ? (
-                <div ref={availabilityWrapperRef} className="relative" dir={i18n.dir()}>
+                <div ref={availabilityWrapperRef} className="relative" dir="rtl">
                   <button
                     type="button"
                     onClick={() => setAvailabilityOpen(v => !v)}
                     disabled={availabilitySaving}
-                    title="שינוי סטטוס זמינות"
+                    title={t('sidebar.changeAvailabilityTooltip')}
                     className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-black border border-slate-200 ${currentAvailability.bg} ${currentAvailability.text} hover:shadow-sm transition-all disabled:opacity-60`}
                   >
                     <span className="relative flex h-2.5 w-2.5">
@@ -2446,8 +2446,8 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 <MessageSquare size={26} />
               </div>
               <div>
-                <h1 className="text-2xl sm:text-3xl font-black text-slate-900">שיחות</h1>
-                <p className="text-slate-400 text-sm font-semibold mt-0.5">בחר מספר מחובר לצפייה בשיחות</p>
+                <h1 className="text-2xl sm:text-3xl font-black text-slate-900">{t('header.title')}</h1>
+                <p className="text-slate-400 text-sm font-semibold mt-0.5">{t('header.chooseBotSubtitle')}</p>
               </div>
             </div>
 
@@ -2466,8 +2466,8 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                     <Users size={28} className="text-slate-400 group-hover:text-sky-500 transition-colors" />
                   </div>
                   <div>
-                    <p className="text-lg font-black text-slate-800 group-hover:text-sky-700 transition-colors">הכל</p>
-                    <p className="text-xs text-slate-400 font-semibold mt-0.5">כל השיחות</p>
+                    <p className="text-lg font-black text-slate-800 group-hover:text-sky-700 transition-colors">{t('header.all')}</p>
+                    <p className="text-xs text-slate-400 font-semibold mt-0.5">{t('header.allSessions')}</p>
                   </div>
                 </button>
 
@@ -2530,7 +2530,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 className="flex items-center gap-1.5 text-xs font-bold text-indigo-500 hover:text-indigo-700 mb-3 transition-colors"
               >
                 {/* "back to the bot picker" — points along the reading direction */}
-                {isRtl ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+                <ChevronRight size={14} />
                 <span className="truncate">{activeBotFilter.display_phone_number || activeBotFilter.name}</span>
               </button>
             )}
@@ -2581,7 +2581,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                           type="button"
                           onClick={() => setAvailabilityOpen(v => !v)}
                           disabled={availabilitySaving}
-                          title="שינוי סטטוס זמינות"
+                          title={t('sidebar.changeAvailabilityTooltip')}
                           className={`w-full flex items-center justify-center gap-2 px-3 py-1.5 rounded-full text-xs font-black border border-slate-200 ${currentAvailability.bg} ${currentAvailability.text} hover:shadow-sm transition-all disabled:opacity-60`}
                         >
                           <span className="relative flex h-2.5 w-2.5 flex-shrink-0">
@@ -2615,20 +2615,20 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                     <div className="w-px self-stretch bg-slate-200 flex-shrink-0 mx-1" />
                   </>
                 )}
-                <div className="w-9 h-9 bg-sky-50 text-sky-600 rounded-xl flex items-center justify-center cursor-pointer flex-shrink-0" onClick={() => botList.length > 1 && setShowBotPicker(true)} title={botList.length > 1 ? 'חזור לבחירת בוט' : undefined}>
+                <div className="w-9 h-9 bg-sky-50 text-sky-600 rounded-xl flex items-center justify-center cursor-pointer flex-shrink-0" onClick={() => botList.length > 1 && setShowBotPicker(true)} title={botList.length > 1 ? t('sidebar.backToBotPicker') : undefined}>
                   <Users size={18} />
                 </div>
                 <div className="min-w-0">
                   <h2 className="text-base font-black text-slate-900 truncate">
-                    {activeBotFilter ? (activeBotFilter.display_phone_number || activeBotFilter.name) : 'שיחות'}
+                    {activeBotFilter ? (activeBotFilter.display_phone_number || activeBotFilter.name) : t('header.title')}
                   </h2>
-                  <p className="text-xs text-slate-400 font-semibold">{filteredContacts.length} קשרים</p>
+                  <p className="text-xs text-slate-400 font-semibold">{t('sidebar.contactsCount', { count: filteredContacts.length })}</p>
                 </div>
               </div>
               {can('sessions.add') && (
               <button
                 onClick={() => { setShowNewConvModal(true); setNewConvPhone(''); setNewConvError(null); }}
-                title="שיחה חדשה"
+                title={t('sidebar.newChat')}
                 className="w-8 h-8 rounded-xl bg-sky-500 text-white flex items-center justify-center hover:bg-sky-600 transition-colors flex-shrink-0"
               >
                 <Plus size={16} />
@@ -2639,7 +2639,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
               <Search className="absolute start-3 top-1/2 -translate-y-1/2 text-slate-300" size={15} />
               <input
                 className="w-full ps-9 pe-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-400 transition-all text-start font-medium"
-                placeholder="חיפוש איש קשר..."
+                placeholder={t('sidebar.searchPlaceholder')}
                 value={contactSearch}
                 onChange={e => setContactSearch(e.target.value)}
               />
@@ -2661,7 +2661,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                       : 'bg-white text-slate-500 border-slate-200 hover:border-slate-400'
                   }`}
                 >
-                  {s === 'all' ? 'הכל' : s === 'waiting' ? 'ממתין' : s === 'handling' ? 'בטיפול' : s === 'resolved' ? 'טופל' : s === 'bot' ? 'בוט' : 'סיום'}
+                  {s === 'all' ? t('sidebar.filterAll') : s === 'waiting' ? t('sidebar.filterWaiting') : s === 'handling' ? t('sidebar.filterHandling') : s === 'resolved' ? t('sidebar.filterResolved') : s === 'bot' ? t('sidebar.filterBot') : t('sidebar.filterClosed')}
                 </button>
               ))}
             </div>
@@ -2692,14 +2692,14 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
             ) : filteredContacts.length === 0 && !contactSearch ? (
               <div className="flex flex-col items-center justify-center py-16 gap-3 text-slate-300 px-6 text-center">
                 <Users size={36} strokeWidth={1} />
-                <p className="text-sm font-bold">אין אנשי קשר</p>
+                <p className="text-sm font-bold">{t('sidebar.noContacts')}</p>
               </div>
             ) : (
               <>
                 {filteredContacts.length === 0 && contactSearch && (
                   <div className="flex flex-col items-center justify-center py-10 gap-2 text-slate-300 px-6 text-center">
                     <Users size={28} strokeWidth={1} />
-                    <p className="text-xs font-bold">לא נמצאו תוצאות לפי שם / מספר</p>
+                    <p className="text-xs font-bold">{t('sidebar.noResultsByNameOrNumber')}</p>
                   </div>
                 )}
                 {filteredContacts.slice(0, visibleContactsLimit).map(contact => {
@@ -2722,7 +2722,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                       <div className="flex-1 min-w-0 flex items-center justify-between gap-2">
                         <div className="min-w-0">
                           <p className={`text-xs font-black truncate flex items-center gap-1 ${isSelected ? 'text-sky-700' : 'text-slate-800'}`}>
-                            {sim ? 'סימולטור' : contact.phone}
+                            {sim ? t('sidebar.simulator') : contact.phone}
                             {!sim && !contact.full_name && contact.whatsapp_name && (
                               <span className={`text-xs font-semibold flex items-center gap-0.5 ms-1 ${isSelected ? 'text-sky-600' : 'text-slate-500'}`}>
                                 · <WhatsAppIcon size={10} className="text-slate-400" /> {contact.whatsapp_name}
@@ -2742,12 +2742,12 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                           <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                             <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-full
                               ${isSelected ? 'bg-sky-200 text-sky-700' : 'bg-slate-100 text-slate-500'}`}>
-                              {contact.sessionCount} שיחות
+                              {t('sidebar.sessionsCountBadge', { count: contact.sessionCount })}
                             </span>
                             {!sim && renderStatusBadge(contact.status)}
                             {contact.wants_phone && (
                               <span className="flex items-center gap-0.5 text-[9px] font-black px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 ring-1 ring-green-400/60 animate-pulse">
-                                <Phone size={9} />טלפוני
+                                <Phone size={9} />{t('sidebar.phoneOnlyBadge')}
                               </span>
                             )}
                           </div>
@@ -2759,7 +2759,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                           {!sim && onOpenContacts && (
                             <button
                               onClick={e => { e.stopPropagation(); onOpenContacts(contact.phone); }}
-                              title="פתח פרטי איש קשר"
+                              title={t('sidebar.openContactDetails')}
                               className="p-1 text-slate-300 hover:text-sky-500 hover:bg-sky-50 rounded-lg transition-colors"
                             >
                               <User size={12} />
@@ -2773,11 +2773,11 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 {loadingMoreContacts && (
                   <div className="flex items-center justify-center gap-2 py-3">
                     <div className="animate-spin w-4 h-4 border-2 border-slate-200 border-t-sky-500 rounded-full" />
-                    <span className="text-xs text-slate-400 font-semibold">טוען...</span>
+                    <span className="text-xs text-slate-400 font-semibold">{t('sidebar.loading')}</span>
                   </div>
                 )}
                 {!loadingMoreContacts && visibleContactsLimit < filteredContacts.length && (
-                  <p className="text-center text-[10px] text-slate-300 font-semibold py-2">גלול למטה לצפייה בעוד {filteredContacts.length - visibleContactsLimit} אנשי קשר</p>
+                  <p className="text-center text-[10px] text-slate-300 font-semibold py-2">{t('sidebar.scrollForMore', { count: filteredContacts.length - visibleContactsLimit })}</p>
                 )}
 
                 {/* Content search results section */}
@@ -2787,10 +2787,10 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                       <div className="flex items-center gap-1.5 flex-1 min-w-0">
                         <Search size={11} className="text-slate-400 flex-shrink-0" />
                         {contentSearchLoading ? (
-                          <span className="text-[10px] text-slate-400 font-semibold">מחפש...</span>
+                          <span className="text-[10px] text-slate-400 font-semibold">{t('sidebar.searching')}</span>
                         ) : (
                           <span className="text-[10px] text-slate-500 font-semibold truncate">
-                            <span className="font-black text-sky-600">{contentSearchResults.length}</span> תוצאות (50 הודעות אחרונות)
+                            {t('sidebar.resultsCount', { count: contentSearchResults.length })}
                           </span>
                         )}
                       </div>
@@ -2803,15 +2803,15 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                               onChange={e => setShowContentResults(e.target.checked)}
                               className="w-3 h-3 accent-sky-500 cursor-pointer"
                             />
-                            <span className="text-[9px] font-black text-slate-600">הצג</span>
+                            <span className="text-[9px] font-black text-slate-600">{t('sidebar.show')}</span>
                           </label>
                         )}
                         <button
                           onClick={openAdvancedSearch}
                           className="text-[9px] font-black text-indigo-500 hover:text-indigo-700 transition-colors"
-                          title="חיפוש מתקדם - עד 6 חודשים"
+                          title={t('sidebar.advancedSearchTooltip')}
                         >
-                          מתקדם →
+                          {t('sidebar.advancedSearchButton')}
                         </button>
                       </div>
                     </div>
@@ -2869,8 +2869,8 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
           {!selectedPhone ? (
             <div className="flex-1 flex flex-col items-center justify-center gap-4 text-center px-8">
               <MessageSquare size={72} strokeWidth={0.7} className="text-slate-200" />
-              <p className="text-xl font-black text-slate-300">בחר איש קשר לצפייה בשיחות</p>
-              <p className="text-sm font-semibold text-slate-300">בחר איש קשר מהפאנל מימין</p>
+              <p className="text-xl font-black text-slate-300">{t('chatPanel.selectContactToView')}</p>
+              <p className="text-sm font-semibold text-slate-300">{t('chatPanel.selectContactHint')}</p>
             </div>
           ) : (
             <>
@@ -2883,7 +2883,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <p className="text-base font-black text-slate-900 flex items-center gap-1.5 flex-wrap">
-                      {isSimulator(selectedPhone) ? 'סימולטור' : selectedPhone}
+                      {isSimulator(selectedPhone) ? t('sidebar.simulator') : selectedPhone}
                       {!isSimulator(selectedPhone) && !selectedContact?.full_name && selectedContact?.whatsapp_name && (
                         <span className="flex items-center gap-0.5 text-sm font-semibold text-slate-500">
                           · <WhatsAppIcon size={13} className="text-slate-400" /> {selectedContact.whatsapp_name}
@@ -2898,7 +2898,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                     {!isSimulator(selectedPhone) && onOpenContacts && (
                       <button
                         onClick={() => onOpenContacts(selectedPhone)}
-                        title="פתח פרטי איש קשר"
+                        title={t('sidebar.openContactDetails')}
                         className="p-1 text-slate-400 hover:text-sky-500 transition-colors rounded-lg hover:bg-sky-50"
                       >
                         <User size={14} />
@@ -2911,7 +2911,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                     </p>
                   )}
                   <p className="text-xs text-slate-400 font-semibold mt-0.5">
-                    {selectedContact?.sessionCount ?? 0} שיחות
+                    {t('sidebar.sessionsCountBadge', { count: selectedContact?.sessionCount ?? 0 })}
                     {selectedContact?.bots && selectedContact.bots.length > 0 && (
                       <> · {selectedContact.bots.map(b => b.name).join(', ')}</>
                     )}
@@ -2925,7 +2925,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 {selectedContact?.wants_phone && (
                   <div className="flex items-center gap-1.5 flex-shrink-0">
                     <span className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-green-100 text-green-700 text-[11px] font-black ring-1 ring-green-400/50">
-                      <Phone size={11} /> טלפוני
+                      <Phone size={11} /> {t('sidebar.phoneOnlyBadge')}
                     </span>
                     {(currentStatus === 'waiting' || currentStatus === 'handling' || currentStatus === 'resolved') && (
                       <button
@@ -2948,9 +2948,9 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                           } catch (e) { console.error(e); }
                         }}
                         className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-green-600 text-white text-[11px] font-black hover:bg-green-700 transition-colors"
-                        title="סמן שיחת טלפון כטופלה"
+                        title={t('chatPanel.markPhoneHandled')}
                       >
-                        <Check size={11} /> טופל
+                        <Check size={11} /> {t('chatPanel.handled')}
                       </button>
                     )}
                   </div>
@@ -2961,7 +2961,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                     <button
                       onClick={() => setShowActionsMenu(v => !v)}
                       className="w-9 h-9 flex items-center justify-center rounded-2xl text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition-colors"
-                      title="פעולות שיחה"
+                      title={t('chatPanel.conversationActions')}
                     >
                       <MoreVertical size={18} />
                     </button>
@@ -2971,10 +2971,10 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                           <button
                             onClick={() => { setShowActionsMenu(false); markResolved(); }}
                             className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-emerald-50 hover:text-emerald-700 transition-colors text-start"
-                            title="סמן כטופל — השיחה תיפתח מחדש אם הלקוח יכתוב"
+                            title={t('chatPanel.markHandledTooltip')}
                           >
                             <Check size={15} />
-                            טופל
+                            {t('chatPanel.handled')}
                           </button>
                         )}
                         {!isSimulator(selectedPhone!) && isAgentMode && (
@@ -2983,17 +2983,17 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                             className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-emerald-50 hover:text-emerald-700 transition-colors text-start"
                           >
                             <RefreshCw size={15} />
-                            החזרת השיחה לבוט
+                            {t('chatPanel.returnToBot')}
                           </button>
                         )}
                         {!isSimulator(selectedPhone!) && (currentStatus === 'waiting' || currentStatus === 'handling' || currentStatus === 'resolved') && (
                           <button
                             onClick={() => { setShowActionsMenu(false); closeConversation(); }}
                             className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-100 hover:text-slate-800 transition-colors text-start"
-                            title="סמן שיחה כסיומה"
+                            title={t('chatPanel.markClosedTooltip')}
                           >
                             <X size={15} />
-                            סיום שיחה
+                            {t('chatPanel.endConversation')}
                           </button>
                         )}
                         <button
@@ -3001,7 +3001,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                           className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 transition-colors text-start"
                         >
                           <Headphones size={15} />
-                          העברת שיחה{isSimulator(selectedPhone!) ? ' (סימולטור)' : ''}
+                          {t('chatPanel.transferConversation')}{isSimulator(selectedPhone!) ? t('chatPanel.simulatorSuffix') : ''}
                         </button>
                         {!isSimulator(selectedPhone!) && (
                           <button
@@ -3010,7 +3010,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                             className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-red-50 hover:text-red-600 transition-colors text-start disabled:opacity-60"
                           >
                             <Ban size={15} />
-                            {addingToBlocklist ? 'מוסיף...' : 'הוספה לרשימת הסרה'}
+                            {addingToBlocklist ? t('chatPanel.addingToBlocklist') : t('chatPanel.addToBlocklist')}
                           </button>
                         )}
                       </div>
@@ -3020,7 +3020,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 {/* Blocklist success toast */}
                 {blocklistSuccess && (
                   <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-black flex-shrink-0">
-                    <Check size={13} /> נוסף לרשימת הסרה
+                    <Check size={13} /> {t('chatPanel.addedToBlocklist')}
                   </span>
                 )}
                 {/* {currentUser?.role !== 'rep' && !isSimulator(selectedPhone) && (
@@ -3045,11 +3045,11 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 <div className="flex-shrink-0 px-6 py-2.5 bg-amber-50 border-b border-amber-200 flex items-center gap-3">
                   <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse flex-shrink-0" />
                   <p className="text-xs font-black text-amber-800 flex-1">
-                    מצב נציג פעיל — הבוט מושהה. הודעות מהלקוח לא יקבלו מענה אוטומטי.
+                    {t('chatPanel.agentModeActive')}
                   </p>
                   {phoneSessions.length > 0 && phoneSessions[phoneSessions.length - 1].agent_since && (
                     <span className="text-xs text-amber-600 font-semibold flex-shrink-0">
-                      הופעל {formatContactTime(phoneSessions[phoneSessions.length - 1].agent_since!)}
+                      {t('chatPanel.activatedAt', { time: formatContactTime(phoneSessions[phoneSessions.length - 1].agent_since!) })}
                     </span>
                   )}
                 </div>
@@ -3060,10 +3060,10 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 <div className="flex-shrink-0 px-6 py-2.5 bg-red-50 border-b border-red-200 flex items-center gap-3">
                   <div className="w-2 h-2 rounded-full bg-red-500 flex-shrink-0" />
                   <p className="text-xs font-black text-red-700 flex-1">
-                    ⚠️ ההודעה נשמרה בהיסטוריה אך <strong>לא נשלחה ללקוח</strong>
+                    {t('chatPanel.waSendFailedPrefix')} <strong>{t('chatPanel.waSendFailedBold')}</strong>
                     {agentWaRetryable
-                      ? <span className="font-normal text-red-600"> — שגיאת שער (502): השרת עמוס זמנית. <span className="underline cursor-pointer" onClick={() => { setAgentWaFailed(false); setAgentWaError(null); setAgentWaRetryable(false); sendAgentMsg(); }}>נסה שוב</span></span>
-                      : <span className="font-normal text-red-500 ms-1"> — {agentWaError ? (agentWaError.length > 100 ? agentWaError.slice(0, 100) + '…' : agentWaError) : 'בעיה ב-WhatsApp API'}</span>
+                      ? <span className="font-normal text-red-600"> {t('chatPanel.gatewayError502')} <span className="underline cursor-pointer" onClick={() => { setAgentWaFailed(false); setAgentWaError(null); setAgentWaRetryable(false); sendAgentMsg(); }}>{t('chatPanel.retry')}</span></span>
+                      : <span className="font-normal text-red-500 ms-1"> — {agentWaError ? (agentWaError.length > 100 ? agentWaError.slice(0, 100) + '…' : agentWaError) : t('chatPanel.waApiIssue')}</span>
                     }
                   </p>
                   <button onClick={() => { setAgentWaFailed(false); setAgentWaError(null); setAgentWaRetryable(false); }} className="text-red-400 hover:text-red-600">
@@ -3078,7 +3078,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
               ) : phoneSessions.length === 0 ? (
                 <div className="flex-1 flex flex-col items-center justify-center gap-3 text-slate-300">
                   <MessageSquare size={48} strokeWidth={1} />
-                  <p className="text-base font-bold">אין שיחות לאיש קשר זה</p>
+                  <p className="text-base font-bold">{t('chatPanel.noSessionsForContact')}</p>
                 </div> 
               ) : ( 
                 /* Sessions ordered oldest (top) → newest (bottom) */
@@ -3101,11 +3101,11 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                   {loadingMoreMsgs && (
                     <div className="flex items-center justify-center gap-2 py-3">
                       <div className="animate-spin w-4 h-4 border-2 border-slate-200 border-t-sky-500 rounded-full" />
-                      <span className="text-xs text-slate-400 font-semibold">טוען הודעות קודמות...</span>
+                      <span className="text-xs text-slate-400 font-semibold">{t('chatPanel.loadingPreviousMessages')}</span>
                     </div>
                   )}
                   {!loadingMoreMsgs && phoneSessions.reduce((acc, s) => acc + (s.process_history?.length || 0), 0) > visibleMsgLimit && (
-                    <p className="text-center text-[10px] text-slate-300 font-semibold py-2">גלול למעלה לצפייה בהודעות קודמות</p>
+                    <p className="text-center text-[10px] text-slate-300 font-semibold py-2">{t('chatPanel.scrollUpForPrevious')}</p>
                   )}
                   {getVisibleSessions().map(session => (
                     <React.Fragment key={session.id}>
@@ -3127,7 +3127,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                       {/* Messages for this session */}
                       <div className="space-y-1 mb-1">
                         {renderSessionMessages(session) ?? (
-                          <p className="text-center text-xs text-slate-300 font-semibold py-2">אין הודעות בשיחה זו</p>
+                          <p className="text-center text-xs text-slate-300 font-semibold py-2">{t('chatPanel.noMessagesInSession')}</p>
                         )}
                       </div>
                     </React.Fragment>
@@ -3142,7 +3142,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                   {phoneSessions.length === 0 && (
                     <div className="flex items-center gap-2 mb-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-700 font-semibold">
                       <span className="text-base">⚠️</span>
-                      לקוח חדש — ניתן לשלוח הודעת תבנית WhatsApp בלבד. הקש <span className="font-black">/</span> לבחירת תבנית.
+                      {t('chatPanel.newCustomerHintPrefix')} <span className="font-black">/</span> {t('chatPanel.newCustomerHintSuffix')}
                     </div>
                   )}
                   {selectedTemplate && !showTemplateParamsModal && renderPostSendModeControl()}
@@ -3150,11 +3150,11 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                     {/* Template dropdown */}
                     {showTemplates && selectedPhone && (
                       <div className="absolute bottom-full left-0 right-0 mb-2 bg-white border border-slate-200 rounded-xl shadow-xl max-h-96 overflow-y-auto z-50">
-                        <div className="px-3 pt-2 pb-1 text-[10px] font-black text-slate-400 uppercase tracking-wider">הודעות תבנית</div>
+                        <div className="px-3 pt-2 pb-1 text-[10px] font-black text-slate-400 uppercase tracking-wider">{t('chatPanel.templateMessagesLabel')}</div>
                         {templatesLoading ? (
-                          <div className="p-4 text-center text-slate-400 text-sm">טוען טמפלייטים...</div>
+                          <div className="p-4 text-center text-slate-400 text-sm">{t('chatPanel.loadingTemplates')}</div>
                         ) : templates.length === 0 ? (
-                          <div className="p-4 text-center text-slate-400 text-sm">לא נמצאו טמפלייטים</div>
+                          <div className="p-4 text-center text-slate-400 text-sm">{t('chatPanel.noTemplatesFound')}</div>
                         ) : (
                           <div className="p-2 pt-0">
                             {(() => {
@@ -3186,7 +3186,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
 
                               return filtered.length > 0 ? (
                                 filtered.map((template: any, idx: number) => {
-                                  const name = template.name || template.elementName || template.template_name || 'ללא שם';
+                                  const name = template.name || template.elementName || template.template_name || t('templatePicker.noNameFallback');
                                   const lang = template.language || 'he';
                                   const status = template.status || '';
                                   
@@ -3210,14 +3210,14 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                                         <div className="flex items-center gap-1">
                                           <span className="text-xs text-slate-500">{lang}</span>
                                           {status === 'APPROVED' && (
-                                            <span className="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded">מאושר</span>
+                                            <span className="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded">{t('templatePicker.approved')}</span>
                                           )}
                                         </div>
                                       </div>
                                       {(templatePostSendMode[name] === 'agent' || templatePostSendMode[name] === 'bot') && (
                                         <div className="mb-1">
                                           <span className={`text-[10px] font-black px-1.5 py-0.5 rounded-full ${templatePostSendMode[name] === 'agent' ? 'bg-purple-100 text-purple-700' : 'bg-sky-100 text-sky-700'}`}>
-                                            {templatePostSendMode[name] === 'agent' ? '→ מעבר למצב נציג' : '→ מעבר למצב בוט'}
+                                            {templatePostSendMode[name] === 'agent' ? t('templatePicker.switchToAgentMode') : t('templatePicker.switchToBotMode')}
                                           </span>
                                         </div>
                                       )}
@@ -3228,7 +3228,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                                   );
                                 })
                               ) : (
-                                <div className="p-4 text-center text-slate-400 text-sm">לא נמצאו תוצאות</div>
+                                <div className="p-4 text-center text-slate-400 text-sm">{t('templatePicker.noResultsFound')}</div>
                               );
                             })()}
                           </div>
@@ -3237,9 +3237,9 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                         {phoneSessions.length > 0 && (
                           <>
                             <div className="border-t border-slate-100 mx-2 my-1" />
-                            <div className="px-3 pt-1 pb-1 text-[10px] font-black text-indigo-400 uppercase tracking-wider">תבניות פנימיות</div>
+                            <div className="px-3 pt-1 pb-1 text-[10px] font-black text-indigo-400 uppercase tracking-wider">{t('templatePicker.internalTemplates')}</div>
                             {internalTemplatesLoading ? (
-                              <div className="p-4 text-center text-slate-400 text-sm">טוען תבניות פנימיות...</div>
+                              <div className="p-4 text-center text-slate-400 text-sm">{t('templatePicker.loadingInternalTemplates')}</div>
                             ) : (
                               <div className="p-2 pt-0">
                                 {(() => {
@@ -3256,7 +3256,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                                           <span className="font-medium text-slate-800 text-sm">/{template.name}</span>
                                           {template.mediaType && (
                                             <span className="text-xs bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded">
-                                              {template.mediaType === 'image' ? 'תמונה' : template.mediaType === 'video' ? 'וידאו' : 'מסמך'}
+                                              {template.mediaType === 'image' ? t('templatePicker.mediaImage') : template.mediaType === 'video' ? t('templatePicker.mediaVideo') : t('templatePicker.mediaDocument')}
                                             </span>
                                           )}
                                         </div>
@@ -3264,7 +3264,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                                       </button>
                                     ))
                                   ) : (
-                                    <div className="p-4 text-center text-slate-400 text-sm">לא נמצאו תוצאות</div>
+                                    <div className="p-4 text-center text-slate-400 text-sm">{t('templatePicker.noResultsFound')}</div>
                                   );
                                 })()}
                               </div>
@@ -3296,7 +3296,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                     </button>
                     <button
                       onClick={() => fileUploadRef.current?.click()}
-                      title="צרף קובץ / תמונה / וידאו"
+                      title={t('input.attachFile')}
                       disabled={fileUploading}
                       className={`order-2 w-10 h-10 flex-shrink-0 flex items-center justify-center rounded-2xl transition-colors cursor-pointer self-end
                         ${fileUploading ? 'text-sky-500 bg-sky-50 animate-pulse' : 'text-slate-400 hover:text-sky-500 hover:bg-slate-100'}`}
@@ -3325,7 +3325,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                               <X size={9} />
                             </button>
                             {attachedFile.type === 'image' && (
-                              <img src={attachedFile.url} alt="תצוגה מקדימה" className="block w-16 h-16 object-cover rounded-xl border border-slate-200 shadow-sm" />
+                              <img src={attachedFile.url} alt={t('input.previewAlt')} className="block w-16 h-16 object-cover rounded-xl border border-slate-200 shadow-sm" />
                             )}
                             {attachedFile.type === 'video' && (
                               <video src={attachedFile.url} className="block w-16 h-16 object-cover rounded-xl border border-slate-200 shadow-sm" />
@@ -3358,7 +3358,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                             sendAgentMsg();
                           }
                         }}
-                        placeholder={attachedFile ? 'כיתוב (אופציונלי)...' : (phoneSessions.length === 0 ? 'הקש / לבחירת תבנית לשליחה ללקוח חדש...' : 'כתוב הודעה ללקוח... (/ לטמפלייטים)')}
+                        placeholder={attachedFile ? t('input.captionPlaceholder') : (phoneSessions.length === 0 ? t('input.newCustomerPlaceholder') : t('input.messagePlaceholder'))}
                         rows={1}
                         className='w-full bg-transparent px-4 py-2.5 text-sm text-start font-medium outline-none text-slate-800 placeholder:text-slate-400 resize-none max-h-40 overflow-y-auto leading-normal'
                       />
@@ -3392,8 +3392,8 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                   <Search size={18} />
                 </div>
                 <div>
-                  <h3 className="text-base font-black text-slate-900">חיפוש מתקדם בהודעות</h3>
-                  <p className="text-xs text-slate-400 font-semibold">טווח תאריכים מקסימלי 6 חודשים</p>
+                  <h3 className="text-base font-black text-slate-900">{t('advancedSearchModal.title')}</h3>
+                  <p className="text-xs text-slate-400 font-semibold">{t('advancedSearchModal.subtitle')}</p>
                 </div>
               </div>
               <button onClick={() => setShowAdvancedSearch(false)} className="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-slate-100 text-slate-400 transition-colors">
@@ -3408,7 +3408,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 <input
                   type="text"
                   className="w-full ps-9 pe-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all text-start font-medium"
-                  placeholder="חיפוש בתוכן הודעות..."
+                  placeholder={t('advancedSearchModal.searchPlaceholder')}
                   value={advancedQuery}
                   onChange={e => { setAdvancedQuery(e.target.value); setAdvancedSearchError(null); }}
                   onKeyDown={e => e.key === 'Enter' && runAdvancedSearch()}
@@ -3416,8 +3416,8 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 />
               </div>
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-[10px] font-bold text-slate-400">טווח מהיר:</span>
-                {[{ label: 'חודש', days: 30 }, { label: '3 חודשים', days: 90 }, { label: 'חצי שנה', days: 183 }].map(opt => (
+                <span className="text-[10px] font-bold text-slate-400">{t('advancedSearchModal.quickRange')}</span>
+                {[{ label: t('advancedSearchModal.rangeMonth'), days: 30 }, { label: t('advancedSearchModal.range3Months'), days: 90 }, { label: t('advancedSearchModal.rangeHalfYear'), days: 183 }].map(opt => (
                   <button key={opt.days} onClick={() => setAdvancedRange(opt.days)}
                     className="text-[10px] font-black px-2.5 py-1 rounded-full border border-indigo-200 text-indigo-600 hover:bg-indigo-50 transition-colors">
                     {opt.label}
@@ -3426,21 +3426,21 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
               </div>
               <div className="flex items-end gap-2">
                 <div className="flex-1">
-                  <label className="text-[10px] font-black text-slate-500 block mb-1">מתאריך</label>
+                  <label className="text-[10px] font-black text-slate-500 block mb-1">{t('advancedSearchModal.fromDate')}</label>
                   <input type="date" value={advancedFrom} max={advancedTo || new Date().toISOString().split('T')[0]}
                     onChange={e => { setAdvancedFrom(e.target.value); setAdvancedDateError(null); }}
                     className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all" />
                 </div>
                 <span className="text-slate-400 font-bold pb-2">—</span>
                 <div className="flex-1">
-                  <label className="text-[10px] font-black text-slate-500 block mb-1">עד תאריך</label>
+                  <label className="text-[10px] font-black text-slate-500 block mb-1">{t('advancedSearchModal.toDate')}</label>
                   <input type="date" value={advancedTo} min={advancedFrom} max={new Date().toISOString().split('T')[0]}
                     onChange={e => { setAdvancedTo(e.target.value); setAdvancedDateError(null); }}
                     className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all" />
                 </div>
                 <button onClick={runAdvancedSearch} disabled={advancedSearchLoading || advancedQuery.trim().length < 2}
                   className="px-4 py-2 bg-indigo-500 text-white rounded-xl text-sm font-black hover:bg-indigo-600 transition-colors disabled:opacity-50 flex items-center gap-2 flex-shrink-0">
-                  {advancedSearchLoading ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : 'חפש'}
+                  {advancedSearchLoading ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : t('advancedSearchModal.searchButton')}
                 </button>
               </div>
               {advancedDateError && <p className="text-xs text-red-500 font-semibold">{advancedDateError}</p>}
@@ -3456,12 +3456,12 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
               ) : advancedResults.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-14 gap-3 text-slate-300">
                   <Search size={36} strokeWidth={1} />
-                  <p className="text-sm font-bold">{advancedQuery.trim().length >= 2 ? 'לא נמצאו תוצאות' : 'הזן טקסט ולחץ חפש'}</p>
+                  <p className="text-sm font-bold">{advancedQuery.trim().length >= 2 ? t('advancedSearchModal.noResultsFound') : t('advancedSearchModal.enterTextAndSearch')}</p>
                 </div>
               ) : (
                 <>
                   <p className="text-[10px] text-slate-400 font-semibold px-4 py-2 bg-slate-50 border-b border-slate-100">
-                    נמצאו <span className="font-black text-indigo-600">{advancedResults.length}</span> אנשי קשר עם הודעות תואמות
+                    {t('advancedSearchModal.foundContactsWithMatches', { count: advancedResults.length })}
                   </p>
                   {advancedResults.map(cr => {
                     const isSel = selectedPhone === cr.phone;
@@ -3480,7 +3480,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                               {cr.phone}{cr.whatsapp_name && <span className="font-semibold text-slate-500 ms-1.5"> · {cr.whatsapp_name}</span>}
                             </p>
                             {cr.matchCount > 1 && (
-                              <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-600 flex-shrink-0">{cr.matchCount} התאמות</span>
+                              <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-600 flex-shrink-0">{t('advancedSearchModal.matchesCount', { count: cr.matchCount })}</span>
                             )}
                           </div>
                           {cr.snippet && (
@@ -3506,13 +3506,13 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 <div className="w-10 h-10 rounded-2xl bg-sky-100 flex items-center justify-center">
                   <Plus size={20} className="text-sky-600" />
                 </div>
-                <h3 className="text-lg font-black text-slate-900">שיחה חדשה</h3>
+                <h3 className="text-lg font-black text-slate-900">{t('newConvModal.title')}</h3>
               </div>
-              <p className="text-sm text-slate-500 mb-4">הזן מספר טלפון ליצירת שיחה חדשה</p>
+              <p className="text-sm text-slate-500 mb-4">{t('newConvModal.subtitle')}</p>
               <input
                 type="tel"
                 dir="ltr"
-                placeholder="לדוגמה: 972501234567 או 0501234567"
+                placeholder={t('newConvModal.phonePlaceholder')}
                 value={newConvPhone}
                 onChange={e => {
                   const val = e.target.value.replace(/[^\d+\-\s()]/g, '');
@@ -3536,14 +3536,14 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 onClick={() => setShowNewConvModal(false)}
                 className="px-5 py-2.5 rounded-2xl border border-slate-200 text-slate-700 text-sm font-bold hover:bg-slate-50 transition-colors"
               >
-                ביטול
+                {t('newConvModal.cancel')}
               </button>
               <button
                 onClick={handleNewConvConfirm}
-                disabled={newConvLoading || (!!newConvPhone && !!validatePhoneInput(newConvPhone)) || newConvError === 'איש קשר קיים במערכת'}
+                disabled={newConvLoading || (!!newConvPhone && !!validatePhoneInput(newConvPhone)) || newConvError === t('newConversation.contactExists')}
                 className="px-5 py-2.5 rounded-2xl bg-sky-500 text-white text-sm font-bold hover:bg-sky-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {newConvLoading ? '...' : 'אישור'}
+                {newConvLoading ? '...' : t('newConvModal.confirm')}
               </button>
             </div>
           </div>
@@ -3559,11 +3559,11 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 <div className="w-10 h-10 rounded-2xl bg-amber-100 flex items-center justify-center">
                   <Headphones size={20} className="text-amber-600" />
                 </div>
-                <h3 className="text-lg font-black text-slate-900">שיחה עם נציג</h3>
+                <h3 className="text-lg font-black text-slate-900">{t('agentConfirmModal.title')}</h3>
               </div>
               <p className="text-sm text-slate-600 leading-relaxed">
-                לחיצה על אישור <strong>תשהה את תגובות הבוט ל-30 דקות</strong>.
-                <br />תוכל לשוחח ישירות עם הלקוח דרך שדה ההודעות.
+                {t('agentConfirmModal.bodyPart1')} <strong>{t('agentConfirmModal.bodyPart1Bold')}</strong>.
+                <br />{t('agentConfirmModal.bodyPart2')}
               </p>
             </div>
             <div className="px-6 pb-6 flex gap-3 justify-end">
@@ -3571,13 +3571,13 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 onClick={() => setShowAgentConfirm(false)}
                 className="px-5 py-2.5 rounded-2xl border border-slate-200 text-slate-700 text-sm font-bold hover:bg-slate-50 transition-colors"
               >
-                ביטול
+                {t('agentConfirmModal.cancel')}
               </button>
               <button
                 onClick={activateAgent}
                 className="px-5 py-2.5 rounded-2xl bg-sky-500 text-white text-sm font-bold hover:bg-sky-600 transition-colors"
               >
-                אישור — עבור למצב נציג
+                {t('agentConfirmModal.confirmSwitchToAgent')}
               </button>
             </div>
           </div>
@@ -3591,7 +3591,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
             {/* Header */}
             <div className="px-6 pt-6 pb-4 border-b border-slate-100">
               <div className="flex items-center justify-between mb-2">
-                <h3 className="text-lg font-black text-slate-900">מילוי פרמטרים לטמפלייט</h3>
+                <h3 className="text-lg font-black text-slate-900">{t('templateParamsModal.title')}</h3>
                 <button
                   onClick={() => setShowTemplateParamsModal(false)}
                   className="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors"
@@ -3600,7 +3600,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 </button>
               </div>
               <p className="text-sm text-slate-600">
-                {selectedTemplate.name || 'טמפלייט'}
+                {selectedTemplate.name || t('templateParamsModal.templateFallback')}
               </p>
             </div>
  
@@ -3624,7 +3624,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                   return (
                     <div key={idx} className="space-y-2">
                       <label className="block text-sm font-bold text-slate-700">
-                        {mediaType === 'image' ? '🖼️ תמונה' : mediaType === 'video' ? '🎥 וידאו' : '📄 מסמך'}
+                        {mediaType === 'image' ? t('templateParamsModal.mediaImage') : mediaType === 'video' ? t('templateParamsModal.mediaVideo') : t('templateParamsModal.mediaDocument')}
                       </label>
                       <TemplateHeaderMediaField
                         mediaType={mediaType}
@@ -3649,7 +3649,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                   if (matches && matches.length > 0) {
                     return (
                       <div key={idx} className="space-y-3">
-                        <label className="block text-sm font-bold text-slate-700">💬 משתנים בהודעה</label>
+                        <label className="block text-sm font-bold text-slate-700">{t('templateParamsModal.variablesInMessage')}</label>
                         <div className="text-xs text-slate-500 bg-slate-50 p-3 rounded-lg mb-2">
                           {comp.text}
                         </div>
@@ -3657,10 +3657,10 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                           const varNum = match.match(/\d+/)?.[0];
 
                           const baseFields = [
-                            { key: 'base:phone',        label: 'טלפון' },
-                            { key: 'base:full_name',     label: 'שם מלא' },
-                            { key: 'base:whatsapp_name', label: 'שם וואטסאפ' },
-                            { key: 'base:email',         label: 'כתובת מייל' },
+                            { key: 'base:phone',        label: t('templateParamsModal.fieldPhone') },
+                            { key: 'base:full_name',     label: t('templateParamsModal.fieldFullName') },
+                            { key: 'base:whatsapp_name', label: t('templateParamsModal.fieldWhatsappName') },
+                            { key: 'base:email',         label: t('templateParamsModal.fieldEmail') },
                           ];
 
                           const resolveField = (optKey: string): string => {
@@ -3684,7 +3684,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                           return (
                             <div key={varIdx}>
                               <label className="block text-xs font-semibold text-slate-600 mb-1 text-start">
-                                {match} - משתנה מספר {varNum}
+                                {t('templateParamsModal.variableNumberLabel', { match, num: varNum })}
                               </label>
                               <div className="flex items-center border border-slate-200 rounded-xl overflow-hidden focus-within:ring-2 focus-within:ring-sky-500/20 focus-within:border-sky-400 transition-all bg-white">
                                 <input
@@ -3695,7 +3695,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                                      newBody[varIdx] = e.target.value;
                                     setTemplateParams(prev => ({ ...prev, body: newBody }));
                                   }}
-                                  placeholder={`הזן ערך ל-${match}`}
+                                  placeholder={t('templateParamsModal.variableValuePlaceholder', { match })}
                                   className="flex-1 px-3 py-2 text-sm outline-none bg-transparent text-slate-800"
                                 />
                                 {hasContactFields && (
@@ -3711,9 +3711,9 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                                         setTemplateParams(prev => ({ ...prev, body: newBody }));
                                         e.target.value = '';
                                       }}
-                                      title="בחר שדה מאיש קשר"
+                                      title={t('templateParamsModal.chooseContactFieldTooltip')}
                                     >
-                                      <option value="">שדה מאיש קשר ▾</option>
+                                      <option value="">{t('templateParamsModal.chooseContactFieldOption')}</option>
                                       {baseFields.map(f => (
                                         <option key={f.key} value={f.key}>
                                           {f.label}{contactRecord ? ` — ${resolveField(f.key) || '—'}` : ''}
@@ -3728,9 +3728,9 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                                   </div>
                                 )}
                                 <QuickInsertMenu
-                                  title="מילוי אוטומטי"
+                                  title={t('templateParamsModal.autoFillTooltip')}
                                   options={[
-                                    { label: 'שם הנציג', getValue: () => currentUser?.name as string, disabled: !currentUser?.name },
+                                    { label: t('templateParamsModal.agentNameOption'), getValue: () => currentUser?.name as string, disabled: !currentUser?.name },
                                   ]}
                                   onSelect={(value) => {
                                     const newBody = [...(templateParams.body || [])];
@@ -3756,7 +3756,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 <div className="sticky top-0">
                   <h4 className="text-sm font-black text-slate-700 mb-4 flex items-center gap-2">
                     <span className="w-6 h-6 bg-sky-500 text-white rounded-lg flex items-center justify-center text-xs">👁️</span>
-                    תצוגה מקדימה
+                    {t('templateParamsModal.previewLabel')}
                   </h4>
                   
                   {/* WhatsApp-like message preview */}
@@ -3774,7 +3774,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                               {mediaUrl ? (
                                 <img 
                                   src={mediaUrl} 
-                                  alt="תמונת תבנית" 
+                                  alt={t('templateParamsModal.templateImageAlt')} 
                                   className="w-full h-full object-cover"
                                 />
                               ) : (
@@ -3782,7 +3782,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                                   <svg className="w-20 h-20 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                                   </svg>
-                                  <span className="text-xs font-semibold">העלה תמונה ראשית</span>
+                                  <span className="text-xs font-semibold">{t('templateParamsModal.uploadMainImage')}</span>
                                 </div>
                               )}
                             </div>
@@ -3794,7 +3794,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                             <div className="w-full aspect-video bg-slate-200 flex items-center justify-center">
                               <div className="flex flex-col items-center gap-2 text-slate-400">
                                 <span className="text-4xl">🎥</span>
-                                <span className="text-xs font-semibold">העלה וידאו</span>
+                                <span className="text-xs font-semibold">{t('templateParamsModal.uploadVideo')}</span>
                               </div>
                             </div>
                           );
@@ -3803,14 +3803,14 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                             <div className="p-4 bg-white/80 flex items-center gap-3">
                               <div className="w-12 h-12 bg-blue-500 text-white rounded-lg flex items-center justify-center text-xl">📄</div>
                               <div className="flex-1">
-                                <div className="text-sm font-bold text-slate-700">מסמך מצורף</div>
-                                <div className="text-xs text-slate-500">קובץ מסמך</div>
+                                <div className="text-sm font-bold text-slate-700">{t('templateParamsModal.attachedDocument')}</div>
+                                <div className="text-xs text-slate-500">{t('templateParamsModal.documentFile')}</div>
                               </div>
                             </div>
                           ) : (
                             <div className="p-4 bg-slate-200 text-slate-400 text-sm text-center flex flex-col items-center gap-2">
                               <span className="text-3xl">📄</span>
-                              <span className="text-xs font-semibold">העלה מסמך</span>
+                              <span className="text-xs font-semibold">{t('templateParamsModal.uploadDocument')}</span>
                             </div>
                           );
                         }
@@ -3841,7 +3841,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                             />
                           );
                         }
-                        return <p className="text-sm text-slate-500 italic">אין תוכן להצגה</p>;
+                        return <p className="text-sm text-slate-500 italic">{t('templateParamsModal.noContentToShow')}</p>;
                       })()}
                     </div>
 
@@ -3888,7 +3888,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
 
                   <p className="text-xs text-slate-500 mt-3 text-center flex items-center justify-center gap-1">
                     <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
-                    התצוגה מתעדכנת אוטומטית
+                    {t('templateParamsModal.autoUpdatingPreview')}
                   </p>
                 </div>
               </div>
@@ -3902,13 +3902,13 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                   onClick={() => setShowTemplateParamsModal(false)}
                   className="px-5 py-2.5 rounded-2xl border border-slate-200 text-slate-700 text-sm font-bold hover:bg-slate-50 transition-colors"
                 >
-                  ביטול
+                  {t('templateParamsModal.cancel')}
                 </button>
                 <button
                   onClick={confirmTemplateParams}
                   className="px-5 py-2.5 rounded-2xl bg-sky-500 text-white text-sm font-bold hover:bg-sky-600 transition-colors"
                 >
-                  אישור
+                  {t('templateParamsModal.confirm')}
                 </button>
               </div>
             </div>
@@ -3921,7 +3921,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 p-6">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-base font-black text-slate-900">שיוך נציגים</h3>
+              <h3 className="text-base font-black text-slate-900">{t('assignRepsModal.title')}</h3>
               <button
                 onClick={() => { setShowAssignModal(false); fetchContacts(); }}
                 className="p-1.5 hover:bg-slate-100 rounded-xl text-slate-400 transition-colors"
@@ -3929,13 +3929,13 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 <X size={18} />
               </button>
             </div>
-            <p className="text-xs text-slate-500 mb-4">שיחה: <span className="font-bold text-slate-700">{assignModalPhone}</span></p>
+            <p className="text-xs text-slate-500 mb-4">{t('assignRepsModal.sessionLabel')}: <span className="font-bold text-slate-700">{assignModalPhone}</span></p>
 
             {/* Currently assigned reps */}
             <div className="mb-5">
-              <p className="text-xs font-black text-slate-700 mb-2">נציגים משויכים:</p>
+              <p className="text-xs font-black text-slate-700 mb-2">{t('assignRepsModal.assignedReps')}</p>
               {assignCurrentReps.length === 0 ? (
-                <p className="text-xs text-slate-400 italic">אין נציגים משויכים</p>
+                <p className="text-xs text-slate-400 italic">{t('assignRepsModal.noAssignedReps')}</p>
               ) : (
                 <div className="flex flex-col gap-2">
                   {assignCurrentReps.map(repId => {
@@ -3947,7 +3947,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                           onClick={() => handleAssignRep(repId, 'unassign')}
                           disabled={assignLoading}
                           className="p-1 hover:bg-red-50 rounded-lg text-slate-400 hover:text-red-500 transition-colors disabled:opacity-50"
-                          title="הסר נציג"
+                          title={t('assignRepsModal.removeRepTooltip')}
                         >
                           <X size={14} />
                         </button>
@@ -3965,7 +3965,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 onChange={e => setAssignNewRepId(e.target.value)}
                 className="flex-1 px-3 py-2 border border-slate-200 rounded-xl text-sm bg-slate-50 outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-400 transition-all"
               >
-                <option value="">בחר נציג להוספה...</option>
+                <option value="">{t('assignRepsModal.chooseRepToAdd')}</option>
                 {subUsers.filter(u => !assignCurrentReps.includes(u.id)).map(u => (
                   <option key={u.id} value={u.id}>{u.name}</option>
                 ))}
@@ -3975,7 +3975,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 disabled={!assignNewRepId || assignLoading}
                 className="px-4 py-2 bg-sky-500 text-white rounded-xl text-sm font-black hover:bg-sky-600 transition-colors disabled:opacity-50 flex-shrink-0"
               >
-                הוסף
+                {t('assignRepsModal.add')}
               </button>
             </div>
           </div>
@@ -3987,7 +3987,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 p-6">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-base font-black text-slate-900">העברת שיחה</h3>
+              <h3 className="text-base font-black text-slate-900">{t('transferModal.title')}</h3>
               <button
                 onClick={() => setShowTransferModal(false)}
                 className="p-1.5 hover:bg-slate-100 rounded-xl text-slate-400 transition-colors"
@@ -3996,28 +3996,28 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
               </button>
             </div>
             <p className="text-xs text-slate-500 mb-4">
-              שיחה: <span className="font-bold text-slate-700">
-                {selectedPhone && isSimulator(selectedPhone) ? '📱 סימולטור (לבדיקות)' : selectedPhone}
+              {t('transferModal.sessionLabel')}: <span className="font-bold text-slate-700">
+                {selectedPhone && isSimulator(selectedPhone) ? t('transferModal.simulatorForTesting') : selectedPhone}
               </span>
             </p>
 
             {/* Target type tabs */}
             <div className="flex gap-1 bg-slate-100 rounded-xl p-1 mb-4">
               {([
-                { key: 'group', label: 'קבוצה' },
-                { key: 'rep', label: 'נציג' },
-                { key: 'shift_manager', label: 'מנהל משמרת' }
-              ] as const).map(t => (
+                { key: 'group', label: t('transferModal.targetGroup') },
+                { key: 'rep', label: t('transferModal.targetRep') },
+                { key: 'shift_manager', label: t('transferModal.targetShiftManager') }
+              ] as const).map(opt => (
                 <button
-                  key={t.key}
-                  onClick={() => { setTransferTargetType(t.key); setTransferTargetId(''); }}
+                  key={opt.key}
+                  onClick={() => { setTransferTargetType(opt.key); setTransferTargetId(''); }}
                   className={`flex-1 px-3 py-1.5 rounded-lg text-xs font-black transition-all ${
-                    transferTargetType === t.key
+                    transferTargetType === opt.key
                       ? 'bg-white text-slate-900 shadow-sm'
                       : 'text-slate-500 hover:text-slate-700'
                   }`}
                 >
-                  {t.label}
+                  {opt.label}
                 </button>
               ))}
             </div>
@@ -4025,16 +4025,16 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
             {/* Target selector */}
             <div className="mb-4">
               <label className="text-xs font-black text-slate-700 mb-1.5 block">
-                {transferTargetType === 'group' && 'בחר קבוצה:'}
-                {transferTargetType === 'rep' && 'בחר נציג מהקבוצה שלך:'}
-                {transferTargetType === 'shift_manager' && 'בחר מנהל משמרת:'}
+                {transferTargetType === 'group' && t('transferModal.chooseGroup')}
+                {transferTargetType === 'rep' && t('transferModal.chooseRepFromYourGroup')}
+                {transferTargetType === 'shift_manager' && t('transferModal.chooseShiftManager')}
               </label>
               <select
                 value={transferTargetId}
                 onChange={e => setTransferTargetId(e.target.value)}
                 className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm bg-slate-50 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all"
               >
-                <option value="">בחר...</option>
+                <option value="">{t('transferModal.choosePlaceholder')}</option>
                 {transferTargetType === 'group' && transferTargets.groups.map(g => (
                   <option key={g.id} value={g.id}>{g.name}</option>
                 ))}
@@ -4047,14 +4047,14 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                     return r.repGroupIds.some(gid => myGroups.includes(gid));
                   });
                   return filtered.length === 0
-                    ? <option value="" disabled>אין נציגים זמינים</option>
+                    ? <option value="" disabled>{t('transferModal.noRepsAvailable')}</option>
                     : filtered.map(r => (
                         <option key={r.id} value={r.id}>{r.name}{r.email ? ` (${r.email})` : ''}</option>
                       ));
                 })()}
                 {transferTargetType === 'shift_manager' && (
                   transferTargets.shiftManagers.length === 0
-                    ? <option value="" disabled>אין מנהלי משמרת זמינים</option>
+                    ? <option value="" disabled>{t('transferModal.noShiftManagersAvailable')}</option>
                     : transferTargets.shiftManagers.map(m => (
                         <option key={m.id} value={m.id}>{m.name}{m.email ? ` (${m.email})` : ''}</option>
                       ))
@@ -4078,7 +4078,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
               />
               <span className="flex items-center gap-1.5 text-sm font-bold text-slate-700">
                 <Phone size={14} className="text-green-600" />
-לקוח מעוניין בשיחת טלפון חוזרת              </span>
+{t('transferModal.customerWantsPhoneCallback')}              </span>
             </label>
 
             <div className="flex gap-2 justify-end">
@@ -4087,14 +4087,14 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 disabled={transferLoading}
                 className="px-4 py-2 bg-slate-100 text-slate-700 rounded-xl text-sm font-black hover:bg-slate-200 transition-colors disabled:opacity-50"
               >
-                ביטול
+                {t('transferModal.cancel')}
               </button>
               <button
                 onClick={submitTransfer}
                 disabled={!transferTargetId || transferLoading}
                 className="px-4 py-2 bg-indigo-500 text-white rounded-xl text-sm font-black hover:bg-indigo-600 transition-colors disabled:opacity-50"
               >
-                {transferLoading ? 'מעביר...' : 'העבר שיחה'}
+                {transferLoading ? t('transferModal.transferring') : t('transferModal.transferButton')}
               </button>
             </div>
           </div>
@@ -4113,7 +4113,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
               onClick={dismissAllNotifications}
               className="self-end text-xs text-slate-400 hover:text-slate-600 font-bold px-2 py-1 bg-white/90 rounded-lg shadow border border-slate-100 mb-1 transition-colors"
             >
-              נקה הכל ({pendingNotifications.length})
+              {t('notifications.clearAll', { count: pendingNotifications.length })}
             </button>
           )}
           {pendingNotifications.map(notif => (
@@ -4154,28 +4154,28 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                     : notif.wants_phone ? 'text-green-900' : 'text-slate-800'
                 }`}>
                   {notif.type === 'session_case1_reminder'
-                    ? 'תזכורת: הלקוח שקט 30 דקות לאחר תגובת נציג'
+                    ? t('notifications.reminderQuiet')
                     : notif.type === 'session_case2_waiting'
-                      ? 'המשתמש מחכה למענה'
-                    : notif.wants_phone ? '📞 בקשת שיחה טלפונית!' : 'שיחה חדשה הועברה אליך'}
+                      ? t('notifications.waitingForResponse')
+                    : notif.wants_phone ? t('notifications.phoneCallRequest') : t('notifications.newSessionTransferred')}
                 </p>
                 <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">
-                  {notif.from_user_name && <span>מאת <span className="font-bold">{notif.from_user_name}</span> · </span>}
+                  {notif.from_user_name && <span>{t('notifications.fromUser')} <span className="font-bold">{notif.from_user_name}</span> · </span>}
                   {notif.target_label}
                 </p>
                 {(notif.session_phone || notif.is_simulator) && (
                   <p className="text-[11px] text-slate-400 mt-0.5">
-                    {notif.is_simulator ? '📱 סימולטור' : notif.session_phone}
+                    {notif.is_simulator ? t('notifications.simulator') : notif.session_phone}
                   </p>
                 )}
                 {notif.wants_phone && (
                   <span className="inline-flex items-center gap-1 mt-1 text-[10px] font-black px-2 py-0.5 rounded-full bg-green-200 text-green-800 ring-1 ring-green-400/50">
-                    <Phone size={10} /> טלפוני
+                    <Phone size={10} /> {t('notifications.phoneOnly')}
                   </span>
                 )}
                 {notif.type === 'session_case1_reminder' && (
                   <span className="inline-flex items-center gap-1 mt-1 text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-200 text-amber-900 ring-1 ring-amber-300/70">
-                    <Clock size={10} /> תזכורת #{notif.reminder_count || 1}
+                    <Clock size={10} /> {t('notifications.reminderCount', { count: notif.reminder_count || 1 })}
                   </span>
                 )}
                 <div className="flex items-center gap-2 mt-1.5 flex-wrap">
@@ -4191,16 +4191,16 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                           : 'text-indigo-600 hover:text-indigo-800'
                       }`}
                     >
-                      פתח שיחה ←
+                      {t('notifications.openSession')}
                     </button>
                   )}
                   {notif.wants_phone && (
                     <button
                       onClick={() => markNotifPhoneHandled(notif)}
                       className="flex items-center gap-1 text-[11px] font-black px-2 py-0.5 rounded-full bg-green-600 text-white hover:bg-green-700 transition-colors"
-                      title="סמן שיחה טלפונית כטופלה"
+                      title={t('notifications.markPhoneHandledTooltip')}
                     >
-                      <Check size={10} /> טופל
+                      <Check size={10} /> {t('notifications.handled')}
                     </button>
                   )}
                   {notif.type === 'session_case1_reminder' && (
@@ -4209,17 +4209,17 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                         onClick={() => applyReminderAction(notif, 'close')}
                         disabled={!!notifActionLoading[notif._id]}
                         className="flex items-center gap-1 text-[11px] font-black px-2 py-0.5 rounded-full bg-rose-600 text-white hover:bg-rose-700 transition-colors disabled:opacity-60"
-                        title="סיום שיחה"
+                        title={t('notifications.endConversationTooltip')}
                       >
-                        {notifActionLoading[notif._id] === 'close' ? 'סוגר...' : 'סגור שיחה'}
+                        {notifActionLoading[notif._id] === 'close' ? t('notifications.closing') : t('notifications.closeConversation')}
                       </button>
                       <button
                         onClick={() => applyReminderAction(notif, 'extend_30m')}
                         disabled={!!notifActionLoading[notif._id]}
                         className="flex items-center gap-1 text-[11px] font-black px-2 py-0.5 rounded-full bg-amber-600 text-white hover:bg-amber-700 transition-colors disabled:opacity-60"
-                        title="הארכת המתנה ב-30 דקות"
+                        title={t('notifications.extendWaitTooltip')}
                       >
-                        {notifActionLoading[notif._id] === 'extend_30m' ? 'מאריך...' : 'הארך 30 דק'}
+                        {notifActionLoading[notif._id] === 'extend_30m' ? t('notifications.extending') : t('notifications.extend30min')}
                       </button>
                     </>
                   )}
@@ -4228,7 +4228,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
               <button
                 onClick={() => dismissNotification(notif._id)}
                 className="flex-shrink-0 p-1 hover:bg-slate-100 rounded-lg text-slate-300 hover:text-slate-500 transition-colors mt-0.5"
-                title="הסתר"
+                title={t('notifications.hideTooltip')}
               >
                 <X size={14} />
               </button>

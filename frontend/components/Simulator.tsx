@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { WhatsAppText } from '../utils/whatsappFormat';
 import { findMatchedBranchIndex } from '../utils/timeRouting';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -98,6 +99,7 @@ const validateSimInput = (type: string | undefined, value: string): boolean => {
 };
 
 const Carousel: React.FC<{ items: CarouselItem[], onSelect: (text: string, idx: number, val?: string) => void }> = ({ items, onSelect }) => {
+  const { t: simT } = useTranslation('builder');
   const scrollRef = useRef<HTMLDivElement>(null);
   const scroll = (direction: 'left' | 'right') => {
     if (scrollRef.current) {
@@ -123,7 +125,7 @@ const Carousel: React.FC<{ items: CarouselItem[], onSelect: (text: string, idx: 
                   {item.options?.map((opt, oIdx) => (
                     <button key={oIdx} onClick={() => onSelect(opt.text, oIdx, opt.value)} className="w-full text-right py-2 px-4 bg-slate-50 border border-slate-100 rounded-xl hover:bg-blue-600 hover:text-white transition-all text-[11px] font-bold uppercase tracking-tight">{opt.text}</button>
                   ))}
-                  {item.url && <a href={item.url} target="_blank" rel="noopener noreferrer" className="w-full text-center py-2 px-4 bg-white border border-blue-100 text-blue-600 rounded-xl hover:bg-blue-50 transition-all text-[11px] font-bold uppercase tracking-tight flex items-center justify-center gap-1.5">מידע נוסף <ExternalLink size={12} /></a>}
+                  {item.url && <a href={item.url} target="_blank" rel="noopener noreferrer" className="w-full text-center py-2 px-4 bg-white border border-blue-100 text-blue-600 rounded-xl hover:bg-blue-50 transition-all text-[11px] font-bold uppercase tracking-tight flex items-center justify-center gap-1.5">{simT('simulator.moreInfo')} <ExternalLink size={12} /></a>}
                 </div>
               </div>
             </div>
@@ -135,6 +137,7 @@ const Carousel: React.FC<{ items: CarouselItem[], onSelect: (text: string, idx: 
 };
 
 const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, nodes, edges, fixedProcesses, versions, token, isStandalone, currentUser, flowId, initialParams, onNodeFocus, onFixedProcessActive, restartKeyword }) => {
+  const { t } = useTranslation('builder');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [userInput, setUserInput] = useState('');
   const [dateInput, setDateInput] = useState('');
@@ -406,7 +409,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
     const pid = currentUser?.public_id || currentUser?.id || (new URLSearchParams(window.location.search)).get('public_id');
     
     if (!pid) {
-      alert("שגיאה: לא נמצא מזהה משתמש לשיתוף. אנא נסה להתחבר מחדש.");
+      alert(t('simulator.shareCopyError'));
       return;
     }
 
@@ -442,7 +445,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
         setShowShareOptions(false);
       }, 1500);
     }).catch(() => {
-      window.prompt("העתק את הקישור לשיתוף:", shareUrl);
+      window.prompt(t('simulator.copyLinkPrompt'), shareUrl);
     });
   };
 
@@ -563,7 +566,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
           } 
           break;
         case 'Return': foundReturnValue = action.value; updateParam('last_return', action.value); break;
-        case 'ChangeState': addMessage({ sender: 'bot', type: 'text', content: `[מצב בוט שונה ל: ${action.value}]` }); break;
+        case 'ChangeState': addMessage({ sender: 'bot', type: 'text', content: t('simulator.botStateChanged', { value: action.value }) }); break;
       }
       i++;
     }
@@ -574,7 +577,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
   const processNext = async (nodeId: string | null, instance: any, depth: number = 0, stack: StackItem[] = [], forcedValue?: { string: string | null, number: number | null }, forcedCommand?: string | null) => {
     const myRunId = runIdRef.current;
     const cancelled = () => runIdRef.current !== myRunId;
-    if (depth > 250) { addMessage({ sender: 'bot', type: 'text', content: "⚠️ חריגה ממורכבות המערכת המותרת." }); return; }
+    if (depth > 250) { addMessage({ sender: 'bot', type: 'text', content: t('simulator.complexityExceeded') }); return; }
     setCurrentInstance(instance); setExecutionStack(stack);
     if (!nodeId) {
       if (stack.length > 0) {
@@ -651,13 +654,13 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
         // Validate required data
         if (!node.data.processId) {
           console.error('[Simulator] ❌ FIXED_PROCESS missing processId!', node);
-          addMessage({ sender: 'bot', type: 'text', content: '⚠️ שגיאה: תת-תהליך לא מוגדר כראוי (חסר processId)' });
+          addMessage({ sender: 'bot', type: 'text', content: t('simulator.subflowMissingProcessId') });
           return processNext(findNextNodeId(nodeId, instance), instance, depth + 1, stack);
         }
         
         if (!flowId) {
           console.error('[Simulator] ❌ FIXED_PROCESS missing flowId!');
-          addMessage({ sender: 'bot', type: 'text', content: '⚠️ שגיאה: flowId לא מוגדר' });
+          addMessage({ sender: 'bot', type: 'text', content: t('simulator.subflowMissingFlowId') });
           return processNext(findNextNodeId(nodeId, instance), instance, depth + 1, stack);
         }
         
@@ -676,7 +679,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
             const publicId = currentUser?.public_id || params.get('public_id');
             if (!publicId) {
               console.error('[Simulator] ❌ No token and no public_id - cannot fetch sub-flow');
-              addMessage({ sender: 'bot', type: 'text', content: '⚠️ שגיאה: אין הרשאות לטעינת תת-תהליך' });
+              addMessage({ sender: 'bot', type: 'text', content: t('simulator.subflowNoPermission') });
               return processNext(findNextNodeId(nodeId, instance), instance, depth + 1, stack);
             }
             fetchUrl = `${API_BASE}/flow/public/${publicId}?flow_id=${flowId}&standard_process_id=${node.data.processId}`;
@@ -689,7 +692,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
           if (!res.ok) {
             const errorText = await res.text();
             console.error('[Simulator] ❌ Failed to fetch sub-flow:', res.status, errorText);
-            addMessage({ sender: 'bot', type: 'text', content: `⚠️ שגיאה בטעינת תת-תהליך (${res.status})` });
+            addMessage({ sender: 'bot', type: 'text', content: t('simulator.subflowFetchError', { status: res.status }) });
             return processNext(findNextNodeId(nodeId, instance), instance, depth + 1, stack);
           }
           
@@ -698,7 +701,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
           
           if (!subFlow.nodes || subFlow.nodes.length === 0) {
             console.error('[Simulator] ❌ Sub-flow is empty!');
-            addMessage({ sender: 'bot', type: 'text', content: '⚠️ תת-תהליך ריק' });
+            addMessage({ sender: 'bot', type: 'text', content: t('simulator.subflowEmpty') });
             return processNext(findNextNodeId(nodeId, instance), instance, depth + 1, stack);
           }
           
@@ -707,7 +710,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
           
           if (!subStart) {
             console.error('[Simulator] ❌ Sub-flow missing START node!');
-            addMessage({ sender: 'bot', type: 'text', content: '⚠️ תת-תהליך לא מכיל נקודת התחלה' });
+            addMessage({ sender: 'bot', type: 'text', content: t('simulator.subflowMissingStart') });
             return processNext(findNextNodeId(nodeId, instance), instance, depth + 1, stack);
           }
           
@@ -716,7 +719,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
           return processNext(subStart.id, subInstance, depth + 1, newStack);
         } catch (e) { 
           console.error('[Simulator] ❌ FIXED_PROCESS exception:', e);
-          addMessage({ sender: 'bot', type: 'text', content: '⚠️ שגיאה בטעינת תת-תהליך' });
+          addMessage({ sender: 'bot', type: 'text', content: t('simulator.subflowLoadError') });
         }
         return processNext(findNextNodeId(nodeId, instance), instance, depth + 1, stack);
       case NodeType.ACTION_WEB_SERVICE:
@@ -808,7 +811,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
           // If the fetch was aborted due to reset, silently discard - do NOT output an error message
           if (error?.name === 'AbortError' || cancelled()) return;
           setIsBotTyping(false); 
-          addMessage({ sender: 'bot', type: 'text', content: `❌ שגיאה בחיבור לשרת ה-Webservice` }); 
+          addMessage({ sender: 'bot', type: 'text', content: t('simulator.webserviceError') }); 
           console.log('[Simulator] 🌐 Error - taking default exit');
           return processNext(findNextNodeId(nodeId, instance, 'default'), instance, depth + 1, stack); 
         }
@@ -838,7 +841,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
         const resolvedUrl = (node.data.url || '').replace(/--([^-]+)--/g, (_: string, name: string) =>
           sessionParamsRef.current[name] ?? ''
         );
-        addMessage({ sender: 'bot', type: 'link', content: node.data.linkLabel || 'קישור חיצוני', url: resolvedUrl });
+        addMessage({ sender: 'bot', type: 'link', content: node.data.linkLabel || t('simulator.moreInfo'), url: resolvedUrl });
         setIsBotTyping(false);
         return processNext(findNextNodeId(nodeId, instance), instance, depth + 1, stack);
       }
@@ -882,7 +885,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
       setIsBotTyping(true);
       await new Promise(r => setTimeout(r, 400));
       setIsBotTyping(false);
-      addMessage({ sender: 'bot', type: 'text', content: 'השיחה אופסה 🔄 שלח הודעה כלשהי להתחיל מחדש' });
+      addMessage({ sender: 'bot', type: 'text', content: t('simulator.restartMessage') });
       await resetChat();
       return;
     }
@@ -959,7 +962,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
         setIsBotTyping(true);
         await new Promise(r => setTimeout(r, 350));
         setIsBotTyping(false);
-        addMessage({ sender: 'bot', type: 'text', content: 'הערך שהוזן אינו חוקי, אנא הזן ערך מתאים.' });
+        addMessage({ sender: 'bot', type: 'text', content: t('simulator.invalidValueMessage') });
         if (node.data.label) {
           setIsBotTyping(true);
           await new Promise(r => setTimeout(r, 250));
@@ -1020,7 +1023,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
           setIsBotTyping(true);
           await new Promise(r => setTimeout(r, 350));
           setIsBotTyping(false);
-          addMessage({ sender: 'bot', type: 'text', content: 'בחר רק מהאפשרויות' });
+          addMessage({ sender: 'bot', type: 'text', content: t('simulator.chooseOnlyFromOptions') });
           const menuImgs = (node.data.optionImages || []).filter((_: any, i: number) => (node.data.options || [])[i] !== 'default');
           setIsBotTyping(true);
           await new Promise(r => setTimeout(r, 400));
@@ -1068,7 +1071,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
     if (!file || !currentNodeId || !currentInstance) return;
     
     const fileName = file.name;
-    addMessage({ sender: 'user', type: 'text', content: `קובץ הועלה: ${fileName}` });
+    addMessage({ sender: 'user', type: 'text', content: t('simulator.fileUploaded', { fileName }) });
     setOpeningWord(fileName);
     
     const nodesList = currentInstance.getNodes() || [];
@@ -1113,7 +1116,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
       if (menuInstance) {
         console.log('[Simulator] ⚡ Flow interrupt! Leaving', currentNodeId, '→ back to menu', sourceNodeId);
         // Show a visual separator so the user understands the context switched
-        addMessage({ sender: 'bot', type: 'separator', content: '↩ חזרת לתפריט' });
+        addMessage({ sender: 'bot', type: 'separator', content: t('simulator.backToMenu') });
         addMessage({ sender: 'user', type: 'text', content: option });
         setOpeningWord(option);
         setLastUserValue({ string: option, number: null });
@@ -1177,7 +1180,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
           <div className="text-right">
             <h2 className="font-bold text-xs uppercase tracking-widest">MeserGO</h2>
             <div className="flex items-center justify-end gap-2 mt-0.5">
-              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-tighter">סימולטור פעיל</span>
+              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-tighter">{t('simulator.active')}</span>
               <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
             </div>
           </div>
@@ -1190,7 +1193,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
                 <button 
                   onClick={() => setShowShareOptions(!showShareOptions)} 
                   className={`p-2.5 rounded-xl transition-all ${copySuccess ? 'bg-green-500 text-white' : (showShareOptions ? 'bg-white/20' : 'hover:bg-white/10')}`} 
-                  title="שיתוף קישור"
+                  title={t('simulator.shareLink')}
                 >
                   {copySuccess ? <Check size={20} /> : <Share2 size={20} />}
                 </button>
@@ -1204,8 +1207,8 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
                       className="absolute left-0 top-full mt-2 w-64 bg-white border border-slate-100 rounded-[1.5rem] shadow-2xl z-[100] overflow-hidden"
                     >
                       <div className="p-4 border-b border-slate-50">
-                        <h4 className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-1">בחר גרסה לשיתוף</h4>
-                        <p className="text-[10px] text-slate-400">הקישור יציג את התזרים של הגרסה הנבחרת</p>
+                        <h4 className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-1">{t('simulator.chooseVersionToShare')}</h4>
+                        <p className="text-[10px] text-slate-400">{t('simulator.shareVersionHint')}</p>
                       </div>
                       <div className="max-h-60 overflow-y-auto">
                         <button 
@@ -1214,13 +1217,13 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
                         >
                           <Globe size={14} className="text-blue-500" />
                           <div className="text-right flex-1 mr-3">
-                            <span className="block text-[11px] font-bold text-slate-900">טיוטה נוכחית (Live)</span>
-                            <span className="block text-[9px] text-slate-400">המצב הנוכחי של העורך</span>
+                            <span className="block text-[11px] font-bold text-slate-900">{t('simulator.currentDraftLive')}</span>
+                            <span className="block text-[9px] text-slate-400">{t('simulator.currentEditorState')}</span>
                           </div>
                         </button>
                         
                         {versions.length === 0 ? (
-                          <div className="p-4 text-center text-[10px] text-slate-300 font-bold uppercase italic">אין גרסאות שמורות</div>
+                          <div className="p-4 text-center text-[10px] text-slate-300 font-bold uppercase italic">{t('simulator.noSavedVersions')}</div>
                         ) : versions.map((v) => (
                           <button 
                             key={v.id}
@@ -1241,10 +1244,10 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
                   )}
                 </AnimatePresence>
               </div>
-              <button onClick={openInNewWindow} className="p-2.5 hover:bg-white/10 rounded-xl transition-all" title="פתח בחלון חדש"><Maximize2 size={20} /></button>
+              <button onClick={openInNewWindow} className="p-2.5 hover:bg-white/10 rounded-xl transition-all" title={t('simulator.openInNewWindow')}><Maximize2 size={20} /></button>
             </div>
           )}
-          <button onClick={resetChat} className="p-2.5 hover:bg-white/10 rounded-xl transition-all" title="אפס צ'אט"><RotateCcw size={20} /></button>
+          <button onClick={resetChat} className="p-2.5 hover:bg-white/10 rounded-xl transition-all" title={t('simulator.resetChat')}><RotateCcw size={20} /></button>
         </div>
       </div>
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-6 bg-[#fcfcfc] space-y-6 scrollbar-hide">
@@ -1280,7 +1283,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
                     <div>
                       <a href={msg.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 p-3 bg-slate-50 rounded-xl hover:bg-slate-100 transition-colors">
                         <ExternalLink size={20} />
-                        <span>פתח מסמך PDF</span>
+                        <span>{t('simulator.openPdfDocument')}</span>
                       </a>
                       {msg.content && <div className="mt-2"><WhatsAppText text={msg.content} /></div>}
                     </div>
@@ -1323,7 +1326,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
                   )}
                   {msg.type === 'input_date' && (() => {
                     const _bubbleInputType = msg.dateTimeMode === 'time' ? 'time' : msg.dateTimeMode === 'datetime' ? 'datetime-local' : 'date';
-                    const _bubbleLabel = msg.dateTimeMode === 'time' ? 'אשר שעה' : msg.dateTimeMode === 'datetime' ? 'אשר תאריך ושעה' : 'אשר תאריך';
+                    const _bubbleLabel = msg.dateTimeMode === 'time' ? t('simulator.confirmTime') : msg.dateTimeMode === 'datetime' ? t('simulator.confirmDateTime') : t('simulator.confirmDate');
                     return (
                       <div className="flex flex-col items-end gap-3">
                         <div className="text-slate-900">{msg.content}</div>
@@ -1351,7 +1354,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
                          onClick={() => simulatorFileInputRef.current?.click()}
                          className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white rounded-xl font-bold text-xs hover:bg-blue-700 transition-all shadow-lg shadow-blue-600/20 active:scale-95"
                        >
-                         <Upload size={14} /> בחר קובץ להעלאה
+                         <Upload size={14} /> {t('simulator.chooseFileToUpload')}
                        </button>
                     </div>
                   )}
@@ -1396,7 +1399,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
               <div className="flex items-center gap-3 bg-slate-50 rounded-[1.5rem] p-2.5 pr-6 border border-slate-100" dir="ltr">
                 <input
                   type="text" 
-                  placeholder="הקלד תגובה..." 
+                  placeholder={t('simulator.typeMessagePlaceholder')} 
                   dir="rtl" 
                   className="flex-1 bg-transparent border-none outline-none text-sm font-bold text-black h-10 text-right" 
                   value={userInput} 

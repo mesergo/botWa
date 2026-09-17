@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import ChatImage from './shared/ChatImage';
 import {
   Search, List, Phone, Bot, Clock, ToggleLeft, ToggleRight, ChevronDown, ChevronUp,
@@ -18,6 +19,7 @@ interface CustomerSessionsPanelProps {
 } 
  
 const CustomerSessionsPanel: React.FC<CustomerSessionsPanelProps> = ({ token, apiBase, userId }) => {
+  const { t } = useTranslation('sessions');
   const [sessions, setSessions] = useState<any[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(false);
   const [sessionsSearch, setSessionsSearch] = useState('');
@@ -153,7 +155,7 @@ const CustomerSessionsPanel: React.FC<CustomerSessionsPanelProps> = ({ token, ap
           <div className="flex items-center justify-between gap-4 flex-wrap mb-3">
             {!sessionsLoading && sessions.length > 0 ? (
               <p className="text-xs font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">
-                {sessionsTotal} סשנים · עמוד {sessionsPage} מתוך {sessionsTotalPages}
+                {t('customerPanel.countSummary', { total: sessionsTotal, page: sessionsPage, totalPages: sessionsTotalPages })}
               </p>
             ) : <span />}
             <div className="relative max-w-md w-full sm:w-auto sm:flex-1" ref={searchBoxRef}>
@@ -163,7 +165,7 @@ const CustomerSessionsPanel: React.FC<CustomerSessionsPanelProps> = ({ token, ap
                 value={sessionsSearchInput}
                 onChange={e => setSessionsSearchInput(e.target.value)}
                 onFocus={() => setShowBotDropdown(true)}
-                placeholder="חיפוש לפי טלפון או בוט..."
+                placeholder={t('customerPanel.searchPlaceholder')}
                 className="w-full ps-10 pe-4 py-3 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700 placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all shadow-sm"
               />
               {sessionsSearchInput && (
@@ -171,7 +173,7 @@ const CustomerSessionsPanel: React.FC<CustomerSessionsPanelProps> = ({ token, ap
                   type="button"
                   onClick={() => { setSessionsSearchInput(''); setShowBotDropdown(false); }}
                   className="absolute end-3 top-1/2 -translate-y-1/2 text-slate-300 hover:text-slate-500"
-                  title="נקה חיפוש"
+                  title={t('customerPanel.clearSearch')}
                 >
                   <X size={14} />
                 </button>
@@ -186,7 +188,7 @@ const CustomerSessionsPanel: React.FC<CustomerSessionsPanelProps> = ({ token, ap
                   className="absolute z-20 top-full mt-1.5 w-full bg-white border border-slate-200 rounded-xl shadow-lg max-h-56 overflow-y-auto"
                 >
                   <p className="px-3 pt-2.5 pb-1 text-[10px] font-black text-slate-300 uppercase tracking-widest">
-                    בחר בוט מהרשימה
+                    {t('customerPanel.chooseBotFromList')}
                   </p>
                   {filteredBots.map(b => (
                     <button
@@ -213,12 +215,12 @@ const CustomerSessionsPanel: React.FC<CustomerSessionsPanelProps> = ({ token, ap
           {sessionsLoading ? (
             <div className="flex items-center justify-center py-24 text-slate-400 font-bold">
               <div className="animate-spin rounded-full h-8 w-8 border-2 border-blue-500 border-t-transparent me-3" />
-              טוען סשנים...
+              {t('customerPanel.loadingSessions')}
             </div>
           ) : sessions.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-24 text-slate-300 gap-4">
               <List size={64} strokeWidth={1} />
-              <p className="text-xl font-bold">לא נמצאו סשנים ללקוח זה</p>
+              <p className="text-xl font-bold">{t('customerPanel.noSessionsFound')}</p>
             </div>
           ) : (
             <>
@@ -227,11 +229,11 @@ const CustomerSessionsPanel: React.FC<CustomerSessionsPanelProps> = ({ token, ap
                 <table className="w-full min-w-[680px] text-sm">
                   <thead>
                     <tr className="border-b border-slate-100 bg-slate-50/80">
-                      <th className="text-start px-4 py-3 text-xs font-black text-slate-400 uppercase tracking-widest">טלפון</th>
-                      <th className="text-start px-4 py-3 text-xs font-black text-slate-400 uppercase tracking-widest">בוט</th>
-                      <th className="text-start px-4 py-3 text-xs font-black text-slate-400 uppercase tracking-widest">תאריך</th>
-                      <th className="text-start px-4 py-3 text-xs font-black text-slate-400 uppercase tracking-widest">סטטוס</th>
-                      <th className="text-start px-4 py-3 text-xs font-black text-slate-400 uppercase tracking-widest">פעולות</th>
+                      <th className="text-start px-4 py-3 text-xs font-black text-slate-400 uppercase tracking-widest">{t('customerPanel.colPhone')}</th>
+                      <th className="text-start px-4 py-3 text-xs font-black text-slate-400 uppercase tracking-widest">{t('customerPanel.colBot')}</th>
+                      <th className="text-start px-4 py-3 text-xs font-black text-slate-400 uppercase tracking-widest">{t('customerPanel.colDate')}</th>
+                      <th className="text-start px-4 py-3 text-xs font-black text-slate-400 uppercase tracking-widest">{t('customerPanel.colStatus')}</th>
+                      <th className="text-start px-4 py-3 text-xs font-black text-slate-400 uppercase tracking-widest">{t('customerPanel.colActions')}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -241,9 +243,9 @@ const CustomerSessionsPanel: React.FC<CustomerSessionsPanelProps> = ({ token, ap
                       const paramEntries = Object.entries(session.parameters || {}).filter(([, v]) => v !== null && v !== '' && v !== undefined);
                       const hasHistory = (session.process_history || []).length > 0;
                       const formatD = (d: string | null) => {
-                        if (!d) return 'לא ידוע';
+                        if (!d) return t('customerPanel.unknown');
                         const dt = new Date(d);
-                        if (isNaN(dt.getTime())) return 'לא ידוע';
+                        if (isNaN(dt.getTime())) return t('customerPanel.unknown');
                         return dt.toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
                       };
                       return (
@@ -274,7 +276,7 @@ const CustomerSessionsPanel: React.FC<CustomerSessionsPanelProps> = ({ token, ap
                             <td className="px-4 py-3">
                               <button
                                 onClick={() => toggleSessionActive(session.id, session.is_active)}
-                                title={session.is_active ? 'לחץ להשבית' : 'לחץ להפעיל'}
+                                title={session.is_active ? t('customerPanel.clickToDisable') : t('customerPanel.clickToEnable')}
                                 className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold border transition-all ${
                                   session.is_active
                                     ? 'bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-100'
@@ -282,8 +284,8 @@ const CustomerSessionsPanel: React.FC<CustomerSessionsPanelProps> = ({ token, ap
                                 }`}
                               >
                                 {session.is_active
-                                  ? <><ToggleRight size={14} /><span>פעיל</span></>
-                                  : <><ToggleLeft size={14} /><span>כבוי</span></>}
+                                  ? <><ToggleRight size={14} /><span>{t('customerPanel.active')}</span></>
+                                  : <><ToggleLeft size={14} /><span>{t('customerPanel.inactive')}</span></>}
                               </button>
                             </td>
                             {/* Actions */}
@@ -299,7 +301,7 @@ const CustomerSessionsPanel: React.FC<CustomerSessionsPanelProps> = ({ token, ap
                                     }`}
                                   >
                                     {isExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-                                    פרמטרים
+                                    {t('customerPanel.parameters')}
                                   </button>
                                 )}
                                 {hasHistory && (
@@ -312,7 +314,7 @@ const CustomerSessionsPanel: React.FC<CustomerSessionsPanelProps> = ({ token, ap
                                     }`}
                                   >
                                     <MessageSquare size={13} />
-                                    היסטוריה
+                                    {t('customerPanel.history')}
                                     <span className="bg-sky-500 text-white text-[9px] font-black rounded-full px-1.5 py-0.5 leading-none">
                                       {session.process_history.length}
                                     </span>
@@ -325,7 +327,7 @@ const CustomerSessionsPanel: React.FC<CustomerSessionsPanelProps> = ({ token, ap
                           {isExpanded && paramEntries.length > 0 && (
                             <tr className="bg-slate-50/70">
                               <td colSpan={5} className="px-6 py-4 border-t border-slate-100">
-                                <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3">פרמטרים שנאספו</p>
+                                <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3">{t('customerPanel.parametersCollected')}</p>
                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                                   {paramEntries.map(([key, value]) => (
                                     <div key={key} className="bg-white border border-slate-100 rounded-xl p-3">
@@ -352,7 +354,7 @@ const CustomerSessionsPanel: React.FC<CustomerSessionsPanelProps> = ({ token, ap
                     disabled={sessionsPage <= 1 || sessionsLoading}
                     className="px-2.5 py-1 text-slate-400 rounded-lg text-xs font-bold hover:text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
                   >
-                    ‹ הקודם
+                    {t('customerPanel.prevPage')}
                   </button>
 
                   {Array.from({ length: sessionsTotalPages }, (_, i) => i + 1)
@@ -386,7 +388,7 @@ const CustomerSessionsPanel: React.FC<CustomerSessionsPanelProps> = ({ token, ap
                     disabled={sessionsPage >= sessionsTotalPages || sessionsLoading}
                     className="px-2.5 py-1 text-slate-400 rounded-lg text-xs font-bold hover:text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
                   >
-                    הבא ›
+                    {t('customerPanel.nextPage')}
                   </button>
                 </div>
               )}
@@ -414,7 +416,7 @@ const CustomerSessionsPanel: React.FC<CustomerSessionsPanelProps> = ({ token, ap
               <button
                 onClick={() => setHistoryOpenId(null)}
                 className="p-1.5 hover:bg-white/10 rounded-xl transition-colors flex-shrink-0"
-                title="סגור"
+                title={t('customerPanel.close')}
               >
                 <X size={16} />
               </button>
@@ -427,7 +429,7 @@ const CustomerSessionsPanel: React.FC<CustomerSessionsPanelProps> = ({ token, ap
               {session.process_history.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full gap-3 text-slate-300">
                   <MessageSquare size={36} strokeWidth={1} />
-                  <p className="text-xs font-bold">אין הודעות</p>
+                  <p className="text-xs font-bold">{t('customerPanel.noMessages')}</p>
                 </div>
               ) : (() => {
                 const grouped: any[] = [];
@@ -475,7 +477,7 @@ const CustomerSessionsPanel: React.FC<CustomerSessionsPanelProps> = ({ token, ap
                             <>
                               <img
                                 src={item.url}
-                                alt="תמונה"
+                                alt={t('customerPanel.imageAlt')}
                                 className="rounded-xl max-w-[160px] h-auto mb-2"
                                 onLoad={() => console.log('[CustomerSessionsPanel][Image] ✅ loaded:', item.url)}
                                 onError={() => console.error('[CustomerSessionsPanel][Image] ❌ FAILED to load image. url=', item.url, '| full item=', item)}
@@ -492,7 +494,7 @@ const CustomerSessionsPanel: React.FC<CustomerSessionsPanelProps> = ({ token, ap
                           {item.type === 'Document' && item.url && (
                             <>
                               <a href={item.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-sky-600 underline text-[11px] mb-2">
-                                <ExternalLink size={10} /> פתח מסמך
+                                <ExternalLink size={10} /> {t('customerPanel.openDocument')}
                               </a>
                               {text && <p className="whitespace-pre-wrap leading-relaxed">{text}</p>}
                             </>
@@ -508,7 +510,7 @@ const CustomerSessionsPanel: React.FC<CustomerSessionsPanelProps> = ({ token, ap
                           )}
                           {(item.type === 'Audio' || isAudioUrl) && (item.url || text) && (
                             <>
-                              <p className="text-[10px] font-semibold mb-1 opacity-70">🎙️ הקלטה</p>
+                              <p className="text-[10px] font-semibold mb-1 opacity-70">{t('customerPanel.recording')}</p>
                               <audio src={item.url || text} controls className="max-w-[200px] mb-1" />
                             </>
                           )}
@@ -546,7 +548,7 @@ const CustomerSessionsPanel: React.FC<CustomerSessionsPanelProps> = ({ token, ap
                                     {card.url && (
                                       <a href={card.url} target="_blank" rel="noopener noreferrer"
                                         className="mt-1 flex items-center gap-1 text-[9px] text-sky-600 font-bold hover:underline">
-                                        <ExternalLink size={8} /> פתח
+                                        <ExternalLink size={8} /> {t('customerPanel.open')}
                                       </a>
                                     )}
                                     {Array.isArray(card.options) && card.options.length > 0 && (

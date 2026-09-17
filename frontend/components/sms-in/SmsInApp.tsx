@@ -85,7 +85,7 @@ export default function SmsInApp({
   // Page direction follows the UI language (rtl for he, ltr for en) so directional
   // affordances — pagination chevrons, toast entrance — mirror with the layout.
   const { t, i18n } = useTranslation('smsIn');
-  const isRtl = i18n.dir() === 'rtl';
+  // Layout is pinned to RTL always regardless of the selected language.
   // Standalone demo = full admin UI; when embedded in botWa, only real admins get assignment tabs
   const isAdmin = isAdminProp ?? !embedded;
   // /admin panel → always every message; user SMS tab → only assigned lines
@@ -1229,7 +1229,7 @@ export default function SmsInApp({
       <AnimatePresence>
         {toast && (
           <motion.div 
-            initial={{ opacity: 0, y: -40, x: isRtl ? 20 : -20 }}
+            initial={{ opacity: 0, y: -40, x: 20 }}
             animate={{ opacity: 1, y: 0, x: 0 }}
             exit={{ opacity: 0, y: -40 }}
             className={`fixed top-4 start-4 z-50 p-4 rounded-xl shadow-xl border flex items-center gap-2.5 max-w-sm ${
@@ -1501,7 +1501,7 @@ export default function SmsInApp({
                               dir="ltr"
                               /* The field keeps dir="ltr" for the Latin dest number, so logical padding would
                                  resolve against the field rather than the page — mirror it explicitly instead. */
-                              className={`w-full text-sm ${isRtl ? 'pr-9 pl-8' : 'pl-9 pr-8'} py-2.5 border border-slate-200 rounded-2xl bg-slate-50 focus:bg-white focus:outline-none focus:ring-4 focus:ring-sky-600/10 focus:border-sky-600 transition-all font-medium text-left`}
+                              className="w-full text-sm pr-9 pl-8 py-2.5 border border-slate-200 rounded-2xl bg-slate-50 focus:bg-white focus:outline-none focus:ring-4 focus:ring-sky-600/10 focus:border-sky-600 transition-all font-medium text-left"
                             />
                             <Search size={14} className="absolute start-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                             {filterDest !== 'all' ? (
@@ -1812,7 +1812,7 @@ export default function SmsInApp({
                             onClick={() => setMessagesPage(p => p - 1)}
                             className="flex items-center gap-1.5 px-4 py-2 rounded-2xl text-sm font-bold border border-slate-200 bg-white text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
                           >
-                            {isRtl ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+                            <ChevronRight size={14} />
                             <span>{t('externalLog.pagination.previous')}</span>
                           </button>
 
@@ -1827,7 +1827,7 @@ export default function SmsInApp({
                             className="flex items-center gap-1.5 px-4 py-2 rounded-2xl text-sm font-bold border border-slate-200 bg-white text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
                           >
                             <span>{t('externalLog.pagination.next')}</span>
-                            {isRtl ? <ChevronLeft size={14} /> : <ChevronRight size={14} />}
+                            <ChevronLeft size={14} />
                           </button>
                         </div>
                       )}

@@ -143,5 +143,30 @@
       "invalidPhone": "טלפון לא תקין",
       "error": "שגיאה: {{error}}"
     }
+  },
+  "page": {
+    "title": "שליחת הודעות",
+    "subtitle": "שילוב אנשי קשר, קבוצות ומספרים למשלוח אחד — ללא כפילויות",
+    "tabs": {
+      "send": "שליחת הודעות"
+    },
+    "progress": {
+      "sendingTitle": "שולח הודעה",
+      "scheduled": "ההודעה תוזמנה לשליחה",
+      "queuedBehind": "ממתין בתור (מיקום {{position}})...",
+      "starting": "מתחיל שליחה...",
+      "processed": "{{processed}}/{{total}} עובדו"
+    },
+    "completion": {
+      "completed": "השליחה הסתיימה",
+      "failed": "השליחה נכשלה",
+      "summary": "נשלחו {{sent}} · נכשלו {{failed}} · דולגו {{skipped}}",
+      "recipients": "סה\"כ {{count}} נמענים",
+      "excluded": "⛔ הוחרגו {{count}} אנשי קשר בשל הגדרת קבוצה מוחרגת"
+    },
+    "errors": {
+      "sendFailed": "שגיאה בשליחה",
+      "networkError": "שגיאת רשת: {{msg}}"
+    }
   }
 }

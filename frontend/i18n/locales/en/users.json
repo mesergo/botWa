@@ -84,7 +84,29 @@
     },
     "deleteGroup": {
       "title": "Delete group",
-      "body": "Are you sure? Deleting the group will also remove it from every representative assigned to it."
+      "body": "Are you sure? Deleting the group will also remove it from every representative assigned to it.",
+      "deleting": "Deleting...",
+      "delete": "Delete"
+    },
+    "closingSettings": {
+      "title": "Closing message to customer",
+      "subtitle": "Determines which closing message is sent to the customer when their enquiry ends.",
+      "perGroupLabel": "Different message for each representative group",
+      "perGroupHint": "Each group uses the \u201cclosing message\u201d defined for it (in the group settings). If a group has no message, the general message below will be sent instead.",
+      "generalLabel": "One general message for all conversations",
+      "generalHint": "The same message will be sent when any conversation ends, regardless of which representative group handled it.",
+      "placeholder": "For example: Thank you for contacting us. We look forward to assisting you again in the future.",
+      "save": "Save",
+      "saving": "Saving...",
+      "saved": "Saved successfully",
+      "loadError": "Error loading closing message settings",
+      "saveError": "Error saving the settings",
+      "unexpectedError": "Unexpected error"
+    },
+    "quota": {
+      "title": "Representative quota full",
+      "message": "You have reached the maximum number of representatives ({{count}}/{{max}}) for your account type. To add more representatives, please contact the office.",
+      "messageGeneric": "You have reached the maximum number of representatives for your account type. To add more representatives, please contact the office."
     },
     "settings": {
       "title": "General settings",
@@ -104,7 +126,8 @@
       "workingHoursHint": "When working hours are on, conversations that arrive outside those hours will receive the “when no representative is available” message.",
       "from": "From",
       "until": "to",
-      "save": "Save settings"
+      "save": "Save settings",
+      "closingModeWarning": "The \u201cone general message for all conversations\u201d option (at the top of the Groups page) is currently active — this message will not be sent until the mode is switched to \u201cdifferent message per group\u201d."
     },
     "days": {
       "0": "Sunday",

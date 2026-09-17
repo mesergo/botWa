@@ -1,5 +1,6 @@
 
 import React, { useRef, useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import ReactFlow, {
   Background,
   BackgroundVariant,
@@ -132,6 +133,7 @@ const Editor: React.FC<EditorProps> = ({
   globalSearchResults, onNavigateToProcessResult, onOpenBotSettings, saveStatus, onRenameProcess, onRenameBot,
   isMultiSelectMode, selectedNodeIds, onCanvasSelectionChange, onBulkDelete, onBulkExtract, onClearSelection
 }) => {
+  const { t } = useTranslation('builder');
   const [showSaveModal, setShowSaveModal] = React.useState(false);
   const [isEditingProcessName, setIsEditingProcessName] = useState(false);
   const [processNameInput, setProcessNameInput] = useState('');
@@ -161,25 +163,25 @@ const Editor: React.FC<EditorProps> = ({
     <div className="flex flex-col h-screen w-full bg-[#f8fafc] overflow-hidden text-black font-medium text-start">{isEditingTemplate && showSaveModal && (
         <div className="fixed inset-0 bg-black/50 z-[200] flex items-center justify-center p-4">
           <div className="bg-white p-8 rounded-3xl w-full max-w-md shadow-2xl">
-            <h3 className="text-2xl font-bold mb-6 text-slate-800">שמירת תבנית</h3>
+            <h3 className="text-2xl font-bold mb-6 text-slate-800">{t('editor.saveTemplateModal.title')}</h3>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-bold text-slate-700 mb-2">שם התבנית</label>
+                <label className="block text-sm font-bold text-slate-700 mb-2">{t('editor.saveTemplateModal.nameLabel')}</label>
                 <input 
                   type="text" 
                   className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
                   value={templateName}
                   onChange={e => setTemplateName(e.target.value)}
-                  placeholder="נא להזין שם לתבנית"
+                  placeholder={t('editor.saveTemplateModal.namePlaceholder')}
                 />
               </div>
               <div>
-                <label className="block text-sm font-bold text-slate-700 mb-2">תיאור קצר</label>
+                <label className="block text-sm font-bold text-slate-700 mb-2">{t('editor.saveTemplateModal.descriptionLabel')}</label>
                 <textarea 
                   className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none resize-none h-24"
                   value={templateDescription}
                   onChange={e => setTemplateDescription(e.target.value)}
-                  placeholder="תיאור מה התבנית עושה..."
+                  placeholder={t('editor.saveTemplateModal.descriptionPlaceholder')}
                 />
               </div>
               <div className="flex items-center gap-3">
@@ -190,7 +192,7 @@ const Editor: React.FC<EditorProps> = ({
                   onChange={e => setTemplateIsPublic(e.target.checked)}
                   className="w-5 h-5 rounded border-slate-300"
                 />
-                <label htmlFor="isPublic" className="text-sm font-bold text-slate-700">תבנית ציבורית (גלויה למשתמשים)</label>
+                <label htmlFor="isPublic" className="text-sm font-bold text-slate-700">{t('editor.saveTemplateModal.isPublicLabel')}</label>
               </div>
               <div className="flex gap-3 mt-8">
                 <button 
@@ -198,13 +200,13 @@ const Editor: React.FC<EditorProps> = ({
                   disabled={!templateName.trim()}
                   className="bg-indigo-600 text-white px-6 py-3 rounded-xl flex-1 font-bold shadow-lg shadow-indigo-200 hover:bg-indigo-700 transition-all disabled:opacity-50 disabled:shadow-none"
                 >
-                  שמור תבנית
+                  {t('editor.saveTemplateModal.save')}
                 </button>
                 <button 
                   onClick={() => setShowSaveModal(false)}
                   className="bg-slate-100 text-slate-600 px-6 py-3 rounded-xl font-bold hover:bg-slate-200 transition-colors"
                 >
-                  ביטול
+                  {t('editor.saveTemplateModal.cancel')}
                 </button>
               </div>
             </div>
@@ -222,7 +224,7 @@ const Editor: React.FC<EditorProps> = ({
             <Search className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-300" size={20} />
             <input 
               className="pr-14 pl-32 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm w-80 outline-none focus:bg-white focus:ring-4 focus:ring-blue-600/5 focus:border-blue-600 transition-all text-right font-medium" 
-              placeholder="חיפוש text או ID" 
+              placeholder={t('editor.toolbar.searchPlaceholder')} 
               dir="rtl"
               value={searchQuery} 
               onChange={e => onSearchChange(e.target.value)} 
@@ -250,7 +252,7 @@ const Editor: React.FC<EditorProps> = ({
                   onClick={() => setGlobalSearchPanelOpen(v => !v)}
                   className="w-full px-4 py-2.5 flex items-center justify-between text-[11px] font-bold text-slate-400 border-b border-slate-100 bg-white rounded-t-2xl hover:bg-slate-50 transition-colors"
                 >
-                  <span>תוצאות מתהליכים קבועים ({globalSearchResults.length})</span>
+                  <span>{t('editor.toolbar.globalSearchResults', { count: globalSearchResults.length })}</span>
                   {globalSearchPanelOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                 </button>
                 {globalSearchPanelOpen && (
@@ -280,26 +282,26 @@ const Editor: React.FC<EditorProps> = ({
             <div className="flex items-center gap-2">
               {onManageParams && (
                 <button onClick={onManageParams} className="flex items-center gap-2 px-5 py-2.5 bg-white border border-amber-400 text-amber-600 rounded-full text-xs font-bold shadow-sm hover:bg-amber-50 transition-all">
-                  <Sliders size={15} /> ניהול פרמטרים
+                  <Sliders size={15} /> {t('editor.toolbar.manageParams')}
                 </button>
               )}
               <button onClick={() => setShowSaveModal(true)} className="flex items-center gap-2 px-6 py-2.5 bg-green-600 text-white border border-green-600 rounded-full text-xs font-bold shadow-sm hover:bg-green-700 transition-all">
-                <CloudUpload size={16} /> שמור תבנית
+                <CloudUpload size={16} /> {t('editor.toolbar.saveTemplate')}
               </button>
             </div>
           ) : currentUser?.account_type === 'Trial' ? (
-            <div className="flex items-center gap-2 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-full text-xs font-bold text-amber-700 cursor-not-allowed select-none" title="בחשבון ניסיוני לא ניתן לפרסם גרסאות">
-              <CloudUpload size={16} className="opacity-50" /> ניסיוני — ללא פרסום
+            <div className="flex items-center gap-2 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-full text-xs font-bold text-amber-700 cursor-not-allowed select-none" title={t('editor.toolbar.trialNoPublish')}>
+              <CloudUpload size={16} className="opacity-50" /> {t('editor.toolbar.trialBadge')}
             </div>
           ) : (
             <button onClick={onPublish} className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 text-white border border-indigo-600 rounded-full text-xs font-bold shadow-sm hover:bg-indigo-700 transition-all">
-              <CloudUpload size={16} /> פרסם גרסה
+              <CloudUpload size={16} /> {t('editor.toolbar.publishVersion')}
             </button>
           )}
           {viewMode === 'main' && !isEditingTemplate && (
-            <button onClick={onChangeTemplate} className="flex items-center gap-2 px-6 py-2.5 bg-white border border-orange-500 text-orange-500 rounded-full text-xs font-bold shadow-sm hover:bg-orange-50 transition-all"><AlertTriangle size={16} /> החלף תסריט</button>
+            <button onClick={onChangeTemplate} className="flex items-center gap-2 px-6 py-2.5 bg-white border border-orange-500 text-orange-500 rounded-full text-xs font-bold shadow-sm hover:bg-orange-50 transition-all"><AlertTriangle size={16} /> {t('editor.toolbar.changeTemplate')}</button>
           )}
-          <button onClick={onTidy} className="flex items-center gap-2 px-6 py-2.5 bg-white border border-slate-200 rounded-full text-xs font-bold shadow-sm hover:border-blue-600 hover:text-blue-600 transition-all"><Wand2 size={16} /> סדר הכל</button>
+          <button onClick={onTidy} className="flex items-center gap-2 px-6 py-2.5 bg-white border border-slate-200 rounded-full text-xs font-bold shadow-sm hover:border-blue-600 hover:text-blue-600 transition-all"><Wand2 size={16} /> {t('editor.toolbar.tidyAll')}</button>
           <div className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs font-bold select-none border w-[130px] justify-center whitespace-nowrap transition-all duration-300 ${
             saveStatus === 'saving' ? 'bg-slate-50 border-slate-200 text-slate-400' :
             saveStatus === 'saved'  ? 'bg-green-50 border-green-200 text-green-600' :
@@ -310,7 +312,7 @@ const Editor: React.FC<EditorProps> = ({
             ) : (
               <svg className="flex-shrink-0" width={13} height={13} viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
             )}
-            {saveStatus === 'saving' ? 'שומר...' : saveStatus === 'saved' ? 'נשמר' : 'שמירה אוטומטית'}
+            {saveStatus === 'saving' ? t('editor.toolbar.saveStatusSaving') : saveStatus === 'saved' ? t('editor.toolbar.saveStatusSaved') : t('editor.toolbar.saveStatusIdle')}
           </div>
            {viewMode === 'editing-process' && (() => {
             const activeProcess = fixedProcesses.find(p => p.id.toString() === activeProcessId?.toString());
@@ -337,7 +339,7 @@ const Editor: React.FC<EditorProps> = ({
             ) : (
               <button
                 onClick={() => { setProcessNameInput(activeProcess.name); setIsEditingProcessName(true); }}
-                title="לחץ לשינוי שם התהליך"
+                title={t('editor.toolbar.renameProcessTitle')}
                 className="px-3 py-2 bg-transparent border-none text-sm font-bold text-black hover:opacity-70 transition-all max-w-[200px] truncate"
                 dir="rtl"
               >
@@ -368,7 +370,7 @@ const Editor: React.FC<EditorProps> = ({
             ) : (
               <button
                 onClick={() => { if (!onRenameBot) return; setBotNameInput(selectedBot.name); setIsEditingBotName(true); }}
-                title={onRenameBot ? 'לחץ לשינוי שם הבוט' : selectedBot.name}
+                title={onRenameBot ? t('editor.toolbar.renameBotTitle') : selectedBot.name}
                 disabled={!onRenameBot}
                 className="px-3 py-1.5 bg-transparent border-none text-base font-bold text-black hover:opacity-70 transition-all max-w-[180px] truncate disabled:cursor-default disabled:hover:opacity-100"
                 dir="rtl"
@@ -381,7 +383,7 @@ const Editor: React.FC<EditorProps> = ({
           {/* User Avatar - navigates to bots page */}
           <button
             onClick={onHome}
-            title="הבוטים שלי"
+            title={t('editor.toolbar.myBots')}
             className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-sm hover:scale-110 transition-transform shadow-md select-none"
           >
             {(currentUser?.name?.charAt(0) || currentUser?.email?.charAt(0) || '?').toUpperCase()}
@@ -389,7 +391,7 @@ const Editor: React.FC<EditorProps> = ({
           {!isEditingTemplate && onOpenBotSettings && (
             <button
               onClick={onOpenBotSettings}
-              title="הגדרות בוט"
+              title={t('editor.toolbar.botSettings')}
               className="p-2 text-slate-300 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-all"
             >
               <Settings size={20} />
@@ -439,36 +441,36 @@ const Editor: React.FC<EditorProps> = ({
                   <div className="mt-4 flex items-center gap-3 bg-white border border-slate-100 shadow-2xl rounded-2xl px-4 py-2.5">
                     <span className="text-[11px] font-bold text-slate-500 whitespace-nowrap">
                       {(selectedNodeIds?.length || 0) > 0
-                        ? `${selectedNodeIds!.length} רכיבים נבחרו`
-                        : 'לחץ על רכיבים או גרור לסימון מספר רכיבים'}
+                        ? t('editor.multiSelect.selectedCount', { count: selectedNodeIds!.length })
+                        : t('editor.multiSelect.hint')}
                     </span>
                     {(selectedNodeIds?.length || 0) > 0 && (
                       <>
                         <div className="h-6 w-px bg-slate-100" />
                         <button
                           onClick={() => onBulkExtract?.('copy')}
-                          title="העתק לתהליכים שלי"
+                          title={t('editor.multiSelect.copyToMyProcesses')}
                           className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 text-slate-600 rounded-xl text-[11px] font-bold hover:bg-blue-50 hover:text-blue-600 transition-all"
                         >
-                          <Copy size={13} /> העתקה
+                          <Copy size={13} /> {t('editor.multiSelect.copy')}
                         </button>
                         <button
                           onClick={() => onBulkExtract?.('move')}
-                          title="העבר לתהליכים שלי"
+                          title={t('editor.multiSelect.moveToMyProcesses')}
                           className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 text-slate-600 rounded-xl text-[11px] font-bold hover:bg-indigo-50 hover:text-indigo-600 transition-all"
                         >
-                          <FolderInput size={13} /> העברה
+                          <FolderInput size={13} /> {t('editor.multiSelect.move')}
                         </button>
                         <button
                           onClick={onBulkDelete}
-                          title="מחק רכיבים נבחרים"
+                          title={t('editor.multiSelect.deleteSelected')}
                           className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 text-rose-500 rounded-xl text-[11px] font-bold hover:bg-rose-50 transition-all"
                         >
-                          <Trash2 size={13} /> מחיקה
+                          <Trash2 size={13} /> {t('editor.multiSelect.delete')}
                         </button>
                         <button
                           onClick={onClearSelection}
-                          title="בטל בחירה"
+                          title={t('editor.multiSelect.clearSelection')}
                           className="flex items-center gap-1.5 p-1.5 text-slate-300 hover:text-slate-600 rounded-xl transition-all"
                         >
                           <X size={14} />
@@ -483,7 +485,7 @@ const Editor: React.FC<EditorProps> = ({
                   {viewMode === 'main' ? (
                     <button 
                       onClick={onSimulatorOpen} 
-                      title="סימולטור"
+                      title={t('editor.simulatorTitle')}
                       className="w-16 h-16 bg-white rounded-full flex items-center justify-center shadow-2xl hover:scale-110 active:scale-95 transition-all overflow-hidden border-2 border-slate-100 group nodrag"
                     >
                       <img src="/images/go_favicon.png" alt="Simulator" className="w-full h-full object-cover" />
@@ -494,14 +496,14 @@ const Editor: React.FC<EditorProps> = ({
                         <div className="flex items-center gap-3 animate-in slide-in-from-bottom-2 duration-300">
                           <div className="bg-amber-50 border border-amber-200 px-4 py-2.5 rounded-2xl text-[11px] font-bold text-amber-700 shadow-sm flex items-center gap-2">
                              <AlertTriangle size={14} className="flex-shrink-0" />
-                             שים לב: השינויים כאן משפיעים על כל המופעים של התהליך
+                             {t('editor.processWarning')}
                              <button onClick={onDuplicate} className="px-6 py-2.5 bg-yellow-60 border border-amber-200 text-slate-900 rounded-2xl font-bold text-xs flex items-center gap-2 shadow-sm hover:border-amber-700 hover:text-amber-700 transition-all">
-                                <Copy size={16} /> שכפול תהליך
+                                <Copy size={16} /> {t('editor.duplicateProcess')}
                              </button>
                           </div>
                         </div>
                       )}
-                      <button onClick={onCloseEditor} className="px-8 py-4 bg-slate-900 text-white rounded-[1.5rem] font-bold flex items-center gap-2 shadow-2xl"><X size={18} /> סגור עורך</button>
+                      <button onClick={onCloseEditor} className="px-8 py-4 bg-slate-900 text-white rounded-[1.5rem] font-bold flex items-center gap-2 shadow-2xl"><X size={18} /> {t('editor.closeEditor')}</button>
                     </div>
                   )}
                 </div>

@@ -67,8 +67,397 @@
     "chooseParameter": "Choose a parameter to insert:",
     "customFields": "Custom fields:"
   },
+  "editor": {
+    "saveTemplateModal": {
+      "title": "Save template",
+      "nameLabel": "Template name",
+      "namePlaceholder": "Enter a name for the template",
+      "descriptionLabel": "Short description",
+      "descriptionPlaceholder": "Describe what the template does...",
+      "isPublicLabel": "Public template (visible to users)",
+      "save": "Save template",
+      "cancel": "Cancel"
+    },
+    "toolbar": {
+      "searchPlaceholder": "Search text or ID",
+      "globalSearchResults": "Results from fixed processes ({{count}})",
+      "manageParams": "Manage parameters",
+      "saveTemplate": "Save template",
+      "trialNoPublish": "Trial accounts cannot publish versions",
+      "trialBadge": "Trial — no publishing",
+      "publishVersion": "Publish version",
+      "changeTemplate": "Change script",
+      "tidyAll": "Tidy all",
+      "saveStatusSaving": "Saving...",
+      "saveStatusSaved": "Saved",
+      "saveStatusIdle": "Autosave",
+      "renameProcessTitle": "Click to rename the process",
+      "renameBotTitle": "Click to rename the bot",
+      "myBots": "My bots",
+      "botSettings": "Bot settings"
+    },
+    "multiSelect": {
+      "selectedCount": "{{count}} components selected",
+      "hint": "Click components or drag to select several",
+      "copyToMyProcesses": "Copy to my processes",
+      "copy": "Copy",
+      "moveToMyProcesses": "Move to my processes",
+      "move": "Move",
+      "deleteSelected": "Delete selected components",
+      "delete": "Delete",
+      "clearSelection": "Clear selection"
+    },
+    "simulatorTitle": "Simulator",
+    "processWarning": "Note: changes here affect every instance of the process",
+    "duplicateProcess": "Duplicate process",
+    "closeEditor": "Close editor"
+  },
   "quickInsert": {
     "autoFill": "Auto-fill",
     "userNameMissing": "No name is set for this user"
+  },
+  "nodeCommon": {
+    "expandModal": {
+      "title": "Expanded editing",
+      "bold": "Bold",
+      "italic": "Italic",
+      "strike": "Strikethrough",
+      "code": "Code",
+      "bullet": "Bullet list",
+      "numbered": "Numbered list",
+      "quote": "Quote",
+      "formatLabel": "Format:",
+      "shortcutsHint": "Ctrl+Enter to save · Esc to cancel · Ctrl+B bold · Ctrl+I italic",
+      "openTitle": "Open expanded editor"
+    },
+    "save": "Save",
+    "cancel": "Cancel",
+    "edit": "Edit",
+    "delete": "Delete",
+    "moreActions": "More actions",
+    "confirmDeleteQuestion": "Are you sure you want to delete?",
+    "dragToReorder": "Drag to reorder",
+    "operators": {
+      "eq": "Equals",
+      "contains": "Contains a word",
+      "containsAny": "Contains any of the words",
+      "containsAll": "Contains all of the words",
+      "gt": "Greater than",
+      "gte": "Greater than or equal to",
+      "lt": "Less than",
+      "lte": "Less than or equal to"
+    },
+    "menuOperators": {
+      "oneOfOptions": "One of the options"
+    },
+    "condition": "Condition",
+    "validationTypes": {
+      "none": "No validation",
+      "email": "Email",
+      "phone": "Phone",
+      "id": "ID number",
+      "url": "Website URL"
+    },
+    "validationTypeTitle": "Validation type",
+    "validationFallback": "Validation",
+    "contactFields": {
+      "fullName": "Full name",
+      "email": "Email"
+    },
+    "fields": {
+      "botQuestion": "Bot's question",
+      "variableName": "Variable name for storage"
+    },
+    "reservedVariableNameWarning": "⚠ \"{{name}}\" is a reserved system name and cannot be used",
+    "saveToContactLabel": "Save to contact details",
+    "contactFieldRequiredWarning": "⚠ A field must be selected for saving",
+    "chooseFieldToSave": "Choose a field to save *",
+    "chooseFieldPlaceholder": "Choose a field...",
+    "customFieldsGroup": "Custom fields",
+    "moreFieldsHintPrefix": "You can define more fields on the",
+    "contactsPageLabel": "Contacts",
+    "moreFieldsHintSuffix": "page → manage fields",
+    "dateModes": {
+      "date": "Date",
+      "time": "Time",
+      "dateTime": "Date and time"
+    },
+    "outputFormatLabel": "Output format:",
+    "mediaTypes": {
+      "image": "Image",
+      "video": "Video",
+      "pdf": "PDF",
+      "contact": "Contact"
+    },
+    "default": "Default",
+    "enterValue": "Enter a value",
+    "charCount": "{{count}} characters",
+    "deleteCondition": "Delete condition",
+    "settings": "Settings",
+    "defaultExitLabel": "Default exit",
+    "addCondition": "Add condition",
+    "valueLabel": "Value",
+    "weekdays": {
+      "sunday": "Sunday",
+      "monday": "Monday",
+      "tuesday": "Tuesday",
+      "wednesday": "Wednesday",
+      "thursday": "Thursday",
+      "friday": "Friday",
+      "saturday": "Saturday"
+    },
+    "conditionKinds": {
+      "time": "Time",
+      "date": "Date",
+      "weekday": "Day"
+    },
+    "deleteOption": "Delete option",
+    "from": "From",
+    "fromTime": "From",
+    "to": "To",
+    "actionTypeLabel": "Action type",
+    "chooseGroupLabel": "Choose a group",
+    "chooseGroupPlaceholder": "-- Choose a group --",
+    "simulatorSkipHint": "This component will be skipped in the simulator (no waPhone)",
+    "actionLabel": "Action",
+    "buttons": "Buttons",
+    "dropdown": "Dropdown",
+    "system": "System"
+  },
+  "nodes": {
+    "start": {
+      "title": "Start",
+      "subtitle": "Start of conversation"
+    },
+    "inputText": {
+      "title": "Input: Text",
+      "questionPlaceholder": "What's your name?"
+    },
+    "inputDate": {
+      "titleTime": "Input: Time",
+      "titleDateTime": "Input: Date and time",
+      "titleDate": "Input: Date",
+      "placeholderTime": "What time?",
+      "placeholderDateTime": "When, and at what time?",
+      "placeholderDate": "When would you like to come?",
+      "inputTypeLabel": "Input type"
+    },
+    "inputFile": {
+      "title": "Input: File",
+      "requestLabel": "File request",
+      "placeholder": "Please upload an image"
+    },
+    "outputText": {
+      "title": "Text message",
+      "contentLabel": "Message content",
+      "placeholder": "Hi, how can I help?"
+    },
+    "outputImage": {
+      "title": "Media message",
+      "mediaTypeLabel": "Media type",
+      "pdfFile": "PDF file",
+      "contactNameLabel": "Contact name",
+      "contactNamePlaceholder": "John Smith",
+      "contactPhoneLabel": "Contact phone",
+      "contactPhonePlaceholder": "0501234567",
+      "uploadModeLabel": "Upload method",
+      "uploadFileTab": "Upload file",
+      "addLinkTab": "Add link",
+      "enterLinkPrefix": "Enter a link to",
+      "captionLabel": "Text (optional)",
+      "captionPlaceholder": "Add text below the media"
+    },
+    "outputLink": {
+      "textLabel": "Link text",
+      "textPlaceholder": "Visit our website",
+      "urlLabel": "Web address",
+      "urlPlaceholder": "https://example.com or --variable_name--"
+    },
+    "outputMenu": {
+      "promptLabel": "Selection prompt",
+      "promptPlaceholder": "Please choose from the list:",
+      "saveVariableLabel": "Save selection to variable (optional)",
+      "saveVariablePlaceholder": "e.g.: selected_option",
+      "optionsListLabel": "Options list ({{mode}})",
+      "matchesAnyAbove": "Matches any of the options above",
+      "addOption": "Add new option",
+      "imageUploadFailed": "The image upload failed"
+    },
+    "actionWebService": {
+      "title": "API connection",
+      "openSettings": "Open settings",
+      "webhookUrlLabel": "Webhook URL",
+      "conditionalExitsLabel": "Conditional exits by Return value",
+      "comparisonValuePlaceholder": "Value to compare...",
+      "noConditionalExits": "No conditional exits - default only"
+    },
+    "actionWait": {
+      "title": "System delay",
+      "durationLabel": "Wait time (seconds)",
+      "placeholder": "e.g.: 3"
+    },
+    "actionSetParameter": {
+      "nameLabel": "Parameter name",
+      "namePlaceholder": "e.g.: user_status",
+      "valuePlaceholder": "A fixed value or --parameter_name--",
+      "hint": "You can enter a fixed value or combine --parameter_name-- to copy the value of another parameter"
+    },
+    "actionReturnToMainMenu": {
+      "matchLabel": "Expression to match",
+      "matchPlaceholder": "Automatic response",
+      "hint": "The expression will be checked against the options of the \"Automatic responses\" node in the flow, and the message will continue from the matching exit"
+    },
+    "fixedProcess": {
+      "title": "Sub-flow {{label}}"
+    },
+    "actionTimeRouting": {
+      "title": "Route by time",
+      "branchesLabel": "Routing branches",
+      "defaultCase": "Default (all other cases)",
+      "optionN": "Option {{n}}",
+      "addRoutingOption": "Add routing option"
+    },
+    "groupAction": {
+      "titleAdd": "Add to group",
+      "titleRemove": "Remove from group",
+      "allBlocklistOption": "All (removal list)",
+      "phoneWillBeAddedToRemovalList": "The phone number will be added to the removal list",
+      "removalReasonLabel": "Removal reason (recorded in the removal log)",
+      "removalReasonPlaceholder": "e.g.: the customer asked to be removed from the list",
+      "removalReasonRequired": "A removal reason must be entered",
+      "removeTitle": "Remove from group",
+      "removeTypeLabel": "Removal type",
+      "removeSpecific": "Remove from a specific group",
+      "removeAll": "Remove from all groups (removal list)"
+    },
+    "transferAgent": {
+      "transfer": "Transfer to agent",
+      "close": "Close ticket (end conversation)",
+      "extend30m": "Extend open ticket time (30 minutes)",
+      "groupLabel": "Agent group to assign",
+      "chooseGroupPlaceholder": "-- Choose an agent group --",
+      "noGroupsHint": "No agent groups have been defined. You can add groups in the sub-users screen.",
+      "assignmentModeLabel": "Assignment method",
+      "anyAgent": "Any available agent from the group",
+      "specificAgent": "A specific agent from the group",
+      "chooseAgentLabel": "Choose an agent",
+      "chooseAgentPlaceholder": "-- Choose an agent --",
+      "noAgentsHint": "There are no agents in this group. Add agents in the sub-users screen.",
+      "transferHint1": "This component will transfer the conversation to an agent from the selected group.",
+      "transferHint2": "The bot will stop responding for 30 minutes (as with an agent conversation).",
+      "wantsPhoneLabel": "Customer is interested in a callback",
+      "closeHint": "With this action type, the ticket will be closed (conversation ended) immediately.",
+      "extendHint": "With this action type, the agent wait time will reset to another 30 minutes."
+    },
+    "automaticResponses": {
+      "title": "Automatic responses",
+      "keywordsLabel": "Keywords and openers",
+      "systemCase2Label": "Response after waiting with no agent reply",
+      "deleteOpener": "Delete opener",
+      "showLess": "Show less",
+      "showAllCount": "Show all {{count}} options",
+      "moreOptionsCount": "{{count}} more options",
+      "addOpener": "Add new opener"
+    }
+  },
+  "baseNode": {
+    "nodeTypeLabels": {
+      "inputText": "Input: Text",
+      "inputDate": "Input: Date",
+      "inputFile": "Input: File",
+      "outputText": "Text message",
+      "outputImage": "Image/Media",
+      "outputLink": "Link",
+      "outputMenu": "Menu",
+      "actionWebService": "Web service",
+      "actionWait": "Wait",
+      "actionTimeRouting": "Time routing",
+      "actionAddToGroup": "Group management",
+      "actionRemoveFromGroup": "Remove from group",
+      "actionTransferToAgent": "Agents",
+      "actionSetParameter": "Set parameter",
+      "actionReturnToMainMenu": "Return to main menu",
+      "fixedProcess": "Sub-flow",
+      "automaticResponses": "Automatic responses",
+      "start": "Start"
+    },
+    "navigateToSource": "Navigate to source component",
+    "navigateToNext": "Navigate to next component",
+    "prevNode": "Previous component",
+    "prevNodesCount": "{{count}} previous components",
+    "nextNode": "Next component",
+    "nextNodesCount": "{{count}} next components"
+  },
+  "apiSettingsModal": {
+    "title": "API Call Settings",
+    "jsonInvalidSyntax": "Invalid JSON — check syntax",
+    "jsonInvalid": "Invalid JSON",
+    "jsonInvalidFixBeforeSave": "Invalid JSON — fix before saving",
+    "urlLabel": "URL address",
+    "urlVariableHint": "You can use <0>--variable_name--</0> in the URL",
+    "methodLabel": "Request method (Method)",
+    "addHeader": "Add Header",
+    "headersLabel": "Headers (optional)",
+    "noHeaders": "No headers defined — only the default will be used",
+    "formatJsonTitle": "Pretty print JSON",
+    "formatJsonButton": "Format JSON",
+    "bodyLabel": "Body (JSON) — optional",
+    "bodyOverridesDefault": "This Body will be sent instead of the standard payload",
+    "bodyEmptyHint": "Empty = the bot's standard payload will be sent (default)",
+    "cancel": "Cancel",
+    "saveSettings": "Save settings"
+  },
+  "botSettingsModal": {
+    "saveError": "Error saving",
+    "title": "Bot settings — {{name}}",
+    "publicIdLabel": "Public ID (API Token)",
+    "saving": "Saving...",
+    "save": "Save",
+    "copy": "Copy",
+    "publicIdUpdated": "The ID was updated successfully",
+    "endpointLabel": "Endpoint (bot number)",
+    "endpointHint": "Enter only the ID — the system will automatically build the link <0>dialog360/{id}</0>",
+    "endpointUpdated": "The Endpoint was updated successfully",
+    "restartKeywordLabel": "Keyword to reset the conversation",
+    "restartKeywordHint": "If the user sends this word at any stage, the conversation will reset and start over. Leave empty to disable.",
+    "restartKeywordPlaceholder": "e.g.: Start over",
+    "restartKeywordUpdated": "The keyword was updated successfully",
+    "connectFacebook": "Facebook connection",
+    "connectFacebookButton": "Connect to Facebook"
+  },
+  "simulator": {
+    "active": "Simulator active",
+    "shareLink": "Share link",
+    "openInNewWindow": "Open in new window",
+    "resetChat": "Reset chat",
+    "chooseVersionToShare": "Choose a version to share",
+    "shareVersionHint": "The link will show the flow of the selected version",
+    "currentDraftLive": "Current draft (Live)",
+    "currentEditorState": "The current state of the editor",
+    "noSavedVersions": "No saved versions",
+    "openPdfDocument": "Open PDF document",
+    "chooseFileToUpload": "Choose file to upload",
+    "confirmTime": "Confirm time",
+    "confirmDateTime": "Confirm date and time",
+    "confirmDate": "Confirm date",
+    "typeMessagePlaceholder": "Type a reply...",
+    "moreInfo": "More info",
+    "shareCopyError": "Error: no user ID found for sharing. Please try logging in again.",
+    "copyLinkPrompt": "Copy the link to share:",
+    "restartMessage": "The conversation was reset 🔄 Send any message to start over",
+    "invalidValueMessage": "The value entered is invalid, please enter a suitable value.",
+    "chooseOnlyFromOptions": "Choose only from the options",
+    "botStateChanged": "[Bot state changed to: {{value}}]",
+    "subflowMissingProcessId": "⚠️ Error: sub-process is not configured correctly (missing processId)",
+    "subflowMissingFlowId": "⚠️ Error: flowId is not defined",
+    "subflowNoPermission": "⚠️ Error: no permission to load sub-process",
+    "subflowFetchError": "⚠️ Error loading sub-process ({{status}})",
+    "subflowEmpty": "⚠️ Sub-process is empty",
+    "subflowMissingStart": "⚠️ Sub-process does not contain a start point",
+    "subflowLoadError": "⚠️ Error loading sub-process",
+    "webserviceError": "❌ Error connecting to the Webservice server",
+    "complexityExceeded": "⚠️ Exceeded the allowed system complexity.",
+    "fileUploaded": "File uploaded: {{fileName}}",
+    "backToMenu": "↩ Back to menu"
   }
 }

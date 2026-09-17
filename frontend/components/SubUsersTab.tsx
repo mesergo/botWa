@@ -206,7 +206,7 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
     setClosingSettingsLoading(true);
     try {
       const res = await fetch(`${API_BASE}/rep-groups/closing-settings`, { headers });
-      if (!res.ok) throw new Error('שגיאה בטעינת הגדרות הודעת הסיום');
+      if (!res.ok) throw new Error(t('subUsers.closingSettings.loadError'));
       const data = await res.json();
       setClosingSettings({ mode: data.mode === 'general' ? 'general' : 'per_group', generalMessage: data.generalMessage || '' });
     } catch {
@@ -227,12 +227,12 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
         body: JSON.stringify({ mode: closingSettings.mode, generalMessage: closingSettings.generalMessage }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'שגיאה בשמירת ההגדרות');
+      if (!res.ok) throw new Error(data.error || t('subUsers.closingSettings.saveError'));
       setClosingSettings({ mode: data.mode === 'general' ? 'general' : 'per_group', generalMessage: data.generalMessage || '' });
       setClosingSettingsSaved(true);
       window.setTimeout(() => setClosingSettingsSaved(false), 2500);
     } catch (e: any) {
-      setClosingSettingsError(e.message || 'שגיאה לא צפויה');
+      setClosingSettingsError(e.message || t('subUsers.closingSettings.unexpectedError'));
     } finally {
       setClosingSettingsSaving(false);
     }
@@ -295,7 +295,7 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
 
   const openCreate = () => {
     if (repsLimit && repsLimit.repsCount >= repsLimit.maxReps) {
-      setQuotaMessage(`הגעת למכסת הנציגים המקסימלית (${repsLimit.repsCount}/${repsLimit.maxReps}) עבור סוג החשבון שלך. לצורך הוספת נציגים נוספים יש לפנות למשרד.`);
+      setQuotaMessage(t('subUsers.quota.message', { count: repsLimit.repsCount, max: repsLimit.maxReps }));
       return;
     }
     setEditingId(null);
@@ -405,10 +405,10 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
       }
       if (data.repsQuotaExceeded) {
         closeForm();
-        setQuotaMessage(data.error || 'הגעת למכסת הנציגים המקסימלית עבור סוג החשבון שלך. לצורך הוספת נציגים נוספים יש לפנות למשרד.');
+        setQuotaMessage(data.error || t('subUsers.quota.messageGeneric'));
         return;
       }
-      if (!res.ok) throw new Error(data.error || 'שגיאה בשמירה');
+      if (!res.ok) throw new Error(data.error || t('errors.save'));
       await loadUsers();
       if (!editingId && data.inviteLink) {
         setInviteSuccessLink(data.inviteLink);
@@ -787,9 +787,9 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
           <div className="bg-white border border-slate-100 rounded-[2rem] shadow-sm p-6 mb-6">
             <div className="flex items-center gap-2 mb-1">
               <MessageSquare size={16} className="text-slate-500" />
-              <h2 className="text-base font-black text-slate-900">הודעת סיום שיחה ללקוח</h2>
+              <h2 className="text-base font-black text-slate-900">{t('subUsers.closingSettings.title')}</h2>
             </div>
-            <p className="text-xs text-slate-400 mb-4">קובע איזו הודעת סיום שיחה תישלח ללקוח כשפנייתו מסתיימת.</p>
+            <p className="text-xs text-slate-400 mb-4">{t('subUsers.closingSettings.subtitle')}</p>
 
             <div className="flex flex-col gap-2 mb-4">
               <label className="flex items-start gap-2 cursor-pointer select-none">
@@ -800,9 +800,9 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
                   onChange={() => setClosingSettings(prev => ({ ...prev, mode: 'per_group' }))}
                 />
                 <span className="text-sm font-bold text-slate-700">
-                  הודעה שונה לכל קבוצת נציגים
+                  {t('subUsers.closingSettings.perGroupLabel')}
                   <span className="block text-xs font-semibold text-slate-400 mt-0.5">
-                    כל קבוצה משתמשת ב"הודעת סיום" שהוגדרה עבורה (בהגדרות הקבוצה). אם לקבוצה אין הודעה — תישלח ההודעה הכללית שלמטה.
+                    {t('subUsers.closingSettings.perGroupHint')}
                   </span>
                 </span>
               </label>
@@ -814,9 +814,9 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
                   onChange={() => setClosingSettings(prev => ({ ...prev, mode: 'general' }))}
                 />
                 <span className="text-sm font-bold text-slate-700">
-                  הודעה כללית אחת לכל השיחות
+                  {t('subUsers.closingSettings.generalLabel')}
                   <span className="block text-xs font-semibold text-slate-400 mt-0.5">
-                    אותה הודעה תישלח בסיום כל שיחה, ללא קשר לקבוצת הנציגים שטיפלה בה.
+                    {t('subUsers.closingSettings.generalHint')}
                   </span>
                 </span>
               </label>
@@ -828,7 +828,7 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
               rows={3}
               disabled={closingSettingsLoading}
               className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:border-blue-500 resize-none disabled:opacity-50"
-              placeholder="לדוגמה: תודה שפנית אלינו. נשמח לעמוד לרשותך גם בעתיד."
+              placeholder={t('subUsers.closingSettings.placeholder')}
             />
 
             {closingSettingsError && (
@@ -841,10 +841,10 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
                 disabled={closingSettingsSaving || closingSettingsLoading}
                 className="flex items-center gap-2 px-5 py-2 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-all disabled:opacity-60"
               >
-                <Check size={15} /> {closingSettingsSaving ? 'שומר...' : 'שמור'}
+                <Check size={15} /> {closingSettingsSaving ? t('subUsers.closingSettings.saving') : t('subUsers.closingSettings.save')}
               </button>
               {closingSettingsSaved && (
-                <span className="text-xs font-black text-emerald-600">נשמר בהצלחה</span>
+                <span className="text-xs font-black text-emerald-600">{t('subUsers.closingSettings.saved')}</span>
               )}
             </div>
           </div>
@@ -1124,7 +1124,7 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
             <div className="w-14 h-14 bg-amber-100 text-amber-600 rounded-2xl flex items-center justify-center mb-6">
               <AlertTriangle size={28} />
             </div>
-            <h3 className="text-xl font-black text-slate-900 mb-2">מכסת הנציגים מלאה</h3>
+            <h3 className="text-xl font-black text-slate-900 mb-2">{t('subUsers.quota.title')}</h3>
             <p className="text-slate-500 text-sm mb-2 font-medium">{quotaMessage}</p>
           </div>
         </div>
@@ -1324,10 +1324,10 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
                 <label className="flex items-center gap-2 text-sm font-bold text-slate-600 mb-1">
                   <MessageSquare size={14} /> {t('subUsers.settings.closingMessage')}
                 </label>
-                <p className="text-xs text-slate-400 mb-2">תישלח ללקוח כשהנציג מסיים את השיחה.</p>
+                <p className="text-xs text-slate-400 mb-2">{t('subUsers.settings.closingHint')}</p>
                 {closingSettings.mode === 'general' && (
                   <p className="text-xs text-amber-600 font-bold mb-2">
-                    כרגע פעילה "הודעה כללית אחת לכל השיחות" (בראש עמוד הקבוצות) — ההודעה כאן לא תישלח עד שיוחלף המצב ל"הודעה שונה לכל קבוצה".
+                    {t('subUsers.settings.closingModeWarning')}
                   </p>
                 )}
                 <textarea
@@ -1428,13 +1428,13 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
                 disabled={settingsSaving}
                 className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-all disabled:opacity-60"
               >
-                <Check size={16} /> {settingsSaving ? 'שומר...' : 'שמור הגדרות'}
+                <Check size={16} /> {settingsSaving ? t('subUsers.modal.saving') : t('subUsers.settings.save')}
               </button>
               <button
                 onClick={() => setSettingsGroup(null)}
                 className="flex items-center gap-2 px-6 py-3 bg-slate-100 text-slate-700 rounded-xl font-bold hover:bg-slate-200 transition-all"
               >
-                <X size={16} /> ביטול
+                <X size={16} /> {t('subUsers.modal.cancel')}
               </button>
             </div>
           </div>
@@ -1448,9 +1448,9 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
             <div className="w-14 h-14 bg-red-100 text-red-600 rounded-2xl flex items-center justify-center mb-6">
               <Trash2 size={28} />
             </div>
-            <h3 className="text-xl font-black text-slate-900 mb-2">מחיקת קבוצה</h3>
+            <h3 className="text-xl font-black text-slate-900 mb-2">{t('subUsers.deleteGroup.title')}</h3>
             <p className="text-slate-500 text-sm mb-8 font-medium">
-              האם אתה בטוח? מחיקת הקבוצה תסיר אותה גם מכל הנציגים המשויכים אליה.
+              {t('subUsers.deleteGroup.body')}
             </p>
             <div className="flex items-center gap-3 flex-row-reverse">
               <button
@@ -1458,13 +1458,13 @@ const SubUsersTab: React.FC<SubUsersTabProps> = ({ token, currentUser }) => {
                 disabled={deleteGroupLoading}
                 className="flex-1 py-3 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 transition-all disabled:opacity-60"
               >
-                {deleteGroupLoading ? 'מוחק...' : 'מחק'}
+                {deleteGroupLoading ? t('subUsers.deleteGroup.deleting') : t('subUsers.deleteGroup.delete')}
               </button>
               <button
                 onClick={() => setDeletingGroupId(null)}
                 className="flex-1 py-3 bg-slate-100 text-slate-700 rounded-xl font-bold hover:bg-slate-200 transition-all"
               >
-                ביטול
+                {t('subUsers.modal.cancel')}
               </button>
             </div>
           </div>

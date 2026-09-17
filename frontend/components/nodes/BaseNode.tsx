@@ -2,28 +2,8 @@
 import React, { memo, useState, useEffect, useRef } from 'react';
 import { Handle, NodeToolbar, Position, useReactFlow, useEdges, useNodes } from 'reactflow';
 import { Trash2, X, ChevronRight, ChevronLeft, Check } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { NodeType } from '../../types';
-
-const NODE_TYPE_LABELS: Record<string, string> = {
-  [NodeType.INPUT_TEXT]:               'קלט: טקסט',
-  [NodeType.INPUT_DATE]:               'קלט: תאריך',
-  [NodeType.INPUT_FILE]:               'קלט: קובץ',
-  [NodeType.OUTPUT_TEXT]:              'הודעת טקסט',
-  [NodeType.OUTPUT_IMAGE]:             'תמונה/מדיה',
-  [NodeType.OUTPUT_LINK]:              'קישור',
-  [NodeType.OUTPUT_MENU]:              'תפריט',
-  [NodeType.ACTION_WEB_SERVICE]:       'שירות אינטרנט',
-  [NodeType.ACTION_WAIT]:              'המתנה',
-  [NodeType.ACTION_TIME_ROUTING]:      'ניתוב לפי זמן',
-  [NodeType.ACTION_ADD_TO_GROUP]:      'ניהול קבוצה',
-  [NodeType.ACTION_REMOVE_FROM_GROUP]: 'הסרה מקבוצה',
-  [NodeType.ACTION_TRANSFER_TO_AGENT]: 'נציגים',
-  [NodeType.ACTION_SET_PARAMETER]:     'הגדרת פרמטר',
-  [NodeType.ACTION_RETURN_TO_MAIN_MENU]: 'חזרה לתפריט ראשי',
-  [NodeType.FIXED_PROCESS]:            'תת-תזרים',
-  [NodeType.AUTOMATIC_RESPONSES]:      'תגובות אוטומטיות',
-  [NodeType.START]:                    'התחלה',
-};
 
 interface BaseNodeProps {
   id: string;
@@ -42,6 +22,27 @@ interface BaseNodeProps {
 }
 
 const BaseNode: React.FC<BaseNodeProps> = ({ id, title, icon, children, type, selected, onDelete, serialId, isSimulatorActive, searchQuery, isCurrentMatch, isSearchMatch, nodeClassName }) => {
+  const { t } = useTranslation('builder');
+  const NODE_TYPE_LABELS: Record<string, string> = {
+    [NodeType.INPUT_TEXT]:               t('baseNode.nodeTypeLabels.inputText'),
+    [NodeType.INPUT_DATE]:               t('baseNode.nodeTypeLabels.inputDate'),
+    [NodeType.INPUT_FILE]:               t('baseNode.nodeTypeLabels.inputFile'),
+    [NodeType.OUTPUT_TEXT]:              t('baseNode.nodeTypeLabels.outputText'),
+    [NodeType.OUTPUT_IMAGE]:             t('baseNode.nodeTypeLabels.outputImage'),
+    [NodeType.OUTPUT_LINK]:              t('baseNode.nodeTypeLabels.outputLink'),
+    [NodeType.OUTPUT_MENU]:              t('baseNode.nodeTypeLabels.outputMenu'),
+    [NodeType.ACTION_WEB_SERVICE]:       t('baseNode.nodeTypeLabels.actionWebService'),
+    [NodeType.ACTION_WAIT]:              t('baseNode.nodeTypeLabels.actionWait'),
+    [NodeType.ACTION_TIME_ROUTING]:      t('baseNode.nodeTypeLabels.actionTimeRouting'),
+    [NodeType.ACTION_ADD_TO_GROUP]:      t('baseNode.nodeTypeLabels.actionAddToGroup'),
+    [NodeType.ACTION_REMOVE_FROM_GROUP]: t('baseNode.nodeTypeLabels.actionRemoveFromGroup'),
+    [NodeType.ACTION_TRANSFER_TO_AGENT]: t('baseNode.nodeTypeLabels.actionTransferToAgent'),
+    [NodeType.ACTION_SET_PARAMETER]:     t('baseNode.nodeTypeLabels.actionSetParameter'),
+    [NodeType.ACTION_RETURN_TO_MAIN_MENU]: t('baseNode.nodeTypeLabels.actionReturnToMainMenu'),
+    [NodeType.FIXED_PROCESS]:            t('baseNode.nodeTypeLabels.fixedProcess'),
+    [NodeType.AUTOMATIC_RESPONSES]:      t('baseNode.nodeTypeLabels.automaticResponses'),
+    [NodeType.START]:                    t('baseNode.nodeTypeLabels.start'),
+  };
   const [isHovered, setIsHovered] = useState(false);
   const [isSourceHovered, setIsSourceHovered] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState<'incoming' | 'outgoing' | null>(null);
@@ -204,10 +205,10 @@ const BaseNode: React.FC<BaseNodeProps> = ({ id, title, icon, children, type, se
               <button
                 onClick={() => handleNavClick('incoming', incomingNodes)}
                 className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold text-slate-600 hover:bg-blue-50 hover:text-blue-700 rounded-xl transition-all"
-                title="נווט לרכיב המקור"
+                title={t('baseNode.navigateToSource')}
               >
                 <ChevronRight size={13} />
-                <span>{incomingNodes.length > 1 ? `${incomingNodes.length} רכיבים קודמים` : 'רכיב קודם'}</span>
+                <span>{incomingNodes.length > 1 ? t('baseNode.prevNodesCount', { count: incomingNodes.length }) : t('baseNode.prevNode')}</span>
               </button>
               {dropdownOpen === 'incoming' && (
                 <div className="absolute top-full mt-1.5 right-0 bg-white border border-slate-200 rounded-2xl shadow-2xl z-[9999] min-w-[200px] overflow-hidden" dir="rtl">
@@ -237,9 +238,9 @@ const BaseNode: React.FC<BaseNodeProps> = ({ id, title, icon, children, type, se
               <button
                 onClick={() => handleNavClick('outgoing', outgoingNodes)}
                 className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold text-slate-600 hover:bg-emerald-50 hover:text-emerald-700 rounded-xl transition-all"
-                title="נווט לרכיב הבא"
+                title={t('baseNode.navigateToNext')}
               >
-                <span>{outgoingNodes.length > 1 ? `${outgoingNodes.length} רכיבים הבאים` : 'רכיב הבא'}</span>
+                <span>{outgoingNodes.length > 1 ? t('baseNode.nextNodesCount', { count: outgoingNodes.length }) : t('baseNode.nextNode')}</span>
                 <ChevronLeft size={13} />
               </button>
               {dropdownOpen === 'outgoing' && (

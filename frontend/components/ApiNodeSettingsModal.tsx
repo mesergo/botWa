@@ -1,6 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import ReactDOM from 'react-dom';
 import { X, Settings, Plus, Trash2, Code } from 'lucide-react';
+import { useTranslation, Trans } from 'react-i18next';
 import { NodeData } from '../types';
 
 const HTTP_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const;
@@ -33,6 +34,7 @@ const ApiNodeSettingsModal: React.FC<ApiNodeSettingsModalProps> = ({
   onChange,
   onClose,
 }) => {
+  const { t } = useTranslation('builder');
   const [url, setUrl] = useState(data.url || '');
   const [method, setMethod] = useState<HttpMethod>((data.apiMethod as HttpMethod) || 'POST');
   const [headers, setHeaders] = useState<Array<{ key: string; value: string }>>(
@@ -55,20 +57,20 @@ const ApiNodeSettingsModal: React.FC<ApiNodeSettingsModalProps> = ({
       setBody(JSON.stringify(parsed, null, 2));
       setJsonError(null);
     } catch (e: any) {
-      setJsonError('JSON לא תקין — בדוק תחביר');
+      setJsonError(t('apiSettingsModal.jsonInvalidSyntax'));
     }
   }, [body]);
 
   const validateJson = (val: string) => {
     if (!val.trim()) { setJsonError(null); return; }
     try { JSON.parse(val); setJsonError(null); }
-    catch { setJsonError('JSON לא תקין'); }
+    catch { setJsonError(t('apiSettingsModal.jsonInvalid')); }
   };
 
   const handleSave = () => {
     if (body.trim()) {
       try { JSON.parse(body); }
-      catch { setJsonError('JSON לא תקין — תקן לפני שמירה'); return; }
+      catch { setJsonError(t('apiSettingsModal.jsonInvalidFixBeforeSave')); return; }
     }
     const cleanedHeaders = headers.filter(h => h.key.trim());
     onChange({
@@ -97,7 +99,7 @@ const ApiNodeSettingsModal: React.FC<ApiNodeSettingsModalProps> = ({
           </button>
           <h3 className="text-xl font-black text-slate-900 flex items-center gap-3">
             <Settings size={20} className="text-slate-400" />
-            הגדרות קריאת API
+            {t('apiSettingsModal.title')}
           </h3>
         </div>
 
@@ -107,7 +109,7 @@ const ApiNodeSettingsModal: React.FC<ApiNodeSettingsModalProps> = ({
           {/* URL */}
           <div>
             <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-3">
-              כתובת URL
+              {t('apiSettingsModal.urlLabel')}
             </label>
             <textarea
               className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600 transition-all resize-none font-mono leading-relaxed"
@@ -118,14 +120,14 @@ const ApiNodeSettingsModal: React.FC<ApiNodeSettingsModalProps> = ({
               dir="ltr"
             />
             <p className="text-[11px] text-slate-400 mt-2 text-start">
-              ניתן להשתמש ב-<code className="bg-slate-100 px-1.5 py-0.5 rounded-md">--שם_משתנה--</code> בכתובת
+              <Trans i18nKey="apiSettingsModal.urlVariableHint" t={t} components={[<code className="bg-slate-100 px-1.5 py-0.5 rounded-md" />]} />
             </p>
           </div>
 
           {/* Method */}
           <div>
             <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-3">
-              שיטת בקשה (Method)
+              {t('apiSettingsModal.methodLabel')}
             </label>
             <div className="flex gap-3 flex-wrap">
               {HTTP_METHODS.map(m => (
@@ -152,16 +154,16 @@ const ApiNodeSettingsModal: React.FC<ApiNodeSettingsModalProps> = ({
                 className="flex items-center gap-1.5 text-sm font-bold text-blue-600 hover:text-blue-700 transition-colors"
               >
                 <Plus size={15} />
-                הוסף Header
+                {t('apiSettingsModal.addHeader')}
               </button>
               <label className="text-xs font-black text-slate-400 uppercase tracking-widest">
-                Headers (אופציונלי)
+                {t('apiSettingsModal.headersLabel')}
               </label>
             </div>
 
             {headers.length === 0 ? (
               <div className="text-center py-5 text-[12px] text-slate-400 font-bold border border-dashed border-slate-200 rounded-2xl">
-                לא הוגדרו headers — ייעשה שימוש בברירת המחדל בלבד
+                {t('apiSettingsModal.noHeaders')}
               </div>
             ) : (
               <div className="space-y-3">
@@ -200,13 +202,13 @@ const ApiNodeSettingsModal: React.FC<ApiNodeSettingsModalProps> = ({
                 onClick={formatJson}
                 disabled={!body.trim()}
                 className="flex items-center gap-1.5 text-sm font-bold text-blue-600 hover:text-blue-700 disabled:text-slate-300 transition-colors"
-                title="Pretty print JSON"
+                title={t('apiSettingsModal.formatJsonTitle')}
               >
                 <Code size={15} />
-                Format JSON
+                {t('apiSettingsModal.formatJsonButton')}
               </button>
               <label className="text-xs font-black text-slate-400 uppercase tracking-widest">
-                Body (JSON) — אופציונלי
+                {t('apiSettingsModal.bodyLabel')}
               </label>
             </div>
             <textarea
@@ -224,8 +226,8 @@ const ApiNodeSettingsModal: React.FC<ApiNodeSettingsModalProps> = ({
             ) : (
               <p className="text-[11px] text-slate-400 mt-2 text-start">
                 {body.trim()
-                  ? 'ה-Body הזה יישלח במקום ה-payload הסטנדרטי'
-                  : 'ריק = ישלח payload סטנדרטי של הבוט (ברירת מחדל)'}
+                  ? t('apiSettingsModal.bodyOverridesDefault')
+                  : t('apiSettingsModal.bodyEmptyHint')}
               </p>
             )}
           </div>
@@ -237,14 +239,14 @@ const ApiNodeSettingsModal: React.FC<ApiNodeSettingsModalProps> = ({
             onClick={onClose}
             className="px-6 py-3 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-xl font-bold text-sm transition-all"
           >
-            ביטול
+            {t('apiSettingsModal.cancel')}
           </button>
           <button
             onClick={handleSave}
             disabled={!!jsonError}
             className="px-9 py-3 bg-blue-600 text-white rounded-xl font-bold text-sm hover:bg-blue-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            שמור הגדרות
+            {t('apiSettingsModal.saveSettings')}
           </button>
         </div>
       </div>

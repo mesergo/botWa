@@ -70,5 +70,394 @@
   "quickInsert": {
     "autoFill": "מילוי אוטומטי",
     "userNameMissing": "לא הוגדר שם למשתמש"
+  },
+  "editor": {
+    "saveTemplateModal": {
+      "title": "שמירת תבנית",
+      "nameLabel": "שם התבנית",
+      "namePlaceholder": "נא להזין שם לתבנית",
+      "descriptionLabel": "תיאור קצר",
+      "descriptionPlaceholder": "תיאור מה התבנית עושה...",
+      "isPublicLabel": "תבנית ציבורית (גלויה למשתמשים)",
+      "save": "שמור תבנית",
+      "cancel": "ביטול"
+    },
+    "toolbar": {
+      "searchPlaceholder": "חיפוש טקסט או מזהה",
+      "globalSearchResults": "תוצאות מתהליכים קבועים ({{count}})",
+      "manageParams": "ניהול פרמטרים",
+      "saveTemplate": "שמור תבנית",
+      "trialNoPublish": "בחשבון ניסיוני לא ניתן לפרסם גרסאות",
+      "trialBadge": "ניסיוני — ללא פרסום",
+      "publishVersion": "פרסם גרסה",
+      "changeTemplate": "החלף תסריט",
+      "tidyAll": "סדר הכל",
+      "saveStatusSaving": "שומר...",
+      "saveStatusSaved": "נשמר",
+      "saveStatusIdle": "שמירה אוטומטית",
+      "renameProcessTitle": "לחץ לשינוי שם התהליך",
+      "renameBotTitle": "לחץ לשינוי שם הבוט",
+      "myBots": "הבוטים שלי",
+      "botSettings": "הגדרות בוט"
+    },
+    "multiSelect": {
+      "selectedCount": "{{count}} רכיבים נבחרו",
+      "hint": "לחץ על רכיבים או גרור לסימון מספר רכיבים",
+      "copyToMyProcesses": "העתק לתהליכים שלי",
+      "copy": "העתקה",
+      "moveToMyProcesses": "העבר לתהליכים שלי",
+      "move": "העברה",
+      "deleteSelected": "מחק רכיבים נבחרים",
+      "delete": "מחיקה",
+      "clearSelection": "בטל בחירה"
+    },
+    "simulatorTitle": "סימולטור",
+    "processWarning": "שים לב: השינויים כאן משפיעים על כל המופעים של התהליך",
+    "duplicateProcess": "שכפול תהליך",
+    "closeEditor": "סגור עורך"
+  },
+  "nodeCommon": {
+    "expandModal": {
+      "title": "עריכה מורחבת",
+      "bold": "מודגש",
+      "italic": "נטוי",
+      "strike": "חוצה",
+      "code": "קוד",
+      "bullet": "תבליט",
+      "numbered": "ממוספר",
+      "quote": "ציטוט",
+      "formatLabel": "עיצוב:",
+      "shortcutsHint": "Ctrl+Enter לשמירה · Esc לביטול · Ctrl+B מודגש · Ctrl+I נטוי",
+      "openTitle": "פתח עורך מורחב"
+    },
+    "save": "שמור",
+    "cancel": "ביטול",
+    "edit": "עריכה",
+    "delete": "מחיקה",
+    "moreActions": "פעולות נוספות",
+    "confirmDeleteQuestion": "האם אתה בטוח שברצונך למחוק?",
+    "dragToReorder": "גרירה לשינוי סדר",
+    "operators": {
+      "eq": "שווה",
+      "contains": "מכיל מילה",
+      "containsAny": "מכיל אחת מהמילים",
+      "containsAll": "מכיל את כל המילים",
+      "gt": "גדול",
+      "gte": "גדול או שווה",
+      "lt": "קטן",
+      "lte": "קטן או שווה"
+    },
+    "menuOperators": {
+      "oneOfOptions": "אחת מהאפשרויות"
+    },
+    "condition": "תנאי",
+    "validationTypes": {
+      "none": "ללא ולידציה",
+      "email": "מייל",
+      "phone": "טלפון",
+      "id": "ת.ז",
+      "url": "כתובת אתר"
+    },
+    "validationTypeTitle": "סוג ולידציה",
+    "validationFallback": "ולידציה",
+    "contactFields": {
+      "fullName": "שם מלא",
+      "email": "מייל"
+    },
+    "fields": {
+      "botQuestion": "שאלה מהבוט",
+      "variableName": "שם משתנה לאחסון"
+    },
+    "reservedVariableNameWarning": "⚠ \"{{name}}\" הוא שם שמור במערכת ולא ניתן להשתמש בו",
+    "saveToContactLabel": "שמור בפרטי איש קשר",
+    "contactFieldRequiredWarning": "⚠ חובה לבחור שדה לשמירה",
+    "chooseFieldToSave": "בחר שדה לשמירה *",
+    "chooseFieldPlaceholder": "בחר שדה...",
+    "customFieldsGroup": "שדות מותאמים אישית",
+    "moreFieldsHintPrefix": "ניתן להגדיר שדות נוספים בדף",
+    "contactsPageLabel": "אנשי קשר",
+    "moreFieldsHintSuffix": "← ניהול שדות",
+    "dateModes": {
+      "date": "תאריך",
+      "time": "שעה",
+      "dateTime": "תאריך ושעה"
+    },
+    "outputFormatLabel": "תבנית פלט:",
+    "mediaTypes": {
+      "image": "תמונה",
+      "video": "וידאו",
+      "pdf": "PDF",
+      "contact": "איש קשר"
+    },
+    "default": "ברירת מחדל",
+    "enterValue": "הזן ערך",
+    "charCount": "{{count}} תווים",
+    "deleteCondition": "מחק תנאי",
+    "settings": "הגדרות",
+    "defaultExitLabel": "יציאה ברירת מחדל",
+    "addCondition": "הוסף תנאי",
+    "valueLabel": "ערך",
+    "weekdays": {
+      "sunday": "ראשון",
+      "monday": "שני",
+      "tuesday": "שלישי",
+      "wednesday": "רביעי",
+      "thursday": "חמישי",
+      "friday": "שישי",
+      "saturday": "שבת"
+    },
+    "conditionKinds": {
+      "time": "שעה",
+      "date": "תאריך",
+      "weekday": "יום"
+    },
+    "deleteOption": "מחק אופציה",
+    "from": "מ",
+    "fromTime": "משעה",
+    "to": "עד",
+    "actionTypeLabel": "סוג פעולה",
+    "chooseGroupLabel": "בחר קבוצה",
+    "chooseGroupPlaceholder": "-- בחר קבוצה --",
+    "simulatorSkipHint": "בסימולטור הרכיב ידולג (אין waPhone)",
+    "actionLabel": "פעולה",
+    "buttons": "כפתורים",
+    "dropdown": "רכיב נפתח",
+    "system": "מערכת"
+  },
+  "nodes": {
+    "start": {
+      "title": "התחלה",
+      "subtitle": "תחילת שיחה"
+    },
+    "inputText": {
+      "title": "קלט: טקסט",
+      "questionPlaceholder": "מה השם שלך?"
+    },
+    "inputDate": {
+      "titleTime": "קלט: שעה",
+      "titleDateTime": "קלט: תאריך ושעה",
+      "titleDate": "קלט: תאריך",
+      "placeholderTime": "באיזו שעה?",
+      "placeholderDateTime": "מתי ובאיזו שעה?",
+      "placeholderDate": "מתי תרצה להגיע?",
+      "inputTypeLabel": "סוג קלט"
+    },
+    "inputFile": {
+      "title": "קלט: קובץ",
+      "requestLabel": "בקשת קובץ",
+      "placeholder": "אנא העלה תמונה"
+    },
+    "outputText": {
+      "title": "הודעת טקסט",
+      "contentLabel": "תוכן ההודעה",
+      "placeholder": "היי, איך אני יכול לעזור?"
+    },
+    "outputImage": {
+      "title": "הודעת מדיה",
+      "mediaTypeLabel": "סוג מדיה",
+      "pdfFile": "קובץ PDF",
+      "contactNameLabel": "שם איש קשר",
+      "contactNamePlaceholder": "ישראל ישראלי",
+      "contactPhoneLabel": "טלפון איש קשר",
+      "contactPhonePlaceholder": "0501234567",
+      "uploadModeLabel": "אופן העלאה",
+      "uploadFileTab": "העלאת קובץ",
+      "addLinkTab": "הוספת קישור",
+      "enterLinkPrefix": "הכנס קישור ל",
+      "captionLabel": "טקסט (אופציונלי)",
+      "captionPlaceholder": "הוסף טקסט מתחת למדיה"
+    },
+    "outputLink": {
+      "textLabel": "טקסט הקישור",
+      "textPlaceholder": "בקר באתר שלנו",
+      "urlLabel": "כתובת אינטרנט",
+      "urlPlaceholder": "https://example.com או --שם_משתנה--"
+    },
+    "outputMenu": {
+      "promptLabel": "הנחיית בחירה",
+      "promptPlaceholder": "בחר בבקשה מהרשימה:",
+      "saveVariableLabel": "שמור בחירה במשתנה (אופציונלי)",
+      "saveVariablePlaceholder": "למשל: selected_option",
+      "optionsListLabel": "רשימת אפשרויות ({{mode}})",
+      "matchesAnyAbove": "מתאים לכל אחת מהאפשרויות שלמעלה",
+      "addOption": "הוסף אפשרות חדשה",
+      "imageUploadFailed": "העלאת התמונה נכשלה"
+    },
+    "actionWebService": {
+      "title": "חיבור API",
+      "openSettings": "פתח הגדרות",
+      "webhookUrlLabel": "כתובת Webhook",
+      "conditionalExitsLabel": "יציאות מותנות לפי Return",
+      "comparisonValuePlaceholder": "ערך להשוואה...",
+      "noConditionalExits": "ללא יציאות מותנות - רק ברירת מחדל"
+    },
+    "actionWait": {
+      "title": "השהיית מערכת",
+      "durationLabel": "זמן המתנה (שניות)",
+      "placeholder": "למשל: 3"
+    },
+    "actionSetParameter": {
+      "nameLabel": "שם הפרמטר",
+      "namePlaceholder": "למשל: user_status",
+      "valuePlaceholder": "ערך קבוע או --שם_משתנה--",
+      "hint": "ניתן לכתוב ערך קבוע או לשלב --שם_פרמטר-- כדי להעתיק ערך של פרמטר אחר"
+    },
+    "actionReturnToMainMenu": {
+      "matchLabel": "ביטוי להתאמה",
+      "matchPlaceholder": "תגובה אוטומטית",
+      "hint": "הביטוי ייבדק מול אפשרויות הצומת \"תגובות אוטומטיות\" בתזרים, וההודעה תמשיך מהיציאה המתאימה"
+    },
+    "fixedProcess": {
+      "title": "תת תזרים {{label}}"
+    },
+    "actionTimeRouting": {
+      "title": "ניתוב לפי זמן",
+      "branchesLabel": "ענפי ניתוב",
+      "defaultCase": "ברירת מחדל (כל שאר המקרים)",
+      "optionN": "אופציה {{n}}",
+      "addRoutingOption": "הוסף אופציית ניתוב"
+    },
+    "groupAction": {
+      "titleAdd": "הוספה לקבוצה",
+      "titleRemove": "הסרה מקבוצה",
+      "allBlocklistOption": "הכל (רשימת הסרה)",
+      "phoneWillBeAddedToRemovalList": "מספר הטלפון יתווסף לרשימת ההסרה",
+      "removalReasonLabel": "סיבת ההסרה (תירשם בלוג ההסרות)",
+      "removalReasonPlaceholder": "למשל: הלקוח ביקש להסיר מהרשימה",
+      "removalReasonRequired": "יש להזין סיבת הסרה",
+      "removeTitle": "הסר מקבוצה",
+      "removeTypeLabel": "סוג הסרה",
+      "removeSpecific": "הסר מקבוצה מסויימת",
+      "removeAll": "הסר מכל הקבוצות (רשימת הסרה)"
+    },
+    "transferAgent": {
+      "transfer": "העברה לנציג",
+      "close": "סגירת פניה (סיום שיחה)",
+      "extend30m": "הארכת זמן פניה פתוחה (30 דקות)",
+      "groupLabel": "קבוצת נציגים לשיוך",
+      "chooseGroupPlaceholder": "-- בחר קבוצת נציגים --",
+      "noGroupsHint": "לא הוגדרו קבוצות נציגים. ניתן להוסיף קבוצות במסך משתמשי משנה.",
+      "assignmentModeLabel": "אופן הקצאה",
+      "anyAgent": "כל נציג זמין מהקבוצה",
+      "specificAgent": "נציג ספציפי מהקבוצה",
+      "chooseAgentLabel": "בחר נציג",
+      "chooseAgentPlaceholder": "-- בחר נציג --",
+      "noAgentsHint": "אין נציגים בקבוצה הזו. הוסף נציגים במסך משתמשי משנה.",
+      "transferHint1": "הרכיב יעביר את השיחה לנציג מהקבוצה שנבחרה.",
+      "transferHint2": "הבוט יפסיק להגיב למשך 30 דקות (כמו בשיחה עם נציג).",
+      "wantsPhoneLabel": "לקוח מעוניין בשיחת טלפון חוזרת",
+      "closeHint": "בסוג פעולה זה תתבצע סגירת פניה (סיום שיחה) מיידית.",
+      "extendHint": "בסוג פעולה זה זמן ההמתנה לנציג יתאפס לעוד 30 דקות."
+    },
+    "automaticResponses": {
+      "title": "תגובות אוטומטיות",
+      "keywordsLabel": "מילות מפתח ופתיחים",
+      "systemCase2Label": "תגובה לאחר המתנה ללא מענה נציג",
+      "deleteOpener": "מחק פתיח",
+      "showLess": "הצג פחות",
+      "showAllCount": "הצג את כל {{count}} האפשרויות",
+      "moreOptionsCount": "עוד {{count}} אפשרויות",
+      "addOpener": "הוסף פתיח חדש"
+    }
+  },
+  "baseNode": {
+    "nodeTypeLabels": {
+      "inputText": "קלט: טקסט",
+      "inputDate": "קלט: תאריך",
+      "inputFile": "קלט: קובץ",
+      "outputText": "הודעת טקסט",
+      "outputImage": "תמונה/מדיה",
+      "outputLink": "קישור",
+      "outputMenu": "תפריט",
+      "actionWebService": "שירות אינטרנט",
+      "actionWait": "המתנה",
+      "actionTimeRouting": "ניתוב לפי זמן",
+      "actionAddToGroup": "ניהול קבוצה",
+      "actionRemoveFromGroup": "הסרה מקבוצה",
+      "actionTransferToAgent": "נציגים",
+      "actionSetParameter": "הגדרת פרמטר",
+      "actionReturnToMainMenu": "חזרה לתפריט ראשי",
+      "fixedProcess": "תת-תזרים",
+      "automaticResponses": "תגובות אוטומטיות",
+      "start": "התחלה"
+    },
+    "navigateToSource": "נווט לרכיב המקור",
+    "navigateToNext": "נווט לרכיב הבא",
+    "prevNode": "רכיב קודם",
+    "prevNodesCount": "{{count}} רכיבים קודמים",
+    "nextNode": "רכיב הבא",
+    "nextNodesCount": "{{count}} רכיבים הבאים"
+  },
+  "apiSettingsModal": {
+    "title": "הגדרות קריאת API",
+    "jsonInvalidSyntax": "JSON לא תקין — בדוק תחביר",
+    "jsonInvalid": "JSON לא תקין",
+    "jsonInvalidFixBeforeSave": "JSON לא תקין — תקן לפני שמירה",
+    "urlLabel": "כתובת URL",
+    "urlVariableHint": "ניתן להשתמש ב-<0>--שם_משתנה--</0> בכתובת",
+    "methodLabel": "שיטת בקשה (Method)",
+    "addHeader": "הוסף Header",
+    "headersLabel": "Headers (אופציונלי)",
+    "noHeaders": "לא הוגדרו headers — ייעשה שימוש בברירת המחדל בלבד",
+    "formatJsonTitle": "Pretty print JSON",
+    "formatJsonButton": "Format JSON",
+    "bodyLabel": "Body (JSON) — אופציונלי",
+    "bodyOverridesDefault": "ה-Body הזה יישלח במקום ה-payload הסטנדרטי",
+    "bodyEmptyHint": "ריק = ישלח payload סטנדרטי של הבוט (ברירת מחדל)",
+    "cancel": "ביטול",
+    "saveSettings": "שמור הגדרות"
+  },
+  "botSettingsModal": {
+    "saveError": "שגיאה בשמירה",
+    "title": "הגדרות בוט — {{name}}",
+    "publicIdLabel": "מזהה ציבורי (API Token)",
+    "saving": "שומר...",
+    "save": "שמור",
+    "copy": "העתק",
+    "publicIdUpdated": "המזהה עודכן בהצלחה",
+    "endpointLabel": "Endpoint (מספר הבוט)",
+    "endpointHint": "הכנס רק את המזהה — המערכת תבנה אוטומטית את הקישור <0>dialog360/{id}</0>",
+    "endpointUpdated": "ה-Endpoint עודכן בהצלחה",
+    "restartKeywordLabel": "מילת מפתח לאיפוס שיחה",
+    "restartKeywordHint": "אם המשתמש שולח מילה זו בכל שלב, השיחה תאופס ותתחיל מחדש. השאר ריק כדי לבטל.",
+    "restartKeywordPlaceholder": "לדוגמה: התחל מחדש",
+    "restartKeywordUpdated": "מילת המפתח עודכנה בהצלחה",
+    "connectFacebook": "חיבור לפייסבוק",
+    "connectFacebookButton": "חבר לפייסבוק"
+  },
+  "simulator": {
+    "active": "סימולטור פעיל",
+    "shareLink": "שיתוף קישור",
+    "openInNewWindow": "פתח בחלון חדש",
+    "resetChat": "אפס צ'אט",
+    "chooseVersionToShare": "בחר גרסה לשיתוף",
+    "shareVersionHint": "הקישור יציג את התזרים של הגרסה הנבחרת",
+    "currentDraftLive": "טיוטה נוכחית (Live)",
+    "currentEditorState": "המצב הנוכחי של העורך",
+    "noSavedVersions": "אין גרסאות שמורות",
+    "openPdfDocument": "פתח מסמך PDF",
+    "chooseFileToUpload": "בחר קובץ להעלאה",
+    "confirmTime": "אשר שעה",
+    "confirmDateTime": "אשר תאריך ושעה",
+    "confirmDate": "אשר תאריך",
+    "typeMessagePlaceholder": "הקלד תגובה...",
+    "moreInfo": "מידע נוסף",
+    "shareCopyError": "שגיאה: לא נמצא מזהה משתמש לשיתוף. אנא נסה להתחבר מחדש.",
+    "copyLinkPrompt": "העתק את הקישור לשיתוף:",
+    "restartMessage": "השיחה אופסה 🔄 שלח הודעה כלשהי להתחיל מחדש",
+    "invalidValueMessage": "הערך שהוזן אינו חוקי, אנא הזן ערך מתאים.",
+    "chooseOnlyFromOptions": "בחר רק מהאפשרויות",
+    "botStateChanged": "[מצב בוט שונה ל: {{value}}]",
+    "subflowMissingProcessId": "⚠️ שגיאה: תת-תהליך לא מוגדר כראוי (חסר processId)",
+    "subflowMissingFlowId": "⚠️ שגיאה: flowId לא מוגדר",
+    "subflowNoPermission": "⚠️ שגיאה: אין הרשאות לטעינת תת-תהליך",
+    "subflowFetchError": "⚠️ שגיאה בטעינת תת-תהליך ({{status}})",
+    "subflowEmpty": "⚠️ תת-תהליך ריק",
+    "subflowMissingStart": "⚠️ תת-תהליך לא מכיל נקודת התחלה",
+    "subflowLoadError": "⚠️ שגיאה בטעינת תת-תהליך",
+    "webserviceError": "❌ שגיאה בחיבור לשרת ה-Webservice",
+    "complexityExceeded": "⚠️ חריגה ממורכבות המערכת המותרת.",
+    "fileUploaded": "קובץ הועלה: {{fileName}}",
+    "backToMenu": "↩ חזרת לתפריט"
   }
 }

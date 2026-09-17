@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { Database, Plus, FileSpreadsheet, ChevronLeft } from 'lucide-react';
 import { InternalDataTable } from '../../types';
 
@@ -15,17 +16,18 @@ export const DatasetSidebar: React.FC<DatasetSidebarProps> = ({
   onSelectTable,
   onOpenCreateModal,
 }) => {
+  const { t } = useTranslation('internalData');
   return (
     <aside className="w-full lg:w-72 bg-white border border-slate-200 rounded-3xl p-4 shadow-sm space-y-4 shrink-0">
       <div className="flex items-center justify-between pb-3 border-b border-slate-100">
         <div className="flex items-center gap-2">
           <Database className="w-4 h-4 text-indigo-600" />
-          <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">טבלאות ומאגרי דאטה</h3>
+          <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">{t('sidebar.title')}</h3>
         </div>
         <button
           onClick={onOpenCreateModal}
           className="p-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition shadow-xs"
-          title="הוסף טבלה חדשה"
+          title={t('sidebar.addTableTitle')}
         >
           <Plus className="w-4 h-4" />
         </button>
@@ -33,12 +35,12 @@ export const DatasetSidebar: React.FC<DatasetSidebarProps> = ({
 
       {tables.length === 0 ? (
         <div className="py-8 text-center text-xs text-slate-500 space-y-3">
-          <p>אין עדיין טבלאות במסד הנתונים</p>
+          <p>{t('sidebar.empty')}</p>
           <button
             onClick={onOpenCreateModal}
             className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold"
           >
-            חבר Google Sheets ראשון
+            {t('sidebar.connectFirstSheet')}
           </button>
         </div>
       ) : (
@@ -70,7 +72,7 @@ export const DatasetSidebar: React.FC<DatasetSidebarProps> = ({
                   <div className="truncate">
                     <div className="text-xs font-bold truncate">{table.name}</div>
                     <div className={`text-[11px] ${isSelected ? 'text-indigo-100' : 'text-slate-500'} flex items-center gap-1.5`}>
-                      <span>{table.recordCount} רשומות</span>
+                      <span>{t('sidebar.records', { count: table.recordCount })}</span>
                       {table.sync.enabled && (
                         <span className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-emerald-300' : 'bg-emerald-500'} animate-pulse`}></span>
                       )}
@@ -91,13 +93,13 @@ export const DatasetSidebar: React.FC<DatasetSidebarProps> = ({
 
       <div className="pt-3 border-t border-slate-100 text-[11px] text-slate-500 space-y-1">
         <div className="flex items-center justify-between">
-          <span>סנכרון פעיל:</span>
+          <span>{t('sidebar.activeSync')}</span>
           <span className="font-bold text-emerald-600">
             {tables.filter((t) => t.sync.enabled).length}
           </span>
         </div>
         <div className="flex items-center justify-between">
-          <span>סה"כ רשומות ב-DB:</span>
+          <span>{t('sidebar.totalRecordsInDb')}</span>
           <span className="font-mono font-semibold text-slate-900">
             {tables.reduce((acc, t) => acc + t.recordCount, 0).toLocaleString()}
           </span>

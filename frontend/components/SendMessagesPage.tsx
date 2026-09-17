@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Send, X, CheckCircle2, Clock, AlertTriangle } from 'lucide-react';
 import ImpersonationBanner from './ImpersonationBanner';
 import OnboardingBanner from './OnboardingBanner';
@@ -82,6 +83,7 @@ const SendMessagesPage: React.FC<SendMessagesPageProps> = ({
   token, currentUser, onBack, onLogout, onOpenContacts, onOpenSessions, onOpenGroups, onOpenSmsIn, onOpenInternalData,
   onOpenAdminPanel, onOpenSettings, onOpenSubUsers, onStopImpersonation, onSwitchAccount, onGoHome,
 }) => {
+  const { t } = useTranslation('messages');
   const can = usePermission(currentUser as any);
   const { fields: contactFields } = useContactFields();
   const authHeader = useMemo(() => ({ Authorization: `Bearer ${token}` }), [token]);
@@ -261,7 +263,7 @@ const SendMessagesPage: React.FC<SendMessagesPageProps> = ({
       return;
     }
     setPreviewLoading(true);
-    const t = setTimeout(async () => {
+    const timer = setTimeout(async () => {
       try {
         const res = await fetch(`${API_BASE}/groups/broadcast-custom/preview`, {
           method: 'POST',
@@ -281,7 +283,7 @@ const SendMessagesPage: React.FC<SendMessagesPageProps> = ({
         setPreviewLoading(false);
       }
     }, 500);
-    return () => clearTimeout(t);
+    return () => clearTimeout(timer);
   }, [selectedContactIds, selectedGroupIds, manualPhonesList, excludeGroupId, authHeader, token]);
 
   const filteredContacts = useMemo(() => {
@@ -404,10 +406,10 @@ const SendMessagesPage: React.FC<SendMessagesPageProps> = ({
         setManualPhonesText('');
         setExcludeGroupId('');
       } else {
-        alert(data.error || 'שגיאה בשליחה');
+        alert(data.error || t('page.errors.sendFailed'));
       }
     } catch (e: any) {
-      alert(`שגיאת רשת: ${e?.message || String(e)}`);
+      alert(t('page.errors.networkError', { msg: e?.message || String(e) }));
     } finally {
       setSending(false);
     }
@@ -530,7 +532,7 @@ const SendMessagesPage: React.FC<SendMessagesPageProps> = ({
         showMobileNavToggle
         mobileNavOpen={mobileNavOpen}
         onMobileNavToggle={() => setMobileNavOpen((prev) => !prev)}
-        badge={{ label: 'שליחת הודעות', icon: <Send size={14} />, className: 'bg-green-50 text-green-700' }}
+        badge={{ label: t('page.title'), icon: <Send size={14} />, className: 'bg-green-50 text-green-700' }}
       />
 
       <div className="flex-1 flex overflow-hidden">
@@ -562,8 +564,8 @@ const SendMessagesPage: React.FC<SendMessagesPageProps> = ({
                   <Send size={18} />
                 </div>
                 <div>
-                  <h1 className="text-xl font-black text-slate-900">שליחת הודעות</h1>
-                  <p className="text-slate-400 text-xs font-semibold mt-0.5">שילוב אנשי קשר, קבוצות ומספרים למשלוח אחד — ללא כפילויות</p>
+                  <h1 className="text-xl font-black text-slate-900">{t('page.title')}</h1>
+                  <p className="text-slate-400 text-xs font-semibold mt-0.5">{t('page.subtitle')}</p>
                 </div>
               </div>
               <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-1.5">
@@ -571,11 +573,11 @@ const SendMessagesPage: React.FC<SendMessagesPageProps> = ({
                   <button
                     onClick={() => setPageView('send')}
                     className={`px-4 py-2 rounded-2xl text-sm font-bold transition ${pageView === 'send' ? 'bg-green-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
-                  >שליחת הודעות</button>
+                  >{t('page.tabs.send')}</button>
                   <button
                     onClick={() => setPageView('broadcasts')}
                     className={`px-4 py-2 rounded-2xl text-sm font-bold transition ${pageView === 'broadcasts' ? 'bg-green-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
-                  >שליחות מרוכזות</button>
+                  >{t('broadcasts.title')}</button>
                 </div>
               </div>
             </div>
@@ -693,11 +695,11 @@ const SendMessagesPage: React.FC<SendMessagesPageProps> = ({
               <Send size={18} />
             </div>
             <div className="flex-1 min-w-0">
-              <h4 className="font-black text-slate-900 text-sm truncate">שולח הודעה</h4>
+              <h4 className="font-black text-slate-900 text-sm truncate">{t('page.progress.sendingTitle')}</h4>
               <p className="text-xs font-semibold text-slate-500 mt-0.5 truncate">
-                {activeBroadcast.status === 'scheduled' && 'ההודעה תוזמנה לשליחה'}
-                {activeBroadcast.status === 'queued' && (activeBroadcast.queuedBehind ? `ממתין בתור (מיקום ${activeBroadcast.queuePosition})...` : 'מתחיל שליחה...')}
-                {activeBroadcast.status === 'running' && `${activeBroadcast.processed}/${activeBroadcast.total} עובדו`}
+                {activeBroadcast.status === 'scheduled' && t('page.progress.scheduled')}
+                {activeBroadcast.status === 'queued' && (activeBroadcast.queuedBehind ? t('page.progress.queuedBehind', { position: activeBroadcast.queuePosition }) : t('page.progress.starting'))}
+                {activeBroadcast.status === 'running' && t('page.progress.processed', { processed: activeBroadcast.processed, total: activeBroadcast.total })}
               </p>
             </div>
             {(activeBroadcast.status === 'scheduled' || activeBroadcast.status === 'queued') ? (
@@ -734,14 +736,14 @@ const SendMessagesPage: React.FC<SendMessagesPageProps> = ({
               {completionToast.status === 'completed' ? <CheckCircle2 size={20} /> : <AlertTriangle size={20} />}
             </div>
             <div className="flex-1 min-w-0">
-              <h4 className="font-black text-slate-900 text-sm">{completionToast.status === 'completed' ? 'השליחה הסתיימה' : 'השליחה נכשלה'}</h4>
+              <h4 className="font-black text-slate-900 text-sm">{completionToast.status === 'completed' ? t('page.completion.completed') : t('page.completion.failed')}</h4>
               <p className="text-xs font-semibold text-slate-500 mt-1">
-                נשלחו {completionToast.sent} · נכשלו {completionToast.failed} · דולגו {completionToast.skipped}
+                {t('page.completion.summary', { sent: completionToast.sent, failed: completionToast.failed, skipped: completionToast.skipped })}
               </p>
-              <p className="text-xs font-semibold text-slate-400 mt-1">סה"כ {completionToast.total} נמענים</p>
+              <p className="text-xs font-semibold text-slate-400 mt-1">{t('page.completion.recipients', { count: completionToast.total })}</p>
               {completionToast.excludedCount > 0 && (
                 <p className="text-xs font-semibold text-amber-600 mt-1">
-                  ⛔ הוחרגו {completionToast.excludedCount} אנשי קשר בשל הגדרת קבוצה מוחרגת
+                  {t('page.completion.excluded', { count: completionToast.excludedCount })}
                 </p>
               )}
             </div>

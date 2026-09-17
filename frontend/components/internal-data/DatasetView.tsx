@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Table as TableIcon, Clock, Code2, Database, RefreshCw, FileSpreadsheet,
   Layers, Trash2, Loader2,
@@ -25,6 +26,7 @@ type TabKey = 'table' | 'schema' | 'sync' | 'api' | 'mql';
 export const DatasetView: React.FC<DatasetViewProps> = ({
   token, table, onRefreshTable, onDeleteTable, onOpenRecordModal, onOpenJsonView,
 }) => {
+  const { t } = useTranslation('internalData');
   const [activeTab, setActiveTab] = useState<TabKey>('table');
   const [isSyncing, setIsSyncing] = useState(false);
 
@@ -34,24 +36,24 @@ export const DatasetView: React.FC<DatasetViewProps> = ({
       await triggerManualSync(token, table._id);
       onRefreshTable();
     } catch (err: any) {
-      alert('שגיאה בסנכרון: ' + err.message);
+      alert(t('datasetView.syncError', { msg: err.message }));
     } finally {
       setIsSyncing(false);
     }
   };
 
   const handleDelete = () => {
-    if (confirm(`האם אתה בטוח שברצונך למחוק את הטבלה "${table.name}" וכל הנתונים שלה?`)) {
+    if (confirm(t('datasetView.confirmDelete', { name: table.name }))) {
       onDeleteTable(table._id);
     }
   };
 
   const tabs: { id: TabKey; label: string; icon: React.ReactNode }[] = [
-    { id: 'table', label: `טבלה ורשומות (${table.recordCount})`, icon: <TableIcon className="w-4 h-4" /> },
-    { id: 'schema', label: 'מבנה טבלה', icon: <Layers className="w-4 h-4" /> },
-    { id: 'sync', label: 'מועדי עדכון וסנכרון', icon: <Clock className="w-4 h-4" /> },
-    { id: 'api', label: 'מחולל API (חיצוני)', icon: <Code2 className="w-4 h-4" /> },
-    { id: 'mql', label: 'מסוף שאילתות', icon: <Database className="w-4 h-4" /> },
+    { id: 'table', label: t('datasetView.tabTable', { count: table.recordCount }), icon: <TableIcon className="w-4 h-4" /> },
+    { id: 'schema', label: t('datasetView.tabSchema'), icon: <Layers className="w-4 h-4" /> },
+    { id: 'sync', label: t('datasetView.tabSync'), icon: <Clock className="w-4 h-4" /> },
+    { id: 'api', label: t('datasetView.tabApi'), icon: <Code2 className="w-4 h-4" /> },
+    { id: 'mql', label: t('datasetView.tabMql'), icon: <Database className="w-4 h-4" /> },
   ];
 
   return (
@@ -69,24 +71,24 @@ export const DatasetView: React.FC<DatasetViewProps> = ({
               <div>
                 <div className="flex items-center gap-3">
                   <h2 className="text-xl font-bold text-slate-900 tracking-tight">{table.name}</h2>
-                  <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200 font-mono">{table.recordCount} רשומות</span>
+                  <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200 font-mono">{t('datasetView.records', { count: table.recordCount })}</span>
                 </div>
-                <p className="text-xs text-slate-500 mt-0.5">{table.description || 'מאגר נתונים פנימי עם נקודות קצה API'}</p>
+                <p className="text-xs text-slate-500 mt-0.5">{table.description || t('datasetView.defaultDescription')}</p>
               </div>
             </div>
 
             <div className="flex flex-wrap items-center gap-2 pt-1 text-xs">
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-50 border border-slate-200 text-slate-700">
                 <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-                מקור:{' '}
-                <strong className="text-slate-900">{table.source_type === 'google_sheet' ? 'Google Sheets (סנכרון חי)' : table.source_type === 'excel_url' ? 'קובץ CSV / Excel' : 'מסד נתונים פנימי'}</strong>
+                {t('datasetView.source')}{' '}
+                <strong className="text-slate-900">{table.source_type === 'google_sheet' ? t('datasetView.sourceGoogleSheetsLive') : table.source_type === 'excel_url' ? t('datasetView.sourceCsvExcel') : t('datasetView.sourceInternalDb')}</strong>
               </span>
               {table.sync.enabled ? (
                 <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium">
-                  <Clock className="w-3.5 h-3.5" />סנכרון מתוזמן כל {table.sync.interval_minutes} דקות
+                  <Clock className="w-3.5 h-3.5" />{t('datasetView.syncScheduled', { minutes: table.sync.interval_minutes })}
                 </span>
               ) : (
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-50 text-slate-600 border border-slate-200"><Clock className="w-3.5 h-3.5" />סנכרון ידני בלבד</span>
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-50 text-slate-600 border border-slate-200"><Clock className="w-3.5 h-3.5" />{t('datasetView.syncManualOnly')}</span>
               )}
             </div>
           </div>
@@ -95,27 +97,27 @@ export const DatasetView: React.FC<DatasetViewProps> = ({
             {table.sync.source_url && (
               <button onClick={handleQuickSync} disabled={isSyncing} className="px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold rounded-xl shadow-sm shadow-emerald-600/20 transition flex items-center gap-2 active:scale-95 disabled:opacity-50">
                 {isSyncing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-                <span>סנכרן נתונים עכשיו</span>
+                <span>{t('datasetView.syncNowButton')}</span>
               </button>
             )}
             <button onClick={() => setActiveTab('api')} className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl shadow-sm shadow-indigo-600/20 transition flex items-center gap-2 active:scale-95">
-              <Code2 className="w-4 h-4" /><span>מחולל API</span>
+              <Code2 className="w-4 h-4" /><span>{t('datasetView.apiGeneratorButton')}</span>
             </button>
-            <button onClick={handleDelete} title="מחק טבלה זו" className="p-2.5 bg-white hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded-xl border border-slate-200 transition shadow-2xs">
+            <button onClick={handleDelete} title={t('datasetView.deleteTableTitle')} className="p-2.5 bg-white hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded-xl border border-slate-200 transition shadow-2xs">
               <Trash2 className="w-4 h-4" />
             </button>
           </div>
         </div>
 
         <div className="flex items-center gap-1.5 mt-6 pt-4 border-t border-slate-100 overflow-x-auto">
-          {tabs.map((t) => (
+          {tabs.map((tab) => (
             <button
-              key={t.id}
-              onClick={() => setActiveTab(t.id)}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition shrink-0 ${activeTab === t.id ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'}`}
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition shrink-0 ${activeTab === tab.id ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'}`}
             >
-              {t.icon}
-              <span>{t.label}</span>
+              {tab.icon}
+              <span>{tab.label}</span>
             </button>
           ))}
         </div>

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Database } from 'lucide-react';
 import ImpersonationBanner from '../ImpersonationBanner';
 import OnboardingBanner from '../OnboardingBanner';
@@ -47,6 +48,7 @@ const InternalDataPage: React.FC<InternalDataPageProps> = ({
   onStopImpersonation,
   onSwitchAccount,
 }) => {
+  const { t } = useTranslation('internalData');
   const can = usePermission(currentUser as any);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
@@ -66,7 +68,7 @@ const InternalDataPage: React.FC<InternalDataPageProps> = ({
         showMobileNavToggle
         mobileNavOpen={mobileNavOpen}
         onMobileNavToggle={() => setMobileNavOpen((prev) => !prev)}
-        badge={{ label: 'ניהול דטה פנימי', icon: <Database size={14} />, className: 'bg-amber-50 text-amber-700' }}
+        badge={{ label: t('badge'), icon: <Database size={14} />, className: 'bg-amber-50 text-amber-700' }}
       />
 
       <div className="flex-1 overflow-hidden flex">
