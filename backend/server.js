@@ -31,6 +31,7 @@ import api360Routes from './routes/api360Routes.js';
 import notificationRoutes from './routes/notificationRoutes.js';
 import deviceRoutes from './routes/deviceRoutes.js';
 import smsInRoutes from './routes/smsInRoutes.js';
+import apiTokenRoutes from './routes/apiTokenRoutes.js';
 import errorLogRoutes from './logsAdmin/errorLog.routes.js';
 import { responseErrorInterceptor } from './logsAdmin/responseErrorInterceptor.js';
 import { connectSmsDb } from './sms-in/smsDb.js';
@@ -90,6 +91,7 @@ async function startServer() {
     
     // Register routes AFTER database connection
     app.use('/api/auth', authRoutes);
+    app.use('/api/api-tokens', apiTokenRoutes);  // Named, revocable client API tokens (settings > API Tokens tab)
     app.use('/api/bots', botRoutes);
     app.use('/api/chat', chatRoutes);
     app.use('/api/flow', flowRoutes);

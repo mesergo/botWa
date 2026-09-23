@@ -994,8 +994,11 @@ export const getProfile = async (req, res) => {
       flows_count,
       active_contacts_count: user.active_contacts_count || 0,
       active_contacts_quota_exceeded: user.active_contacts_quota_exceeded === true,
+      // Only users who actually entered the /reg wizard (it stamps updated_at on its first
+      // save) have pending onboarding; pre-existing accounts just carry the schema default
+      // completed:false, so treat them as done and don't show them the banner.
       onboarding: {
-        completed: user.onboarding?.completed === true,
+        completed: user.onboarding?.completed === true || !user.onboarding?.updated_at,
         current_step: user.onboarding?.current_step || 'intro',
       },
     });

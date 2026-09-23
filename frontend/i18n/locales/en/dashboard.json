@@ -18,7 +18,8 @@
     "numbers": "Connected numbers",
     "routing": "SMS line routing",
     "templates": "Template messages",
-    "removal": "Group removal management"
+    "removal": "Group removal management",
+    "apiTokens": "API Tokens"
   },
   "settings": {
     "loading": "Loading details...",
@@ -188,6 +189,25 @@
       "confirmRevertBody": "Your custom setting will be removed, and all your bots will go back to using the keywords and message defined in the system.",
       "cancel": "Cancel",
       "confirmAck": "I understand, confirm"
+    },
+    "apiTokens": {
+      "heading": "API Tokens",
+      "description": "Create named tokens for external integrations. Each token can have an optional expiration date, and can be revoked at any time.",
+      "nameLabel": "Token name",
+      "namePlaceholder": "e.g. CRM integration",
+      "expiresLabel": "Expiration date (optional)",
+      "create": "Create token",
+      "creating": "Creating...",
+      "createError": "Failed to create token, please try again",
+      "loading": "Loading tokens...",
+      "loadError": "Could not load tokens. Please try again.",
+      "empty": "No tokens created yet",
+      "copy": "Copy",
+      "delete": "Delete",
+      "confirmDelete": "Delete this token? This cannot be undone.",
+      "expired": "Expired",
+      "noExpiry": "No expiry",
+      "createdAt": "Created on"
     }
   },
   "bots": {
