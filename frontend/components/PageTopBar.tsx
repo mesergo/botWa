@@ -110,7 +110,7 @@ const PageTopBar: React.FC<PageTopBarProps> = ({
         )}
         {rightSlot}
         <LanguageSwitcher variant="bar" />
-        {currentUser?.role === 'admin' && onOpenAdminPanel && (
+        {!sidebarHandlesProfile && currentUser?.role === 'admin' && onOpenAdminPanel && (
           <button onClick={onOpenAdminPanel} className="flex items-center gap-2 px-4 py-2 bg-blue-100 text-blue-700 rounded-lg font-bold hover:bg-blue-200 transition-colors">
             <Shield size={18} /> {t('pages.adminPanel')}
           </button>

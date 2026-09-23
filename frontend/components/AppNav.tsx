@@ -266,7 +266,7 @@ const AppNav: React.FC<AppNavProps> = ({
                   : 'text-slate-400 group-hover:text-slate-600'
               }`}
             />
-            <span className="tracking-tight">{t(labelKey)}</span>
+            <span className="tracking-tight whitespace-nowrap truncate">{t(labelKey)}</span>
           </button>
         );
       })}
@@ -327,10 +327,10 @@ const AppNav: React.FC<AppNavProps> = ({
     );
   }
 
-  // tabs mode — horizontal pill bar. The surrounding top bar keeps a fixed `dir="ltr"` arrangement,
-  // so the tab strip cannot inherit the page direction and states it explicitly instead.
+  // tabs mode — horizontal pill bar. Layout is pinned to RTL always, so the tab strip stays in
+  // a fixed physical order regardless of the selected language.
   return (
-    <div className="flex items-center gap-1 bg-slate-100 rounded-2xl p-1" dir={i18n.dir()}>
+    <div className="flex items-center gap-1 bg-slate-100 rounded-2xl p-1" dir="rtl">
       {onGoHome && (
         <button
           onClick={onGoHome}
@@ -347,7 +347,7 @@ const AppNav: React.FC<AppNavProps> = ({
             key={key}
             onClick={() => navigate(NAV_PATHS[key])}
             disabled={isActive}
-            className={`flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm transition-all ${
+            className={`flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm transition-all whitespace-nowrap ${
               isActive
                 ? 'bg-white text-slate-900 shadow-sm cursor-default'
                 : 'text-slate-500 hover:text-slate-700'

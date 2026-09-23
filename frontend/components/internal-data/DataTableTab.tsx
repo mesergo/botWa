@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Search, ArrowUpDown, Plus, Trash2, Edit2, Eye, Download, RefreshCw,
   Table as TableIcon, LayoutGrid, FileCode, Check, ChevronLeft, ChevronRight,
@@ -23,6 +24,7 @@ export const DataTableTab: React.FC<DataTableTabProps> = ({
   onOpenRecordModal,
   onOpenJsonView,
 }) => {
+  const { t } = useTranslation('internalData');
   const [rows, setRows] = useState<InternalDataRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -73,13 +75,13 @@ export const DataTableTab: React.FC<DataTableTabProps> = ({
   };
 
   const handleDelete = async (rowId: string) => {
-    if (!window.confirm('למחוק רשומה זו?')) return;
+    if (!window.confirm(t('dataTable.confirmDeleteRecord'))) return;
     try {
       await apiDeleteRow(token, rowId);
       loadData();
       onRefreshTable();
     } catch (err: any) {
-      alert('שגיאה במחיקת רשומה: ' + err.message);
+      alert(t('dataTable.deleteError', { msg: err.message }));
     }
   };
 
@@ -127,7 +129,7 @@ export const DataTableTab: React.FC<DataTableTabProps> = ({
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="חיפוש חופשי בכל השדות (מספר טלפון, שם, מייל, עיר...)"
+              placeholder={t('dataTable.searchPlaceholder')}
               className="w-full pl-3 pr-9 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition"
             />
           </div>
@@ -138,12 +140,12 @@ export const DataTableTab: React.FC<DataTableTabProps> = ({
               className="px-3 py-2 bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-medium border border-slate-200 flex items-center gap-1.5 transition"
             >
               <SlidersHorizontal className="w-3.5 h-3.5 text-slate-500" />
-              <span>עמודות ({visibleColumns.length})</span>
+              <span>{t('dataTable.columns', { count: visibleColumns.length })}</span>
             </button>
 
             {showColumnPicker && (
               <div className="absolute left-0 mt-2 w-56 bg-white border border-slate-200 rounded-2xl shadow-xl z-20 p-2 space-y-1 max-h-60 overflow-y-auto">
-                <div className="text-[11px] font-bold text-slate-700 px-2 py-1 border-b border-slate-100">בחר עמודות להצגה:</div>
+                <div className="text-[11px] font-bold text-slate-700 px-2 py-1 border-b border-slate-100">{t('dataTable.chooseColumnsToShow')}</div>
                 {sortedFields.map((f) => (
                   <button
                     key={f.key}
@@ -161,15 +163,15 @@ export const DataTableTab: React.FC<DataTableTabProps> = ({
 
         <div className="flex items-center gap-2">
           <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200">
-            <button onClick={() => setViewMode('table')} title="תצוגת טבלה"
+            <button onClick={() => setViewMode('table')} title={t('dataTable.viewTableTitle')}
               className={`p-1.5 rounded-lg text-xs transition ${viewMode === 'table' ? 'bg-white text-indigo-600 shadow-xs font-semibold' : 'text-slate-500 hover:text-slate-900'}`}>
               <TableIcon className="w-4 h-4" />
             </button>
-            <button onClick={() => setViewMode('cards')} title="תצוגת כרטיסיות"
+            <button onClick={() => setViewMode('cards')} title={t('dataTable.viewCardsTitle')}
               className={`p-1.5 rounded-lg text-xs transition ${viewMode === 'cards' ? 'bg-white text-indigo-600 shadow-xs font-semibold' : 'text-slate-500 hover:text-slate-900'}`}>
               <LayoutGrid className="w-4 h-4" />
             </button>
-            <button onClick={() => setViewMode('json')} title="תצוגת JSON גולמי"
+            <button onClick={() => setViewMode('json')} title={t('dataTable.viewJsonTitle')}
               className={`p-1.5 rounded-lg text-xs transition ${viewMode === 'json' ? 'bg-white text-indigo-600 shadow-xs font-semibold' : 'text-slate-500 hover:text-slate-900'}`}>
               <FileCode className="w-4 h-4" />
             </button>
@@ -177,23 +179,23 @@ export const DataTableTab: React.FC<DataTableTabProps> = ({
 
           <button onClick={() => setShowImportModal(true)} className="px-2.5 py-2 bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-medium border border-slate-200 flex items-center gap-1 transition shadow-2xs">
             <Upload className="w-3.5 h-3.5 text-slate-500" />
-            <span>ייבוא</span>
+            <span>{t('dataTable.import')}</span>
           </button>
 
           <div className="flex gap-1">
-            <button onClick={handleExportCsv} title="ייצא כ-CSV" className="px-2.5 py-2 bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-medium border border-slate-200 flex items-center gap-1 transition shadow-2xs">
+            <button onClick={handleExportCsv} title={t('dataTable.exportCsvTitle')} className="px-2.5 py-2 bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-medium border border-slate-200 flex items-center gap-1 transition shadow-2xs">
               <Download className="w-3.5 h-3.5 text-slate-500" /><span>CSV</span>
             </button>
-            <button onClick={handleExportJson} title="ייצא כ-JSON" className="px-2.5 py-2 bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-medium border border-slate-200 flex items-center gap-1 transition shadow-2xs">
+            <button onClick={handleExportJson} title={t('dataTable.exportJsonTitle')} className="px-2.5 py-2 bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-medium border border-slate-200 flex items-center gap-1 transition shadow-2xs">
               <Download className="w-3.5 h-3.5 text-slate-500" /><span>JSON</span>
             </button>
           </div>
 
           <button onClick={() => onOpenRecordModal()} className="px-3 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 transition shadow-sm active:scale-95">
-            <Plus className="w-3.5 h-3.5" /><span>הוסף רשומה</span>
+            <Plus className="w-3.5 h-3.5" /><span>{t('dataTable.addRecord')}</span>
           </button>
 
-          <button onClick={loadData} title="רענן רשומות" className="p-2 bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-xl border border-slate-200 transition shadow-2xs">
+          <button onClick={loadData} title={t('dataTable.refreshTitle')} className="p-2 bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-xl border border-slate-200 transition shadow-2xs">
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-indigo-600' : ''}`} />
           </button>
         </div>
@@ -202,7 +204,7 @@ export const DataTableTab: React.FC<DataTableTabProps> = ({
 
       {sortedFields.length === 0 ? (
         <div className="bg-white rounded-2xl border border-dashed border-slate-200 py-10 text-center text-sm text-slate-400">
-          לטבלה זו אין שדות עדיין. ייבאו נתונים או הוסיפו רשומה ראשונה כדי שהשדות יזוהו אוטומטית.
+          {t('dataTable.noFieldsYet')}
         </div>
       ) : viewMode === 'table' ? (
         <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
@@ -222,18 +224,18 @@ export const DataTableTab: React.FC<DataTableTabProps> = ({
                       </th>
                     );
                   })}
-                  <th className="px-4 py-3.5 text-left w-24">פעולות</th>
+                  <th className="px-4 py-3.5 text-left w-24">{t('dataTable.colActions')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-sans text-slate-800">
                 {loading && rows.length === 0 ? (
                   <tr><td colSpan={visibleColumns.length + 2} className="px-4 py-12 text-center text-slate-500">
                     <RefreshCw className="w-6 h-6 animate-spin mx-auto text-indigo-600 mb-2" />
-                    <span>טוען רשומות...</span>
+                    <span>{t('dataTable.loadingRecords')}</span>
                   </td></tr>
                 ) : rows.length === 0 ? (
                   <tr><td colSpan={visibleColumns.length + 2} className="px-4 py-12 text-center text-slate-500">
-                    לא נמצאו רשומות בטבלה זו. לחץ על "הוסף רשומה" או "ייבוא".
+                    {t('dataTable.noRecordsFound')}
                   </td></tr>
                 ) : rows.map((row, idx) => (
                   <tr key={row._id} className="hover:bg-indigo-50/40 transition group">
@@ -257,9 +259,9 @@ export const DataTableTab: React.FC<DataTableTabProps> = ({
                     })}
                     <td className="px-4 py-3 text-left">
                       <div className="flex items-center justify-end gap-1 opacity-80 group-hover:opacity-100 transition">
-                        <button onClick={() => onOpenJsonView(row)} title="הצג JSON מלא" className="p-1.5 hover:bg-slate-100 text-slate-500 hover:text-sky-600 rounded-lg transition"><Eye className="w-3.5 h-3.5" /></button>
-                        <button onClick={() => onOpenRecordModal(row)} title="ערוך רשומה" className="p-1.5 hover:bg-slate-100 text-slate-500 hover:text-amber-600 rounded-lg transition"><Edit2 className="w-3.5 h-3.5" /></button>
-                        <button onClick={() => handleDelete(row._id)} title="מחק רשומה" className="p-1.5 hover:bg-rose-50 text-slate-500 hover:text-rose-600 rounded-lg transition"><Trash2 className="w-3.5 h-3.5" /></button>
+                        <button onClick={() => onOpenJsonView(row)} title={t('dataTable.viewJsonRowTitle')} className="p-1.5 hover:bg-slate-100 text-slate-500 hover:text-sky-600 rounded-lg transition"><Eye className="w-3.5 h-3.5" /></button>
+                        <button onClick={() => onOpenRecordModal(row)} title={t('dataTable.editRowTitle')} className="p-1.5 hover:bg-slate-100 text-slate-500 hover:text-amber-600 rounded-lg transition"><Edit2 className="w-3.5 h-3.5" /></button>
+                        <button onClick={() => handleDelete(row._id)} title={t('dataTable.deleteRowTitle')} className="p-1.5 hover:bg-rose-50 text-slate-500 hover:text-rose-600 rounded-lg transition"><Trash2 className="w-3.5 h-3.5" /></button>
                       </div>
                     </td>
                   </tr>
@@ -270,12 +272,12 @@ export const DataTableTab: React.FC<DataTableTabProps> = ({
 
           <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 bg-slate-50/90 border-t border-slate-200 text-xs text-slate-600">
             <div>
-              מציג <span className="font-semibold text-slate-900">{rows.length}</span> מתוך{' '}
-              <span className="font-semibold text-slate-900">{totalCount}</span> רשומות
+              {t('dataTable.showing')} <span className="font-semibold text-slate-900">{rows.length}</span> {t('dataTable.outOf')}{' '}
+              <span className="font-semibold text-slate-900">{totalCount}</span> {t('dataTable.records')}
             </div>
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-1.5">
-                <span>שורות לעמוד:</span>
+                <span>{t('dataTable.rowsPerPage')}</span>
                 <select value={limit} onChange={(e) => { setLimit(Number(e.target.value)); setPage(1); }} className="bg-white border border-slate-300 text-slate-800 rounded-lg px-2 py-1 text-xs">
                   <option value={10}>10</option><option value={25}>25</option><option value={50}>50</option><option value={100}>100</option>
                 </select>

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Code2, Copy, Check, Play, Send, Sparkles, KeyRound, Globe, Sliders,
   Loader2, Terminal, Phone, Filter, Layers, ShieldCheck, ShieldAlert,
@@ -13,6 +14,7 @@ interface ApiGeneratorTabProps {
 }
 
 export const ApiGeneratorTab: React.FC<ApiGeneratorTabProps> = ({ token, table, onRefreshTable }) => {
+  const { t } = useTranslation('internalData');
   const origin = typeof window !== 'undefined' ? window.location.origin : '';
   const fields = table.fields.map((f) => f.key);
 
@@ -28,7 +30,7 @@ export const ApiGeneratorTab: React.FC<ApiGeneratorTabProps> = ({ token, table, 
   const [includeApiKeyInUrl, setIncludeApiKeyInUrl] = useState<boolean>(false);
   const [successReturn, setSuccessReturn] = useState<string>(String(table.api.bot_success_return ?? -2));
   const [notFoundReturn, setNotFoundReturn] = useState<string>(String(table.api.bot_not_found_return ?? 0));
-  const [notFoundMessage, setNotFoundMessage] = useState<string>(table.api.bot_not_found_message || '❌ לא נמצאה רשומה תואמת');
+  const [notFoundMessage, setNotFoundMessage] = useState<string>(table.api.bot_not_found_message || t('apiGenerator.defaultNotFoundMessage'));
   const [successMessage, setSuccessMessage] = useState<string>(table.api.bot_success_message || '');
   const [isSavingFormat, setIsSavingFormat] = useState<boolean>(false);
 
@@ -51,7 +53,7 @@ export const ApiGeneratorTab: React.FC<ApiGeneratorTabProps> = ({ token, table, 
     setLookupKey(table.fields.find((f) => f.type === 'phone')?.key || table.fields[0]?.key || 'phone');
     setSuccessReturn(String(table.api.bot_success_return ?? -2));
     setNotFoundReturn(String(table.api.bot_not_found_return ?? 0));
-    setNotFoundMessage(table.api.bot_not_found_message || '❌ לא נמצאה רשומה תואמת');
+    setNotFoundMessage(table.api.bot_not_found_message || t('apiGenerator.defaultNotFoundMessage'));
     setSuccessMessage(table.api.bot_success_message || '');
   }, [table._id]);
 
@@ -71,7 +73,7 @@ export const ApiGeneratorTab: React.FC<ApiGeneratorTabProps> = ({ token, table, 
       });
       onRefreshTable();
     } catch (err: any) {
-      alert('שגיאה בשמירת פורמט התגובה: ' + err.message);
+      alert(t('apiGenerator.saveFormatError', { msg: err.message }));
     } finally {
       setIsSavingFormat(false);
     }
@@ -194,7 +196,7 @@ export const ApiGeneratorTab: React.FC<ApiGeneratorTabProps> = ({ token, table, 
       await updateApiSettings(token, table._id, { enabled: !table.api.enabled });
       onRefreshTable();
     } catch (err: any) {
-      alert('שגיאה בעדכון הרשאות API: ' + err.message);
+      alert(t('apiGenerator.updatePermissionsError', { msg: err.message }));
     } finally {
       setIsTogglingAccess(false);
     }
@@ -218,7 +220,7 @@ export const ApiGeneratorTab: React.FC<ApiGeneratorTabProps> = ({ token, table, 
       }
       return `import requests\n\nurl = "${currentUrl}"\npayload = ${JSON.stringify(requestBody || {}, null, 2)}\nheaders = {\n    "Content-Type": "application/json",\n    ${!table.api.enabled ? `"x-api-key": "${table.api.key}",` : ''}\n}\n\nresponse = requests.post(url, json=payload, headers=headers)\nprint(response.json())`;
     }
-    return `/* Make.com / Zapier - HTTP Module */\n1. URL: ${currentUrl}\n2. Method: ${method}\n${method === 'POST' ? `3. Body (JSON):\n${JSON.stringify(requestBody || {}, null, 2)}` : ''}\n4. Headers: ${!table.api.enabled ? `x-api-key: ${table.api.key}` : '(none — הטבלה ציבורית)'}`;
+    return `/* Make.com / Zapier - HTTP Module */\n1. URL: ${currentUrl}\n2. Method: ${method}\n${method === 'POST' ? `3. Body (JSON):\n${JSON.stringify(requestBody || {}, null, 2)}` : ''}\n4. Headers: ${!table.api.enabled ? `x-api-key: ${table.api.key}` : t('apiGenerator.publicTableNote')}`;
   };
 
   return (
@@ -229,7 +231,7 @@ export const ApiGeneratorTab: React.FC<ApiGeneratorTabProps> = ({ token, table, 
         <div className="flex items-center justify-between border-b border-slate-100 pb-3">
           <div className="flex items-center gap-2">
             <KeyRound className="w-5 h-5 text-amber-500" />
-            <h3 className="text-base font-bold text-slate-900">הרשאות גישה ל-API</h3>
+            <h3 className="text-base font-bold text-slate-900">{t('apiGenerator.accessTitle')}</h3>
           </div>
           <button
             onClick={handleTogglePublicApi}
@@ -241,18 +243,18 @@ export const ApiGeneratorTab: React.FC<ApiGeneratorTabProps> = ({ token, table, 
             }`}
           >
             {table.api.enabled ? <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" /> : <ShieldAlert className="w-3.5 h-3.5 text-amber-600" />}
-            <span>{table.api.enabled ? 'API פתוח (Public) — לחץ לסגירה' : 'API מאובטח עם מפתח — לחץ לפתיחה'}</span>
+            <span>{table.api.enabled ? t('apiGenerator.publicApiOpen') : t('apiGenerator.secureApiKey')}</span>
           </button>
         </div>
         {!table.api.enabled && (
           <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between">
             <div>
-              <div className="text-[11px] text-slate-500 mb-0.5">מפתח API ייעודי לטבלה זו:</div>
+              <div className="text-[11px] text-slate-500 mb-0.5">{t('apiGenerator.dedicatedApiKeyLabel')}</div>
               <div className="font-mono text-xs text-amber-700 font-semibold select-all" dir="ltr">{table.api.key}</div>
             </div>
             <button onClick={() => handleCopy(table.api.key, 'key')} className="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-700 text-xs font-medium rounded-lg border border-slate-200 transition flex items-center gap-1.5">
               {copiedKey ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-              <span>{copiedKey ? 'הועתק!' : 'העתק מפתח'}</span>
+              <span>{copiedKey ? t('apiGenerator.copied') : t('apiGenerator.copyKey')}</span>
             </button>
           </div>
         )}
@@ -264,17 +266,17 @@ export const ApiGeneratorTab: React.FC<ApiGeneratorTabProps> = ({ token, table, 
           <div>
             <div className="flex items-center gap-2">
               <Sparkles className="w-5 h-5 text-indigo-600" />
-              <h3 className="text-base font-bold text-slate-900">מחולל כתובות API חיצוניות</h3>
+              <h3 className="text-base font-bold text-slate-900">{t('apiGenerator.generatorTitle')}</h3>
               <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">REST API v1</span>
             </div>
-            <p className="text-xs text-slate-500 mt-1">יצירת נקודות קצה שניתן לשתול במערכות חיצוניות (Make, Zapier, בוטים, CRM, אתרים)</p>
+            <p className="text-xs text-slate-500 mt-1">{t('apiGenerator.generatorSubtitle')}</p>
           </div>
           <div className="flex items-center gap-2">
             <button onClick={() => setApiMode('phone_lookup')} className={`px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition ${apiMode === 'phone_lookup' ? 'bg-indigo-600 text-white shadow-xs' : 'bg-slate-100 text-slate-700 hover:text-slate-900 hover:bg-slate-200'}`}>
-              <Phone className="w-3.5 h-3.5 text-emerald-600" /><span>איתור לפי מפתח</span>
+              <Phone className="w-3.5 h-3.5 text-emerald-600" /><span>{t('apiGenerator.modeLookup')}</span>
             </button>
             <button onClick={() => setApiMode('dynamic_filter')} className={`px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition ${apiMode === 'dynamic_filter' ? 'bg-indigo-600 text-white shadow-xs' : 'bg-slate-100 text-slate-700 hover:text-slate-900 hover:bg-slate-200'}`}>
-              <Filter className="w-3.5 h-3.5 text-sky-600" /><span>שאילתת סינון וכללים</span>
+              <Filter className="w-3.5 h-3.5 text-sky-600" /><span>{t('apiGenerator.modeFilter')}</span>
             </button>
           </div>
         </div>
@@ -283,59 +285,59 @@ export const ApiGeneratorTab: React.FC<ApiGeneratorTabProps> = ({ token, table, 
 
           {apiMode === 'phone_lookup' ? (
             <div className="space-y-3 p-4 bg-slate-50 rounded-2xl border border-slate-200">
-              <label className="block text-xs font-bold text-slate-900 flex items-center gap-1.5"><Phone className="w-3.5 h-3.5 text-emerald-600" /><span>1. שדה חיפוש וערך לבדיקה</span></label>
+              <label className="block text-xs font-bold text-slate-900 flex items-center gap-1.5"><Phone className="w-3.5 h-3.5 text-emerald-600" /><span>{t('apiGenerator.step1LookupTitle')}</span></label>
               <div>
-                <label className="block text-[11px] text-slate-600 mb-1">שדה המפתח (Lookup Key):</label>
+                <label className="block text-[11px] text-slate-600 mb-1">{t('apiGenerator.lookupKeyFieldLabel')}</label>
                 <select value={lookupKey} onChange={(e) => setLookupKey(e.target.value)} className="w-full px-3 py-1.5 text-xs bg-white border border-slate-300 rounded-lg text-slate-800 focus:ring-2 focus:ring-indigo-500">
                   {fields.map((f) => (<option key={f} value={f}>{f}</option>))}
                 </select>
               </div>
               <div>
-                <label className="block text-[11px] text-slate-600 mb-1">ערך לשליחה בקריאה (Value):</label>
+                <label className="block text-[11px] text-slate-600 mb-1">{t('apiGenerator.lookupValueLabel')}</label>
                 <input type="text" value={lookupValue} onChange={(e) => setLookupValue(e.target.value)} placeholder="0501234567" className="w-full px-3 py-1.5 text-xs font-mono bg-white border border-slate-300 rounded-lg text-emerald-700 font-semibold placeholder-slate-400 focus:ring-2 focus:ring-indigo-500" dir="ltr" />
               </div>
             </div>
           ) : (
             <div className="space-y-3 p-4 bg-slate-50 rounded-2xl border border-slate-200">
-              <label className="block text-xs font-bold text-slate-900 flex items-center gap-1.5"><Filter className="w-3.5 h-3.5 text-sky-600" /><span>1. כללי שאילתה וסינון</span></label>
+              <label className="block text-xs font-bold text-slate-900 flex items-center gap-1.5"><Filter className="w-3.5 h-3.5 text-sky-600" /><span>{t('apiGenerator.step1FilterTitle')}</span></label>
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="block text-[11px] text-slate-600 mb-1">שדה לסינון:</label>
+                  <label className="block text-[11px] text-slate-600 mb-1">{t('apiGenerator.filterFieldLabel')}</label>
                   <select value={filterField} onChange={(e) => setFilterField(e.target.value)} className="w-full px-2 py-1.5 text-xs bg-white border border-slate-300 rounded-lg text-slate-800 focus:ring-2 focus:ring-indigo-500">
                     {fields.map((f) => (<option key={f} value={f}>{f}</option>))}
                   </select>
                 </div>
                 <div>
-                  <label className="block text-[11px] text-slate-600 mb-1">תנאי:</label>
+                  <label className="block text-[11px] text-slate-600 mb-1">{t('apiGenerator.conditionLabel')}</label>
                   <select value={filterOperator} onChange={(e) => setFilterOperator(e.target.value)} className="w-full px-2 py-1.5 text-xs bg-white border border-slate-300 rounded-lg text-slate-800 focus:ring-2 focus:ring-indigo-500">
-                    <option value="equals">שווה בדיוק (==)</option>
-                    <option value="contains">מכיל טקסט (Contains)</option>
-                    <option value="startsWith">מתחיל ב-</option>
-                    <option value="gt">גדול מ- (&gt;)</option>
+                    <option value="equals">{t('apiGenerator.conditionEquals')}</option>
+                    <option value="contains">{t('apiGenerator.conditionContains')}</option>
+                    <option value="startsWith">{t('apiGenerator.conditionStartsWith')}</option>
+                    <option value="gt">{t('apiGenerator.conditionGreaterThan')}</option>
                   </select>
                 </div>
               </div>
               <div>
-                <label className="block text-[11px] text-slate-600 mb-1">ערך מבוקש:</label>
-                <input type="text" value={filterValue} onChange={(e) => setFilterValue(e.target.value)} placeholder="דוד, פעיל..." className="w-full px-3 py-1.5 text-xs bg-white border border-slate-300 rounded-lg text-slate-900 focus:ring-2 focus:ring-indigo-500" />
+                <label className="block text-[11px] text-slate-600 mb-1">{t('apiGenerator.requestedValueLabel')}</label>
+                <input type="text" value={filterValue} onChange={(e) => setFilterValue(e.target.value)} placeholder={t('apiGenerator.filterValuePlaceholder')} className="w-full px-3 py-1.5 text-xs bg-white border border-slate-300 rounded-lg text-slate-900 focus:ring-2 focus:ring-indigo-500" />
               </div>
             </div>
           )}
 
           <div className="space-y-3 p-4 bg-slate-50 rounded-2xl border border-slate-200">
-            <label className="block text-xs font-bold text-slate-900 flex items-center gap-1.5"><Sliders className="w-3.5 h-3.5 text-amber-600" /><span>2. שיטת קריאה ופורמט תוצאה</span></label>
+            <label className="block text-xs font-bold text-slate-900 flex items-center gap-1.5"><Sliders className="w-3.5 h-3.5 text-amber-600" /><span>{t('apiGenerator.step2Title')}</span></label>
             <div>
-              <label className="block text-[11px] text-slate-600 mb-1">שיטת קריאה (HTTP Method):</label>
+              <label className="block text-[11px] text-slate-600 mb-1">{t('apiGenerator.httpMethodLabel')}</label>
               <div className="grid grid-cols-2 gap-2">
                 <button type="button" onClick={() => setMethod('GET')} className={`py-1.5 px-3 rounded-lg text-xs font-bold transition ${method === 'GET' ? 'bg-emerald-600 text-white shadow-2xs' : 'bg-white text-slate-700 border border-slate-300'}`}>GET (Params)</button>
                 <button type="button" onClick={() => setMethod('POST')} className={`py-1.5 px-3 rounded-lg text-xs font-bold transition ${method === 'POST' ? 'bg-indigo-600 text-white shadow-2xs' : 'bg-white text-slate-700 border border-slate-300'}`}>POST (JSON Body)</button>
               </div>
             </div>
             <div>
-              <label className="block text-[11px] text-slate-600 mb-1">פורמט התוצאה החוזרת:</label>
+              <label className="block text-[11px] text-slate-600 mb-1">{t('apiGenerator.resultFormatLabel')}</label>
               <div className="w-full px-3 py-1.5 text-xs bg-slate-100 border border-slate-200 rounded-lg text-slate-700 font-semibold flex items-center gap-1.5">
                 <Layers className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
-                <span>Actions לבוט (SetParameter/Return)</span>
+                <span>{t('apiGenerator.botActionsFormat')}</span>
               </div>
               <button
                 type="button"
@@ -347,38 +349,38 @@ export const ApiGeneratorTab: React.FC<ApiGeneratorTabProps> = ({ token, table, 
                     : 'bg-white text-indigo-700 border-indigo-200 hover:bg-indigo-50'
                 }`}
               >
-                {isSavingFormat ? 'שומר...' : isSavedAsDefault ? '✓ זהו פורמט הברירת מחדל של הטבלה' : 'קבע כפורמט קבוע לכל קריאה לטבלה'}
+                {isSavingFormat ? t('apiGenerator.saving') : isSavedAsDefault ? t('apiGenerator.savedAsDefault') : t('apiGenerator.setAsDefaultForTable')}
               </button>
               <p className="text-[10px] text-slate-500 mt-1">
-                בלי שמירה, הפורמט חל רק כשהכתובת כוללת <span className="font-mono" dir="ltr">_format</span>.
+                {t('apiGenerator.noSaveFormatHint')} <span className="font-mono" dir="ltr">_format</span>.
               </p>
             </div>
             <div className="space-y-2 pt-1">
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="block text-[11px] text-slate-600 mb-1">קוד Return בהצלחה:</label>
+                  <label className="block text-[11px] text-slate-600 mb-1">{t('apiGenerator.returnCodeSuccessLabel')}</label>
                   <input type="text" value={successReturn} onChange={(e) => setSuccessReturn(e.target.value)} className="w-full px-3 py-1.5 text-xs font-mono bg-white border border-slate-300 rounded-lg text-slate-800 focus:ring-2 focus:ring-indigo-500" dir="ltr" />
                 </div>
                 <div>
-                  <label className="block text-[11px] text-slate-600 mb-1">קוד Return כשלא נמצא:</label>
+                  <label className="block text-[11px] text-slate-600 mb-1">{t('apiGenerator.returnCodeNotFoundLabel')}</label>
                   <input type="text" value={notFoundReturn} onChange={(e) => setNotFoundReturn(e.target.value)} className="w-full px-3 py-1.5 text-xs font-mono bg-white border border-slate-300 rounded-lg text-slate-800 focus:ring-2 focus:ring-indigo-500" dir="ltr" />
                 </div>
               </div>
               <div>
-                <label className="block text-[11px] text-slate-600 mb-1">הודעה כשלא נמצאה רשומה:</label>
+                <label className="block text-[11px] text-slate-600 mb-1">{t('apiGenerator.messageWhenNotFoundLabel')}</label>
                 <input type="text" value={notFoundMessage} onChange={(e) => setNotFoundMessage(e.target.value)} className="w-full px-3 py-1.5 text-xs bg-white border border-slate-300 rounded-lg text-slate-900 focus:ring-2 focus:ring-indigo-500" />
               </div>
               <div>
-                <label className="block text-[11px] text-slate-600 mb-1">פרמטר message כשנמצאה רשומה (אופציונלי):</label>
-                <textarea value={successMessage} onChange={(e) => setSuccessMessage(e.target.value)} rows={2} placeholder="ריק = ללא פרמטר message" className="w-full px-3 py-1.5 text-xs bg-white border border-slate-300 rounded-lg text-slate-900 focus:ring-2 focus:ring-indigo-500" />
+                <label className="block text-[11px] text-slate-600 mb-1">{t('apiGenerator.messageWhenFoundLabel')}</label>
+                <textarea value={successMessage} onChange={(e) => setSuccessMessage(e.target.value)} rows={2} placeholder={t('apiGenerator.emptyMeansNoParam')} className="w-full px-3 py-1.5 text-xs bg-white border border-slate-300 rounded-lg text-slate-900 focus:ring-2 focus:ring-indigo-500" />
               </div>
             </div>
           </div>
 
           <div className="space-y-3 p-4 bg-slate-50 rounded-2xl border border-slate-200">
             <label className="block text-xs font-bold text-slate-900 flex items-center justify-between">
-              <span className="flex items-center gap-1.5"><Layers className="w-3.5 h-3.5 text-violet-600" /><span>3. שדות להחזרה (Projection)</span></span>
-              <span className="text-[10px] text-slate-500 font-normal">{selectedFields.length === 0 ? 'כל השדות' : `${selectedFields.length} נבחרו`}</span>
+              <span className="flex items-center gap-1.5"><Layers className="w-3.5 h-3.5 text-violet-600" /><span>{t('apiGenerator.step3Title')}</span></span>
+              <span className="text-[10px] text-slate-500 font-normal">{selectedFields.length === 0 ? t('apiGenerator.allFields') : t('apiGenerator.fieldsSelected', { count: selectedFields.length })}</span>
             </label>
             <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto p-1.5 bg-white rounded-lg border border-slate-200">
               {fields.map((field) => (
@@ -387,7 +389,7 @@ export const ApiGeneratorTab: React.FC<ApiGeneratorTabProps> = ({ token, table, 
             </div>
             {!table.api.enabled && (
               <div className="pt-2 border-t border-slate-200 flex items-center justify-between text-[11px]">
-                <span className="text-slate-600">צרף API Key ב-URL:</span>
+                <span className="text-slate-600">{t('apiGenerator.attachApiKeyInUrl')}</span>
                 <input type="checkbox" checked={includeApiKeyInUrl} onChange={(e) => setIncludeApiKeyInUrl(e.target.checked)} className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" />
               </div>
             )}
@@ -397,12 +399,12 @@ export const ApiGeneratorTab: React.FC<ApiGeneratorTabProps> = ({ token, table, 
 
         <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-2">
           <div className="flex items-center justify-between text-xs">
-            <span className="font-semibold text-slate-800 flex items-center gap-2"><Globe className="w-4 h-4 text-emerald-600" />כתובת ה-API החיצונית המוכנה לשתילה:</span>
+            <span className="font-semibold text-slate-800 flex items-center gap-2"><Globe className="w-4 h-4 text-emerald-600" />{t('apiGenerator.externalApiUrlLabel')}</span>
             <div className="flex items-center gap-2">
               <span className="px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 font-mono font-bold text-[11px] border border-indigo-200">{method}</span>
               <button onClick={() => handleCopy(displayUrl, 'url')} className="px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-lg flex items-center gap-1.5 transition shadow-xs">
                 {copiedUrl ? <Check className="w-3.5 h-3.5 text-white" /> : <Copy className="w-3.5 h-3.5" />}
-                <span>{copiedUrl ? 'הועתק!' : 'העתק כתובת API'}</span>
+                <span>{copiedUrl ? t('apiGenerator.copied') : t('apiGenerator.copyApiUrl')}</span>
               </button>
             </div>
           </div>
@@ -421,15 +423,15 @@ export const ApiGeneratorTab: React.FC<ApiGeneratorTabProps> = ({ token, table, 
 
         <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-sm space-y-4">
           <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-            <div className="flex items-center gap-2"><Terminal className="w-4 h-4 text-emerald-600" /><h4 className="text-sm font-bold text-slate-900">בדיקה והרצת API חי (Sandbox)</h4></div>
+            <div className="flex items-center gap-2"><Terminal className="w-4 h-4 text-emerald-600" /><h4 className="text-sm font-bold text-slate-900">{t('apiGenerator.sandboxTitle')}</h4></div>
             <button onClick={handleExecuteApiCall} disabled={isExecuting} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl flex items-center gap-2 shadow-xs transition disabled:opacity-50 active:scale-95">
               {isExecuting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5 fill-current" />}
-              <span>שגר קריאה לבדיקה</span>
+              <span>{t('apiGenerator.sendTestCall')}</span>
             </button>
           </div>
           <div className="space-y-2">
             <div className="flex items-center justify-between text-xs">
-              <span className="text-slate-600">תשובת השרת:</span>
+              <span className="text-slate-600">{t('apiGenerator.serverResponseLabel')}</span>
               {testStatusCode && (
                 <div className="flex items-center gap-2">
                   <span className={`px-2 py-0.5 rounded font-mono font-bold text-[11px] ${testStatusCode >= 200 && testStatusCode < 300 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'}`}>HTTP {testStatusCode}</span>
@@ -439,11 +441,11 @@ export const ApiGeneratorTab: React.FC<ApiGeneratorTabProps> = ({ token, table, 
             </div>
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 font-mono text-xs text-slate-200 min-h-[220px] max-h-[350px] overflow-auto">
               {isExecuting ? (
-                <div className="h-full flex items-center justify-center text-slate-400 gap-2 py-12"><Loader2 className="w-5 h-5 animate-spin text-emerald-400" /><span>שולח בקשה...</span></div>
+                <div className="h-full flex items-center justify-center text-slate-400 gap-2 py-12"><Loader2 className="w-5 h-5 animate-spin text-emerald-400" /><span>{t('apiGenerator.sendingRequest')}</span></div>
               ) : testResponse !== null ? (
                 <pre className="text-emerald-400">{typeof testResponse === 'object' ? JSON.stringify(testResponse, null, 2) : testResponse}</pre>
               ) : (
-                <div className="h-full flex flex-col items-center justify-center text-slate-400 py-12 text-center"><Send className="w-6 h-6 mb-2 text-slate-500" /><p className="text-slate-400 text-xs">לחץ על "שגר קריאה לבדיקה" כדי לראות את התוצאה</p></div>
+                <div className="h-full flex flex-col items-center justify-center text-slate-400 py-12 text-center"><Send className="w-6 h-6 mb-2 text-slate-500" /><p className="text-slate-400 text-xs">{t('apiGenerator.clickToSeeResult')}</p></div>
               )}
             </div>
           </div>
@@ -451,10 +453,10 @@ export const ApiGeneratorTab: React.FC<ApiGeneratorTabProps> = ({ token, table, 
 
         <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-sm space-y-4">
           <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-            <div className="flex items-center gap-2"><Code2 className="w-4 h-4 text-indigo-600" /><h4 className="text-sm font-bold text-slate-900">קוד הטמעה למערכות חיצוניות</h4></div>
+            <div className="flex items-center gap-2"><Code2 className="w-4 h-4 text-indigo-600" /><h4 className="text-sm font-bold text-slate-900">{t('apiGenerator.embedCodeTitle')}</h4></div>
             <button onClick={() => handleCopy(getCodeSnippet(), 'snippet')} className="p-1.5 hover:bg-slate-100 text-slate-600 hover:text-slate-900 rounded-lg transition flex items-center gap-1 text-xs">
               {copiedSnippet ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-              <span>{copiedSnippet ? 'הועתק!' : 'העתק קוד'}</span>
+              <span>{copiedSnippet ? t('apiGenerator.copied') : t('apiGenerator.copyCode')}</span>
             </button>
           </div>
           <div className="flex gap-1 p-1 bg-slate-100 rounded-xl border border-slate-200 overflow-x-auto text-xs">

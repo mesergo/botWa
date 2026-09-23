@@ -563,14 +563,26 @@ const FlowBuilder: React.FC = () => {
     });
   }, [searchNavigateTrigger, reactFlowInstance]);
 
-  // After a bot switch (enterBot), wait for the new nodes to arrive then fitView
+  // After a bot switch (enterBot), wait for the new nodes to arrive then position the
+  // viewport so the "תגובות אוטומטיות" (automatic responses / entry) node starts out
+  // visible near the top-left of the canvas, right next to the sidebar — instead of
+  // fitView's default of centering the whole flow.
   useEffect(() => {
     if (!pendingFitViewRef.current || nodes.length === 0) return;
     pendingFitViewRef.current = false;
     requestAnimationFrame(() =>
       requestAnimationFrame(() =>
         requestAnimationFrame(() => {
-          reactFlowInstance?.fitView({ padding: 0.5, duration: 0 });
+          const entryNode = nodes.find(n => n.type === NodeType.AUTOMATIC_RESPONSES);
+          if (entryNode && reactFlowInstance) {
+            const zoom = 0.5;
+            reactFlowInstance.setViewport(
+              { x: 40 - entryNode.position.x * zoom, y: 40 - entryNode.position.y * zoom, zoom },
+              { duration: 0 }
+            );
+          } else {
+            reactFlowInstance?.fitView({ padding: 0.5, duration: 0 });
+          }
           requestAnimationFrame(() => requestAnimationFrame(() => setIsFlowTransitioning(false)));
         })
       )
@@ -913,6 +925,7 @@ const FlowBuilder: React.FC = () => {
         return;
       }
       const data = await res.json();
+      let loadedNodes: Node[];
       if (data.nodes?.length > 0) {
         const loadedNodeIds = new Set((data.nodes as any[]).map((n: any) => n.id));
         const seenHandles = new Set<string>();
@@ -924,7 +937,8 @@ const FlowBuilder: React.FC = () => {
             seenHandles.add(key);
             return true;
           });
-        setNodes(data.nodes.map((n: any) => bindNodeCallbacks(n)));
+        loadedNodes = data.nodes.map((n: any) => bindNodeCallbacks(n));
+        setNodes(loadedNodes);
         setEdges(cleanEdges.map((e: any, i: number) => ({ ...e, type: 'button', id: e.id || `edge-${i}-${Date.now()}`, style: DEFAULT_EDGE_STYLE, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6' } })));
       } else {
         const isSubProcess = !!processId;
@@ -936,7 +950,8 @@ const FlowBuilder: React.FC = () => {
             ? { label: 'תחילת תזרים', serialId: '#1' }
             : { label: 'תגובות אוטומטיות', serialId: '#1', options: ['כניסה'], optionOperators: ['eq'] },
         });
-        setNodes([start]);
+        loadedNodes = [start];
+        setNodes(loadedNodes);
         setEdges([]);
       }
       // Mark this key as ready and remember the server-authoritative count.
@@ -944,6 +959,7 @@ const FlowBuilder: React.FC = () => {
       loadedWidgetCountRef.current = typeof data.widget_count === 'number'
         ? data.widget_count
         : (data.nodes?.length || 0);
+      return loadedNodes;
     } catch (e) { console.error(e); }
   }, [token, bindNodeCallbacks]);
 
@@ -2416,7 +2432,6 @@ const FlowBuilder: React.FC = () => {
    * timer (via useEffect cleanup) and the latest connections are never saved.
    */
   const handleCloseProcessEditor = useCallback(async () => {
-    const zoom = reactFlowInstance?.getViewport().zoom ?? 1;
     setIsFlowTransitioning(true);
     await syncFlowRef.current();
     const closingProcessId = activeProcessId;
@@ -2424,11 +2439,20 @@ const FlowBuilder: React.FC = () => {
     setViewMode('editor');
     setIsMultiSelectMode(false);
     setSelectedNodeIds([]);
-    loadFlow(selectedBot?.id || null).then(() => {
+    loadFlow(selectedBot?.id || null).then((loadedNodes) => {
       requestAnimationFrame(() =>        // React commits new nodes to DOM
         requestAnimationFrame(() =>      // ReactFlow measures node sizes
-          requestAnimationFrame(() => {  // safe to fitView
-            reactFlowInstance?.fitView({ padding: 0.5, duration: 0, minZoom: zoom, maxZoom: zoom });
+          requestAnimationFrame(() => {  // safe to position the viewport
+            const entryNode = loadedNodes?.find(n => n.type === NodeType.AUTOMATIC_RESPONSES);
+            if (entryNode && reactFlowInstance) {
+              const zoom = 0.5;
+              reactFlowInstance.setViewport(
+                { x: 40 - entryNode.position.x * zoom, y: 40 - entryNode.position.y * zoom, zoom },
+                { duration: 0 }
+              );
+            } else {
+              reactFlowInstance?.fitView({ padding: 0.5, duration: 0 });
+            }
             requestAnimationFrame(() => requestAnimationFrame(() => setIsFlowTransitioning(false)));
           })
         )
@@ -2454,11 +2478,19 @@ const FlowBuilder: React.FC = () => {
     setViewMode('editing-process');
     setIsMultiSelectMode(false);
     setSelectedNodeIds([]);
-    loadFlow(selectedBot?.id || null, id).then(() => {
+    loadFlow(selectedBot?.id || null, id).then((loadedNodes) => {
       requestAnimationFrame(() =>
         requestAnimationFrame(() =>
           requestAnimationFrame(() => {
-            reactFlowInstance?.fitView({ padding: 0.5, duration: 0, minZoom: zoom, maxZoom: zoom });
+            const startNode = loadedNodes?.find(n => n.type === NodeType.START);
+            if (startNode && reactFlowInstance) {
+              reactFlowInstance.setViewport(
+                { x: 40 - startNode.position.x * zoom, y: 40 - startNode.position.y * zoom, zoom },
+                { duration: 0 }
+              );
+            } else {
+              reactFlowInstance?.fitView({ padding: 0.5, duration: 0, minZoom: zoom, maxZoom: zoom });
+            }
             requestAnimationFrame(() => requestAnimationFrame(() => setIsFlowTransitioning(false)));
           })
         )
@@ -2474,11 +2506,19 @@ const FlowBuilder: React.FC = () => {
     setViewMode('viewing-process');
     setIsMultiSelectMode(false);
     setSelectedNodeIds([]);
-    loadFlow(selectedBot?.id || null, id).then(() => {
+    loadFlow(selectedBot?.id || null, id).then((loadedNodes) => {
       requestAnimationFrame(() =>
         requestAnimationFrame(() =>
           requestAnimationFrame(() => {
-            reactFlowInstance?.fitView({ padding: 0.5, duration: 0, minZoom: zoom, maxZoom: zoom });
+            const startNode = loadedNodes?.find(n => n.type === NodeType.START);
+            if (startNode && reactFlowInstance) {
+              reactFlowInstance.setViewport(
+                { x: 40 - startNode.position.x * zoom, y: 40 - startNode.position.y * zoom, zoom },
+                { duration: 0 }
+              );
+            } else {
+              reactFlowInstance?.fitView({ padding: 0.5, duration: 0, minZoom: zoom, maxZoom: zoom });
+            }
             requestAnimationFrame(() => requestAnimationFrame(() => setIsFlowTransitioning(false)));
           })
         )

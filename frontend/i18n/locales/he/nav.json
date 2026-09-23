@@ -71,6 +71,18 @@
         "label": "SMS נכנס",
         "description": "הודעות SMS נכנסות וניתוב קווים"
       },
+      "internalData": {
+        "label": "ניהול דטה פנימי",
+        "description": "טבלאות נתונים מותאמות אישית, ייבוא וסנכרון אונליין"
+      },
+      "sendMessages": {
+        "label": "שליחת הודעות",
+        "description": "שליחת הודעות לאנשי קשר וקבוצות"
+      },
+      "users": {
+        "label": "משתמשים",
+        "description": "ניהול נציגים ומשתמשי צוות"
+      },
       "settings": {
         "label": "הגדרות",
         "description": "הגדרות חשבון ופרופיל"

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { X, Settings, Copy, Check } from 'lucide-react';
+import { useTranslation, Trans } from 'react-i18next';
 import { BotFlow } from '../types';
 
 const FacebookIcon: React.FC<{ size?: number; className?: string }> = ({ size = 18, className = '' }) => (
@@ -27,6 +28,7 @@ const BotSettingsModal: React.FC<BotSettingsModalProps> = ({
   onUpdateBotRestartKeyword,
   onConnectFacebook,
 }) => {
+  const { t } = useTranslation('builder');
   const [editBotPublicId, setEditBotPublicId] = useState(bot.public_id);
   const [savingBotPublicId, setSavingBotPublicId] = useState(false);
   const [copiedBotPublicId, setCopiedBotPublicId] = useState(false);
@@ -69,7 +71,7 @@ const BotSettingsModal: React.FC<BotSettingsModalProps> = ({
       setBotPublicIdSuccess(true);
       setTimeout(() => setBotPublicIdSuccess(false), 3000);
     } catch (err: any) {
-      setBotPublicIdError(err.message || 'שגיאה בשמירה');
+      setBotPublicIdError(err.message || t('botSettingsModal.saveError'));
     } finally {
       setSavingBotPublicId(false);
     }
@@ -86,7 +88,7 @@ const BotSettingsModal: React.FC<BotSettingsModalProps> = ({
       setBotEndpointSuccess(true);
       setTimeout(() => setBotEndpointSuccess(false), 3000);
     } catch (err: any) {
-      setBotEndpointError(err.message || 'שגיאה בשמירה');
+      setBotEndpointError(err.message || t('botSettingsModal.saveError'));
     } finally {
       setSavingBotEndpoint(false);
     }
@@ -104,7 +106,7 @@ const BotSettingsModal: React.FC<BotSettingsModalProps> = ({
       setRestartKeywordSuccess(true);
       setTimeout(() => setRestartKeywordSuccess(false), 3000);
     } catch (err: any) {
-      setRestartKeywordError(err.message || 'שגיאה בשמירה');
+      setRestartKeywordError(err.message || t('botSettingsModal.saveError'));
     } finally {
       setSavingRestartKeyword(false);
     }
@@ -120,7 +122,7 @@ const BotSettingsModal: React.FC<BotSettingsModalProps> = ({
           </button>
           <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
             <Settings size={18} className="text-slate-400" />
-            הגדרות בוט — {bot.name}
+            {t('botSettingsModal.title', { name: bot.name })}
           </h3>
         </div>
 
@@ -128,7 +130,7 @@ const BotSettingsModal: React.FC<BotSettingsModalProps> = ({
           {/* Public ID */}
           <div>
             <h4 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
-              <Copy size={12} /> מזהה ציבורי (API Token)
+              <Copy size={12} /> {t('botSettingsModal.publicIdLabel')}
             </h4>
             <div className="flex gap-2">
               {onUpdateBotPublicId && (
@@ -137,7 +139,7 @@ const BotSettingsModal: React.FC<BotSettingsModalProps> = ({
                   disabled={savingBotPublicId || !editBotPublicId.trim() || editBotPublicId.trim() === bot.public_id}
                   className="px-5 py-3 bg-blue-600 text-white rounded-2xl font-bold text-sm hover:bg-blue-700 transition-all disabled:opacity-50 shrink-0"
                 >
-                  {savingBotPublicId ? 'שומר...' : 'שמור'}
+                  {savingBotPublicId ? t('botSettingsModal.saving') : t('botSettingsModal.save')}
                 </button>
               )}
               <button
@@ -148,7 +150,7 @@ const BotSettingsModal: React.FC<BotSettingsModalProps> = ({
                   });
                 }}
                 className="p-3 text-slate-400 hover:text-blue-600 hover:bg-blue-50 border border-slate-200 rounded-2xl transition-colors shrink-0"
-                title="העתק"
+                title={t('botSettingsModal.copy')}
               >
                 {copiedBotPublicId ? <Check size={16} className="text-emerald-500" /> : <Copy size={16} />}
               </button>
@@ -167,7 +169,7 @@ const BotSettingsModal: React.FC<BotSettingsModalProps> = ({
             )}
             {botPublicIdSuccess && (
               <div className="mt-3 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-2 text-emerald-600 text-sm font-bold flex items-center gap-2">
-                <Check size={14} /> המזהה עודכן בהצלחה
+                <Check size={14} /> {t('botSettingsModal.publicIdUpdated')}
               </div>
             )}
           </div>
@@ -176,9 +178,9 @@ const BotSettingsModal: React.FC<BotSettingsModalProps> = ({
           {isAdminOrImpersonating && (
           <div>
             <h4 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-1 flex items-center gap-2">
-              <Settings size={12} /> Endpoint (מספר הבוט)
+              <Settings size={12} /> {t('botSettingsModal.endpointLabel')}
             </h4>
-            <p className="text-xs text-slate-400 mb-3">הכנס רק את המזהה — המערכת תבנה אוטומטית את הקישור <code className="bg-slate-100 px-1 rounded">dialog360/{'{id}'}</code></p>
+            <p className="text-xs text-slate-400 mb-3"><Trans i18nKey="botSettingsModal.endpointHint" t={t} components={[<code className="bg-slate-100 px-1 rounded" />]} /></p>
             <>
                 <div className="flex gap-2 items-center">
                   <button
@@ -186,7 +188,7 @@ const BotSettingsModal: React.FC<BotSettingsModalProps> = ({
                     disabled={savingBotEndpoint || editBotEndpoint.trim() === (bot.endpoint ? bot.endpoint.split('/').pop() ?? '' : '')}
                     className="px-5 py-3 bg-blue-600 text-white rounded-2xl font-bold text-sm hover:bg-blue-700 transition-all disabled:opacity-50 shrink-0"
                   >
-                    {savingBotEndpoint ? 'שומר...' : 'שמור'}
+                    {savingBotEndpoint ? t('botSettingsModal.saving') : t('botSettingsModal.save')}
                   </button>
                   <div className="flex flex-1 items-center bg-slate-50 border border-slate-200 rounded-2xl overflow-hidden">
                     <span className="px-3 py-3 text-sm text-slate-500 bg-slate-100 border-e border-slate-200 shrink-0 font-mono">dialog360/</span>
@@ -211,7 +213,7 @@ const BotSettingsModal: React.FC<BotSettingsModalProps> = ({
                 )}
                 {botEndpointSuccess && (
                   <div className="mt-3 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-2 text-emerald-600 text-sm font-bold flex items-center gap-2">
-                    <Check size={14} /> ה-Endpoint עודכן בהצלחה
+                    <Check size={14} /> {t('botSettingsModal.endpointUpdated')}
                   </div>
                 )}
               </>
@@ -222,22 +224,22 @@ const BotSettingsModal: React.FC<BotSettingsModalProps> = ({
           {onUpdateBotRestartKeyword && (
             <div>
               <h4 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-1 flex items-center gap-2">
-                <Settings size={12} /> מילת מפתח לאיפוס שיחה
+                <Settings size={12} /> {t('botSettingsModal.restartKeywordLabel')}
               </h4>
-              <p className="text-xs text-slate-400 mb-3">אם המשתמש שולח מילה זו בכל שלב, השיחה תאופס ותתחיל מחדש. השאר ריק כדי לבטל.</p>
+              <p className="text-xs text-slate-400 mb-3">{t('botSettingsModal.restartKeywordHint')}</p>
               <div className="flex gap-2">
                 <button
                   onClick={handleSaveRestartKeyword}
                   disabled={savingRestartKeyword || editRestartKeyword.trim() === (bot.restart_keyword ?? '')}
                   className="px-5 py-3 bg-blue-600 text-white rounded-2xl font-bold text-sm hover:bg-blue-700 transition-all disabled:opacity-50 shrink-0"
                 >
-                  {savingRestartKeyword ? 'שומר...' : 'שמור'}
+                  {savingRestartKeyword ? t('botSettingsModal.saving') : t('botSettingsModal.save')}
                 </button>
                 <input
                   className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600 transition-all"
                   value={editRestartKeyword}
                   onChange={e => setEditRestartKeyword(e.target.value)}
-                  placeholder="לדוגמה: התחל מחדש"
+                  placeholder={t('botSettingsModal.restartKeywordPlaceholder')}
                   dir="rtl"
                 />
               </div>
@@ -248,7 +250,7 @@ const BotSettingsModal: React.FC<BotSettingsModalProps> = ({
               )}
               {restartKeywordSuccess && (
                 <div className="mt-3 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-2 text-emerald-600 text-sm font-bold flex items-center gap-2">
-                  <Check size={14} /> מילת המפתח עודכנה בהצלחה
+                  <Check size={14} /> {t('botSettingsModal.restartKeywordUpdated')}
                 </div>
               )}
             </div>
@@ -257,7 +259,7 @@ const BotSettingsModal: React.FC<BotSettingsModalProps> = ({
           {canShowFacebook && (
             <div>
               <h4 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
-                <FacebookIcon size={12} /> חיבור לפייסבוק
+                <FacebookIcon size={12} /> {t('botSettingsModal.connectFacebook')}
               </h4>
               <button
                 onClick={() => {
@@ -267,7 +269,7 @@ const BotSettingsModal: React.FC<BotSettingsModalProps> = ({
                 className="flex items-center gap-3 px-6 py-3 bg-[#1877F2] text-white rounded-2xl font-bold text-sm hover:bg-[#166FE5] transition-all"
               >
                 <FacebookIcon size={18} />
-                חבר לפייסבוק
+                {t('botSettingsModal.connectFacebookButton')}
               </button>
             </div>
           )}

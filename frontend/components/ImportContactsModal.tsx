@@ -1,5 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { X, Download, Upload, Check } from 'lucide-react';
+import { useTranslation, Trans } from 'react-i18next';
 import { useContactFields } from '../context/ContactFieldsContext';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -38,6 +39,7 @@ const ImportContactsModal: React.FC<ImportContactsModalProps> = ({
   token, groups, groupsLoading = false, onClose, onImported,
   initialAssignToGroups = false, initialSelectedGroupIds = [], onImportingChange,
 }) => {
+  const { t } = useTranslation('contacts');
   const { fields: contactFieldDefs } = useContactFields();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -58,12 +60,12 @@ const ImportContactsModal: React.FC<ImportContactsModalProps> = ({
 
   const downloadSample = () => {
     const customLabels = contactFieldDefs.map(f => f.label);
-    const header = ['טלפון', 'שם מלא', 'שם וואטסאפ', 'מייל', ...customLabels].join(',');
+    const header = [t('import.csv.phone'), t('import.csv.fullName'), t('import.csv.whatsappName'), t('import.csv.email'), ...customLabels].join(',');
     const customEmpty = customLabels.map(() => '').join(',');
     const customSep = customLabels.length > 0 ? ',' : '';
     const rows = [
-      `972501234567,ישראל ישראלי,ישראל,israel@example.com${customSep}${customEmpty}`,
-      `972529876543,שרה כהן,שרה' כהן,sarah@example.com${customSep}${customEmpty}`,
+      `972501234567,${t('import.csv.sample1Name')},${t('import.csv.sample1Whatsapp')},israel@example.com${customSep}${customEmpty}`,
+      `972529876543,${t('import.csv.sample2Name')},${t('import.csv.sample2Whatsapp')},sarah@example.com${customSep}${customEmpty}`,
     ];
     const csv = '\uFEFF' + [header, ...rows].join('\n'); // BOM for Excel Hebrew support
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -95,13 +97,13 @@ const ImportContactsModal: React.FC<ImportContactsModalProps> = ({
         body: formData,
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? 'שגיאה בייבוא');
+      if (!res.ok) throw new Error(data.error ?? t('import.importFailed'));
       setImportResult(data);
       onImported(data);
     } catch (err: unknown) {
       setImportResult({
         imported: 0, created: 0, updated: 0, skipped: [],
-        errors: [{ row: 0, phone: '', error: err instanceof Error ? err.message : 'שגיאה לא ידועה' }],
+        errors: [{ row: 0, phone: '', error: err instanceof Error ? err.message : t('import.unknownError') }],
       });
     } finally {
       onImportingChange?.(false);
@@ -125,7 +127,7 @@ const ImportContactsModal: React.FC<ImportContactsModalProps> = ({
         <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm p-5 sm:p-8">
             <div className="flex items-center justify-between mb-6">
-              <h2 className="text-xl font-black text-slate-900">ייבוא אנשי קשר</h2>
+              <h2 className="text-xl font-black text-slate-900">{t('import.title')}</h2>
               <button onClick={onClose} className="p-2 text-slate-300 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-colors">
                 <X size={20} />
               </button>
@@ -134,13 +136,13 @@ const ImportContactsModal: React.FC<ImportContactsModalProps> = ({
             <div className="flex flex-col gap-4">
               {/* Download sample */}
               <div className="bg-slate-50 rounded-2xl px-5 py-4">
-                <p className="text-sm font-bold text-slate-700 mb-1">רוצה לראות דוגמה?</p>
-                <p className="text-xs text-slate-400 mb-3">הורד קובץ לדוגמה כדי לראות את פורמט הנתונים הנדרש</p>
+                <p className="text-sm font-bold text-slate-700 mb-1">{t('import.sampleTitle')}</p>
+                <p className="text-xs text-slate-400 mb-3">{t('import.sampleHint')}</p>
                 <button
                   onClick={downloadSample}
                   className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-600 hover:bg-slate-100 rounded-xl font-bold text-sm transition-colors"
                 >
-                  <Download size={15} /> הורד קובץ לדוגמה
+                  <Download size={15} /> {t('import.downloadSample')}
                 </button>
               </div>
 
@@ -153,7 +155,7 @@ const ImportContactsModal: React.FC<ImportContactsModalProps> = ({
                     onChange={e => { setAssignToGroups(e.target.checked); if (!e.target.checked) setSelectedGroupIds([]); }}
                     className="w-4 h-4 accent-indigo-600 cursor-pointer"
                   />
-                  <span className="text-sm font-bold text-indigo-800">שייך לרשימת תפוצה</span>
+                  <span className="text-sm font-bold text-indigo-800">{t('import.assignToList')}</span>
                 </label>
                 {assignToGroups && (
                   <div className="flex flex-col gap-2">
@@ -162,7 +164,7 @@ const ImportContactsModal: React.FC<ImportContactsModalProps> = ({
                         <div className="animate-spin w-5 h-5 border-2 border-indigo-200 border-t-indigo-500 rounded-full" />
                       </div>
                     ) : groups.length === 0 ? (
-                      <p className="text-xs text-indigo-400 font-semibold px-1">אין רשימות תפוצה. צור קבוצה תחילה.</p>
+                      <p className="text-xs text-indigo-400 font-semibold px-1">{t('import.noLists')}</p>
                     ) : (
                       <div className="flex flex-col gap-1.5 max-h-36 overflow-y-auto ps-1">
                         {groups.map(g => (
@@ -186,18 +188,18 @@ const ImportContactsModal: React.FC<ImportContactsModalProps> = ({
               <button
                 onClick={() => fileInputRef.current?.click()}
                 disabled={assignToGroups && selectedGroupIds.length === 0 && groups.length > 0}
-                title={assignToGroups && selectedGroupIds.length === 0 && groups.length > 0 ? 'בחר לפחות רשימת תפוצה אחת' : undefined}
+                title={assignToGroups && selectedGroupIds.length === 0 && groups.length > 0 ? t('import.selectAtLeastOne') : undefined}
                 className="flex items-center justify-center gap-2 w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-bold text-sm transition-colors disabled:opacity-60"
               >
                 <Upload size={16} />
-                בחר קובץ Excel / CSV לייבוא
+                {t('import.chooseFile')}
               </button>
 
               <button
                 onClick={onClose}
                 className="w-full py-2.5 text-slate-400 hover:text-slate-600 font-bold text-sm transition-colors"
               >
-                ביטול
+                {t('import.cancel')}
               </button>
             </div>
           </div>
@@ -209,7 +211,7 @@ const ImportContactsModal: React.FC<ImportContactsModalProps> = ({
         <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm p-5 sm:p-8 max-h-[85vh] overflow-y-auto" dir="rtl">
             <div className="flex items-center justify-between mb-5">
-              <h2 className="text-xl font-black text-slate-900">תוצאות ייבוא</h2>
+              <h2 className="text-xl font-black text-slate-900">{t('import.resultTitle')}</h2>
               <button onClick={onClose} className="p-2 text-slate-300 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-colors">
                 <X size={20} />
               </button>
@@ -218,10 +220,10 @@ const ImportContactsModal: React.FC<ImportContactsModalProps> = ({
               <div className="flex items-center gap-3 bg-emerald-50 text-emerald-700 rounded-2xl px-5 py-3">
                 <Check size={18} className="flex-shrink-0" />
                 <span className="font-bold text-sm">
-                  יובאו בהצלחה: <span className="text-lg">{importResult.imported}</span> אנשי קשר
+                  <Trans t={t} i18nKey="import.imported" count={importResult.imported} components={[<span className="text-lg" />]} />
                   {(importResult.created > 0 || importResult.updated > 0) && (
                     <span className="block text-xs font-semibold text-emerald-600 mt-0.5">
-                      {importResult.created} חדשים · {importResult.updated} עודכנו (קיימים)
+                      {t('import.createdUpdated', { created: importResult.created, updated: importResult.updated })}
                     </span>
                   )}
                 </span>
@@ -230,18 +232,18 @@ const ImportContactsModal: React.FC<ImportContactsModalProps> = ({
               {importResult.skipped.length > 0 && (
                 <div className="bg-amber-50 rounded-2xl px-5 py-3">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="font-bold text-sm text-amber-700">דולגו: <span className="text-lg">{importResult.skipped.length}</span></span>
+                    <span className="font-bold text-sm text-amber-700"><Trans t={t} i18nKey="import.skipped" count={importResult.skipped.length} components={[<span className="text-lg" />]} /></span>
                     <button
                       onClick={() => setShowSkippedDetails(v => !v)}
                       className="text-xs font-bold text-amber-700 underline hover:text-amber-900 transition-colors"
                     >
-                      {showSkippedDetails ? 'הסתר פירוט' : 'צפה בסיבה'}
+                      {showSkippedDetails ? t('import.hideDetails') : t('import.viewReason')}
                     </button>
                   </div>
                   {showSkippedDetails && (
                     <ul className="text-xs text-amber-600 space-y-1 max-h-32 overflow-y-auto mt-2">
                       {importResult.skipped.map((s, i) => (
-                        <li key={i}>שורה {s.row}{s.phone ? ` (${s.phone})` : ''}: {s.reason}</li>
+                        <li key={i}>{t('import.row', { row: s.row })}{s.phone ? ` (${s.phone})` : ''}: {s.reason}</li>
                       ))}
                     </ul>
                   )}
@@ -251,18 +253,18 @@ const ImportContactsModal: React.FC<ImportContactsModalProps> = ({
               {importResult.errors.length > 0 && (
                 <div className="bg-red-50 rounded-2xl px-5 py-3">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="font-bold text-sm text-red-600">שגיאות: <span className="text-lg">{importResult.errors.length}</span></span>
+                    <span className="font-bold text-sm text-red-600">{t('import.errors', { count: importResult.errors.length })}</span>
                     <button
                       onClick={() => setShowErrorDetails(v => !v)}
                       className="text-xs font-bold text-red-600 underline hover:text-red-800 transition-colors"
                     >
-                      {showErrorDetails ? 'הסתר פירוט' : 'צפה בסיבה'}
+                      {showErrorDetails ? t('import.hideDetails') : t('import.viewReason')}
                     </button>
                   </div>
                   {showErrorDetails && (
                     <ul className="text-xs text-red-500 space-y-1 max-h-32 overflow-y-auto mt-2">
                       {importResult.errors.map((e, i) => (
-                        <li key={i}>{e.row ? `שורה ${e.row}` : ''}{e.phone ? ` (${e.phone})` : ''}: {e.error}</li>
+                        <li key={i}>{e.row ? t('import.row', { row: e.row }) : ''}{e.phone ? ` (${e.phone})` : ''}: {e.error}</li>
                       ))}
                     </ul>
                   )}
@@ -272,7 +274,7 @@ const ImportContactsModal: React.FC<ImportContactsModalProps> = ({
                 onClick={onClose}
                 className="mt-2 w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-sm transition-colors"
               >
-                סגור
+                {t('import.close')}
               </button>
             </div>
           </div>

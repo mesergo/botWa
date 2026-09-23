@@ -10,6 +10,9 @@ import messagesHe from './locales/he/messages.json';
 import smsInHe from './locales/he/smsIn.json';
 import builderHe from './locales/he/builder.json';
 import dashboardHe from './locales/he/dashboard.json';
+import sessionsHe from './locales/he/sessions.json';
+import groupsHe from './locales/he/groups.json';
+import internalDataHe from './locales/he/internalData.json';
 import commonEn from './locales/en/common.json';
 import authEn from './locales/en/auth.json';
 import navEn from './locales/en/nav.json';
@@ -20,6 +23,9 @@ import messagesEn from './locales/en/messages.json';
 import smsInEn from './locales/en/smsIn.json';
 import builderEn from './locales/en/builder.json';
 import dashboardEn from './locales/en/dashboard.json';
+import sessionsEn from './locales/en/sessions.json';
+import groupsEn from './locales/en/groups.json';
+import internalDataEn from './locales/en/internalData.json';
 
 export const LANGUAGE_STORAGE_KEY = 'mesergo_locale';
 export type SupportedLanguage = 'he' | 'en';
@@ -37,10 +43,12 @@ export const getFormatLocale = (language = i18n.resolvedLanguage): 'he-IL' | 'en
 const applyDocumentLanguage = (language?: string | null) => {
   const normalizedLanguage = normalizeLanguage(language);
   document.documentElement.lang = normalizedLanguage;
-  // Layout direction follows the selected language: tabs/menus/sidebars mirror to the
-  // left in English. Content that must stay Latin-oriented regardless of page language
-  // (phone numbers, emails, URLs) sets its own dir="ltr" locally and is unaffected.
-  document.documentElement.dir = normalizedLanguage === 'en' ? 'ltr' : 'rtl';
+  // Physical layout direction is always RTL regardless of the selected language, so the
+  // sidebar/navbar/tabs stay in the same position when switching languages. Only text
+  // content and formatting (dates/numbers) follow the selected language. Content that must
+  // stay Latin-oriented regardless of page language (phone numbers, emails, URLs) sets its
+  // own dir="ltr" locally and is unaffected.
+  document.documentElement.dir = 'rtl';
 };
 
 const initialLanguage = normalizeLanguage(localStorage.getItem(LANGUAGE_STORAGE_KEY));
@@ -60,6 +68,9 @@ void i18n
         smsIn: smsInHe,
         builder: builderHe,
         dashboard: dashboardHe,
+        sessions: sessionsHe,
+        groups: groupsHe,
+        internalData: internalDataHe,
       },
       en: {
         common: commonEn,
@@ -72,13 +83,16 @@ void i18n
         smsIn: smsInEn,
         builder: builderEn,
         dashboard: dashboardEn,
+        sessions: sessionsEn,
+        groups: groupsEn,
+        internalData: internalDataEn,
       },
     },
     lng: initialLanguage,
     fallbackLng: 'he',
     supportedLngs: supportedLanguages,
     defaultNS: 'common',
-    ns: ['common', 'auth', 'nav', 'editor', 'contacts', 'users', 'messages', 'smsIn', 'builder', 'dashboard'],
+    ns: ['common', 'auth', 'nav', 'editor', 'contacts', 'users', 'messages', 'smsIn', 'builder', 'dashboard', 'sessions', 'groups', 'internalData'],
     interpolation: { escapeValue: false },
     returnNull: false,
   });

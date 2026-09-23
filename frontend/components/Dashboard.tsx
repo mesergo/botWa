@@ -40,7 +40,7 @@ interface DashboardProps {
   onDeleteBot: (id: string) => void;
   onSetDefaultBot: (id: string) => void;
   onLogout: () => void;
-  currentUser?: { id?: string; name?: string; email?: string; role?: string; isImpersonating?: boolean; availability_status?: 'available' | 'unavailable' | 'on_break' } | null;
+  currentUser?: { id?: string; name?: string; email?: string; role?: string; isImpersonating?: boolean; availability_status?: 'available' | 'unavailable' | 'on_break'; onboarding?: { completed?: boolean; current_step?: string } } | null;
   onOpenAdminPanel?: () => void;
   onStopImpersonation?: () => void;
   onSwitchAccount?: (accountId: string) => void;
@@ -145,7 +145,7 @@ const AvailabilityBadge: React.FC<{
 
   // Rendered inside the fixed `dir="ltr"` top bar, so the page direction is stated explicitly.
   return (
-    <div ref={wrapperRef} className="relative" dir={i18n.dir()}>
+    <div ref={wrapperRef} className="relative" dir="rtl">
       <button
         type="button"
         onClick={() => setOpen(v => !v)}
@@ -186,7 +186,8 @@ const AvailabilityBadge: React.FC<{
 const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, onDeleteBot, onSetDefaultBot, onLogout,onOpenInternalData, currentUser, onOpenAdminPanel, onStopImpersonation, onSwitchAccount, onOpenContacts, onOpenSessions, onOpenGroups, onOpenSendMessages, onConnectFacebook, onUpdateBotPublicId, onUpdateBotEndpoint, onUpdateBotRestartKeyword, onUpdateAvailability, onGoHome,onOpenSmsIn, token, initialTab }) => {
   const { t, i18n } = useTranslation('dashboard');
   // "Enter / edit" affordance points along the reading direction: left in Hebrew, right in English.
-  const ForwardArrow = i18n.dir() === 'rtl' ? ArrowLeft : ArrowRight;
+  // Layout is pinned to RTL always regardless of the selected language.
+  const ForwardArrow = ArrowLeft;
   const can = usePermission(currentUser as User | null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newBotName, setNewBotName] = useState('');

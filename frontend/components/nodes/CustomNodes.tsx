@@ -11,6 +11,8 @@ import BaseNode from './BaseNode';
 import { NodeType } from '../../types';
 import { useContactFields } from '../../context/ContactFieldsContext';
 import ApiNodeSettingsModal from '../ApiNodeSettingsModal';
+import { useTranslation } from 'react-i18next';
+import i18n from '../../i18n';
 
 const UPLOAD_API_BASE = window.location.hostname === 'localhost'
   ? 'http://localhost:3001/api'
@@ -34,14 +36,14 @@ async function uploadNodeFile(file: File, token?: string | null): Promise<string
   });
 
   if (!response.ok) {
-    let errorMessage = 'העלאה נכשלה';
+    let errorMessage = i18n.t('builder:upload.failed');
     try {
       const contentType = response.headers.get('content-type');
       if (contentType && contentType.includes('application/json')) {
         const errorData = await response.json();
         errorMessage = errorData.error || errorMessage;
       } else {
-        errorMessage = `שגיאת שרת: ${response.status}`;
+        errorMessage = i18n.t('builder:upload.serverError', { status: response.status });
       }
     } catch { /* ignore parse errors */ }
     throw new Error(errorMessage);
@@ -184,6 +186,7 @@ const ExpandTextModal = ({ value, onChange, onClose }: {
   onChange: (v: string) => void;
   onClose: () => void;
 }) => {
+  const { t } = useTranslation('builder');
   const editorRef = useRef<HTMLDivElement>(null);
   const [activeFormats, setActiveFormats] = useState<Set<string>>(new Set());
 
@@ -327,13 +330,13 @@ const ExpandTextModal = ({ value, onChange, onClose }: {
   };
 
   const FORMAT_BUTTONS = [
-    { symbol: 'B',  label: 'מודגש',  action: () => execFmt('bold'),                       ss: 'font-bold',    cmd: 'bold' },
-    { symbol: 'I',  label: 'נטוי',   action: () => execFmt('italic'),                     ss: 'italic',       cmd: 'italic' },
-    { symbol: 'S',  label: 'חוצה',   action: () => execFmt('strikeThrough'),               ss: 'line-through', cmd: 'strikeThrough' },
-    { symbol: '`',  label: 'קוד',    action: toggleCode,                                    ss: 'font-mono',    cmd: 'code' },
-    { symbol: '•',  label: 'תבליט', action: () => execFmt('insertUnorderedList'),          ss: '',             cmd: 'insertUnorderedList' },
-    { symbol: '1.', label: 'ממוספר',action: () => execFmt('insertOrderedList'),            ss: '',             cmd: 'insertOrderedList' },
-    { symbol: '>',  label: 'ציטוט', action: toggleBlockquote,                              ss: '',             cmd: 'blockquote' },
+    { symbol: 'B',  label: t('nodeCommon.expandModal.bold'),  action: () => execFmt('bold'),                       ss: 'font-bold',    cmd: 'bold' },
+    { symbol: 'I',  label: t('nodeCommon.expandModal.italic'),   action: () => execFmt('italic'),                     ss: 'italic',       cmd: 'italic' },
+    { symbol: 'S',  label: t('nodeCommon.expandModal.strike'),   action: () => execFmt('strikeThrough'),               ss: 'line-through', cmd: 'strikeThrough' },
+    { symbol: '`',  label: t('nodeCommon.expandModal.code'),    action: toggleCode,                                    ss: 'font-mono',    cmd: 'code' },
+    { symbol: '•',  label: t('nodeCommon.expandModal.bullet'), action: () => execFmt('insertUnorderedList'),          ss: '',             cmd: 'insertUnorderedList' },
+    { symbol: '1.', label: t('nodeCommon.expandModal.numbered'),action: () => execFmt('insertOrderedList'),            ss: '',             cmd: 'insertOrderedList' },
+    { symbol: '>',  label: t('nodeCommon.expandModal.quote'), action: toggleBlockquote,                              ss: '',             cmd: 'blockquote' },
   ];
 
   return createPortal(
@@ -358,7 +361,7 @@ const ExpandTextModal = ({ value, onChange, onClose }: {
           <button onClick={onClose} className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors">
             <X size={18} className="text-slate-400" />
           </button>
-          <span className="text-sm font-bold text-slate-500">עריכה מורחבת</span>
+          <span className="text-sm font-bold text-slate-500">{t('nodeCommon.expandModal.title')}</span>
         </div>
 
         {/* WYSIWYG editor */}
@@ -386,7 +389,7 @@ const ExpandTextModal = ({ value, onChange, onClose }: {
 
         {/* Toolbar at bottom */}
         <div className="flex flex-wrap gap-1.5 p-2 bg-slate-50 border border-slate-200 rounded-xl" dir="rtl">
-          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider self-center ml-auto">עיצוב:</span>
+          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider self-center ml-auto">{t('nodeCommon.expandModal.formatLabel')}</span>
           {FORMAT_BUTTONS.map(btn => {
             const isActive = activeFormats.has(btn.cmd);
             return (
@@ -409,10 +412,10 @@ const ExpandTextModal = ({ value, onChange, onClose }: {
 
         {/* Footer */}
         <div className="flex items-center justify-between">
-          <span className="text-[11px] text-slate-400">Ctrl+Enter לשמירה · Esc לביטול · Ctrl+B מודגש · Ctrl+I נטוי</span>
+          <span className="text-[11px] text-slate-400">{t('nodeCommon.expandModal.shortcutsHint')}</span>
           <div className="flex gap-2">
-            <button onClick={onClose} className="px-4 py-2 border border-slate-200 rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-50 transition-colors">ביטול</button>
-            <button onClick={() => { onChange(getWaText()); onClose(); }} className="px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-700 transition-colors">שמור</button>
+            <button onClick={onClose} className="px-4 py-2 border border-slate-200 rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-50 transition-colors">{t('nodeCommon.cancel')}</button>
+            <button onClick={() => { onChange(getWaText()); onClose(); }} className="px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-700 transition-colors">{t('nodeCommon.save')}</button>
           </div>
         </div>
       </div>
@@ -423,6 +426,7 @@ const ExpandTextModal = ({ value, onChange, onClose }: {
 };
 
 const SearchableInput = React.forwardRef(({ value, onChange, placeholder, type = "text", searchQuery, isCurrentMatch, isTextArea = false, disabled = false, expandable = true, autoResize = false }: any, ref: React.Ref<{ openExpandModal: () => void }>) => {
+  const { t } = useTranslation('builder');
   const [isFocused, setIsFocused] = React.useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -472,7 +476,7 @@ const SearchableInput = React.forwardRef(({ value, onChange, placeholder, type =
           type="button"
           onMouseDown={e => { e.preventDefault(); e.stopPropagation(); setModalOpen(true); }}
           className="absolute top-0 left-1 z-10 w-6 h-6 flex items-center justify-center rounded-md text-slate-400 hover:text-blue-500 hover:bg-blue-50 transition-all nodrag"
-          title="פתח עורך מורחב"
+          title={t('nodeCommon.expandModal.openTitle')}
           tabIndex={-1}
         >
           <Pencil size={13} />
@@ -519,7 +523,10 @@ const SearchableInput = React.forwardRef(({ value, onChange, placeholder, type =
 });
 
 /** Combined "⋮" actions button (edit + delete) used for option/condition rows. */
-const OptionActionsMenu = ({ onEdit, onDelete, editLabel = 'עריכה', deleteLabel = 'מחיקה' }: { onEdit?: () => void; onDelete: () => void; editLabel?: string; deleteLabel?: string }) => {
+const OptionActionsMenu = ({ onEdit, onDelete, editLabel, deleteLabel }: { onEdit?: () => void; onDelete: () => void; editLabel?: string; deleteLabel?: string }) => {
+  const { t } = useTranslation('builder');
+  const resolvedEditLabel = editLabel ?? t('nodeCommon.edit');
+  const resolvedDeleteLabel = deleteLabel ?? t('nodeCommon.delete');
   const [isOpen, setIsOpen] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -543,28 +550,28 @@ const OptionActionsMenu = ({ onEdit, onDelete, editLabel = 'עריכה', deleteL
         type="button"
         onClick={() => setIsOpen(o => { const next = !o; if (!next) setConfirmingDelete(false); return next; })}
         className="w-10 h-10 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-all nodrag flex-shrink-0"
-        title="פעולות נוספות"
+        title={t('nodeCommon.moreActions')}
       >
         <MoreVertical size={18} />
       </button>
       {isOpen && (
         confirmingDelete ? (
           <div className="absolute left-0 top-full mt-1 w-56 bg-white border border-slate-100 rounded-xl shadow-2xl z-[100] overflow-hidden animate-in fade-in slide-in-from-top-1 duration-150 nodrag p-3">
-            <p className="text-[12px] font-bold text-slate-700 text-right mb-3">האם אתה בטוח שברצונך למחוק?</p>
+            <p className="text-[12px] font-bold text-slate-700 text-right mb-3">{t('nodeCommon.confirmDeleteQuestion')}</p>
             <div className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={() => { closeAll(); onDelete(); }}
                 className="flex-1 px-2 py-1.5 rounded-lg bg-red-600 text-white text-[12px] font-bold hover:bg-red-700 transition-colors"
               >
-                מחיקה
+                {t('nodeCommon.delete')}
               </button>
               <button
                 type="button"
                 onClick={() => setConfirmingDelete(false)}
                 className="flex-1 px-2 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-[12px] font-bold hover:bg-slate-200 transition-colors"
               >
-                ביטול
+                {t('nodeCommon.cancel')}
               </button>
             </div>
           </div>
@@ -577,7 +584,7 @@ const OptionActionsMenu = ({ onEdit, onDelete, editLabel = 'עריכה', deleteL
               className="w-full flex items-center gap-2 px-3 py-2 hover:bg-slate-50 transition-colors text-right text-slate-700"
             >
               <Pencil size={14} />
-              <span className="text-[12px] font-bold">{editLabel}</span>
+              <span className="text-[12px] font-bold">{resolvedEditLabel}</span>
             </button>
           )}
           <button
@@ -586,7 +593,7 @@ const OptionActionsMenu = ({ onEdit, onDelete, editLabel = 'עריכה', deleteL
             className="w-full flex items-center gap-2 px-3 py-2 hover:bg-red-50 transition-colors text-right text-red-600"
           >
             <Trash2 size={14} />
-            <span className="text-[12px] font-bold">{deleteLabel}</span>
+            <span className="text-[12px] font-bold">{resolvedDeleteLabel}</span>
           </button>
         </div>
         )
@@ -744,15 +751,18 @@ function useDragReorder(onMove: (from: number, to: number) => void, minIndex: nu
 }
 
 /** Small drag-handle icon for reorderable option/branch rows. */
-const DragHandle = (props: React.HTMLAttributes<HTMLDivElement>) => (
+const DragHandle = (props: React.HTMLAttributes<HTMLDivElement>) => {
+  const { t } = useTranslation('builder');
+  return (
   <div
     {...props}
     className={`nodrag flex-shrink-0 flex items-center justify-center w-6 h-10 text-slate-300 hover:text-slate-500 cursor-grab active:cursor-grabbing ${props.className || ''}`}
-    title="גרירה לשינוי סדר"
+    title={t('nodeCommon.dragToReorder')}
   >
     <GripVertical size={16} />
   </div>
-);
+  );
+};
 
 /**
  * Thin highlighted line rendered at the top or bottom edge of a row while
@@ -775,14 +785,14 @@ const InputFieldWrapper = ({ label, children }: any) => (
   </div>
 );
 
-const RESPONSE_OPERATORS = [
-  { id: 'eq', label: 'שווה', icon: '=' },
-  { id: 'contains', label: 'מכיל מילה', icon: '≡' },
-  { id: 'contains_any', label: 'מכיל אחת מהמילים', icon: '∈' },
-  { id: 'contains_all', label: 'מכיל את כל המילים', icon: '∀' },
-];
-
 const ResponseOperatorSelector = ({ value, onChange, disabled = false }: { value: string, onChange: (op: string) => void, disabled?: boolean }) => {
+  const { t } = useTranslation('builder');
+  const RESPONSE_OPERATORS = [
+    { id: 'eq', label: t('nodeCommon.operators.eq'), icon: '=' },
+    { id: 'contains', label: t('nodeCommon.operators.contains'), icon: '≡' },
+    { id: 'contains_any', label: t('nodeCommon.operators.containsAny'), icon: '∈' },
+    { id: 'contains_all', label: t('nodeCommon.operators.containsAll'), icon: '∀' },
+  ];
   const [isOpen, setIsOpen] = useState(false);
   const currentOp = RESPONSE_OPERATORS.find(o => o.id === value) || RESPONSE_OPERATORS[0];
  
@@ -815,14 +825,14 @@ const ResponseOperatorSelector = ({ value, onChange, disabled = false }: { value
   );
 };
 
-const MENU_CONDITION_OPERATORS = [
-  { id: 'eq', label: 'אחת מהאפשרויות', icon: '≡' },
-  { id: 'contains', label: 'מכיל מילה', icon: '=' },
-  { id: 'contains_any', label: 'מכיל אחת מהמילים', icon: '∈' },
-  { id: 'contains_all', label: 'מכיל את כל המילים', icon: '∀' },
-];
-
 const MenuConditionOperatorSelector = ({ value, onChange, disabled = false }: { value: string, onChange: (op: string) => void, disabled?: boolean }) => {
+  const { t } = useTranslation('builder');
+  const MENU_CONDITION_OPERATORS = [
+    { id: 'eq', label: t('nodeCommon.menuOperators.oneOfOptions'), icon: '≡' },
+    { id: 'contains', label: t('nodeCommon.operators.contains'), icon: '=' },
+    { id: 'contains_any', label: t('nodeCommon.operators.containsAny'), icon: '∈' },
+    { id: 'contains_all', label: t('nodeCommon.operators.containsAll'), icon: '∀' },
+  ];
   const [isOpen, setIsOpen] = useState(false);
   const currentOp = MENU_CONDITION_OPERATORS.find(o => o.id === value) || MENU_CONDITION_OPERATORS[0];
 
@@ -856,6 +866,13 @@ const MenuConditionOperatorSelector = ({ value, onChange, disabled = false }: { 
 };
 
 const AddMenuConditionButton = ({ onSelect }: { onSelect: (operator: string) => void }) => {
+  const { t } = useTranslation('builder');
+  const MENU_CONDITION_OPERATORS = [
+    { id: 'eq', label: t('nodeCommon.menuOperators.oneOfOptions'), icon: '≡' },
+    { id: 'contains', label: t('nodeCommon.operators.contains'), icon: '=' },
+    { id: 'contains_any', label: t('nodeCommon.operators.containsAny'), icon: '∈' },
+    { id: 'contains_all', label: t('nodeCommon.operators.containsAll'), icon: '∀' },
+  ];
   const [isOpen, setIsOpen] = useState(false);
 
   return (
@@ -864,7 +881,7 @@ const AddMenuConditionButton = ({ onSelect }: { onSelect: (operator: string) => 
         onClick={() => setIsOpen(!isOpen)}
         className="w-full py-4 text-[13px] font-bold bg-white text-blue-600 rounded-2xl border-2 border-dashed border-blue-100 hover:bg-blue-50 hover:border-blue-400 flex items-center justify-center gap-1 transition-all nodrag uppercase tracking-wider whitespace-nowrap"
       >
-        <Plus size={16} className="flex-shrink-0" />תנאי
+        <Plus size={16} className="flex-shrink-0" />{t('nodeCommon.condition')}
       </button>
 
       {isOpen && (
@@ -885,17 +902,17 @@ const AddMenuConditionButton = ({ onSelect }: { onSelect: (operator: string) => 
   );
 };
 
-const VALIDATION_TYPES = [
-  { id: 'none',  label: 'ללא ולידציה',  icon: <X size={12} /> },
-  { id: 'email', label: 'מייל',         icon: <Mail size={12} /> },
-  { id: 'phone', label: 'טלפון',        icon: <Phone size={12} /> },
-  { id: 'id',    label: 'ת.ז',          icon: <CreditCard size={12} /> },
-  { id: 'url',   label: 'כתובת אתר',   icon: <Link size={12} /> },
-];
-
 const ValidationTypeSelector = ({ value, onChange, disabled = false }: { value?: string; onChange: (v: string) => void; disabled?: boolean }) => {
+  const { t } = useTranslation('builder');
+  const VALIDATION_TYPES = [
+    { id: 'none',  label: t('nodeCommon.validationTypes.none'),  icon: <X size={12} /> },
+    { id: 'email', label: t('nodeCommon.validationTypes.email'), icon: <Mail size={12} /> },
+    { id: 'phone', label: t('nodeCommon.validationTypes.phone'), icon: <Phone size={12} /> },
+    { id: 'id',    label: t('nodeCommon.validationTypes.id'),    icon: <CreditCard size={12} /> },
+    { id: 'url',   label: t('nodeCommon.validationTypes.url'),   icon: <Link size={12} /> },
+  ];
   const [isOpen, setIsOpen] = useState(false);
-  const currentType = VALIDATION_TYPES.find(t => t.id === (value || 'none')) || VALIDATION_TYPES[0];
+  const currentType = VALIDATION_TYPES.find(vt => vt.id === (value || 'none')) || VALIDATION_TYPES[0];
   const hasValidation = value && value !== 'none';
 
   return (
@@ -908,25 +925,25 @@ const ValidationTypeSelector = ({ value, onChange, disabled = false }: { value?:
             ? 'bg-blue-50 border-blue-300 text-blue-600'
             : 'bg-slate-50 border-slate-200 text-slate-500 hover:border-blue-400'
         } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
-        title="סוג ולידציה"
+        title={t('nodeCommon.validationTypeTitle')}
       >
         {currentType.icon}
-        <span>{hasValidation ? currentType.label : 'ולידציה'}</span>
+        <span>{hasValidation ? currentType.label : t('nodeCommon.validationFallback')}</span>
         <ChevronDown size={10} />
       </button>
 
       {!disabled && isOpen && (
         <div className="absolute right-0 top-full mt-1 w-40 bg-white border border-slate-100 rounded-xl shadow-2xl z-[100] overflow-hidden">
-          {VALIDATION_TYPES.map((t) => (
+          {VALIDATION_TYPES.map((vt) => (
             <button
-              key={t.id}
-              onClick={() => { onChange(t.id === 'none' ? '' : t.id); setIsOpen(false); }}
+              key={vt.id}
+              onClick={() => { onChange(vt.id === 'none' ? '' : vt.id); setIsOpen(false); }}
               className={`w-full flex items-center justify-end gap-2 px-3 py-2 hover:bg-slate-50 transition-colors text-right ${
-                (value || 'none') === t.id ? 'bg-blue-50 text-blue-600' : 'text-slate-700'
+                (value || 'none') === vt.id ? 'bg-blue-50 text-blue-600' : 'text-slate-700'
               }`}
             >
-              <span className="text-[11px] font-bold">{t.label}</span>
-              {t.icon}
+              <span className="text-[11px] font-bold">{vt.label}</span>
+              {vt.icon}
             </button>
           ))}
         </div>
@@ -935,16 +952,16 @@ const ValidationTypeSelector = ({ value, onChange, disabled = false }: { value?:
   );
 };
 
-const OPERATORS = [
-  { id: 'eq', label: 'שווה', icon: '=' },
-  { id: 'gt', label: 'גדול', icon: '<' },
-  { id: 'gte', label: 'גדול או שווה', icon: '=<' },
-  { id: 'lt', label: 'קטן', icon: '>' },
-  { id: 'lte', label: 'קטן או שווה', icon: '=>' },
-  { id: 'cont', label: 'מכיל מילה', icon: '≡' },
-];
-
 const OperatorSelector = ({ value, onChange }: { value: string, onChange: (op: string) => void }) => {
+  const { t } = useTranslation('builder');
+  const OPERATORS = [
+    { id: 'eq', label: t('nodeCommon.operators.eq'), icon: '=' },
+    { id: 'gt', label: t('nodeCommon.operators.gt'), icon: '<' },
+    { id: 'gte', label: t('nodeCommon.operators.gte'), icon: '=<' },
+    { id: 'lt', label: t('nodeCommon.operators.lt'), icon: '>' },
+    { id: 'lte', label: t('nodeCommon.operators.lte'), icon: '=>' },
+    { id: 'cont', label: t('nodeCommon.operators.contains'), icon: '≡' },
+  ];
   const [isOpen, setIsOpen] = useState(false);
   const currentOp = OPERATORS.find(o => o.id === value) || OPERATORS[0];
  
@@ -977,6 +994,7 @@ const OperatorSelector = ({ value, onChange }: { value: string, onChange: (op: s
 };
 
 export const StartNode = (props: any) => {
+  const { t } = useTranslation('builder');
   const [isSourceHovered, setIsSourceHovered] = useState(false);
   const { setEdges } = useReactFlow();
   const edges = useEdges();
@@ -997,11 +1015,11 @@ export const StartNode = (props: any) => {
         <span className="text-[12px] font-black px-1.5 py-0.5 rounded-md bg-slate-50 border border-slate-100 text-slate-900">
           {props.data.serialId}
         </span>
-        <span className="text-[16px] font-bold uppercase tracking-tight">התחלה</span>
+        <span className="text-[16px] font-bold uppercase tracking-tight">{t('nodes.start.title')}</span>
         <PlayCircle size={16} className="text-blue-600" />
       </div>
       <div className="p-3 text-center">
-        <p className="text-[12px] text-slate-400 font-bold">תחילת שיחה</p>
+        <p className="text-[12px] text-slate-400 font-bold">{t('nodes.start.subtitle')}</p>
       </div>
       <Handle
         type="source"
@@ -1025,23 +1043,23 @@ export const StartNode = (props: any) => {
   );
 };
 
-const FIXED_CONTACT_FIELDS = [
-  { id: 'full_name', label: 'שם מלא' },
-  { id: 'email', label: 'מייל' },
-];
-
 export const InputTextNode = (props: any) => {
+  const { t } = useTranslation('builder');
   const { fields: contactFields } = useContactFields();
+  const FIXED_CONTACT_FIELDS = [
+    { id: 'full_name', label: t('nodeCommon.contactFields.fullName') },
+    { id: 'email', label: t('nodeCommon.contactFields.email') },
+  ];
 
   return (
-    <BaseNode id={props.id} title="קלט: טקסט" icon={<Type size={20} />} type={NodeType.INPUT_TEXT} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} isSearchMatch={props.data.isSearchMatch}>
-      <InputFieldWrapper label="שאלה מהבוט">
-        <SearchableInput value={props.data.label} onChange={(v: string) => props.data.onChange({ label: v })} placeholder="מה השם שלך?" searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
+    <BaseNode id={props.id} title={t('nodes.inputText.title')} icon={<Type size={20} />} type={NodeType.INPUT_TEXT} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} isSearchMatch={props.data.isSearchMatch}>
+      <InputFieldWrapper label={t('nodeCommon.fields.botQuestion')}>
+        <SearchableInput value={props.data.label} onChange={(v: string) => props.data.onChange({ label: v })} placeholder={t('nodes.inputText.questionPlaceholder')} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
       </InputFieldWrapper>
-      <InputFieldWrapper label="שם משתנה לאחסון">
+      <InputFieldWrapper label={t('nodeCommon.fields.variableName')}>
         <SearchableInput value={props.data.variableName} onChange={(v: string) => props.data.onChange({ variableName: v })} placeholder="user_name" searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
         {['waPhone', 'waOpen', 'waName'].includes(props.data.variableName) && (
-          <p className="text-[11px] text-red-500 text-right mt-1">⚠ "{props.data.variableName}" הוא שם שמור במערכת ולא ניתן להשתמש בו</p>
+          <p className="text-[11px] text-red-500 text-right mt-1">{t('nodeCommon.reservedVariableNameWarning', { name: props.data.variableName })}</p>
         )}
       </InputFieldWrapper>
       <div className="mb-3 p-1">
@@ -1050,12 +1068,12 @@ export const InputTextNode = (props: any) => {
             value={props.data.validationType}
             onChange={(v: string) => props.data.onChange({ validationType: v || undefined })}
           />
-          <label className="text-[14px] font-bold text-slate-400 uppercase tracking-wider">סוג ולידציה</label>
+          <label className="text-[14px] font-bold text-slate-400 uppercase tracking-wider">{t('nodeCommon.validationTypeTitle')}</label>
         </div>
       </div>
       <div className="mb-2 p-1">
         <div className="flex items-center justify-end gap-2">
-          <label className="text-[14px] font-bold text-slate-400 uppercase tracking-wider">שמור בפרטי איש קשר</label>
+          <label className="text-[14px] font-bold text-slate-400 uppercase tracking-wider">{t('nodeCommon.saveToContactLabel')}</label>
           <input
             type="checkbox"
             className="w-4 h-4 cursor-pointer accent-blue-500 disabled:opacity-40"
@@ -1072,7 +1090,7 @@ export const InputTextNode = (props: any) => {
         {props.data.saveToContact && (
           <div className="mt-2 flex flex-col gap-1">
             <label className="text-[12px] font-bold text-right" style={{ color: !props.data.contactFieldKey ? '#ef4444' : '#94a3b8' }}>
-              {!props.data.contactFieldKey ? '⚠ חובה לבחור שדה לשמירה' : 'בחר שדה לשמירה *'}
+              {!props.data.contactFieldKey ? t('nodeCommon.contactFieldRequiredWarning') : t('nodeCommon.chooseFieldToSave')}
             </label>
             <select
               className="w-full px-3 py-2 rounded-lg text-sm text-right outline-none focus:ring-2 bg-white font-semibold"
@@ -1085,12 +1103,12 @@ export const InputTextNode = (props: any) => {
               onChange={(e) => props.data.onChange({ contactFieldKey: e.target.value || undefined })}
               dir="rtl"
             >
-              <option value="" disabled>בחר שדה...</option>
+              <option value="" disabled>{t('nodeCommon.chooseFieldPlaceholder')}</option>
               {FIXED_CONTACT_FIELDS.map((f) => (
                 <option key={f.id} value={f.id}>{f.label}</option>
               ))}
               {contactFields.length > 0 && (
-                <optgroup label="שדות מותאמים אישית">
+                <optgroup label={t('nodeCommon.customFieldsGroup')}>
                   {contactFields.map((f: any) => (
                     <option key={f._id} value={f._id}>{f.label}</option>
                   ))}
@@ -1099,7 +1117,7 @@ export const InputTextNode = (props: any) => {
             </select>
             {/* {contactFields.length === 0 && ( */}
               <p className="text-[11px] text-slate-500 text-right mt-1">
-                ניתן להגדיר שדות נוספים בדף <strong>אנשי קשר</strong> → ניהול שדות
+                {t('nodeCommon.moreFieldsHintPrefix')} <strong>{t('nodeCommon.contactsPageLabel')}</strong> {t('nodeCommon.moreFieldsHintSuffix')}
               </p>
             {/* )} */}
           </div>
@@ -1110,23 +1128,24 @@ export const InputTextNode = (props: any) => {
 };
 
 export const InputDateNode = (props: any) => {
+  const { t } = useTranslation('builder');
   const mode: 'date' | 'time' | 'datetime' = props.data.dateTimeMode || 'date';
 
   const MODES = [
-    { id: 'date',     label: 'תאריך' },
-    { id: 'time',     label: 'שעה' },
-    { id: 'datetime', label: 'תאריך ושעה' },
+    { id: 'date',     label: t('nodeCommon.dateModes.date') },
+    { id: 'time',     label: t('nodeCommon.dateModes.time') },
+    { id: 'datetime', label: t('nodeCommon.dateModes.dateTime') },
   ] as const;
 
-  const modeTitle       = mode === 'time' ? 'קלט: שעה' : mode === 'datetime' ? 'קלט: תאריך ושעה' : 'קלט: תאריך';
+  const modeTitle       = mode === 'time' ? t('nodes.inputDate.titleTime') : mode === 'datetime' ? t('nodes.inputDate.titleDateTime') : t('nodes.inputDate.titleDate');
   const modeIcon        = mode === 'time' ? <Clock size={20} /> : <Calendar size={20} />;
-  const modePlaceholder = mode === 'time' ? 'באיזו שעה?' : mode === 'datetime' ? 'מתי ובאיזו שעה?' : 'מתי תרצה להגיע?';
+  const modePlaceholder = mode === 'time' ? t('nodes.inputDate.placeholderTime') : mode === 'datetime' ? t('nodes.inputDate.placeholderDateTime') : t('nodes.inputDate.placeholderDate');
   const modeVarPH       = mode === 'time' ? 'selected_time' : mode === 'datetime' ? 'selected_datetime' : 'selected_date';
-  const modeHint        = mode === 'time' ? 'תבנית פלט: HH:MM' : mode === 'datetime' ? 'תבנית פלט: DD/MM/YYYY HH:MM' : 'תבנית פלט: DD/MM/YYYY';
+  const modeHint        = mode === 'time' ? `${t('nodeCommon.outputFormatLabel')} HH:MM` : mode === 'datetime' ? `${t('nodeCommon.outputFormatLabel')} DD/MM/YYYY HH:MM` : `${t('nodeCommon.outputFormatLabel')} DD/MM/YYYY`;
 
   return (
     <BaseNode id={props.id} title={modeTitle} icon={modeIcon} type={NodeType.INPUT_DATE} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} isSearchMatch={props.data.isSearchMatch}>
-      <InputFieldWrapper label="סוג קלט">
+      <InputFieldWrapper label={t('nodes.inputDate.inputTypeLabel')}>
         <div className="flex rounded-xl overflow-hidden border border-slate-200 mb-1">
           {MODES.map(m => (
             <button
@@ -1140,36 +1159,43 @@ export const InputDateNode = (props: any) => {
         </div>
         <p className="text-[11px] text-slate-400 text-right">{modeHint}</p>
       </InputFieldWrapper>
-      <InputFieldWrapper label="שאלה מהבוט">
+      <InputFieldWrapper label={t('nodeCommon.fields.botQuestion')}>
         <SearchableInput value={props.data.label} onChange={(v: string) => props.data.onChange({ label: v })} placeholder={modePlaceholder} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
       </InputFieldWrapper>
-      <InputFieldWrapper label="שם משתנה לאחסון">
+      <InputFieldWrapper label={t('nodeCommon.fields.variableName')}>
         <SearchableInput value={props.data.variableName} onChange={(v: string) => props.data.onChange({ variableName: v })} placeholder={modeVarPH} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
         {['waPhone', 'waOpen', 'waName'].includes(props.data.variableName) && (
-          <p className="text-[11px] text-red-500 text-right mt-1">⚠ "{props.data.variableName}" הוא שם שמור במערכת ולא ניתן להשתמש בו</p>
+          <p className="text-[11px] text-red-500 text-right mt-1">{t('nodeCommon.reservedVariableNameWarning', { name: props.data.variableName })}</p>
         )}
       </InputFieldWrapper>
     </BaseNode>
   );
 };
 
-export const InputFileNode = (props: any) => (
-  <BaseNode id={props.id} title="קלט: קובץ" icon={<Upload size={20} />} type={NodeType.INPUT_FILE} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} isSearchMatch={props.data.isSearchMatch}>
-    <InputFieldWrapper label="בקשת קובץ">
-      <SearchableInput value={props.data.label} onChange={(v: string) => props.data.onChange({ label: v })} placeholder="אנא העלה תמונה" searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
+export const InputFileNode = (props: any) => {
+  const { t } = useTranslation('builder');
+  return (
+  <BaseNode id={props.id} title={t('nodes.inputFile.title')} icon={<Upload size={20} />} type={NodeType.INPUT_FILE} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} isSearchMatch={props.data.isSearchMatch}>
+    <InputFieldWrapper label={t('nodes.inputFile.requestLabel')}>
+      <SearchableInput value={props.data.label} onChange={(v: string) => props.data.onChange({ label: v })} placeholder={t('nodes.inputFile.placeholder')} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
     </InputFieldWrapper>
   </BaseNode>
-);
+  );
+};
 
-export const OutputTextNode = (props: any) => (
-  <BaseNode id={props.id} title="הודעת טקסט" icon={<MessageSquare size={20} />} type={NodeType.OUTPUT_TEXT} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} isSearchMatch={props.data.isSearchMatch}>
-    <InputFieldWrapper label="תוכן ההודעה">
-      <SearchableInput isTextArea value={props.data.content} onChange={(v: string) => props.data.onChange({ content: v })} placeholder="היי, איך אני יכול לעזור?" searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
+export const OutputTextNode = (props: any) => {
+  const { t } = useTranslation('builder');
+  return (
+  <BaseNode id={props.id} title={t('nodes.outputText.title')} icon={<MessageSquare size={20} />} type={NodeType.OUTPUT_TEXT} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} isSearchMatch={props.data.isSearchMatch}>
+    <InputFieldWrapper label={t('nodes.outputText.contentLabel')}>
+      <SearchableInput isTextArea value={props.data.content} onChange={(v: string) => props.data.onChange({ content: v })} placeholder={t('nodes.outputText.placeholder')} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
     </InputFieldWrapper>
   </BaseNode>
-);
+  );
+};
 
 export const OutputImageNode = (props: any) => {
+  const { t } = useTranslation('builder');
   const fileInputRef = useRef<HTMLInputElement>(null);
   // Files uploaded via the "העלאת קובץ" tab are stored on our own server under {UPLOAD_ORIGIN}/uploads/
   // (or, for legacy data, as base64 data: URLs) — only treat other URLs as "הוספת קישור" (an
@@ -1191,7 +1217,7 @@ export const OutputImageNode = (props: any) => {
       const url = await uploadNodeFile(file, props.data.token);
       props.data.onChange({ url });
     } catch (err: any) {
-      setUploadError(err?.message || 'העלאת הקובץ נכשלה');
+      setUploadError(err?.message || t('upload.fileFailed'));
     } finally {
       setIsUploading(false);
     }
@@ -1225,7 +1251,7 @@ export const OutputImageNode = (props: any) => {
       return (
         <div className="flex flex-col items-center justify-center gap-2 text-slate-600">
           <ExternalLink size={40} />
-          <span className="text-sm">קובץ PDF</span>
+          <span className="text-sm">{t('nodes.outputImage.pdfFile')}</span>
         </div>
       );
     } else {
@@ -1234,18 +1260,18 @@ export const OutputImageNode = (props: any) => {
   };
  
   return (
-    <BaseNode id={props.id} title="הודעת מדיה" icon={<ImageIcon size={20} />} type={NodeType.OUTPUT_IMAGE} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} isSearchMatch={props.data.isSearchMatch}>
-      <InputFieldWrapper label="סוג מדיה">
+    <BaseNode id={props.id} title={t('nodes.outputImage.title')} icon={<ImageIcon size={20} />} type={NodeType.OUTPUT_IMAGE} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} isSearchMatch={props.data.isSearchMatch}>
+      <InputFieldWrapper label={t('nodes.outputImage.mediaTypeLabel')}>
         <div className="relative">
           <select
             className="w-full appearance-none border border-slate-200 rounded-lg px-3.5 py-2 pr-9 text-right bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent focus:outline-none transition-all nodrag cursor-pointer text-slate-700 text-[13px] font-medium shadow-sm hover:border-slate-300 hover:shadow"
             value={mediaType}
             onChange={(e) => props.data.onChange({ mediaType: e.target.value, url: '' })}
           >
-            <option value="image">תמונה</option>
-            <option value="video">וידאו</option>
+            <option value="image">{t('nodeCommon.mediaTypes.image')}</option>
+            <option value="video">{t('nodeCommon.mediaTypes.video')}</option>
             <option value="pdf">PDF</option>
-            <option value="contact">איש קשר</option>
+            <option value="contact">{t('nodeCommon.mediaTypes.contact')}</option>
           </select>
           <div className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
             <ChevronDown size={16} />
@@ -1258,27 +1284,27 @@ export const OutputImageNode = (props: any) => {
      
       {mediaType === 'contact' ? (
         <>
-          <InputFieldWrapper label="שם איש קשר">
+          <InputFieldWrapper label={t('nodes.outputImage.contactNameLabel')}>
             <SearchableInput
               value={props.data.contactName}
               onChange={(v: string) => props.data.onChange({ contactName: v })}
-              placeholder="ישראל ישראלי"
+              placeholder={t('nodes.outputImage.contactNamePlaceholder')}
               searchQuery={props.data.searchQuery}
               isCurrentMatch={props.data.isCurrentMatch}
             />
           </InputFieldWrapper>
-          <InputFieldWrapper label="טלפון איש קשר">
+          <InputFieldWrapper label={t('nodes.outputImage.contactPhoneLabel')}>
             <SearchableInput
               value={props.data.contactPhone}
               onChange={(v: string) => props.data.onChange({ contactPhone: v })}
-              placeholder="0501234567"
+              placeholder={t('nodes.outputImage.contactPhonePlaceholder')}
               searchQuery={props.data.searchQuery}
               isCurrentMatch={props.data.isCurrentMatch}
             />
           </InputFieldWrapper>
         </>
       ) : (
-      <InputFieldWrapper label="אופן העלאה">
+      <InputFieldWrapper label={t('nodes.outputImage.uploadModeLabel')}>
         <div className="flex gap-1.5 mb-3 bg-slate-100/80 p-1.5 rounded-lg border border-slate-200/60">
           <button
             type="button"
@@ -1290,7 +1316,7 @@ export const OutputImageNode = (props: any) => {
             }`}
           >
             <Upload size={13} className="inline ml-1 -mt-0.5" />
-            העלאת קובץ
+            {t('nodes.outputImage.uploadFileTab')}
           </button>
           <button
             type="button"
@@ -1302,7 +1328,7 @@ export const OutputImageNode = (props: any) => {
             }`}
           >
             <Globe size={13} className="inline ml-1 -mt-0.5" />
-            הוספת קישור
+            {t('nodes.outputImage.addLinkTab')}
           </button>
         </div>
        
@@ -1310,7 +1336,7 @@ export const OutputImageNode = (props: any) => {
           <SearchableInput
             value={props.data.url}
             onChange={(v: string) => props.data.onChange({ url: v })}
-            placeholder={`הכנס קישור ל${mediaType === 'image' ? 'תמונה' : mediaType === 'video' ? 'וידאו' : 'PDF'}`}
+            placeholder={`${t('nodes.outputImage.enterLinkPrefix')}${mediaType === 'image' ? t('nodeCommon.mediaTypes.image') : mediaType === 'video' ? t('nodeCommon.mediaTypes.video') : 'PDF'}`}
             searchQuery={props.data.searchQuery}
             isCurrentMatch={props.data.isCurrentMatch}
           />
@@ -1353,12 +1379,12 @@ export const OutputImageNode = (props: any) => {
                 {isUploading ? (
                   <>
                     <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-                    <span className="text-xs font-semibold">מעלה...</span>
+                    <span className="text-xs font-semibold">{t('upload.uploading')}</span>
                   </>
                 ) : (
                   <>
                     <Upload size={28} strokeWidth={1.5} />
-                    <span className="text-xs font-semibold uppercase tracking-wider">העלה {mediaType === 'image' ? 'תמונה' : mediaType === 'video' ? 'וידאו' : 'PDF'}</span>
+                    <span className="text-xs font-semibold uppercase tracking-wider">{t('upload.uploadLabel', { label: mediaType === 'image' ? t('nodeCommon.mediaTypes.image') : mediaType === 'video' ? t('nodeCommon.mediaTypes.video') : 'PDF' })}</span>
                   </>
                 )}
               </button>
@@ -1373,11 +1399,11 @@ export const OutputImageNode = (props: any) => {
       )}
      
       {mediaType !== 'contact' && (
-      <InputFieldWrapper label="טקסט (אופציונלי)">
+      <InputFieldWrapper label={t('nodes.outputImage.captionLabel')}>
         <SearchableInput
           value={props.data.caption}
           onChange={(v: string) => props.data.onChange({ caption: v })}
-          placeholder="הוסף טקסט מתחת למדיה"
+          placeholder={t('nodes.outputImage.captionPlaceholder')}
           searchQuery={props.data.searchQuery}
           isCurrentMatch={props.data.isCurrentMatch}
           isTextArea={true}
@@ -1389,22 +1415,24 @@ export const OutputImageNode = (props: any) => {
 };
 
 export const OutputLinkNode = (props: any) => {
+  const { t } = useTranslation('builder');
   const urlValue: string = props.data.url || '';
   const isVarSyntax = /--[^-]+--/.test(urlValue);
 
   return (
-    <BaseNode id={props.id} title="קישור חיצוני" icon={<ExternalLink size={20} />} type={NodeType.OUTPUT_LINK} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} isSearchMatch={props.data.isSearchMatch}>
-      <InputFieldWrapper label="טקסט הקישור">
-        <SearchableInput value={props.data.linkLabel} onChange={(v: string) => props.data.onChange({ linkLabel: v })} placeholder="בקר באתר שלנו" searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
+    <BaseNode id={props.id} title={t('palette.items.outputLink')} icon={<ExternalLink size={20} />} type={NodeType.OUTPUT_LINK} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} isSearchMatch={props.data.isSearchMatch}>
+      <InputFieldWrapper label={t('nodes.outputLink.textLabel')}>
+        <SearchableInput value={props.data.linkLabel} onChange={(v: string) => props.data.onChange({ linkLabel: v })} placeholder={t('nodes.outputLink.textPlaceholder')} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
       </InputFieldWrapper>
-      <InputFieldWrapper label="כתובת אינטרנט">
-        <SearchableInput value={props.data.url} onChange={(v: string) => props.data.onChange({ url: v })} placeholder="https://example.com או --שם_משתנה--" searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
+      <InputFieldWrapper label={t('nodes.outputLink.urlLabel')}>
+        <SearchableInput value={props.data.url} onChange={(v: string) => props.data.onChange({ url: v })} placeholder={t('nodes.outputLink.urlPlaceholder')} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
       </InputFieldWrapper>
     </BaseNode>
   );
 };
 
 export const OutputMenuNode = (props: any) => {
+  const { t } = useTranslation('builder');
   const options = props.data.options || [''];
   const optionImages = props.data.optionImages || [];
   const conditionOptions = props.data.menuConditionOptions || [];
@@ -1433,7 +1461,7 @@ export const OutputMenuNode = (props: any) => {
       newImages[index] = url;
       props.data.onChange({ optionImages: newImages });
     } catch (err: any) {
-      setUploadError(err?.message || 'העלאת התמונה נכשלה');
+      setUploadError(err?.message || t('nodes.outputMenu.imageUploadFailed'));
     } finally {
       setUploadingIndex(null);
     }
@@ -1496,14 +1524,14 @@ export const OutputMenuNode = (props: any) => {
   });
 
   return (
-    <BaseNode id={props.id} title="תפריט בחירה" icon={<List size={20} />} type={NodeType.OUTPUT_MENU} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} isSearchMatch={props.data.isSearchMatch}>
-      <InputFieldWrapper label="הנחיית בחירה">
-        <SearchableInput value={props.data.content} onChange={(v: string) => props.data.onChange({ content: v })} placeholder="בחר בבקשה מהרשימה:" searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
+    <BaseNode id={props.id} title={t('palette.items.outputMenu')} icon={<List size={20} />} type={NodeType.OUTPUT_MENU} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} isSearchMatch={props.data.isSearchMatch}>
+      <InputFieldWrapper label={t('nodes.outputMenu.promptLabel')}>
+        <SearchableInput value={props.data.content} onChange={(v: string) => props.data.onChange({ content: v })} placeholder={t('nodes.outputMenu.promptPlaceholder')} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
       </InputFieldWrapper>
-      <InputFieldWrapper label="שמור בחירה במשתנה (אופציונלי)">
-        <SearchableInput value={props.data.variableName} onChange={(v: string) => props.data.onChange({ variableName: v })} placeholder="למשל: selected_option" searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
+      <InputFieldWrapper label={t('nodes.outputMenu.saveVariableLabel')}>
+        <SearchableInput value={props.data.variableName} onChange={(v: string) => props.data.onChange({ variableName: v })} placeholder={t('nodes.outputMenu.saveVariablePlaceholder')} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
         {['waPhone', 'waOpen', 'waName'].includes(props.data.variableName) && (
-          <p className="text-[11px] text-red-500 text-right mt-1">⚠ "{props.data.variableName}" הוא שם שמור במערכת ולא ניתן להשתמש בו</p>
+          <p className="text-[11px] text-red-500 text-right mt-1">{t('nodeCommon.reservedVariableNameWarning', { name: props.data.variableName })}</p>
         )}
       </InputFieldWrapper>
       <div
@@ -1511,11 +1539,11 @@ export const OutputMenuNode = (props: any) => {
         onDragOver={(e) => e.preventDefault()}
         onDrop={(e) => { e.preventDefault(); optionsReorder.commitDrop(); conditionsReorder.commitDrop(); }}
       >
-        <label className="block text-[14px] font-bold text-slate-400 uppercase tracking-widest">רשימת אפשרויות ({options.length <= 2 ? 'כפתורים' : 'רכיב נפתח'})</label>
+        <label className="block text-[14px] font-bold text-slate-400 uppercase tracking-widest">{t('nodes.outputMenu.optionsListLabel', { mode: options.length <= 2 ? t('nodeCommon.buttons') : t('nodeCommon.dropdown') })}</label>
         {/* Default (catch-all) handle — always first */}
         <div className="flex items-center gap-2 p-2 bg-slate-50 border border-dashed border-slate-300 rounded-2xl relative">
           <DeletableHandle nodeId={props.id} handleId="option-default" style={{ top: '50%', right: -10 }} onDelete={props.data.onDeleteEdge} />
-          <span className="flex-1 text-[12px] font-black text-slate-400 uppercase tracking-widest px-2 text-right">ברירת מחדל</span>
+          <span className="flex-1 text-[12px] font-black text-slate-400 uppercase tracking-widest px-2 text-right">{t('nodeCommon.default')}</span>
         </div>
         {options.map((opt: string, i: number) => (
           <div
@@ -1531,8 +1559,8 @@ export const OutputMenuNode = (props: any) => {
               onDelete={() => removeOption(i)}
             />
             <div className="flex-1 relative">
-              <SearchableInput ref={(el: any) => { optionInputRefs.current[i] = el; }} value={opt} onChange={(v: string) => updateOption(i, v)} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} placeholder="הזן ערך" expandable={false} />
-              <span className="absolute top-1 left-1 z-20 pointer-events-none text-[10px] font-bold text-slate-400 bg-white/80 px-1 rounded">{(opt || '').length} תווים</span>
+              <SearchableInput ref={(el: any) => { optionInputRefs.current[i] = el; }} value={opt} onChange={(v: string) => updateOption(i, v)} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} placeholder={t('nodeCommon.enterValue')} expandable={false} />
+              <span className="absolute top-1 left-1 z-20 pointer-events-none text-[10px] font-bold text-slate-400 bg-white/80 px-1 rounded">{t('nodeCommon.charCount', { count: (opt || '').length })}</span>
             </div>
             <div className="flex items-center gap-1.5 pl-1 pr-1">
               {optionImages[i] ? (
@@ -1597,14 +1625,14 @@ export const OutputMenuNode = (props: any) => {
                   <OptionActionsMenu
                     onEdit={operator !== 'eq' ? () => conditionInputRefs.current[j]?.openExpandModal() : undefined}
                     onDelete={() => removeConditionOption(j)}
-                    deleteLabel="מחק תנאי"
+                    deleteLabel={t('nodeCommon.deleteCondition')}
                   />
                   <MenuConditionOperatorSelector value={operator} onChange={(op) => updateConditionOperator(j, op)} />
                   <div className="flex-1">
                     {operator !== 'eq' ? (
-                      <SearchableInput ref={(el: any) => { conditionInputRefs.current[j] = el; }} value={val} onChange={(v: string) => updateConditionOption(j, v)} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} placeholder="הזן ערך" expandable={false} />
+                      <SearchableInput ref={(el: any) => { conditionInputRefs.current[j] = el; }} value={val} onChange={(v: string) => updateConditionOption(j, v)} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} placeholder={t('nodeCommon.enterValue')} expandable={false} />
                     ) : (
-                      <span className="block px-3 py-2 text-[12px] text-slate-400 font-bold">מתאים לכל אחת מהאפשרויות שלמעלה</span>
+                      <span className="block px-3 py-2 text-[12px] text-slate-400 font-bold">{t('nodes.outputMenu.matchesAnyAbove')}</span>
                     )}
                   </div>
                 </div>
@@ -1615,7 +1643,7 @@ export const OutputMenuNode = (props: any) => {
 
         <div className="flex items-stretch gap-2 mt-2">
           <button onClick={addOption} className="flex-1 min-w-0 py-4 px-2 text-[13px] font-bold bg-white text-blue-600 rounded-2xl border-2 border-dashed border-blue-100 hover:bg-blue-50 hover:border-blue-400 flex items-center justify-center gap-2 transition-all nodrag uppercase tracking-wider whitespace-nowrap">
-            <Plus size={18} className="flex-shrink-0" /> הוסף אפשרות חדשה
+            <Plus size={18} className="flex-shrink-0" /> {t('nodes.outputMenu.addOption')}
           </button>
           <AddMenuConditionButton onSelect={addConditionOption} />
         </div>
@@ -1634,6 +1662,7 @@ const METHOD_BADGE: Record<string, string> = {
 };
 
 export const ActionWebServiceNode = (props: any) => {
+  const { t } = useTranslation('builder');
   const branches = props.data.options || [];
   const operators = props.data.optionOperators || Array(branches.length).fill('eq');
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -1682,27 +1711,27 @@ export const ActionWebServiceNode = (props: any) => {
         onClose={() => setSettingsOpen(false)}
       />
     )}
-    <BaseNode id={props.id} title="חיבור API" icon={<Globe size={20} />} type={NodeType.ACTION_WEB_SERVICE} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} isSearchMatch={props.data.isSearchMatch}>
+    <BaseNode id={props.id} title={t('nodes.actionWebService.title')} icon={<Globe size={20} />} type={NodeType.ACTION_WEB_SERVICE} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} isSearchMatch={props.data.isSearchMatch}>
       {/* Settings button + method badge */}
       <div className="flex items-center justify-between mb-3">
         <button
           onClick={() => setSettingsOpen(true)}
           className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-600 hover:border-blue-400 hover:text-blue-600 hover:bg-blue-50 transition-all nodrag"
-          title="פתח הגדרות"
+          title={t('nodes.actionWebService.openSettings')}
         >
           <Settings size={13} />
-          הגדרות
+          {t('nodeCommon.settings')}
         </button>
         <span className={`px-2.5 py-1 rounded-lg border text-[11px] font-black tracking-wide ${badgeClass}`}>{method}</span>
       </div>
-      <InputFieldWrapper label="כתובת Webhook">
+      <InputFieldWrapper label={t('nodes.actionWebService.webhookUrlLabel')}>
         <SearchableInput value={props.data.url} onChange={(v: string) => props.data.onChange({ url: v })} placeholder="https://api.yourdomain.com" searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} expandable={false} isTextArea={true} autoResize={true} />
       </InputFieldWrapper>
      
       <div className="space-y-3 mt-4 text-right">
         {/* Default exit - always present */}
         <div>
-          <label className="block text-[14px] font-bold text-slate-400 uppercase tracking-widest mb-2">יציאה ברירת מחדל</label>
+          <label className="block text-[14px] font-bold text-slate-400 uppercase tracking-widest mb-2">{t('nodeCommon.defaultExitLabel')}</label>
           <div className="flex items-center gap-2 p-3 bg-slate-50 border border-slate-100 rounded-2xl relative">
             <DeletableHandle nodeId={props.id} handleId="default" style={{ top: '50%', right: -10 }} onDelete={props.data.onDeleteEdge} />
             <div className="flex-1 text-center">
@@ -1716,7 +1745,7 @@ export const ActionWebServiceNode = (props: any) => {
           onDragOver={(e) => e.preventDefault()}
           onDrop={(e) => { e.preventDefault(); branchesReorder.commitDrop(); }}
         >
-          <label className="block text-[14px] font-bold text-slate-400 uppercase tracking-widest mb-2">יציאות מותנות לפי Return</label>
+          <label className="block text-[14px] font-bold text-slate-400 uppercase tracking-widest mb-2">{t('nodes.actionWebService.conditionalExitsLabel')}</label>
           {branches.map((branch: string, i: number) => (
             <div
               key={i}
@@ -1730,16 +1759,16 @@ export const ActionWebServiceNode = (props: any) => {
                 <DragHandle {...branchesReorder.getHandleProps(i)} />
                 <OperatorSelector value={operators[i]} onChange={(op) => updateOperator(i, op)} />
                 <div className="flex-1">
-                  <SearchableInput value={branch} onChange={(v: string) => updateBranch(i, v)} placeholder="ערך להשוואה..." searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} expandable={false} />
+                  <SearchableInput value={branch} onChange={(v: string) => updateBranch(i, v)} placeholder={t('nodes.actionWebService.comparisonValuePlaceholder')} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} expandable={false} />
                 </div>
                 <button onClick={() => removeBranch(i)} className="p-2 text-slate-300 hover:text-red-500 opacity-0 group-hover/branch:opacity-100 transition-all nodrag"><X size={18} /></button>
               </div>
             </div>
           ))}
           {branches.length === 0 && (
-            <div className="text-[11px] text-slate-400 font-bold uppercase tracking-tighter text-center py-2 border border-dashed border-slate-100 rounded-xl mb-3">ללא יציאות מותנות - רק ברירת מחדל</div>
+            <div className="text-[11px] text-slate-400 font-bold uppercase tracking-tighter text-center py-2 border border-dashed border-slate-100 rounded-xl mb-3">{t('nodes.actionWebService.noConditionalExits')}</div>
           )}
-          <button onClick={addBranch} className="w-full p-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-600 hover:text-white transition-all flex items-center justify-center gap-2"><Plus size={16} /> הוסף תנאי</button>
+          <button onClick={addBranch} className="w-full p-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-600 hover:text-white transition-all flex items-center justify-center gap-2"><Plus size={16} /> {t('nodeCommon.addCondition')}</button>
         </div>
       </div>
     </BaseNode>
@@ -1747,58 +1776,71 @@ export const ActionWebServiceNode = (props: any) => {
   );
 };
 
-export const ActionWaitNode = (props: any) => (
-  <BaseNode id={props.id} title="השהיית מערכת" icon={<Clock size={20} />} type={NodeType.ACTION_WAIT} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} isSearchMatch={props.data.isSearchMatch}>
-    <InputFieldWrapper label="זמן המתנה (שניות)">
-      <SearchableInput type="number" value={props.data.waitTime?.toString()} onChange={(v: string) => props.data.onChange({ waitTime: parseInt(v) || 0 })} placeholder="למשל: 3" searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
+export const ActionWaitNode = (props: any) => {
+  const { t } = useTranslation('builder');
+  return (
+  <BaseNode id={props.id} title={t('nodes.actionWait.title')} icon={<Clock size={20} />} type={NodeType.ACTION_WAIT} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} isSearchMatch={props.data.isSearchMatch}>
+    <InputFieldWrapper label={t('nodes.actionWait.durationLabel')}>
+      <SearchableInput type="number" value={props.data.waitTime?.toString()} onChange={(v: string) => props.data.onChange({ waitTime: parseInt(v) || 0 })} placeholder={t('nodes.actionWait.placeholder')} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
     </InputFieldWrapper>
   </BaseNode>
-);
+  );
+};
 
-export const ActionSetParameterNode = (props: any) => (
-  <BaseNode id={props.id} title="הגדרת פרמטר" icon={<Zap size={20} />} type={NodeType.ACTION_SET_PARAMETER} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} isSearchMatch={props.data.isSearchMatch} nodeClassName="max-w-[280px]">
-    <InputFieldWrapper label="שם הפרמטר">
-      <SearchableInput value={props.data.parameterName} onChange={(v: string) => props.data.onChange({ parameterName: v })} placeholder="למשל: user_status" searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
+export const ActionSetParameterNode = (props: any) => {
+  const { t } = useTranslation('builder');
+  return (
+  <BaseNode id={props.id} title={t('palette.items.setParameter')} icon={<Zap size={20} />} type={NodeType.ACTION_SET_PARAMETER} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} isSearchMatch={props.data.isSearchMatch} nodeClassName="max-w-[280px]">
+    <InputFieldWrapper label={t('nodes.actionSetParameter.nameLabel')}>
+      <SearchableInput value={props.data.parameterName} onChange={(v: string) => props.data.onChange({ parameterName: v })} placeholder={t('nodes.actionSetParameter.namePlaceholder')} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
     </InputFieldWrapper>
-    <InputFieldWrapper label="ערך">
-      <SearchableInput value={props.data.parameterValue} onChange={(v: string) => props.data.onChange({ parameterValue: v })} placeholder="ערך קבוע או --שם_משתנה--" searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
+    <InputFieldWrapper label={t('nodeCommon.valueLabel')}>
+      <SearchableInput value={props.data.parameterValue} onChange={(v: string) => props.data.onChange({ parameterValue: v })} placeholder={t('nodes.actionSetParameter.valuePlaceholder')} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
     </InputFieldWrapper>
-    <p className="text-[11px] text-slate-400 text-right px-1 -mt-2 mb-1">ניתן לכתוב ערך קבוע או לשלב --שם_פרמטר-- כדי להעתיק ערך של פרמטר אחר</p>
+    <p className="text-[11px] text-slate-400 text-right px-1 -mt-2 mb-1">{t('nodes.actionSetParameter.hint')}</p>
   </BaseNode>
-);
+  );
+};
 
-export const ActionReturnToMainMenuNode = (props: any) => (
-  <BaseNode id={props.id} title="חזרה לתפריט ראשי" icon={<CornerUpLeft size={20} />} type={NodeType.ACTION_RETURN_TO_MAIN_MENU} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} isSearchMatch={props.data.isSearchMatch} nodeClassName="max-w-[280px]">
-    <InputFieldWrapper label="ביטוי להתאמה">
-      <SearchableInput value={props.data.returnMenuText} onChange={(v: string) => props.data.onChange({ returnMenuText: v })} placeholder="תגובה אוטומטית" searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
+export const ActionReturnToMainMenuNode = (props: any) => {
+  const { t } = useTranslation('builder');
+  return (
+  <BaseNode id={props.id} title={t('palette.items.returnToMainMenu')} icon={<CornerUpLeft size={20} />} type={NodeType.ACTION_RETURN_TO_MAIN_MENU} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} isSearchMatch={props.data.isSearchMatch} nodeClassName="max-w-[280px]">
+    <InputFieldWrapper label={t('nodes.actionReturnToMainMenu.matchLabel')}>
+      <SearchableInput value={props.data.returnMenuText} onChange={(v: string) => props.data.onChange({ returnMenuText: v })} placeholder={t('nodes.actionReturnToMainMenu.matchPlaceholder')} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} />
     </InputFieldWrapper>
-    <p className="text-[11px] text-slate-400 text-right px-1 -mt-2 mb-1">הביטוי ייבדק מול אפשרויות הצומת "תגובות אוטומטיות" בתזרים, וההודעה תמשיך מהיציאה המתאימה</p>
+    <p className="text-[11px] text-slate-400 text-right px-1 -mt-2 mb-1">{t('nodes.actionReturnToMainMenu.hint')}</p>
   </BaseNode>
-);
+  );
+};
 
-export const FixedProcessNode = (props: any) => (
-  <BaseNode id={props.id} title={`תת תזרים ${props.data.label}`} icon={<Layers size={20} />} type={NodeType.FIXED_PROCESS} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} isSearchMatch={props.data.isSearchMatch}>
-    <div className="bg-slate-50 p-5 rounded-2xl border border-slate-100 text-[14px] text-slate-500 font-bold uppercase tracking-widest flex items-center justify-end gap-3 text-right">תת תזרים {props.data.label} <Layers size={20} className="text-slate-400" /></div>
+export const FixedProcessNode = (props: any) => {
+  const { t } = useTranslation('builder');
+  return (
+  <BaseNode id={props.id} title={t('nodes.fixedProcess.title', { label: props.data.label })} icon={<Layers size={20} />} type={NodeType.FIXED_PROCESS} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} isSearchMatch={props.data.isSearchMatch}>
+    <div className="bg-slate-50 p-5 rounded-2xl border border-slate-100 text-[14px] text-slate-500 font-bold uppercase tracking-widest flex items-center justify-end gap-3 text-right">{t('nodes.fixedProcess.title', { label: props.data.label })} <Layers size={20} className="text-slate-400" /></div>
   </BaseNode>
-);
+  );
+};
 
 export const ActionTimeRoutingNode = (props: any) => {
+  const { t } = useTranslation('builder');
   const branches: Array<{ conditions: any[] }> = props.data.timeRoutingBranches || [];
 
   const WEEKDAYS = [
-    { value: 0, label: 'ראשון' },
-    { value: 1, label: 'שני' },
-    { value: 2, label: 'שלישי' },
-    { value: 3, label: 'רביעי' },
-    { value: 4, label: 'חמישי' },
-    { value: 5, label: 'שישי' },
-    { value: 6, label: 'שבת' },
+    { value: 0, label: t('nodeCommon.weekdays.sunday') },
+    { value: 1, label: t('nodeCommon.weekdays.monday') },
+    { value: 2, label: t('nodeCommon.weekdays.tuesday') },
+    { value: 3, label: t('nodeCommon.weekdays.wednesday') },
+    { value: 4, label: t('nodeCommon.weekdays.thursday') },
+    { value: 5, label: t('nodeCommon.weekdays.friday') },
+    { value: 6, label: t('nodeCommon.weekdays.saturday') },
   ];
 
   const CONDITION_KINDS = [
-    { value: 'time', label: 'שעה' },
-    { value: 'date', label: 'תאריך' },
-    { value: 'weekday', label: 'יום' },
+    { value: 'time', label: t('nodeCommon.conditionKinds.time') },
+    { value: 'date', label: t('nodeCommon.conditionKinds.date') },
+    { value: 'weekday', label: t('nodeCommon.conditionKinds.weekday') },
   ];
 
   const defaultConditionForKind = (kind: 'time' | 'date' | 'weekday') => {
@@ -1874,20 +1916,20 @@ export const ActionTimeRoutingNode = (props: any) => {
   });
 
   return (
-    <BaseNode id={props.id} title="ניתוב לפי זמן" icon={<Clock size={20} />} type={NodeType.ACTION_TIME_ROUTING} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} isSearchMatch={props.data.isSearchMatch}>
+    <BaseNode id={props.id} title={t('nodes.actionTimeRouting.title')} icon={<Clock size={20} />} type={NodeType.ACTION_TIME_ROUTING} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} isSearchMatch={props.data.isSearchMatch}>
       <div
         className="space-y-4 relative text-right"
         onDragOver={(e) => e.preventDefault()}
         onDrop={(e) => { e.preventDefault(); branchesReorder.commitDrop(); }}
       >
 
-        <label className="block text-[14px] font-bold text-slate-400 uppercase tracking-widest">ענפי ניתוב</label>
+        <label className="block text-[14px] font-bold text-slate-400 uppercase tracking-widest">{t('nodes.actionTimeRouting.branchesLabel')}</label>
 
         {/* Default option */}
         <div className="flex items-center gap-2 p-2 bg-slate-50 border border-slate-200 rounded-2xl relative">
           <DeletableHandle nodeId={props.id} handleId="option-default" style={{ top: '50%', right: -10 }} onDelete={props.data.onDeleteEdge} />
           <div className="flex-1 text-center py-2">
-            <span className="text-sm font-bold text-slate-600">ברירת מחדל (כל שאר המקרים)</span>
+            <span className="text-sm font-bold text-slate-600">{t('nodes.actionTimeRouting.defaultCase')}</span>
           </div>
         </div>
 
@@ -1903,11 +1945,11 @@ export const ActionTimeRoutingNode = (props: any) => {
 
             <div className="flex items-center justify-between">
               <DragHandle {...branchesReorder.getHandleProps(bi)} />
-              <span className="text-[11px] font-black text-slate-400 uppercase tracking-widest">אופציה {bi + 1}</span>
+              <span className="text-[11px] font-black text-slate-400 uppercase tracking-widest">{t('nodes.actionTimeRouting.optionN', { n: bi + 1 })}</span>
               <button
                 onClick={() => removeBranch(bi)}
                 className="w-8 h-8 rounded-lg flex items-center justify-center text-red-500 hover:text-red-600 hover:bg-red-50 transition-all nodrag flex-shrink-0"
-                title="מחק אופציה"
+                title={t('nodeCommon.deleteOption')}
               >
                 <Trash2 size={15} />
               </button>
@@ -1928,7 +1970,7 @@ export const ActionTimeRoutingNode = (props: any) => {
 
                   {condition.kind === 'time' && (
                     <div className="flex-1 flex gap-1 items-center justify-center" dir="rtl">
-                      <span className="text-xs font-bold text-slate-500 whitespace-nowrap">משעה</span>
+                      <span className="text-xs font-bold text-slate-500 whitespace-nowrap">{t('nodeCommon.fromTime')}</span>
                       <input
                         type="time"
                         value={formatHM(condition.fromHour, condition.fromMinute)}
@@ -1938,7 +1980,7 @@ export const ActionTimeRoutingNode = (props: any) => {
                         }}
                         className="min-w-0 flex-1 px-1 py-1 border border-slate-200 rounded-lg text-center nodrag font-bold text-xs"
                       />
-                      <span className="text-xs font-bold text-slate-500 whitespace-nowrap">עד</span>
+                      <span className="text-xs font-bold text-slate-500 whitespace-nowrap">{t('nodeCommon.to')}</span>
                       <input
                         type="time"
                         value={formatHM(condition.toHour, condition.toMinute)}
@@ -1953,14 +1995,14 @@ export const ActionTimeRoutingNode = (props: any) => {
 
                   {condition.kind === 'date' && (
                     <div className="flex-1 flex gap-1 items-center" dir="rtl">
-                      <span className="text-xs font-bold text-slate-500 whitespace-nowrap">מ</span>
+                      <span className="text-xs font-bold text-slate-500 whitespace-nowrap">{t('nodeCommon.from')}</span>
                       <input
                         type="date"
                         value={condition.fromDate || ''}
                         onChange={(e) => updateCondition(bi, ci, { fromDate: e.target.value })}
                         className="flex-1 min-w-0 px-1 py-1 border border-slate-200 rounded-lg nodrag font-bold text-xs"
                       />
-                      <span className="text-xs font-bold text-slate-500 whitespace-nowrap">עד</span>
+                      <span className="text-xs font-bold text-slate-500 whitespace-nowrap">{t('nodeCommon.to')}</span>
                       <input
                         type="date"
                         value={condition.toDate || ''}
@@ -1972,7 +2014,7 @@ export const ActionTimeRoutingNode = (props: any) => {
 
                   {condition.kind === 'weekday' && (
                     <div className="flex-1 flex gap-1 items-center" dir="rtl">
-                      <span className="text-xs font-bold text-slate-500 whitespace-nowrap">מ</span>
+                      <span className="text-xs font-bold text-slate-500 whitespace-nowrap">{t('nodeCommon.from')}</span>
                       <select
                         value={Number.isInteger(condition.fromDay) ? condition.fromDay : 0}
                         onChange={(e) => updateCondition(bi, ci, { fromDay: parseInt(e.target.value, 10) })}
@@ -1982,7 +2024,7 @@ export const ActionTimeRoutingNode = (props: any) => {
                           <option key={`from-${d.value}`} value={d.value}>{d.label}</option>
                         ))}
                       </select>
-                      <span className="text-xs font-bold text-slate-500 whitespace-nowrap">עד</span>
+                      <span className="text-xs font-bold text-slate-500 whitespace-nowrap">{t('nodeCommon.to')}</span>
                       <select
                         value={Number.isInteger(condition.toDay) ? condition.toDay : 4}
                         onChange={(e) => updateCondition(bi, ci, { toDay: parseInt(e.target.value, 10) })}
@@ -1998,7 +2040,7 @@ export const ActionTimeRoutingNode = (props: any) => {
                   <button
                     onClick={() => removeCondition(bi, ci)}
                     className="w-6 h-6 rounded-md flex items-center justify-center text-slate-200 hover:text-red-500 hover:bg-red-50 transition-all nodrag flex-shrink-0"
-                    title="מחק תנאי"
+                    title={t('nodeCommon.deleteCondition')}
                   >
                     <X size={13} />
                   </button>
@@ -2010,7 +2052,7 @@ export const ActionTimeRoutingNode = (props: any) => {
               onClick={() => addCondition(bi)}
               className="w-full py-2 text-[12px] font-bold bg-white text-blue-600 rounded-xl border-2 border-dashed border-blue-100 hover:bg-blue-50 hover:border-blue-400 flex items-center justify-center gap-1.5 transition-all nodrag"
             >
-              <Plus size={14} /> הוסף תנאי
+              <Plus size={14} /> {t('nodeCommon.addCondition')}
             </button>
           </div>
         ))}
@@ -2019,7 +2061,7 @@ export const ActionTimeRoutingNode = (props: any) => {
           onClick={addBranch}
           className="w-full mt-2 py-4 text-[13px] font-bold bg-white text-blue-600 rounded-2xl border-2 border-dashed border-blue-100 hover:bg-blue-50 hover:border-blue-400 flex items-center justify-center gap-2 transition-all nodrag uppercase tracking-wider"
         >
-          <Plus size={18} /> הוסף אופציית ניתוב
+          <Plus size={18} /> {t('nodes.actionTimeRouting.addRoutingOption')}
         </button>
       </div>
     </BaseNode>
@@ -2027,6 +2069,7 @@ export const ActionTimeRoutingNode = (props: any) => {
 };
 
 export const ActionAddToGroupNode = (props: any) => {
+  const { t } = useTranslation('builder');
   const allGroups: Array<{ _id: string; name: string; is_blocklist?: boolean }> = props.data.groups || [];
   const mode: 'add' | 'remove' = props.data.groupActionMode || 'add';
 
@@ -2035,7 +2078,7 @@ export const ActionAddToGroupNode = (props: any) => {
     ? allGroups.filter(g => !g.is_blocklist)
     : allGroups;
 
-  const title = mode === 'remove' ? 'הסרה מקבוצה' : 'הוספה לקבוצה';
+  const title = mode === 'remove' ? t('nodes.groupAction.titleRemove') : t('nodes.groupAction.titleAdd');
   const icon = mode === 'remove' ? <UserMinus size={20} /> : <Users size={20} />;
 
   // In remove mode the select value is either '__all__' (blocklist) or a specific group id.
@@ -2057,7 +2100,7 @@ export const ActionAddToGroupNode = (props: any) => {
 
   return (
     <BaseNode id={props.id} title={title} icon={icon} type={NodeType.ACTION_ADD_TO_GROUP} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} isSearchMatch={props.data.isSearchMatch}>
-      <InputFieldWrapper label="סוג פעולה">
+      <InputFieldWrapper label={t('nodeCommon.actionTypeLabel')}>
         <div className="flex flex-col gap-2 nodrag">
           <label className="flex items-center gap-2 cursor-pointer text-slate-700 text-sm font-medium">
             <input
@@ -2066,7 +2109,7 @@ export const ActionAddToGroupNode = (props: any) => {
               checked={mode === 'add'}
               onChange={() => props.data.onChange({ groupActionMode: 'add', removeGroupId: '', removeFromGroupMode: 'specific' })}
             />
-            הוספה לקבוצה
+            {t('nodes.groupAction.titleAdd')}
           </label>
           <label className="flex items-center gap-2 cursor-pointer text-slate-700 text-sm font-medium">
             <input
@@ -2075,13 +2118,13 @@ export const ActionAddToGroupNode = (props: any) => {
               checked={mode === 'remove'}
               onChange={() => props.data.onChange({ groupActionMode: 'remove', groupId: '' })}
             />
-            הסרה מקבוצה
+            {t('nodes.groupAction.titleRemove')}
           </label>
         </div>
       </InputFieldWrapper>
 
       {mode === 'add' && (
-        <InputFieldWrapper label="בחר קבוצה">
+        <InputFieldWrapper label={t('nodeCommon.chooseGroupLabel')}>
           <div className="relative">
             <select
               className="nodrag w-full h-12 px-4 border border-slate-200 rounded-xl bg-white text-slate-900 text-right focus:outline-none focus:ring-2 focus:ring-orange-400 appearance-none"
@@ -2089,7 +2132,7 @@ export const ActionAddToGroupNode = (props: any) => {
               onChange={(e) => handleAddGroupChange(e.target.value)}
               style={{ fontFamily: 'Heebo, sans-serif' }}
             >
-              <option value="">-- בחר קבוצה --</option>
+              <option value="">{t('nodeCommon.chooseGroupPlaceholder')}</option>
               {groups.map(g => (
                 <option key={g._id} value={g._id}>{g.name}</option>
               ))}
@@ -2097,13 +2140,13 @@ export const ActionAddToGroupNode = (props: any) => {
             <ChevronDown size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
           </div>
           {!props.data.groupId && (
-            <p className="mt-2 text-[12px] text-slate-400 text-right">בסימולטור הרכיב ידולג (אין waPhone)</p>
+            <p className="mt-2 text-[12px] text-slate-400 text-right">{t('nodeCommon.simulatorSkipHint')}</p>
           )}
         </InputFieldWrapper>
       )}
 
       {mode === 'remove' && (
-        <InputFieldWrapper label="בחר קבוצה">
+        <InputFieldWrapper label={t('nodeCommon.chooseGroupLabel')}>
           <div className="relative">
             <select
               className="nodrag w-full h-12 px-4 border border-slate-200 rounded-xl bg-white text-slate-900 text-right focus:outline-none focus:ring-2 focus:ring-orange-400 appearance-none"
@@ -2111,8 +2154,8 @@ export const ActionAddToGroupNode = (props: any) => {
               onChange={(e) => handleRemoveSelectChange(e.target.value)}
               style={{ fontFamily: 'Heebo, sans-serif' }}
             >
-              <option value="">-- בחר קבוצה --</option>
-              <option value="__all__">הכל (רשימת הסרה)</option>
+              <option value="">{t('nodeCommon.chooseGroupPlaceholder')}</option>
+              <option value="__all__">{t('nodes.groupAction.allBlocklistOption')}</option>
               {groups.map(g => (
                 <option key={g._id} value={g._id}>{g.name}</option>
               ))}
@@ -2120,24 +2163,24 @@ export const ActionAddToGroupNode = (props: any) => {
             <ChevronDown size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
           </div>
           {removeSelectValue === '__all__' ? (
-            <p className="mt-2 text-[12px] text-slate-500 text-right">מספר הטלפון יתווסף לרשימת ההסרה</p>
+            <p className="mt-2 text-[12px] text-slate-500 text-right">{t('nodes.groupAction.phoneWillBeAddedToRemovalList')}</p>
           ) : !removeSelectValue ? (
-            <p className="mt-2 text-[12px] text-slate-400 text-right">בסימולטור הרכיב ידולג (אין waPhone)</p>
+            <p className="mt-2 text-[12px] text-slate-400 text-right">{t('nodeCommon.simulatorSkipHint')}</p>
           ) : null}
         </InputFieldWrapper>
       )}
 
       {mode === 'remove' && removeSelectValue === '__all__' && (
-        <InputFieldWrapper label={<span>סיבת ההסרה (תירשם בלוג ההסרות) <span className="text-red-500">*</span></span> as any}>
+        <InputFieldWrapper label={<span>{t('nodes.groupAction.removalReasonLabel')} <span className="text-red-500">*</span></span> as any}>
           <textarea
             className={`nodrag w-full min-h-[64px] px-3 py-2 border rounded-xl bg-white text-slate-900 text-right focus:outline-none focus:ring-2 focus:ring-orange-400 resize-y ${!String(props.data.removalReason || '').trim() ? 'border-red-400' : 'border-slate-200'}`}
             value={props.data.removalReason || ''}
             onChange={(e) => props.data.onChange({ removalReason: e.target.value })}
-            placeholder="למשל: הלקוח ביקש להסיר מהרשימה"
+            placeholder={t('nodes.groupAction.removalReasonPlaceholder')}
             style={{ fontFamily: 'Heebo, sans-serif' }}
           />
           {!String(props.data.removalReason || '').trim() && (
-            <p className="mt-2 text-[12px] font-bold text-red-500 text-right">יש להזין סיבת הסרה</p>
+            <p className="mt-2 text-[12px] font-bold text-red-500 text-right">{t('nodes.groupAction.removalReasonRequired')}</p>
           )}
         </InputFieldWrapper>
       )}
@@ -2146,12 +2189,13 @@ export const ActionAddToGroupNode = (props: any) => {
 };
 
 export const ActionRemoveFromGroupNode = (props: any) => {
+  const { t } = useTranslation('builder');
   const groups: Array<{ _id: string; name: string; is_blocklist?: boolean }> = (props.data.groups || []).filter((g: any) => !g.is_blocklist);
   const mode: 'specific' | 'all' = props.data.removeFromGroupMode || 'specific';
 
   return (
-    <BaseNode id={props.id} title="הסר מקבוצה" icon={<UserMinus size={20} />} type={NodeType.ACTION_REMOVE_FROM_GROUP} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} isSearchMatch={props.data.isSearchMatch}>
-      <InputFieldWrapper label="סוג הסרה">
+    <BaseNode id={props.id} title={t('nodes.groupAction.removeTitle')} icon={<UserMinus size={20} />} type={NodeType.ACTION_REMOVE_FROM_GROUP} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} isSearchMatch={props.data.isSearchMatch}>
+      <InputFieldWrapper label={t('nodes.groupAction.removeTypeLabel')}>
         <div className="flex flex-col gap-2 nodrag">
           <label className="flex items-center gap-2 cursor-pointer text-slate-700 text-sm font-medium">
             <input
@@ -2160,7 +2204,7 @@ export const ActionRemoveFromGroupNode = (props: any) => {
               checked={mode === 'specific'}
               onChange={() => props.data.onChange({ removeFromGroupMode: 'specific', removeGroupId: '' })}
             />
-            הסר מקבוצה מסויימת
+            {t('nodes.groupAction.removeSpecific')}
           </label>
           <label className="flex items-center gap-2 cursor-pointer text-slate-700 text-sm font-medium">
             <input
@@ -2169,13 +2213,13 @@ export const ActionRemoveFromGroupNode = (props: any) => {
               checked={mode === 'all'}
               onChange={() => props.data.onChange({ removeFromGroupMode: 'all', removeGroupId: '' })}
             />
-            הסר מכל הקבוצות (רשימת הסרה)
+            {t('nodes.groupAction.removeAll')}
           </label>
         </div>
       </InputFieldWrapper>
 
       {mode === 'specific' && (
-        <InputFieldWrapper label="בחר קבוצה">
+        <InputFieldWrapper label={t('nodeCommon.chooseGroupLabel')}>
           <div className="relative">
             <select
               className="nodrag w-full h-12 px-4 border border-slate-200 rounded-xl bg-white text-slate-900 text-right focus:outline-none focus:ring-2 focus:ring-orange-400 appearance-none"
@@ -2183,7 +2227,7 @@ export const ActionRemoveFromGroupNode = (props: any) => {
               onChange={(e) => props.data.onChange({ removeGroupId: e.target.value })}
               style={{ fontFamily: 'Heebo, sans-serif' }}
             >
-              <option value="">-- בחר קבוצה --</option>
+              <option value="">{t('nodeCommon.chooseGroupPlaceholder')}</option>
               {groups.map(g => (
                 <option key={g._id} value={g._id}>{g.name}</option>
               ))}
@@ -2191,26 +2235,26 @@ export const ActionRemoveFromGroupNode = (props: any) => {
             <ChevronDown size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
           </div>
           {!props.data.removeGroupId && (
-            <p className="mt-2 text-[12px] text-slate-400 text-right">בסימולטור הרכיב ידולג (אין waPhone)</p>
+            <p className="mt-2 text-[12px] text-slate-400 text-right">{t('nodeCommon.simulatorSkipHint')}</p>
           )}
         </InputFieldWrapper>
       )}
 
       {mode === 'all' && (
-        <p className="text-[12px] text-slate-500 text-right mt-1">מספר הטלפון יתווסף לרשימת ההסרה</p>
+        <p className="text-[12px] text-slate-500 text-right mt-1">{t('nodes.groupAction.phoneWillBeAddedToRemovalList')}</p>
       )}
 
       {mode === 'all' && (
-        <InputFieldWrapper label={<span>סיבת ההסרה (תירשם בלוג ההסרות) <span className="text-red-500">*</span></span> as any}>
+        <InputFieldWrapper label={<span>{t('nodes.groupAction.removalReasonLabel')} <span className="text-red-500">*</span></span> as any}>
           <textarea
             className={`nodrag w-full min-h-[64px] px-3 py-2 border rounded-xl bg-white text-slate-900 text-right focus:outline-none focus:ring-2 focus:ring-orange-400 resize-y ${!String(props.data.removalReason || '').trim() ? 'border-red-400' : 'border-slate-200'}`}
             value={props.data.removalReason || ''}
             onChange={(e) => props.data.onChange({ removalReason: e.target.value })}
-            placeholder="למשל: הלקוח ביקש להסיר מהרשימה"
+            placeholder={t('nodes.groupAction.removalReasonPlaceholder')}
             style={{ fontFamily: 'Heebo, sans-serif' }}
           />
           {!String(props.data.removalReason || '').trim() && (
-            <p className="mt-2 text-[12px] font-bold text-red-500 text-right">יש להזין סיבת הסרה</p>
+            <p className="mt-2 text-[12px] font-bold text-red-500 text-right">{t('nodes.groupAction.removalReasonRequired')}</p>
           )}
         </InputFieldWrapper>
       )}
@@ -2219,6 +2263,7 @@ export const ActionRemoveFromGroupNode = (props: any) => {
 };
 
 export const ActionTransferToAgentNode = (props: any) => {
+  const { t } = useTranslation('builder');
   const repGroups: Array<{ id: string; name: string }> = props.data.repGroups || [];
   const repUsers: Array<{ id: string; name: string; email: string; repGroupIds: string[] }> = props.data.repUsers || [];
   const actionType: 'transfer' | 'close' | 'extend_30m' =
@@ -2248,7 +2293,7 @@ export const ActionTransferToAgentNode = (props: any) => {
   return (
     <BaseNode
       id={props.id}
-      title="נציגים"
+      title={t('palette.items.agents')}
       icon={<UserCheck size={20} />}
       type={NodeType.ACTION_TRANSFER_TO_AGENT}
       selected={props.selected}
@@ -2259,7 +2304,7 @@ export const ActionTransferToAgentNode = (props: any) => {
       isCurrentMatch={props.data.isCurrentMatch}
       isSearchMatch={props.data.isSearchMatch}
     >
-      <InputFieldWrapper label="פעולה">
+      <InputFieldWrapper label={t('nodeCommon.actionLabel')}>
         <div className="flex flex-col gap-2 nodrag">
           <label className="flex items-center gap-2 cursor-pointer text-slate-700 text-sm font-medium">
             <input
@@ -2268,7 +2313,7 @@ export const ActionTransferToAgentNode = (props: any) => {
               checked={actionType === 'transfer'}
               onChange={() => props.data.onChange({ repActionType: 'transfer' })}
             />
-            העברה לנציג
+            {t('nodes.transferAgent.transfer')}
           </label>
           <label className="flex items-center gap-2 cursor-pointer text-slate-700 text-sm font-medium">
             <input
@@ -2277,7 +2322,7 @@ export const ActionTransferToAgentNode = (props: any) => {
               checked={actionType === 'close'}
               onChange={() => props.data.onChange({ repActionType: 'close' })}
             />
-            סגירת פניה (סיום שיחה)
+            {t('nodes.transferAgent.close')}
           </label>
           <label className="flex items-center gap-2 cursor-pointer text-slate-700 text-sm font-medium">
             <input
@@ -2286,13 +2331,13 @@ export const ActionTransferToAgentNode = (props: any) => {
               checked={actionType === 'extend_30m'}
               onChange={() => props.data.onChange({ repActionType: 'extend_30m' })}
             />
-            הארכת זמן פניה פתוחה (30 דקות)
+            {t('nodes.transferAgent.extend30m')}
           </label>
         </div>
       </InputFieldWrapper>
 
       {actionType === 'transfer' && (
-      <InputFieldWrapper label="קבוצת נציגים לשיוך">
+      <InputFieldWrapper label={t('nodes.transferAgent.groupLabel')}>
         <div className="relative">
           <select
             className="nodrag w-full h-12 px-4 border border-slate-200 rounded-xl bg-white text-slate-900 text-right focus:outline-none focus:ring-2 focus:ring-orange-400 appearance-none"
@@ -2300,7 +2345,7 @@ export const ActionTransferToAgentNode = (props: any) => {
             onChange={(e) => handleGroupChange(e.target.value)}
             style={{ fontFamily: 'Heebo, sans-serif' }}
           >
-            <option value="">-- בחר קבוצת נציגים --</option>
+            <option value="">{t('nodes.transferAgent.chooseGroupPlaceholder')}</option>
             {repGroups.map(g => (
               <option key={g.id} value={g.id}>{g.name}</option>
             ))}
@@ -2309,14 +2354,14 @@ export const ActionTransferToAgentNode = (props: any) => {
         </div>
         {repGroups.length === 0 && (
           <p className="mt-2 text-[12px] text-amber-600 text-right">
-            לא הוגדרו קבוצות נציגים. ניתן להוסיף קבוצות במסך משתמשי משנה.
+            {t('nodes.transferAgent.noGroupsHint')}
           </p>
         )}
       </InputFieldWrapper>
       )}
 
       {actionType === 'transfer' && value && (
-        <InputFieldWrapper label="אופן הקצאה">
+        <InputFieldWrapper label={t('nodes.transferAgent.assignmentModeLabel')}>
           <div className="flex flex-col gap-2 nodrag">
             <label className="flex items-center gap-2 cursor-pointer text-slate-700 text-sm font-medium">
               <input
@@ -2325,7 +2370,7 @@ export const ActionTransferToAgentNode = (props: any) => {
                 checked={mode === 'any'}
                 onChange={() => props.data.onChange({ repAssignmentMode: 'any', repUserId: '' })}
               />
-              כל נציג זמין מהקבוצה
+              {t('nodes.transferAgent.anyAgent')}
             </label>
             <label className="flex items-center gap-2 cursor-pointer text-slate-700 text-sm font-medium">
               <input
@@ -2334,14 +2379,14 @@ export const ActionTransferToAgentNode = (props: any) => {
                 checked={mode === 'specific'}
                 onChange={() => props.data.onChange({ repAssignmentMode: 'specific' })}
               />
-              נציג ספציפי מהקבוצה
+              {t('nodes.transferAgent.specificAgent')}
             </label>
           </div>
         </InputFieldWrapper>
       )}
 
       {actionType === 'transfer' && value && mode === 'specific' && (
-        <InputFieldWrapper label="בחר נציג">
+        <InputFieldWrapper label={t('nodes.transferAgent.chooseAgentLabel')}>
           <div className="relative">
             <select
               className="nodrag w-full h-12 px-4 border border-slate-200 rounded-xl bg-white text-slate-900 text-right focus:outline-none focus:ring-2 focus:ring-orange-400 appearance-none"
@@ -2349,7 +2394,7 @@ export const ActionTransferToAgentNode = (props: any) => {
               onChange={(e) => props.data.onChange({ repUserId: e.target.value })}
               style={{ fontFamily: 'Heebo, sans-serif' }}
             >
-              <option value="">-- בחר נציג --</option>
+              <option value="">{t('nodes.transferAgent.chooseAgentPlaceholder')}</option>
               {repsInGroup.map(r => (
                 <option key={r.id} value={r.id}>{r.name}</option>
               ))}
@@ -2358,7 +2403,7 @@ export const ActionTransferToAgentNode = (props: any) => {
           </div>
           {repsInGroup.length === 0 && (
             <p className="mt-2 text-[12px] text-amber-600 text-right">
-              אין נציגים בקבוצה הזו. הוסף נציגים במסך משתמשי משנה.
+              {t('nodes.transferAgent.noAgentsHint')}
             </p>
           )}
         </InputFieldWrapper>
@@ -2367,8 +2412,8 @@ export const ActionTransferToAgentNode = (props: any) => {
       {actionType === 'transfer' && (
         <>
           <p className="mt-2 text-[12px] text-slate-500 text-right leading-relaxed">
-            הרכיב יעביר את השיחה לנציג מהקבוצה שנבחרה.<br />
-            הבוט יפסיק להגיב למשך 30 דקות (כמו בשיחה עם נציג).
+            {t('nodes.transferAgent.transferHint1')}<br />
+            {t('nodes.transferAgent.transferHint2')}
           </p>
 
           <label className="flex items-center gap-2 mt-2 cursor-pointer nodrag select-none">
@@ -2380,7 +2425,7 @@ export const ActionTransferToAgentNode = (props: any) => {
             />
             <span className="flex items-center gap-1 text-[12px] font-bold text-slate-700">
               <Phone size={11} className="text-green-600" />
-              לקוח מעוניין בשיחת טלפון חוזרת
+              {t('nodes.transferAgent.wantsPhoneLabel')}
             </span>
           </label>
         </>
@@ -2388,13 +2433,13 @@ export const ActionTransferToAgentNode = (props: any) => {
 
       {actionType === 'close' && (
         <p className="mt-2 text-[12px] text-slate-500 text-right leading-relaxed">
-          בסוג פעולה זה תתבצע סגירת פניה (סיום שיחה) מיידית.
+          {t('nodes.transferAgent.closeHint')}
         </p>
       )}
 
       {actionType === 'extend_30m' && (
         <p className="mt-2 text-[12px] text-slate-500 text-right leading-relaxed">
-          בסוג פעולה זה זמן ההמתנה לנציג יתאפס לעוד 30 דקות.
+          {t('nodes.transferAgent.extendHint')}
         </p>
       )}
     </BaseNode>
@@ -2402,6 +2447,7 @@ export const ActionTransferToAgentNode = (props: any) => {
 };
 
 export const AutomaticResponsesNode = (props: any) => {
+  const { t } = useTranslation('builder');
   const options = props.data.options || ['כניסה'];
   const operators = props.data.optionOperators || Array(options.length).fill('eq');
   // Persist isExpanded in node data so it survives remounts and re-entry
@@ -2471,13 +2517,13 @@ export const AutomaticResponsesNode = (props: any) => {
   }, 1);
 
   return (
-    <BaseNode id={props.id} title="תגובות אוטומטיות" icon={<Zap size={20} />} type={NodeType.AUTOMATIC_RESPONSES} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} isSearchMatch={props.data.isSearchMatch}>
+    <BaseNode id={props.id} title={t('nodes.automaticResponses.title')} icon={<Zap size={20} />} type={NodeType.AUTOMATIC_RESPONSES} selected={props.selected} onDelete={props.data.onDelete} serialId={props.data.serialId} isSimulatorActive={props.data?.isSimulatorActive} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} isSearchMatch={props.data.isSearchMatch}>
       <div
         className="space-y-4 relative text-right"
         onDragOver={(e) => e.preventDefault()}
         onDrop={(e) => { e.preventDefault(); optionsReorder.commitDrop(); }}
       >
-        <label className="block text-[14px] font-bold text-slate-400 uppercase tracking-widest">מילות מפתח ופתיחים</label>
+        <label className="block text-[14px] font-bold text-slate-400 uppercase tracking-widest">{t('nodes.automaticResponses.keywordsLabel')}</label>
         <div className="flex items-center gap-2 p-2 border rounded-2xl group/item relative transition-colors bg-slate-50 border-slate-200">
           <DeletableHandle nodeId={props.id} handleId="option-system-case2" style={{ top: '50%', right: -10 }} onDelete={props.data.onDeleteEdge} />
           <div className="flex-1">
@@ -2486,13 +2532,13 @@ export const AutomaticResponsesNode = (props: any) => {
                 className="w-full h-12 px-4 flex items-center text-right text-slate-900"
                 style={{ fontFamily: 'Heebo, sans-serif' }}
               >
-                {'תגובה לאחר המתנה ללא מענה נציג'}
+                {t('nodes.automaticResponses.systemCase2Label')}
               </div>
             </div>
           </div>
           <div className="flex items-center gap-1.5 pl-1 pr-1 flex-row-reverse">
             <div className="w-10 h-10 flex items-center justify-center text-slate-300 italic text-[10px] font-bold">
-              מערכת
+              {t('nodeCommon.system')}
             </div>
           </div>
         </div>
@@ -2512,7 +2558,7 @@ export const AutomaticResponsesNode = (props: any) => {
               <DeletableHandle nodeId={props.id} handleId={`option-${i}`} style={{ top: '50%', right: -10 }} onDelete={props.data.onDeleteEdge} />
               {!isDefault && <DragHandle {...optionsReorder.getHandleProps(i)} />}
               <div className="flex-1">
-                <SearchableInput value={opt} onChange={(v: string) => updateOption(i, v)} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} disabled={isDefault} placeholder={!isDefault ? "הזן ערך" : ""} />
+                <SearchableInput value={opt} onChange={(v: string) => updateOption(i, v)} searchQuery={props.data.searchQuery} isCurrentMatch={props.data.isCurrentMatch} disabled={isDefault} placeholder={!isDefault ? t('nodeCommon.enterValue') : ""} />
               </div>
               <div className="flex items-center gap-1.5 pl-1 pr-1 flex-row-reverse">
                 {!isDefault ? (
@@ -2521,7 +2567,7 @@ export const AutomaticResponsesNode = (props: any) => {
                     <button
                       onClick={() => removeOption(i)}
                       className="w-10 h-10 rounded-lg flex items-center justify-center text-red-400 hover:text-red-600 hover:bg-red-50 transition-all nodrag flex-shrink-0"
-                      title="מחק פתיח"
+                      title={t('nodes.automaticResponses.deleteOpener')}
                     >
                       <X size={18} />
                     </button>
@@ -2543,14 +2589,14 @@ export const AutomaticResponsesNode = (props: any) => {
               props.data.onChange({ isExpanded: next });
             }}
             className="w-full py-2 text-[12px] font-bold text-slate-500 bg-slate-50 hover:bg-slate-100 rounded-2xl border border-slate-200 flex items-center justify-center gap-2 transition-all nodrag"
-            title={isExpanded ? 'הצג פחות' : `הצג את כל ${options.length} האפשרויות`}
+            title={isExpanded ? t('nodes.automaticResponses.showLess') : t('nodes.automaticResponses.showAllCount', { count: options.length })}
           >
             <ChevronDown size={16} className={`transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
-            {isExpanded ? 'הצג פחות' : `עוד ${options.length - MAX_VISIBLE} אפשרויות`}
+            {isExpanded ? t('nodes.automaticResponses.showLess') : t('nodes.automaticResponses.moreOptionsCount', { count: options.length - MAX_VISIBLE })}
           </button>
         )}
         <button onClick={addOption} className="w-full mt-2 py-4 text-[13px] font-bold bg-white text-slate-900 rounded-2xl border-2 border-dashed border-slate-200 hover:bg-slate-50 hover:border-slate-400 flex items-center justify-center gap-2 transition-all nodrag uppercase tracking-wider">
-          <Plus size={18} /> הוסף פתיח חדש
+          <Plus size={18} /> {t('nodes.automaticResponses.addOpener')}
         </button>
       </div>
     </BaseNode>

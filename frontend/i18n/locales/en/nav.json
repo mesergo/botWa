@@ -71,6 +71,18 @@
         "label": "Inbound SMS",
         "description": "Incoming SMS messages and line routing"
       },
+      "internalData": {
+        "label": "Internal data management",
+        "description": "Custom data tables, import and online sync"
+      },
+      "sendMessages": {
+        "label": "Send messages",
+        "description": "Send messages to contacts and groups"
+      },
+      "users": {
+        "label": "Users",
+        "description": "Manage agents and team members"
+      },
       "settings": {
         "label": "Settings",
         "description": "Account and profile settings"

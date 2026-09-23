@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { FileSpreadsheet, RefreshCw } from 'lucide-react';
 import { InternalDataTable, InternalDataRow, InternalDataStats } from '../../types';
 import { StatsHeader } from './StatsHeader';
@@ -16,6 +17,7 @@ interface InternalDataAppProps {
 const EMPTY_STATS: InternalDataStats = { totalCollections: 0, totalRecords: 0, totalEndpoints: 0, totalApiCalls: 0, activeSchedules: 0 };
 
 const InternalDataApp: React.FC<InternalDataAppProps> = ({ token }) => {
+  const { t } = useTranslation('internalData');
   const [tables, setTables] = useState<InternalDataTable[]>([]);
   const [selectedTableId, setSelectedTableId] = useState<string | null>(null);
   const [stats, setStats] = useState<InternalDataStats>(EMPTY_STATS);
@@ -71,7 +73,7 @@ const InternalDataApp: React.FC<InternalDataAppProps> = ({ token }) => {
       if (selectedTableId === id) setSelectedTableId(remaining.length > 0 ? remaining[0]._id : null);
       handleRefreshAll();
     } catch (err: any) {
-      alert('שגיאה במחיקת הטבלה: ' + err.message);
+      alert(t('app.deleteTableError', { msg: err.message }));
     }
   };
 
@@ -85,7 +87,7 @@ const InternalDataApp: React.FC<InternalDataAppProps> = ({ token }) => {
         {isLoading ? (
           <div className="h-96 flex flex-col items-center justify-center text-slate-500 gap-3">
             <RefreshCw className="w-8 h-8 animate-spin text-indigo-600" />
-            <p className="text-sm font-medium">טוען נתונים...</p>
+            <p className="text-sm font-medium">{t('app.loading')}</p>
           </div>
         ) : tables.length === 0 ? (
           <div className="bg-white border border-slate-200 rounded-3xl p-12 text-center max-w-xl mx-auto space-y-5 my-12 shadow-xl shadow-slate-200/60">
@@ -93,16 +95,16 @@ const InternalDataApp: React.FC<InternalDataAppProps> = ({ token }) => {
               <FileSpreadsheet className="w-8 h-8" />
             </div>
             <div className="space-y-2">
-              <h2 className="text-xl font-bold text-slate-900">ברוכים הבאים לניהול דטה פנימי</h2>
+              <h2 className="text-xl font-bold text-slate-900">{t('app.welcomeTitle')}</h2>
               <p className="text-xs text-slate-600 leading-relaxed">
-                חברו גיליון Google Sheets או העלו קובץ, המערכת תשאב את הנתונים למסד פנימי ותייצר עבורכם נקודות קצה API לשליפה וסינון מהיר.
+                {t('app.welcomeText')}
               </p>
             </div>
             <button
               onClick={() => setIsCreateModalOpen(true)}
               className="px-6 py-3 bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 text-white text-xs font-bold rounded-xl shadow-md shadow-indigo-600/20 transition active:scale-95"
             >
-              + חבר Google Sheets / טבלה ראשונה
+              {t('app.connectFirstTable')}
             </button>
           </div>
         ) : (
@@ -126,7 +128,7 @@ const InternalDataApp: React.FC<InternalDataAppProps> = ({ token }) => {
                 />
               ) : (
                 <div className="bg-white border border-slate-200 rounded-3xl p-12 text-center text-slate-500 shadow-sm">
-                  בחר טבלה מהתפריט הצדדי כדי להציג את הנתונים ומחולל ה-API.
+                  {t('app.chooseTableHint')}
                 </div>
               )}
             </div>

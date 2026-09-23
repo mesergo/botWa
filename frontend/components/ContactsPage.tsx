@@ -46,7 +46,7 @@ interface MergedContact extends ContactRecord {
 
 interface ContactsPageProps {
   token: string | null;
-  currentUser?: { name?: string; email?: string; role?: string; isImpersonating?: boolean } | null;
+  currentUser?: { name?: string; email?: string; role?: string; isImpersonating?: boolean; onboarding?: { completed?: boolean; current_step?: string } } | null;
   onBack: () => void;
   onLogout: () => void;
   onOpenSessions?: (phone?: string) => void;
@@ -349,7 +349,7 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
   const closeModal = () => { setModalOpen(false); setModalError(''); };
 
   const saveContact = async () => {
-    if (!form.phone.trim()) { setModalError('מספר טלפון הוא שדה חובה'); return; }
+    if (!form.phone.trim()) { setModalError(t('errors.phoneRequired')); return; }
     setSaving(true);
     setModalError('');
     try {
@@ -370,13 +370,13 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
       }
       if (!res.ok) {
         const err = await res.json();
-        setModalError(err.error ?? 'שגיאה בשמירה');
+        setModalError(err.error ?? t('errors.saveFailed'));
         return;
       }
       closeModal();
       fetchData();
     } catch {
-      setModalError('שגיאת רשת');
+      setModalError(t('errors.network'));
     } finally {
       setSaving(false);
     }
@@ -408,10 +408,9 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
   const firstName = currentUser?.name?.charAt(0)?.toUpperCase() ?? currentUser?.email?.charAt(0)?.toUpperCase() ?? '?';
   const isSimulator = (phone: string) => phone === 'Simulated' || phone.toLowerCase() === 'simulator' || phone.toLowerCase() === 'simulated';
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
-  const isRtl = i18n.dir() === 'rtl';
-  // Pagination arrows point along the reading direction: "previous" is toward the inline start.
-  const PrevPageIcon = isRtl ? ChevronRight : ChevronLeft;
-  const NextPageIcon = isRtl ? ChevronLeft : ChevronRight;
+  // Layout is pinned to RTL always: "previous" is toward the inline start (visually right).
+  const PrevPageIcon = ChevronRight;
+  const NextPageIcon = ChevronLeft;
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -465,7 +464,7 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
                 activeMainTab === 'contacts' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
               }`}
             >
-              <Users size={14} /> אנשי קשר
+              <Users size={14} /> {t('tabs.contacts')}
             </button>
             <button
               onClick={() => setActiveMainTab('groups')}
@@ -473,7 +472,7 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
                 activeMainTab === 'groups' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
               }`}
             >
-              <Layers size={14} /> רשימות תפוצה
+              <Layers size={14} /> {t('tabs.lists')}
             </button>
           </div>
 
@@ -485,8 +484,8 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
                 <Users size={26} />
               </div>
               <div>
-                <h1 className="text-xl sm:text-2xl font-black text-slate-900">אנשי קשר</h1>
-                <p className="text-slate-400 text-sm font-semibold mt-0.5">{total} איש קשר</p>
+                <h1 className="text-xl sm:text-2xl font-black text-slate-900">{t('page.title')}</h1>
+                <p className="text-slate-400 text-sm font-semibold mt-0.5">{t('page.contactCount', { count: total })}</p>
               </div>
             </div>
 
@@ -496,7 +495,7 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
                 <Search className="absolute start-4 top-1/2 -translate-y-1/2 text-slate-300" size={16} />
                 <input
                   className="w-full ps-11 pe-4 py-2.5 bg-white border border-slate-200 rounded-2xl text-sm outline-none focus:ring-4 focus:ring-blue-600/10 focus:border-blue-600 transition-all text-start font-medium"
-                  placeholder="חיפוש לפי טלפון, שם, מייל..."
+                  placeholder={t('page.searchPlaceholder')}
                   value={search}
                   onChange={e => setSearch(e.target.value)}
                 />
@@ -507,11 +506,11 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
               <button
                 onClick={openImportModal}
                 disabled={importing}
-                title="ייבוא אנשי קשר מאקסל / CSV"
+                title={t('page.importTitle')}
                 className="w-full sm:w-auto justify-center flex items-center gap-2 px-4 py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-2xl font-bold text-sm transition-colors disabled:opacity-60"
               >
                 <Upload size={15} />
-                {importing ? 'מייבא...' : 'ייבוא מאקסל'}
+                {importing ? t('page.importing') : t('page.import')}
               </button>
               )}
 
@@ -521,7 +520,7 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
                 onClick={openAdd}
                 className="w-full sm:w-auto justify-center flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-bold text-sm transition-colors shadow-sm"
               >
-                <Plus size={16} /> הוסף איש קשר
+                <Plus size={16} /> {t('page.add')}
               </button>
               )}
             </div>
@@ -544,14 +543,14 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
             <div className="py-16 sm:py-24 bg-white border-2 border-dashed border-slate-200 rounded-3xl sm:rounded-[2.5rem] flex flex-col items-center justify-center gap-4 text-slate-300 px-4">
               <Users size={56} strokeWidth={1} />
               <p className="text-lg sm:text-xl font-bold text-center">
-                {total === 0 ? 'עדיין אין אנשי קשר' : 'לא נמצאו תוצאות'}
+                {total === 0 ? t('page.empty') : t('page.noResults')}
               </p>
               {total === 0 && can('contacts.add') && (
                 <button
                   onClick={openAdd}
                   className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-bold text-sm transition-colors mt-2"
                 >
-                  <Plus size={16} /> הוסף איש קשר ראשון
+                  <Plus size={16} /> {t('page.addFirst')}
                 </button>
               )}
             </div>
@@ -590,7 +589,7 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
                             {sim ? <MessageSquare size={16} /> : <Phone size={16} />}
                           </div>
                           <div className="min-w-0">
-                            <p className="text-sm font-bold text-slate-900 truncate">{sim ? 'סימולטור' : contact.phone}</p>
+                            <p className="text-sm font-bold text-slate-900 truncate">{sim ? t('table.simulator') : contact.phone}</p>
                             {(contact.full_name || contact.whatsapp_name) && (
                               <p className="text-xs text-slate-500 font-semibold truncate mt-0.5">{contact.full_name || contact.whatsapp_name}</p>
                             )}
@@ -600,7 +599,7 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
                           {onOpenSessions && contact.sessionCount > 0 && (
                             <button
                               onClick={() => onOpenSessions(contact.phone)}
-                              title="עבור לשיחות"
+                              title={t('actions.goToSessions')}
                               className="p-1.5 text-blue-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                             >
                               <ExternalLink size={15} />
@@ -609,7 +608,7 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
                           {can('contacts.edit') && (
                             <button
                               onClick={() => openEdit(contact)}
-                              title="ערוך"
+                              title={t('actions.edit')}
                               className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
                             >
                               <Edit2 size={15} />
@@ -620,14 +619,14 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
                               <div className="flex items-center gap-1">
                                 <button
                                   onClick={() => confirmDelete(contact._id!)}
-                                  title="אשר מחיקה"
+                                  title={t('actions.confirmDelete')}
                                   className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
                                 >
                                   <Check size={15} />
                                 </button>
                                 <button
                                   onClick={() => setDeletingId(null)}
-                                  title="ביטול"
+                                  title={t('actions.cancel')}
                                   className="p-1.5 text-slate-400 hover:bg-slate-100 rounded-lg transition-colors"
                                 >
                                   <X size={15} />
@@ -636,7 +635,7 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
                             ) : (
                               <button
                                 onClick={() => setDeletingId(contact._id!)}
-                                title="מחק"
+                                title={t('actions.delete')}
                                 className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
                               >
                                 <Trash2 size={15} />
@@ -648,19 +647,19 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
 
                       <div className="mt-3 grid grid-cols-3 gap-2 text-xs" onClick={e => e.stopPropagation()}>
                         <div className="bg-slate-50 rounded-xl px-2.5 py-2 border border-slate-100 min-w-0">
-                          <p className="text-slate-400 font-bold mb-1">שם וואטסאפ</p>
+                          <p className="text-slate-400 font-bold mb-1">{t('table.whatsappName')}</p>
                           <p className={`font-bold truncate ${contact.whatsapp_name ? 'text-slate-700' : 'text-slate-300'}`}>
                             {contact.whatsapp_name || '—'}
                           </p>
                         </div>
                         <div className="bg-slate-50 rounded-xl px-2.5 py-2 border border-slate-100 min-w-0">
-                          <p className="text-slate-400 font-bold mb-1">כתובת מייל</p>
+                          <p className="text-slate-400 font-bold mb-1">{t('table.email')}</p>
                           <p className={`font-bold truncate ${contact.email ? 'text-slate-700' : 'text-slate-300'}`}>
                             {contact.email || '—'}
                           </p>
                         </div>
                         <div className="bg-slate-50 rounded-xl px-2.5 py-2 border border-slate-100 min-w-0">
-                          <p className="text-slate-400 font-bold mb-1">שוחח עם</p>
+                          <p className="text-slate-400 font-bold mb-1">{t('table.chattedWith')}</p>
                           <p className={`font-bold truncate ${botPhonesLabel !== '—' ? 'text-slate-700' : 'text-slate-300'}`} title={botPhonesLabel}>
                             {botPhonesLabel}
                           </p>
@@ -669,24 +668,24 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
 
                       <div className="mt-2 grid grid-cols-3 gap-2 text-xs" onClick={e => e.stopPropagation()}>
                         <div className="bg-slate-50 rounded-xl px-2.5 py-2 border border-slate-100 min-w-0">
-                          <p className="text-slate-400 font-bold mb-1">רשימות תפוצה</p>
+                          <p className="text-slate-400 font-bold mb-1">{t('table.lists')}</p>
                           <p className={`font-bold truncate ${groupsLabel !== '—' ? 'text-slate-700' : 'text-slate-300'}`} title={groupsLabel}>
                             {groupsLabel}
                           </p>
                         </div>
                         <div className="bg-slate-50 rounded-xl px-2.5 py-2 border border-slate-100 min-w-0">
-                          <p className="text-slate-400 font-bold mb-1">שיחות</p>
+                          <p className="text-slate-400 font-bold mb-1">{t('table.sessions')}</p>
                           <p className="text-slate-700 font-bold">{contact.sessionCount}</p>
                         </div>
                         <div className="bg-slate-50 rounded-xl px-2.5 py-2 border border-slate-100 min-w-0">
-                          <p className="text-slate-400 font-bold mb-1">פעיל לאחרונה</p>
+                          <p className="text-slate-400 font-bold mb-1">{t('table.lastActive')}</p>
                           <p className="text-slate-700 font-bold truncate">{formatDate(contact.lastSeen)}</p>
                         </div>
                       </div>
 
                       {customFieldRows.length > 0 && (
                         <div className="mt-3 bg-indigo-50/40 border border-indigo-100 rounded-xl p-3 flex flex-col gap-2" onClick={e => e.stopPropagation()}>
-                          <p className="text-[11px] text-indigo-400 font-bold">שדות מותאמים אישית</p>
+                          <p className="text-[11px] text-indigo-400 font-bold">{t('table.customFields')}</p>
                           <div className="flex flex-col gap-1.5">
                             {customFieldRows.map(row => {
                               return (
@@ -707,11 +706,11 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
 
                 <button
                   onClick={() => setFieldsModalOpen(true)}
-                  title="ניהול שדות"
+                  title={t('table.manageFields')}
                   className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-bold text-sm transition-colors shadow-sm"
                 >
                   <Sliders size={14} />
-                  ניהול שדות
+                  {t('table.manageFields')}
                 </button>
               </div>
 
@@ -724,11 +723,11 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
                 const hasCustomCols = contactFieldDefs.length > 0;
                 let gridTemplateColumns: string;
                 if (hasCustomCols) {
-                  const fixedBase = '9rem 8.5rem 7.5rem 8.5rem 8.5rem 8.5rem 4rem 8rem';
+                  const fixedBase = '9rem 8.5rem 7.5rem 8.5rem 8.5rem 8.5rem 6.5rem 8rem';
                   const customCols = contactFieldDefs.map(() => '8rem').join(' ');
                   gridTemplateColumns = [fixedBase, customCols, '7rem'].join(' ');
                 } else {
-                  gridTemplateColumns = '1.6fr 1.5fr 1.3fr 1.4fr 1.4fr 1.4fr 0.65fr 1.3fr 7rem';
+                  gridTemplateColumns = '1.6fr 1.5fr 1.3fr 1.4fr 1.4fr 1.4fr 1fr 1.3fr 7rem';
                 }
 
                 return (
@@ -738,25 +737,25 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
                       className="grid gap-3 px-6 py-3 bg-slate-50 border-b border-slate-100 text-xs font-bold text-slate-400 uppercase tracking-wide"
                       style={{ gridTemplateColumns }}
                     >
-                      <span>טלפון</span>
-                      <span>שם מלא</span>
-                      <span>שם וואטסאפ</span>
-                      <span>כתובת מייל</span>
-                      <span>שוחח עם</span>
-                      <span>רשימות תפוצה</span>
-                      <span className="text-center">שיחות</span>
-                      <span>פעיל לאחרונה</span>
+                      <span className="truncate">{t('table.phone')}</span>
+                      <span className="truncate">{t('table.fullName')}</span>
+                      <span className="truncate">{t('table.whatsappName')}</span>
+                      <span className="truncate">{t('table.email')}</span>
+                      <span className="truncate">{t('table.chattedWith')}</span>
+                      <span className="truncate">{t('table.lists')}</span>
+                      <span className="text-center truncate">{t('table.sessions')}</span>
+                      <span className="truncate">{t('table.lastActive')}</span>
                       {contactFieldDefs.map(f => (
                         <span key={f._id} className="text-indigo-400 truncate" title={f.label}>{f.label}</span>
                       ))}
                       <div className="flex items-center justify-end">
                         <button
                           onClick={() => setFieldsModalOpen(true)}
-                          title="ניהול שדות"
+                          title={t('table.manageFields')}
                           className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold text-xs transition-colors shadow-sm whitespace-nowrap"
                         >
                           <Sliders size={13} />
-                          ניהול שדות
+                          {t('table.manageFields')}
                         </button>
                       </div>
                     </div>
@@ -776,8 +775,8 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
                               {sim ? <MessageSquare size={15} /> : <Phone size={15} />}
                             </div>
                             <div className="min-w-0">
-                              <p className="text-sm font-bold text-slate-900 truncate">{sim ? 'סימולטור' : contact.phone}</p>
-                              {sim && <span className="text-xs bg-purple-100 text-purple-600 px-2 py-0.5 rounded-full font-bold">בדיקות</span>}
+                              <p className="text-sm font-bold text-slate-900 truncate">{sim ? t('table.simulator') : contact.phone}</p>
+                              {sim && <span className="text-xs bg-purple-100 text-purple-600 px-2 py-0.5 rounded-full font-bold">{t('table.tests')}</span>}
                             </div>
                           </div>
 
@@ -845,7 +844,7 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
                             {onOpenSessions && contact.sessionCount > 0 && (
                               <button
                                 onClick={() => onOpenSessions(contact.phone)}
-                                title="עבור לשיחות"
+                                title={t('actions.goToSessions')}
                                 className="p-1.5 text-blue-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                               >
                                 <ExternalLink size={14} />
@@ -854,7 +853,7 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
                             {can('contacts.edit') && (
                             <button
                               onClick={() => openEdit(contact)}
-                              title="ערוך"
+                              title={t('actions.edit')}
                               className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
                             >
                               <Edit2 size={14} />
@@ -865,14 +864,14 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
                                 <div className="flex items-center gap-1">
                                   <button
                                     onClick={() => confirmDelete(contact._id!)}
-                                    title="אשר מחיקה"
+                                    title={t('actions.confirmDelete')}
                                     className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
                                   >
                                     <Check size={14} />
                                   </button>
                                   <button
                                     onClick={() => setDeletingId(null)}
-                                    title="ביטול"
+                                    title={t('actions.cancel')}
                                     className="p-1.5 text-slate-400 hover:bg-slate-100 rounded-lg transition-colors"
                                   >
                                     <X size={14} />
@@ -881,7 +880,7 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
                               ) : (
                                 <button
                                   onClick={() => setDeletingId(contact._id!)}
-                                  title="מחק"
+                                  title={t('actions.delete')}
                                   className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
                                 >
                                   <Trash2 size={14} />
@@ -900,7 +899,7 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
               {totalPages > 1 && (
                 <div className="hidden lg:flex items-center justify-between px-6 py-3 border-t border-slate-100 bg-slate-50">
                   <span className="text-xs font-bold text-slate-400">
-                    עמוד {page} מתוך {totalPages} &nbsp;·&nbsp; {total} איש קשר
+                    {t('pagination.desktop', { page, totalPages, count: total })}
                   </span>
                   <div className="flex items-center gap-1">
                     <button
@@ -954,15 +953,15 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
                     disabled={page === 1}
                     className="px-3 py-1.5 rounded-lg text-xs font-bold text-slate-500 hover:bg-slate-100 disabled:opacity-40"
                   >
-                    הקודם
+                    {t('actions.previous')}
                   </button>
-                  <span className="text-xs font-bold text-slate-400 text-center">עמוד {page} / {totalPages}</span>
+                  <span className="text-xs font-bold text-slate-400 text-center">{t('pagination.mobile', { page, totalPages })}</span>
                   <button
                     onClick={() => setPage(p => Math.min(totalPages, p + 1))}
                     disabled={page === totalPages}
                     className="px-3 py-1.5 rounded-lg text-xs font-bold text-slate-500 hover:bg-slate-100 disabled:opacity-40"
                   >
-                    הבא
+                    {t('actions.next')}
                   </button>
                 </div>
               )}
@@ -1014,7 +1013,7 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md p-5 sm:p-8">
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-xl font-black text-slate-900">
-                {editingContact?._id ? 'עריכת איש קשר' : 'הוספת איש קשר'}
+                {editingContact?._id ? t('modal.editTitle') : t('modal.addTitle')}
               </h2>
               <button onClick={closeModal} className="p-2 text-slate-300 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-colors">
                 <X size={20} />
@@ -1027,7 +1026,7 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
                 <Phone size={15} className="absolute start-3.5 top-1/2 -translate-y-1/2 text-slate-300" />
                 <input
                   className="w-full ps-10 pe-4 py-2.5 border border-slate-200 rounded-xl text-sm outline-none focus:ring-4 focus:ring-blue-600/10 focus:border-blue-600 transition-all disabled:bg-slate-50 disabled:text-slate-400"
-                  placeholder="מספר טלפון *"
+                  placeholder={t('modal.phonePlaceholder')}
                   value={form.phone}
                   onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}
                   disabled={!!editingContact?._id}
@@ -1039,7 +1038,7 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
                 <User size={15} className="absolute start-3.5 top-1/2 -translate-y-1/2 text-slate-300" />
                 <input
                   className="w-full ps-10 pe-4 py-2.5 border border-slate-200 rounded-xl text-sm outline-none focus:ring-4 focus:ring-blue-600/10 focus:border-blue-600 transition-all"
-                  placeholder="שם מלא"
+                  placeholder={t('modal.fullNamePlaceholder')}
                   value={form.full_name}
                   onChange={e => setForm(f => ({ ...f, full_name: e.target.value }))}
                 />
@@ -1052,7 +1051,7 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
                 </svg>
                 <input
                   className="w-full ps-10 pe-4 py-2.5 border border-slate-200 rounded-xl text-sm outline-none disabled:bg-slate-50 disabled:text-slate-400 transition-all"
-                  placeholder="שם מוואטסאפ"
+                  placeholder={t('modal.whatsappNamePlaceholder')}
                   value={form.whatsapp_name}
                   disabled
                 />
@@ -1064,7 +1063,7 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
                 <input
                   type="email"
                   className="w-full ps-10 pe-4 py-2.5 border border-slate-200 rounded-xl text-sm outline-none focus:ring-4 focus:ring-blue-600/10 focus:border-blue-600 transition-all"
-                  placeholder="כתובת מייל"
+                  placeholder={t('modal.emailPlaceholder')}
                   value={form.email}
                   onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
                 />
@@ -1085,14 +1084,14 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
               <div className="bg-indigo-50 border border-indigo-100 rounded-2xl px-5 py-4 flex flex-col gap-3">
                 <div className="flex items-center gap-2">
                   <Layers size={14} className="text-indigo-500" />
-                  <span className="text-sm font-bold text-indigo-800">רשימות תפוצה</span>
+                  <span className="text-sm font-bold text-indigo-800">{t('modal.lists')}</span>
                 </div>
                 {loadingGroups ? (
                   <div className="flex items-center justify-center py-3">
                     <div className="animate-spin w-5 h-5 border-2 border-indigo-200 border-t-indigo-500 rounded-full" />
                   </div>
                 ) : availableGroups.length === 0 ? (
-                  <p className="text-xs text-indigo-400 font-semibold px-1">אין רשימות תפוצה. צור קבוצה תחילה.</p>
+                  <p className="text-xs text-indigo-400 font-semibold px-1">{t('modal.noLists')}</p>
                 ) : (
                   <div className="flex flex-col gap-1.5 max-h-36 overflow-y-auto ps-1">
                     {availableGroups.map(g => (
@@ -1120,13 +1119,13 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
                   disabled={saving}
                   className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white rounded-xl font-bold text-sm transition-colors"
                 >
-                  {saving ? 'שומר...' : 'שמור'}
+                  {saving ? t('actions.saving') : t('actions.save')}
                 </button>
                 <button
                   onClick={closeModal}
                   className="px-6 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-sm transition-colors"
                 >
-                  ביטול
+                  {t('actions.cancel')}
                 </button>
               </div>
             </div>
@@ -1162,20 +1161,20 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
                   <button
                     onClick={() => { setDetailContact(null); onOpenSessions(detailContact.phone); }}
                     className="flex items-center gap-2 px-4 py-2 bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-xl font-bold text-sm transition-colors border border-slate-200"
-                    title="עבור לשיחות"
+                    title={t('actions.goToSessions')}
                   >
                     <MessageSquare size={15} />
-                    שיחות
+                    {t('detail.sessions')}
                   </button>
                 )}
                 {can('contacts.edit') && (
                 <button
                   onClick={() => { setDetailContact(null); openEdit(detailContact); }}
                   className="flex items-center gap-2 px-4 py-2 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-xl font-bold text-sm transition-colors border border-blue-200"
-                  title="ערוך"
+                  title={t('detail.edit')}
                 >
                   <Edit2 size={15} />
-                  ערוך
+                  {t('detail.edit')}
                 </button>
                 )}
                 <button
@@ -1193,14 +1192,14 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
               {/* Stats bar */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 <div className="bg-slate-50 border border-slate-100 rounded-2xl px-5 py-4 flex flex-col gap-1">
-                  <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">שיחות</span>
+                  <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">{t('detail.sessions')}</span>
                   <div className="flex items-center gap-2 mt-1">
                     <MessageSquare size={18} className="text-blue-400" />
                     <span className="text-2xl font-black text-slate-800">{detailContact.sessionCount}</span>
                   </div>
                 </div>
                 <div className="bg-slate-50 border border-slate-100 rounded-2xl px-5 py-4 flex flex-col gap-1">
-                  <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">פעיל לאחרונה</span>
+                  <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">{t('detail.lastActive')}</span>
                   <div className="flex items-center gap-2 mt-1">
                     <Clock size={16} className="text-slate-400" />
                     <span className="text-sm font-bold text-slate-700">{formatDate(detailContact.lastSeen)}</span>
@@ -1210,12 +1209,12 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
 
               {/* Standard fields */}
               <div className="flex flex-col gap-3">
-                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100 pb-2">פרטי בסיס</h3>
+                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100 pb-2">{t('detail.basicDetails')}</h3>
                 <div className="grid grid-cols-1 gap-2">
                   {[
-                    { label: 'שם מלא', value: detailContact.full_name },
-                    { label: 'שם וואטסאפ', value: detailContact.whatsapp_name },
-                    { label: 'כתובת מייל', value: detailContact.email },
+                    { label: t('detail.fullName'), value: detailContact.full_name },
+                    { label: t('detail.whatsappName'), value: detailContact.whatsapp_name },
+                    { label: t('detail.email'), value: detailContact.email },
                   ].map(({ label, value }) => (
                     <div key={label} className="flex items-center justify-between px-5 py-3.5 bg-slate-50 rounded-2xl border border-slate-100">
                       <span className={`text-sm font-semibold ${value ? 'text-slate-800' : 'text-slate-300'}`}>{value || '—'}</span>
@@ -1227,7 +1226,7 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
 
               {/* Bot phones this contact interacted with */}
               <div className="flex flex-col gap-3">
-                <h3 className="text-xs font-bold text-indigo-400 uppercase tracking-wider border-b border-indigo-100 pb-2">טלפונים שהתכתבו עם איש קשר זה</h3>
+                <h3 className="text-xs font-bold text-indigo-400 uppercase tracking-wider border-b border-indigo-100 pb-2">{t('detail.botPhones')}</h3>
                 {detailContact.botPhones && detailContact.botPhones.length > 0 ? (
                   <div className="flex flex-wrap gap-2">
                     {detailContact.botPhones.map(p => (
@@ -1245,7 +1244,7 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
 
               {/* Custom fields from bot flows */}
               <div className="flex flex-col gap-3">
-                <h3 className="text-xs font-bold text-blue-400 uppercase tracking-wider border-b border-blue-100 pb-2">פרטים שנשמרו מהשיחות</h3>
+                <h3 className="text-xs font-bold text-blue-400 uppercase tracking-wider border-b border-blue-100 pb-2">{t('detail.savedFromChats')}</h3>
                 {detailContact.custom_field_values && Object.keys(detailContact.custom_field_values).length > 0 ? (
                   <div className="grid grid-cols-1 gap-2">
                     {Object.entries(detailContact.custom_field_values).map(([key, value]) => {
@@ -1263,8 +1262,8 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
                 ) : (
                   <div className="flex flex-col items-center justify-center gap-3 py-8 text-slate-300 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
                     <Eye size={32} strokeWidth={1.5} />
-                    <p className="text-sm font-bold">אין פרטים שנשמרו מהשיחות עדיין</p>
-                    <p className="text-xs text-slate-300">פרטים יופיעו כאן לאחר שיחות עם צומת "שמור בפרטי איש קשר"</p>
+                    <p className="text-sm font-bold">{t('detail.noSavedDetails')}</p>
+                    <p className="text-xs text-slate-300">{t('detail.savedDetailsHint')}</p>
                   </div>
                 )}
               </div>
@@ -1289,19 +1288,19 @@ const ContactsPage: React.FC<ContactsPageProps> = ({
 
 // ─── ContactFieldsModal ───────────────────────────────────────────────────────
 
-const BASE_FIELDS = [
-  { label: 'טלפון' },
-  { label: 'שם מלא' },
-  { label: 'שם וואטסאפ' },
-  { label: 'כתובת מייל' },
-];
-
 const ContactFieldsModal: React.FC<{
   token: string | null;
   fields: ContactFieldDef[];
   onClose: () => void;
   onChanged: () => void;
 }> = ({ token, fields, onClose, onChanged }) => {
+  const { t } = useTranslation('contacts');
+  const BASE_FIELDS = [
+    { label: t('baseFields.phone') },
+    { label: t('baseFields.fullName') },
+    { label: t('baseFields.whatsappName') },
+    { label: t('baseFields.email') },
+  ];
   const [newLabel, setNewLabel] = useState('');
   const [adding, setAdding] = useState(false);
   const [addError, setAddError] = useState('');
@@ -1317,13 +1316,13 @@ const ContactFieldsModal: React.FC<{
   const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
 
   const handleAdd = async () => {
-    if (!newLabel.trim()) { setAddError('שם השדה הוא שדה חובה'); return; }
+    if (!newLabel.trim()) { setAddError(t('fields.labelRequired')); return; }
     setSaving(true); setAddError('');
     try {
       const res = await fetch(`${apiBase}/contact-fields`, { method: 'POST', headers, body: JSON.stringify({ label: newLabel.trim() }) });
-      if (!res.ok) { const e = await res.json(); setAddError(e.error ?? 'שגיאה'); return; }
+      if (!res.ok) { const e = await res.json(); setAddError(e.error ?? t('errors.generic')); return; }
       setNewLabel(''); setAdding(false); onChanged();
-    } catch { setAddError('שגיאת רשת'); }
+    } catch { setAddError(t('errors.network')); }
     finally { setSaving(false); }
   };
 
@@ -1354,7 +1353,7 @@ const ContactFieldsModal: React.FC<{
             <div className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center">
               <Sliders size={20} />
             </div>
-            <h2 className="text-xl font-black text-slate-900">ניהול שדות</h2>
+            <h2 className="text-xl font-black text-slate-900">{t('fields.title')}</h2>
           </div>
           <button onClick={onClose} className="p-2 text-slate-300 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-colors">
             <X size={20} />
@@ -1365,23 +1364,23 @@ const ContactFieldsModal: React.FC<{
 
           {/* Base fields (read-only) */}
           <div className="flex flex-col gap-2">
-            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">שדות בסיס (קבועים)</h3>
+            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">{t('fields.baseTitle')}</h3>
             {BASE_FIELDS.map(f => (
               <div key={f.label} className="flex items-center justify-between px-4 py-3 bg-slate-50 rounded-xl border border-slate-100">
                 <span className="text-sm font-semibold text-slate-500">{f.label}</span>
-                <span className="text-xs text-slate-300 font-bold">קבוע</span>
+                <span className="text-xs text-slate-300 font-bold">{t('fields.fixed')}</span>
               </div>
             ))}
           </div>
 
           {/* Custom fields */}
           <div className="flex flex-col gap-2">
-            <h3 className="text-xs font-bold text-indigo-400 uppercase tracking-wider mb-1">שדות מוגדרים אישית</h3>
+            <h3 className="text-xs font-bold text-indigo-400 uppercase tracking-wider mb-1">{t('fields.customTitle')}</h3>
 
             {fields.length === 0 && !adding && (
               <div className="py-6 text-center text-slate-300 bg-slate-50 rounded-xl border border-dashed border-slate-200">
-                <p className="text-sm font-bold">אין שדות מוגדרים עדיין</p>
-                <p className="text-xs mt-1">לחץ על "הוסף שדה" כדי להתחיל</p>
+                <p className="text-sm font-bold">{t('fields.empty')}</p>
+                <p className="text-xs mt-1">{t('fields.emptyHint', { action: t('fields.addField') })}</p>
               </div>
             )}
 
@@ -1405,7 +1404,7 @@ const ContactFieldsModal: React.FC<{
                   </>
                 ) : deletingId === f._id ? (
                   <>
-                    <span className="flex-1 text-sm font-semibold text-red-600">למחוק את "{f.label}"?</span>
+                    <span className="flex-1 text-sm font-semibold text-red-600">{t('fields.deleteConfirm', { label: f.label })}</span>
                     <button onClick={() => handleDelete(f._id)} className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors">
                       <Check size={15} />
                     </button>
@@ -1434,16 +1433,16 @@ const ContactFieldsModal: React.FC<{
                   <input
                     autoFocus
                     className="flex-1 px-4 py-2.5 border border-indigo-300 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-400"
-                    placeholder="שם השדה (לדוגמה: סוג לקוח)"
+                    placeholder={t('fields.newPlaceholder')}
                     value={newLabel}
                     onChange={e => { setNewLabel(e.target.value); setAddError(''); }}
                     onKeyDown={e => { if (e.key === 'Enter') handleAdd(); if (e.key === 'Escape') { setAdding(false); setNewLabel(''); } }}
                   />
                   <button onClick={handleAdd} disabled={saving} className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-sm transition-colors disabled:opacity-60">
-                    הוסף
+                    {t('fields.add')}
                   </button>
                   <button onClick={() => { setAdding(false); setNewLabel(''); setAddError(''); }} className="px-3 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl font-bold text-sm transition-colors">
-                    ביטול
+                    {t('actions.cancel')}
                   </button>
                 </div>
                 {addError && <p className="text-xs text-red-500 font-semibold px-1">{addError}</p>}
@@ -1453,7 +1452,7 @@ const ContactFieldsModal: React.FC<{
                 onClick={() => setAdding(true)}
                 className="flex items-center gap-2 px-4 py-2.5 border-2 border-dashed border-indigo-200 text-indigo-500 hover:border-indigo-400 hover:bg-indigo-50 rounded-xl font-bold text-sm transition-colors mt-1"
               >
-                <Plus size={15} /> הוסף שדה
+                <Plus size={15} /> {t('fields.addField')}
               </button>
             )}
           </div>
@@ -1461,7 +1460,7 @@ const ContactFieldsModal: React.FC<{
 
         <div className="px-5 sm:px-8 py-4 sm:py-5 border-t border-slate-100 flex-shrink-0">
           <button onClick={onClose} className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-sm transition-colors">
-            סגור
+            {t('actions.close')}
           </button>
         </div>
       </div>
