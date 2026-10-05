@@ -1,4 +1,4 @@
-import { resolveDialog360BotId, callDialog360TemplateAction } from '../utils/dialog360TemplatesApi.js';
+import { resolveDialog360BotId, callDialog360TemplateAction, formatDialog360Error } from '../utils/dialog360TemplatesApi.js';
 
 // POST /api/admin/users/:userId/dialog360-templates/add
 // Create a new WhatsApp message template on behalf of a customer.
@@ -28,7 +28,7 @@ export const addUserDialog360Template = async (req, res) => {
 
     if (!ok) {
       return res.status(status).json({
-        error: data?.error || data?.message || `Dialog360 API returned status ${status}`,
+        error: formatDialog360Error(data, status),
         details: data,
         success: false
       });
@@ -71,7 +71,7 @@ export const editUserDialog360Template = async (req, res) => {
 
     if (!ok) {
       return res.status(status).json({
-        error: data?.error || data?.message || `Dialog360 API returned status ${status}`,
+        error: formatDialog360Error(data, status),
         details: data,
         success: false
       });
@@ -106,7 +106,7 @@ export const deleteUserDialog360Template = async (req, res) => {
 
     if (!ok) {
       return res.status(status).json({
-        error: data?.error || data?.message || `Dialog360 API returned status ${status}`,
+        error: formatDialog360Error(data, status),
         details: data,
         success: false
       });

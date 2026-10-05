@@ -326,15 +326,21 @@ export const pushMessagesToWhatsApp = async (phone, messages, user = null, bot =
     if (!textBuffer.trim()) { textBuffer = ''; textBufIndices = []; return; }
     const buf = textBuffer.trim();
     const indices = [...textBufIndices];
+    // Native WhatsApp reply: only the FIRST chunk of the flushed buffer carries
+    // the replyTo (quoting multiple chunks doesn't make sense), taken from the
+    // first buffered message's own replyTo field, if any.
+    const replyTo = indices.length ? (messages[indices[0]].replyTo || null) : null;
     textBuffer = '';
     textBufIndices = [];
+    let chunkIdx = 0;
     for (const chunk of splitText(buf)) {
-      const { success, wamid } = await sendOne({ text: chunk });
+      const { success, wamid } = await sendOne({ text: chunk, ...(chunkIdx === 0 && replyTo ? { replyTo } : {}) });
       if (success) {
         anySuccess = true;
         if (wamid) indices.forEach(idx => { wamidPerMsg[idx] = wamid; });
       }
       await _sleep(300);
+      chunkIdx++;
     }
     await _sleep(100);
   };
@@ -408,7 +414,7 @@ export const pushMessagesToWhatsApp = async (phone, messages, user = null, bot =
       case 'Image': {
         await flushTextBuffer();
         console.log(`[WA-PUSH] 🖼  Sending IMAGE | url=${msg.url?.substring(0, 80)} | caption=${msg.text?.substring(0, 40) || '(none)'}`);
-        const { success: imgOk, wamid: imgWamid } = await sendOne({ image: msg.url, text: msg.text || '' });
+        const { success: imgOk, wamid: imgWamid } = await sendOne({ image: msg.url, text: msg.text || '', ...(msg.replyTo ? { replyTo: msg.replyTo } : {}) });
         if (imgOk) { anySuccess = true; if (imgWamid) wamidPerMsg[i] = imgWamid; }
         await _sleep(MEDIA_SEND_DELAY.image);
         break;
@@ -417,7 +423,7 @@ export const pushMessagesToWhatsApp = async (phone, messages, user = null, bot =
       case 'Video': {
         await flushTextBuffer();
         console.log(`[WA-PUSH] 🎬 Sending VIDEO | url=${msg.url?.substring(0, 80)} | caption=${msg.text?.substring(0, 40) || '(none)'}`);
-        const { success: vidOk, wamid: vidWamid } = await sendOne({ video: msg.url, text: msg.text || '' });
+        const { success: vidOk, wamid: vidWamid } = await sendOne({ video: msg.url, text: msg.text || '', ...(msg.replyTo ? { replyTo: msg.replyTo } : {}) });
         if (vidOk) { anySuccess = true; if (vidWamid) wamidPerMsg[i] = vidWamid; }
         await _sleep(MEDIA_SEND_DELAY.video);
         break;
@@ -426,7 +432,7 @@ export const pushMessagesToWhatsApp = async (phone, messages, user = null, bot =
       case 'Document': {
         await flushTextBuffer();
         console.log(`[WA-PUSH] 📄 Sending DOCUMENT | url=${msg.url?.substring(0, 80)} | filename=${msg.filename || 'file'}`);
-        const { success: docOk, wamid: docWamid } = await sendOne({ file: msg.url, filename: msg.filename || 'file', text: msg.text || '' });
+        const { success: docOk, wamid: docWamid } = await sendOne({ file: msg.url, filename: msg.filename || 'file', text: msg.text || '', ...(msg.replyTo ? { replyTo: msg.replyTo } : {}) });
         if (docOk) { anySuccess = true; if (docWamid) wamidPerMsg[i] = docWamid; }
         await _sleep(MEDIA_SEND_DELAY.document);
         break;
@@ -440,7 +446,7 @@ export const pushMessagesToWhatsApp = async (phone, messages, user = null, bot =
           phones: [{ phone: normalizedContactPhone, wa_id: normalizedContactPhone, type: 'CELL' }]
         }];
         console.log(`[WA-PUSH] 👤 Sending CONTACT | name=${msg.contactName} | phone=${msg.contactPhone}`);
-        const { success: contactOk, wamid: contactWamid } = await sendOne({ contact: contactPayload });
+        const { success: contactOk, wamid: contactWamid } = await sendOne({ contact: contactPayload, ...(msg.replyTo ? { replyTo: msg.replyTo } : {}) });
         if (contactOk) { anySuccess = true; if (contactWamid) wamidPerMsg[i] = contactWamid; }
         await _sleep(MEDIA_SEND_DELAY.contact);
         break;

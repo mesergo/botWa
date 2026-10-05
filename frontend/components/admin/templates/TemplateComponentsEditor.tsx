@@ -5,6 +5,7 @@ import {
   TemplateComponentsFormState,
   TemplateHeaderType,
   TemplateButtonType,
+  TemplateFormErrors,
   extractBodyVariableIndexes,
 } from './types';
 
@@ -12,6 +13,7 @@ interface TemplateComponentsEditorProps {
   value: TemplateComponentsFormState;
   onChange: (next: TemplateComponentsFormState) => void;
   token: string;
+  errors?: TemplateFormErrors;
 }
 
 const HEADER_OPTIONS: { value: TemplateHeaderType; label: string }[] = [
@@ -30,7 +32,7 @@ const BUTTON_TYPE_OPTIONS: { value: TemplateButtonType; label: string }[] = [
 
 const MAX_RECOMMENDED_BUTTONS = 3;
 
-const TemplateComponentsEditor: React.FC<TemplateComponentsEditorProps> = ({ value, onChange, token }) => {
+const TemplateComponentsEditor: React.FC<TemplateComponentsEditorProps> = ({ value, onChange, token, errors }) => {
   const setHeaderType = (headerType: TemplateHeaderType) => {
     onChange({ ...value, headerType, headerText: '', headerMediaUrl: '' });
   };
@@ -105,6 +107,7 @@ const TemplateComponentsEditor: React.FC<TemplateComponentsEditorProps> = ({ val
             token={token}
           />
         )}
+        {errors?.header && <p className="text-[11px] text-rose-600 mt-1.5 font-bold">{errors.header}</p>}
       </div>
 
       {/* Body */}
@@ -120,22 +123,28 @@ const TemplateComponentsEditor: React.FC<TemplateComponentsEditorProps> = ({ val
         <p className="text-[11px] text-slate-400 mt-1.5 font-medium">
           השתמש ב-<span className="font-mono font-black bg-slate-100 px-1 rounded">{'{{1}}'}</span>, <span className="font-mono font-black bg-slate-100 px-1 rounded">{'{{2}}'}</span> וכו׳ עבור משתנים
         </p>
+        {errors?.body && <p className="text-[11px] text-rose-600 mt-1.5 font-bold">{errors.body}</p>}
 
         {value.bodyVariables.length > 0 && (
           <div className="mt-3 space-y-2">
             <label className="block text-xs font-bold text-slate-500">ערכי דוגמה למשתנים</label>
             {value.bodyVariables.map(v => (
-              <div key={v.index} className="flex items-center gap-2">
-                <span className="text-xs font-mono font-black text-sky-600 bg-sky-50 px-2 py-2 rounded-lg border border-sky-100 flex-shrink-0">
-                  {`{{${v.index}}}`}
-                </span>
-                <input
-                  type="text"
-                  value={v.example}
-                  onChange={(e) => setVariableExample(v.index, e.target.value)}
-                  placeholder={`ערך דוגמה עבור {{${v.index}}}`}
-                  className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all"
-                />
+              <div key={v.index}>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-mono font-black text-sky-600 bg-sky-50 px-2 py-2 rounded-lg border border-sky-100 flex-shrink-0">
+                    {`{{${v.index}}}`}
+                  </span>
+                  <input
+                    type="text"
+                    value={v.example}
+                    onChange={(e) => setVariableExample(v.index, e.target.value)}
+                    placeholder={`ערך דוגמה עבור {{${v.index}}}`}
+                    className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all"
+                  />
+                </div>
+                {errors?.bodyVariables?.[v.index] && (
+                  <p className="text-[11px] text-rose-600 mt-1 font-bold">{errors.bodyVariables[v.index]}</p>
+                )}
               </div>
             ))}
           </div>
@@ -173,7 +182,9 @@ const TemplateComponentsEditor: React.FC<TemplateComponentsEditorProps> = ({ val
           </p>
         )}
         <div className="space-y-3">
-          {value.buttons.map((btn, idx) => (
+          {value.buttons.map((btn, idx) => {
+            const buttonError = errors?.buttons?.[idx];
+            return (
             <div key={idx} className="flex items-start gap-2 bg-slate-50 border border-slate-200 rounded-xl p-3">
               <select
                 value={btn.type}
@@ -185,14 +196,18 @@ const TemplateComponentsEditor: React.FC<TemplateComponentsEditorProps> = ({ val
                 ))}
               </select>
               <div className="flex-1 space-y-2">
-                <input
-                  type="text"
-                  value={btn.text}
-                  onChange={(e) => updateButton(idx, { text: e.target.value })}
-                  placeholder="טקסט הכפתור"
-                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all"
-                />
+                <div>
+                  <input
+                    type="text"
+                    value={btn.text}
+                    onChange={(e) => updateButton(idx, { text: e.target.value })}
+                    placeholder="טקסט הכפתור"
+                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all"
+                  />
+                  {buttonError?.text && <p className="text-[11px] text-rose-600 mt-1 font-bold">{buttonError.text}</p>}
+                </div>
                 {btn.type === 'url' && (
+                  <div>
                   <input
                     type="text"
                     value={btn.url || ''}
@@ -200,8 +215,11 @@ const TemplateComponentsEditor: React.FC<TemplateComponentsEditorProps> = ({ val
                     placeholder="https://..."
                     className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all"
                   />
+                  {buttonError?.url && <p className="text-[11px] text-rose-600 mt-1 font-bold">{buttonError.url}</p>}
+                  </div>
                 )}
                 {btn.type === 'phone_number' && (
+                  <div>
                   <input
                     type="text"
                     value={btn.phone_number || ''}
@@ -209,6 +227,8 @@ const TemplateComponentsEditor: React.FC<TemplateComponentsEditorProps> = ({ val
                     placeholder="+972501234567"
                     className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all"
                   />
+                  {buttonError?.phone_number && <p className="text-[11px] text-rose-600 mt-1 font-bold">{buttonError.phone_number}</p>}
+                  </div>
                 )}
               </div>
               <button
@@ -220,7 +240,8 @@ const TemplateComponentsEditor: React.FC<TemplateComponentsEditorProps> = ({ val
                 <X size={14} />
               </button>
             </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </div>

@@ -98,6 +98,10 @@ const userSchema = new mongoose.Schema({
   facebook_connect_enabled: { type: Boolean, default: false },
   // Per-client toggle (set by admin): show the "ניהול דטה פנימי" tab. Admins always see it.
   internal_data_enabled: { type: Boolean, default: false },
+  // Per-client toggle (set by admin): allow the customer to add/edit/duplicate/delete their own
+  // WhatsApp message templates from Dashboard Settings → הודעות תבנית → תבניות WhatsApp.
+  // Admins always have this ability. Default: not authorized.
+  wa_templates_manage_enabled: { type: Boolean, default: false },
   // Per-user tab visibility overrides (set by admin), applied on top of the user's UserType
   // permissions in resolvePermissions(). Tri-state: true = force show, false = force hide,
   // null = inherit from UserType/role (default). See plan: perCustomerTabManagementOverride.

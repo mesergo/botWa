@@ -1114,13 +1114,23 @@ export const getContacts = async (req, res) => {
           lastMessageAt: { $max: '$_lastMsgDate' },
           widgetIds: { $addToSet: '$widget_id' },
           flowIds: { $addToSet: '$flow_id' },
-          repGroupIds: { $addToSet: '$rep_group_id' },
-          repUserIds: { $addToSet: '$rep_user_id' },
           customerPhones: { $addToSet: '$customer_phone' },
           // Status of the most recent session for this contact
           latestStatus: { $first: '$status' },
           latestSessionDate: { $first: '$_date' },
-          latestWantsPhone: { $first: '$wants_phone' }
+          latestWantsPhone: { $first: '$wants_phone' },
+          // Routing of the MOST RECENT session only — used to display the contact's
+          // current status/badge. Visibility for restricted reps is decided below
+          // using the full per-session history instead (repHistory), so a rep keeps
+          // access to a contact they personally handled even after the latest
+          // session routed to a different group.
+          latestRepGroupId: { $first: '$rep_group_id' },
+          latestRepUserId: { $first: '$rep_user_id' },
+          // Full per-session routing history (one entry per session, newest first
+          // since we sort by _date:-1 before $group), used only to decide whether a
+          // restricted rep ever personally handled this contact, and if so, what
+          // their own most recent relevant activity date was (for sorting).
+          repHistory: { $push: { repGroupId: '$rep_group_id', repUserId: '$rep_user_id', date: '$_lastMsgDate' } }
         }
       }, 
       { $sort: { lastMessageAt: -1 } }
@@ -1146,10 +1156,15 @@ export const getContacts = async (req, res) => {
         lastMessageAt: c.lastMessageAt || c.lastSeen,
         bots: [...usedBotIds].map(id => ({ id, name: botNameMap[id] })),
         botPhones: (c.customerPhones || []).filter(p => p && p !== 'Simulated' && p !== 'simulated'),
-        repGroupIds: (c.repGroupIds || []).filter(Boolean).map(String),
-        repUserIds: (c.repUserIds || []).filter(Boolean).map(String),
+        repGroupId: c.latestRepGroupId ? String(c.latestRepGroupId) : null,
+        repUserId: c.latestRepUserId ? String(c.latestRepUserId) : null,
         status: c.latestStatus || 'bot',
-        wants_phone: !!c.latestWantsPhone
+        wants_phone: !!c.latestWantsPhone,
+        repHistory: (c.repHistory || []).map(h => ({
+          repGroupId: h.repGroupId ? String(h.repGroupId) : null,
+          repUserId: h.repUserId ? String(h.repUserId) : null,
+          date: h.date || null
+        }))
       };
     });
 
@@ -1197,12 +1212,30 @@ export const getContacts = async (req, res) => {
     if (viewOnlyAssigned) {
       const repId = req.userId;
       const repGroupSet = new Set(((userDoc?.rep_group_ids) || []).map(id => id.toString()));
-      finalResult = finalResult.filter(c =>
-        c.assigned_to.includes(repId) ||
-        (c.repUserIds || []).includes(repId) ||
-        (c.repGroupIds || []).some(gid => repGroupSet.has(gid))
-      );
+      finalResult = finalResult
+        .map(c => {
+          if (c.assigned_to.includes(repId)) return c; // manual assignment → full access, normal ordering
+          // Per-session check: does this rep (or one of their groups) appear ANYWHERE
+          // in this contact's routing history — not just the latest session? This
+          // keeps the contact accessible to a rep who genuinely handled it in the
+          // past, even after a later, unrelated session routed to another group.
+          const matches = (c.repHistory || []).filter(h =>
+            h.repUserId === repId || (h.repGroupId && repGroupSet.has(h.repGroupId))
+          );
+          if (matches.length === 0) return null; // never handled by this rep/group at all
+          // Sort position should reflect THIS rep's own last relevant activity, not
+          // the contact's global last message (which may belong to a different
+          // department's newer session) — otherwise the contact would jump back to
+          // the top of this rep's list purely because another group is now active.
+          const relevantLastMessageAt = matches.reduce((max, h) => (h.date && (!max || h.date > max)) ? h.date : max, null);
+          return { ...c, lastMessageAt: relevantLastMessageAt || c.lastMessageAt };
+        })
+        .filter(Boolean)
+        .sort((a, b) => new Date(b.lastMessageAt) - new Date(a.lastMessageAt));
     }
+
+    // repHistory is only needed internally to compute the filter/sort above.
+    finalResult = finalResult.map(({ repHistory, ...rest }) => rest);
 
     res.json(finalResult);
   } catch (err) {
@@ -1626,20 +1659,26 @@ export const getSessionsByPhone = async (req, res) => {
       { $sort: { _sortDate: 1 } }
     ]).toArray();
 
-    // Reps restricted to their own assignments: also allow if any session in this
-    // conversation is pinned to them directly or to one of their rep groups.
+    // Reps restricted to their own assignments (and NOT manually assigned to this
+    // contact via Contact.assigned_to, which grants full history access above):
+    // show only the INDIVIDUAL sessions actually routed to them directly or to one
+    // of their rep groups — not every session in this phone's history. This keeps
+    // a rep's access to conversations they themselves handled in the past, while
+    // preventing them from reading sessions that were routed to a different
+    // group/rep (the stale-routing bug this whole fix addresses).
+    let visibleSessions = sessions;
     if (viewOnlyAssigned && !allowedByAssignment) {
       const repId = req.userId;
-      allowedByAssignment = sessions.some(s =>
+      visibleSessions = sessions.filter(s =>
         String(s.rep_user_id || '') === repId ||
         (s.rep_group_id && repGroupSet.has(String(s.rep_group_id)))
       );
-    }
-    if (viewOnlyAssigned && !allowedByAssignment) {
-      return res.json([]);
+      if (visibleSessions.length === 0) {
+        return res.json([]);
+      }
     }
 
-    const result = sessions.map(s => {
+    const result = visibleSessions.map(s => {
       const flowId = widgetFlowMap[s.widget_id] || s.flow_id;
       const botName = flowId ? botNameMap[flowId] : null;
       return {
@@ -2484,7 +2523,7 @@ export const getTransferTargets = async (req, res) => {
 export const sendAgentMessage = async (req, res) => {
   try {
     const { id } = req.params;
-    const { message, isTemplate, templateData, mediaType, mediaUrl, mediaFilename } = req.body;
+    const { message, isTemplate, templateData, mediaType, mediaUrl, mediaFilename, quotedWamid, quotedText, quotedSender } = req.body;
     const hasMedia = !!(mediaType && mediaUrl);
     if (!hasMedia && (!message || !String(message).trim())) {
       return res.status(400).json({ error: 'הודעה או מדיה הם שדה חובה' });
@@ -2541,6 +2580,10 @@ export const sendAgentMessage = async (req, res) => {
         language: templateData.language || 'he',
         fromMe: 1
       };
+      if (quotedWamid) {
+        waBody.replyTo = quotedWamid;
+        console.log(`[sendAgentMessage] ↪ replyTo (template) set to wamid=${String(quotedWamid).substring(0, 20)}…`);
+      }
       
       // Add user-provided parameters
       if (templateData.params) {
@@ -2658,14 +2701,27 @@ export const sendAgentMessage = async (req, res) => {
       }
     } else {
       // Text or media: use shared whatsappSender utility
+      // Native WhatsApp reply: prefer `replyTo` (quoted message has a wamid). If the
+      // quoted message has no wamid yet (e.g. inbound customer message before Phase C
+      // ships), fall back to prepending a plain-text quote prefix to the OUTBOUND text
+      // only — the stored historyEntry.text below keeps the original, unprefixed text.
+      let outboundText = msgText;
+      let replyTo = null;
+      if (quotedWamid) {
+        replyTo = quotedWamid;
+      } else if (quotedText) {
+        const quotedPrefix = `↪ ${quotedSender || ''}: ${quotedText}`.trim();
+        outboundText = outboundText ? `${quotedPrefix}\n\n${outboundText}` : quotedPrefix;
+      }
       const waMessages = hasMedia
-        ? [{ type: mediaType === 'video' ? 'Video' : mediaType === 'document' ? 'Document' : 'Image', url: mediaUrl, text: msgText, filename: mediaFilename || 'file' }]
-        : [{ type: 'Text', text: msgText }];
+        ? [{ type: mediaType === 'video' ? 'Video' : mediaType === 'document' ? 'Document' : 'Image', url: mediaUrl, text: outboundText, filename: mediaFilename || 'file', ...(replyTo ? { replyTo } : {}) }]
+        : [{ type: 'Text', text: outboundText, ...(replyTo ? { replyTo } : {}) }];
       console.log(`\n${'─'.repeat(60)}`);
       console.log(`[AGENT-SEND] 📤 Agent → Customer`);
       console.log(`[AGENT-SEND]    session id : ${id}`);
       console.log(`[AGENT-SEND]    phone      : ${normalizedPhone}`);
       console.log(`[AGENT-SEND]    type       : ${hasMedia ? `MEDIA (${mediaType})` : 'TEXT'}`);
+      if (replyTo) console.log(`[AGENT-SEND]    replyTo    : ${String(replyTo).substring(0, 20)}…`);
       if (hasMedia) {
         console.log(`[AGENT-SEND]    media url  : ${mediaUrl}`);
         console.log(`[AGENT-SEND]    filename   : ${mediaFilename || '—'}`);
@@ -2764,6 +2820,15 @@ export const sendAgentMessage = async (req, res) => {
     } else {
       historyEntry.type = 'Text';
       historyEntry.text = msgText;
+    }
+
+    // Persist the quoted/replied-to message so the sent bubble can render its
+    // own quoted snippet on reload, regardless of whether it ended up using a
+    // native WhatsApp replyTo or the plain-text fallback prefix.
+    if (quotedWamid || quotedText) {
+      historyEntry.quoted_wamid = quotedWamid || null;
+      historyEntry.quoted_text = quotedText || null;
+      historyEntry.quoted_sender = quotedSender || null;
     }
     
     console.log(`[sendAgentMessage] 💾 Saving history entry:`, JSON.stringify(historyEntry, null, 2));

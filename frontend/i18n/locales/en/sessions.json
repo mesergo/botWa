@@ -90,7 +90,9 @@
     "broadcastListFallback": "Distribution list",
     "templateLabel": "Template: {{name}}",
     "recording": "Recording",
-    "openLink": "Open"
+    "openLink": "Open",
+    "replyTooltip": "Reply to this message",
+    "customerLabel": "Customer"
   },
   "header": {
     "title": "Conversations",
@@ -154,7 +156,9 @@
     "newCustomerHintSuffix": "to choose a template.",
     "templateMessagesLabel": "Template messages",
     "loadingTemplates": "Loading templates...",
-    "noTemplatesFound": "No templates found"
+    "noTemplatesFound": "No templates found",
+    "replyingTo": "Replying to {{name}}",
+    "cancelReply": "Cancel reply"
   },
   "templatePicker": {
     "noNameFallback": "Unnamed",

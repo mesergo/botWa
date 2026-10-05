@@ -63,6 +63,76 @@ export const emptyTemplateForm = (): TemplateFormState => ({
   components: emptyTemplateComponentsForm(),
 });
 
+// Field-level validation errors for the add/edit/duplicate template form. Shown as inline red
+// text under each invalid field, instead of letting the user submit and hit a generic/crashing
+// error, or blindly disabling the Save button without explaining why.
+export interface TemplateFormErrors {
+  name?: string;
+  header?: string;
+  body?: string;
+  bodyVariables?: Record<number, string>;
+  buttons?: Record<number, { text?: string; url?: string; phone_number?: string }>;
+}
+
+const TEMPLATE_NAME_REGEX = /^[a-z0-9_]+$/;
+
+// Validates the full template form and returns every problem found at once (not just the
+// first one), so the user can fix all invalid fields in a single pass.
+export const validateTemplateForm = (form: TemplateFormState, isEdit: boolean): TemplateFormErrors => {
+  const errors: TemplateFormErrors = {};
+  const { components } = form;
+
+  if (!isEdit) {
+    if (!form.name.trim()) {
+      errors.name = 'שם התבנית הוא שדה חובה';
+    } else if (!TEMPLATE_NAME_REGEX.test(form.name)) {
+      errors.name = 'שם התבנית חייב להכיל אותיות אנגלית קטנות, ספרות וקו תחתון בלבד (a-z, 0-9, _)';
+    }
+  }
+
+  if (components.headerType === 'text' && !components.headerText.trim()) {
+    errors.header = 'יש להזין טקסט לכותרת';
+  } else if (['image', 'video', 'document'].includes(components.headerType) && !components.headerMediaUrl.trim()) {
+    errors.header = 'יש להעלות קובץ עבור הכותרת';
+  }
+
+  if (!components.bodyText.trim()) {
+    errors.body = 'גוף ההודעה הוא שדה חובה';
+  }
+
+  if (components.bodyVariables.length > 0) {
+    const bodyVariables: Record<number, string> = {};
+    components.bodyVariables.forEach(v => {
+      if (!v.example.trim()) bodyVariables[v.index] = 'יש להזין ערך דוגמה עבור המשתנה';
+    });
+    if (Object.keys(bodyVariables).length > 0) errors.bodyVariables = bodyVariables;
+  }
+
+  if (components.buttons.length > 0) {
+    const buttons: Record<number, { text?: string; url?: string; phone_number?: string }> = {};
+    components.buttons.forEach((b, idx) => {
+      const buttonError: { text?: string; url?: string; phone_number?: string } = {};
+      if (!b.text.trim()) buttonError.text = 'טקסט הכפתור הוא שדה חובה';
+      if (b.type === 'url' && !/^https?:\/\/.+/.test((b.url || '').trim())) {
+        buttonError.url = 'יש להזין קישור תקין (חייב להתחיל ב-http:// או https://)';
+      }
+      if (b.type === 'phone_number' && !(b.phone_number || '').trim()) {
+        buttonError.phone_number = 'יש להזין מספר טלפון';
+      }
+      if (Object.keys(buttonError).length > 0) buttons[idx] = buttonError;
+    });
+    if (Object.keys(buttons).length > 0) errors.buttons = buttons;
+  }
+
+  return errors;
+};
+
+// True when the errors object returned by validateTemplateForm has no problems at all.
+export const hasNoTemplateFormErrors = (errors: TemplateFormErrors): boolean =>
+  !errors.name && !errors.header && !errors.body &&
+  !(errors.bodyVariables && Object.keys(errors.bodyVariables).length > 0) &&
+  !(errors.buttons && Object.keys(errors.buttons).length > 0);
+
 // Detects `{{1}}`, `{{2}}`, ... occurrences in the body text (order of first appearance),
 // returning the sorted, de-duplicated list of variable indexes found.
 export const extractBodyVariableIndexes = (bodyText: string): number[] => {

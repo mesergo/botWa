@@ -1,6 +1,6 @@
 ﻿import React, { useState, useEffect, useRef } from 'react';
 import { WhatsAppText } from '../utils/whatsappFormat';
-import { Clock, MessageSquare, Search, Bot, User, Phone, List, Users, ExternalLink, X, Headphones, RefreshCw, Settings, UserCog, Layers, Plus, UserPlus, Check, CheckCheck, AlertCircle, Paperclip, ChevronRight, ChevronLeft, Bell, MoreVertical, Ban, Megaphone, Repeat } from 'lucide-react';
+import { Clock, MessageSquare, Search, Bot, User, Phone, List, Users, ExternalLink, X, Headphones, RefreshCw, Settings, UserCog, Layers, Plus, UserPlus, Check, CheckCheck, AlertCircle, Paperclip, ChevronRight, ChevronLeft, Bell, MoreVertical, Ban, Megaphone, Repeat, Reply } from 'lucide-react';
 import ImpersonationBanner, { SiblingAccount } from './ImpersonationBanner';
 import OnboardingBanner from './OnboardingBanner';
 import MigrationNoticeBanner from './MigrationNoticeBanner';
@@ -76,6 +76,7 @@ interface SessionsPageProps {
   ownOnly?: boolean;
   initialPhone?: string | null;
   initialBotPhone?: string | null;
+  initialText?: string | null;
 }
 
 const API_BASE = window.location.hostname === 'localhost'
@@ -88,7 +89,7 @@ const WhatsAppIcon = ({ size = 12, className = '' }: { size?: number; className?
   </svg>
 );
 
-const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack, onLogout, onOpenContacts, onOpenGroups, onOpenSendMessages, onOpenAdminPanel,onOpenSmsIn, onOpenSettings, onOpenSubUsers, onStopImpersonation, onSwitchAccount, onUpdateAvailability, onGoHome, initialPhone, initialBotPhone,onOpenInternalData }) => {
+const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack, onLogout, onOpenContacts, onOpenGroups, onOpenSendMessages, onOpenAdminPanel,onOpenSmsIn, onOpenSettings, onOpenSubUsers, onStopImpersonation, onSwitchAccount, onUpdateAvailability, onGoHome, initialPhone, initialBotPhone, initialText,onOpenInternalData }) => {
   // UI direction follows the active language (he -> rtl, en -> ltr).
   const { i18n, t } = useTranslation('sessions');
   // Layout is pinned to RTL always regardless of the selected language.
@@ -117,6 +118,8 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
   const [fileUploading, setFileUploading] = useState(false);
   const fileUploadRef = React.useRef<HTMLInputElement>(null);
   const agentMessageInputRef = React.useRef<HTMLTextAreaElement>(null);
+  // Quote/reply-to-message state — the message currently being replied to in the composer
+  const [replyTarget, setReplyTarget] = useState<{ wamid: string | null; text: string; sender: string; displayName: string } | null>(null);
 
   // Template dropdown state
   const [showTemplates, setShowTemplates] = useState(false);
@@ -612,8 +615,31 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
     setShowTemplateParamsModal(false);
     setVisibleMsgLimit(50);
     setLoadingMoreMsgs(false);
+    setReplyTarget(null);
     prevScrollHeightRef.current = 0;
   }, [selectedPhone]);
+
+  // Deep link support: /sessions?phone=...&text=<message> — pre-fill the compose box with
+  // the given text (un-sent, editable), mirroring wa.me's ?text= param. Applied once
+  // (appliedInitialTextRef) so later contact switches don't re-apply it.
+  //
+  // Must be declared AFTER the "clear on switch" effect above (not merged into it) and must
+  // depend on BOTH selectedPhone and initialText — initialPhone/initialText arrive
+  // asynchronously from the URL (after the bots list loads in App.tsx) and don't always
+  // reach this component in the same render/commit as the selectedPhone update they trigger.
+  // Declaring this effect later means that within any commit where both fire, it runs after
+  // the clear effect and wins; depending on both values means that whichever one arrives in
+  // a LATER commit still re-triggers this effect and applies the text (a version merged into
+  // the clear effect — keyed on selectedPhone alone — would miss a later-arriving initialText
+  // entirely, since its dependency array wouldn't change again).
+  const appliedInitialTextRef = useRef(false);
+  useEffect(() => {
+    if (!initialText) return;
+    if (selectedPhone !== initialPhone) return;
+    if (appliedInitialTextRef.current) return;
+    appliedInitialTextRef.current = true;
+    setAgentMessage(initialText);
+  }, [selectedPhone, initialText, initialPhone]);
 
   // Restore scroll position after loading older messages
   useEffect(() => {
@@ -1355,6 +1381,13 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
       requestBody.mediaUrl = currentAttachedFile.url;
       requestBody.mediaFilename = currentAttachedFile.name;
     }
+
+    const currentReplyTarget = replyTarget;
+    if (currentReplyTarget) {
+      requestBody.quotedWamid = currentReplyTarget.wamid;
+      requestBody.quotedText = currentReplyTarget.text;
+      requestBody.quotedSender = currentReplyTarget.displayName;
+    }
     
     try {
       const r = await fetch(`${API_BASE}/sessions/${sessionId}/send-agent-message`, {
@@ -1368,6 +1401,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
         console.log('[SessionsPage] History entry:', data.historyEntry);
         setAgentMessage('');
         setAttachedFile(null);
+        setReplyTarget(null);
         setSelectedTemplate(null);
         setSendPostSendModeOverride(null);
         setTemplateParams({});
@@ -1978,6 +2012,50 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
   };
 
   /* ─── render messages for one session ─── */
+  // Short, display-friendly preview of a history item's content, used both for
+  // the "replying to" bar above the composer and the quoted snippet rendered
+  // inside a sent bubble. Falls back to a labeled placeholder for media-only items.
+  const getQuotePreviewText = (item: any): string => {
+    const raw = (item.text ?? item.content ?? '').toString().trim();
+    if (raw) return raw;
+    if (item.type === 'Image') return `📷 ${t('messageList.imageAlt')}`;
+    if (item.type === 'Video') return '🎬 וידאו';
+    if (item.type === 'Document') return '📄 מסמך';
+    if (item.type === 'Contact') return `👤 ${item.contactName || ''}`.trim();
+    if (item.type === 'Audio') return `🎙️ ${t('messageList.recording')}`;
+    return '';
+  };
+
+  const getMessageDisplayName = (item: any, senderType: string, session: Session): string => {
+    if (senderType === 'agent') return item.agent_name || item.name || 'נציג';
+    if (senderType === 'broadcast') return item.broadcast_group || item.name || t('messageList.broadcastListFallback');
+    if (senderType === 'bot') return session.bot_name || 'בוט';
+    return t('messageList.customerLabel') || 'לקוח';
+  };
+
+  const handleStartReply = (item: any, senderType: string, session: Session) => {
+    const previewText = getQuotePreviewText(item);
+    if (!previewText) return;
+    setReplyTarget({
+      wamid: item.wamid || null,
+      text: previewText,
+      sender: senderType,
+      displayName: getMessageDisplayName(item, senderType, session)
+    });
+    agentMessageInputRef.current?.focus();
+  };
+
+  const ReplyButton = ({ item, senderType, session }: { item: any; senderType: string; session: Session }) => (
+    <button
+      type="button"
+      onClick={() => handleStartReply(item, senderType, session)}
+      title={t('messageList.replyTooltip')}
+      className="opacity-0 group-hover:opacity-100 transition-opacity self-center flex-shrink-0 p-1 rounded-full text-slate-400 hover:text-sky-600 hover:bg-slate-100"
+    >
+      <Reply size={13} />
+    </button>
+  );
+
   const renderSessionMessages = (session: Session) => {
     if (!session.process_history.length) return null;
 
@@ -2043,7 +2121,8 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
       // Agent message — purple bubble on left side
       if (isAgent) {
         return (
-          <div key={`${session.id}-${idx}`} className="flex w-full justify-start">
+          <div key={`${session.id}-${idx}`} className="group flex w-full items-center gap-1 justify-start">
+            <ReplyButton item={item} senderType={senderType} session={session} />
             <div className="flex gap-1.5 max-w-[88%] flex-row-reverse">
               <div className="flex flex-col items-center gap-0.5 flex-shrink-0">
                 <div className="w-6 h-6 rounded-lg flex items-center justify-center shadow-sm bg-purple-100 border border-purple-200 text-purple-700">
@@ -2061,6 +2140,12 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
               </div>
               <div className="flex flex-col gap-0.5 items-end">
                 <div className="px-3 py-1.5 rounded-2xl text-sm font-semibold shadow-sm text-start bg-purple-50 border border-purple-200 text-purple-900 rounded-ss-none">
+                  {item.quoted_text && (
+                    <div className="mb-1.5 px-2 py-1 rounded-lg border-s-2 border-purple-400 bg-purple-100/70 text-xs max-w-[220px]">
+                      <p className="font-black text-purple-700 truncate">{item.quoted_sender || ''}</p>
+                      <p className="text-purple-600 truncate">{item.quoted_text.length > 80 ? item.quoted_text.slice(0, 80) + '…' : item.quoted_text}</p>
+                    </div>
+                  )}
                   {item.type === 'Image' && item.url && (
                     <img
                       src={item.url}
@@ -2138,7 +2223,8 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
       // Group-broadcast message — amber bubble on left side (like a bot message, but visually distinct)
       if (isBroadcast) {
         return (
-          <div key={`${session.id}-${idx}`} className="flex w-full justify-start">
+          <div key={`${session.id}-${idx}`} className="group flex w-full items-center gap-1 justify-start">
+            <ReplyButton item={item} senderType={senderType} session={session} />
             <div className="flex gap-1.5 max-w-[88%] flex-row-reverse">
               <div className="flex flex-col items-center gap-0.5 flex-shrink-0">
                 <div className="w-6 h-6 rounded-lg flex items-center justify-center shadow-sm bg-amber-100 border border-amber-200 text-amber-700">
@@ -2211,8 +2297,9 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
       return (
         <div
           key={`${session.id}-${idx}`}
-          className={`flex w-full ${isBot ? 'justify-start' : 'justify-end'}`}
+          className={`group flex w-full items-center gap-1 ${isBot ? 'justify-start' : 'justify-end'}`}
         >
+          {isBot && <ReplyButton item={item} senderType={senderType} session={session} />}
           <div className={`flex gap-1.5 max-w-[88%] ${isBot ? 'flex-row-reverse' : 'flex-row'}`}>
             <div className="flex flex-col items-center gap-0.5 flex-shrink-0">
               <div className={`w-6 h-6 rounded-lg flex items-center justify-center shadow-sm
@@ -2235,6 +2322,12 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                   ? 'bg-white border border-slate-100 text-slate-900 rounded-ss-none'
                   : 'bg-sky-500 text-white rounded-se-none'}`}
               >
+                {item.quoted_text && (
+                  <div className={`mb-1.5 px-2 py-1 rounded-lg border-s-2 text-xs max-w-[220px] ${isBot ? 'border-sky-400 bg-slate-50 text-slate-600' : 'border-white/70 bg-sky-400/40 text-white'}`}>
+                    <p className={`font-black truncate ${isBot ? 'text-sky-700' : 'text-white'}`}>{item.quoted_sender || ''}</p>
+                    <p className="truncate">{item.quoted_text.length > 80 ? item.quoted_text.slice(0, 80) + '…' : item.quoted_text}</p>
+                  </div>
+                )}
                 {(item.type === 'Text' || item.type === 'UserInput' || !item.type || item.type.startsWith('input_')) && text && !isAudioUrl && (
                   <WhatsAppText text={text} className="leading-snug" />
                 )}
@@ -2337,6 +2430,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
               </div>
             </div>
           </div>
+          {!isBot && <ReplyButton item={item} senderType={senderType} session={session} />}
         </div>
       );
     });
@@ -3146,6 +3240,25 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                     </div>
                   )}
                   {selectedTemplate && !showTemplateParamsModal && renderPostSendModeControl()}
+                  {replyTarget && (
+                    <div className="flex items-center gap-2 mb-2 px-3 py-2 bg-sky-50 border border-sky-200 rounded-xl">
+                      <Reply size={14} className="text-sky-500 flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[10px] font-black text-sky-600">{t('chatPanel.replyingTo', { name: replyTarget.displayName })}</p>
+                        <p className="text-xs text-sky-900 font-semibold truncate">
+                          {replyTarget.text.length > 80 ? replyTarget.text.slice(0, 80) + '…' : replyTarget.text}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setReplyTarget(null)}
+                        title={t('chatPanel.cancelReply')}
+                        className="text-sky-400 hover:text-sky-600 flex-shrink-0"
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                  )}
                   <div className="flex flex-wrap sm:flex-nowrap items-end gap-2 sm:gap-3 relative">
                     {/* Template dropdown */}
                     {showTemplates && selectedPhone && (

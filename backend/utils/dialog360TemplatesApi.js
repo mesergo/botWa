@@ -59,3 +59,20 @@ export const callDialog360TemplateAction = async (botId, action, body) => {
 
   return { ok: response.ok, status: response.status, data };
 };
+
+// Extracts a human-readable string from a failed Dialog360/Graph-API response.
+// The gateway sometimes forwards Meta's Graph API error shape, where `data.error` is an
+// OBJECT (e.g. { message, type, code, error_user_msg, fbtrace_id }) rather than a string.
+// Rendering that object directly in a React component crashes the whole page ("Objects are
+// not valid as a React child"), so every controller MUST go through this helper instead of
+// reading `data.error`/`data.message` directly, to guarantee a plain string is always returned.
+export const formatDialog360Error = (data, status) => {
+  const err = data?.error;
+  if (typeof err === 'string' && err.trim()) return err;
+  if (err && typeof err === 'object') {
+    const nested = err.error_user_msg || err.message || err.error;
+    if (typeof nested === 'string' && nested.trim()) return nested;
+  }
+  if (typeof data?.message === 'string' && data.message.trim()) return data.message;
+  return `Dialog360 API returned status ${status}`;
+};
