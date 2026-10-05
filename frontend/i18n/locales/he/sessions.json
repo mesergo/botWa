@@ -90,7 +90,9 @@
     "broadcastListFallback": "רשימת תפוצה",
     "templateLabel": "תבנית: {{name}}",
     "recording": "הקלטה",
-    "openLink": "פתח"
+    "openLink": "פתח",
+    "replyTooltip": "הגב להודעה זו",
+    "customerLabel": "לקוח"
   },
   "header": {
     "title": "שיחות",
@@ -154,7 +156,9 @@
     "newCustomerHintSuffix": "לבחירת תבנית.",
     "templateMessagesLabel": "הודעות תבנית",
     "loadingTemplates": "טוען טמפלייטים...",
-    "noTemplatesFound": "לא נמצאו טמפלייטים"
+    "noTemplatesFound": "לא נמצאו טמפלייטים",
+    "replyingTo": "מגיב ל{{name}}",
+    "cancelReply": "ביטול מענה"
   },
   "templatePicker": {
     "noNameFallback": "ללא שם",

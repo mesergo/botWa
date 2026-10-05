@@ -851,8 +851,13 @@ async function saveBroadcastToSessions(userId, flowId, broadcastId, groupName, s
   const sortTimeExpr = { $ifNull: ['$createdAt', '$created_at'] };
 
   // Layer 1 candidates — latest OPEN AGENT session per phone, no age limit.
+  // is_active:{$ne:false} excludes sessions that were explicitly closed (e.g. via
+  // closeConversation) but never got is_agent flipped back to false — otherwise a
+  // stale closed session could still "catch" this broadcast entry and, worse, later
+  // suppress the bot for a genuinely new customer message (see chatController.js's
+  // agentCheckSession lookup, same fix applied there).
   const agentSessions = await BotSession.aggregate([
-    { $match: { user_id: String(userId), flow_id: flowId, sender: { $in: normalizedPhones }, is_agent: true } },
+    { $match: { user_id: String(userId), flow_id: flowId, sender: { $in: normalizedPhones }, is_agent: true, is_active: { $ne: false } } },
     { $addFields: { _sortTime: sortTimeExpr } },
     { $sort: { _sortTime: -1 } },
     { $group: { _id: '$sender', sessionId: { $first: '$_id' }, status: { $first: '$status' } } },

@@ -175,7 +175,11 @@ export const resolvePermissions = async (user) => {
   // Per-user gate for the "ניהול דטה פנימי" tab: admins always see it,
   // other users only when the admin enabled it on their account (User.internal_data_enabled).
   const internalDataView = user?.role === 'admin' ? true : user?.internal_data_enabled === true;
-  const result = { ...base, sms_in: { view: smsInView }, facebook_connect: { view: facebookConnectView }, internal_data: { view: internalDataView } };
+  // Per-user gate for add/edit/duplicate/delete of the customer's own WhatsApp message
+  // templates (Dashboard Settings → הודעות תבנית → תבניות WhatsApp): admins always have it,
+  // other users only when the admin enabled it on their account (User.wa_templates_manage_enabled).
+  const waTemplatesManageView = user?.role === 'admin' ? true : user?.wa_templates_manage_enabled === true;
+  const result = { ...base, sms_in: { view: smsInView }, facebook_connect: { view: facebookConnectView }, internal_data: { view: internalDataView }, wa_templates_manage: { view: waTemplatesManageView } };
 
   // Final layer: per-customer tab visibility overrides (tri-state), set by admin on
   // User.tab_overrides. Only applied when explicitly true/false (null/undefined = inherit).

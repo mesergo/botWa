@@ -16,6 +16,10 @@ import AnchoredDropdown from './AnchoredDropdown';
 import LanguageSwitcher from './LanguageSwitcher';
 import SmsInApp from './sms-in/SmsInApp';
 import PaymentCountriesSelect from './admin/PaymentCountriesSelect';
+import TemplateActionsMenu from './admin/templates/TemplateActionsMenu';
+import TemplateFormModal from './admin/templates/TemplateFormModal';
+import { buildComponentsPayload, TemplateModalMode } from './admin/templates/types';
+import { useOwnDialog360Templates } from './admin/templates/useOwnDialog360Templates';
 
 const API_BASE = window.location.hostname === 'localhost'
   ? 'http://localhost:3001/api'
@@ -265,6 +269,19 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
   // specific template is sent (no_change / agent / bot).
   const [templatePostSendMode, setTemplatePostSendMode] = useState<Record<string, 'no_change' | 'agent' | 'bot'>>({});
   const [previewTemplate, setPreviewTemplate] = useState<any | null>(null);
+
+  // Self-service add/edit/duplicate/delete of the account's own WhatsApp templates,
+  // gated by the `wa_templates_manage.view` permission (admin-controlled toggle).
+  const [showWaTemplateModal, setShowWaTemplateModal] = useState(false);
+  const [waTemplateModalMode, setWaTemplateModalMode] = useState<TemplateModalMode>('add');
+  const [waTemplateModalSource, setWaTemplateModalSource] = useState<any | null>(null);
+  const ownWaTemplates = useOwnDialog360Templates({
+    token: token ?? null,
+    onSuccess: () => {
+      setShowWaTemplateModal(false);
+      loadWaTemplates();
+    }
+  });
 
   // Internal (self-authored) templates state (Settings tab)
   const [internalTemplates, setInternalTemplates] = useState<InternalTemplate[]>([]);
@@ -1878,6 +1895,23 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                   </div>
                 </div>
 
+                {templatesSubTab === 'wa' && can('wa_templates_manage.view') && (
+                  <div className="flex items-center justify-end mb-4">
+                    <button
+                      onClick={() => {
+                        setWaTemplateModalMode('add');
+                        setWaTemplateModalSource(null);
+                        ownWaTemplates.setError(null);
+                        setShowWaTemplateModal(true);
+                      }}
+                      className="flex items-center gap-1.5 bg-sky-600 text-white px-3 py-2 rounded-xl text-xs font-bold hover:bg-sky-700 transition-colors whitespace-nowrap shadow-sm"
+                    >
+                      <Plus size={14} />
+                      {t('settings.templates.addTemplate')}
+                    </button>
+                  </div>
+                )}
+
                 {templatesSubTab === 'wa' && (waTemplatesLoading ? (
                   <div className="flex items-center justify-center py-12">
                     <div className="text-center text-slate-400">
@@ -1924,20 +1958,37 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-2 mb-2">
                                   <h3 className="text-sm font-black text-slate-800 truncate group-hover:text-sky-700 transition-colors flex-1">{name}</h3>
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      toggleShowInChat(tmpl);
-                                    }}
-                                    className={`shrink-0 p-1.5 rounded-lg transition-all ${
-                                      (templateSettings[name] ?? true)
-                                        ? 'bg-emerald-500 hover:bg-emerald-600 text-white'
-                                        : 'bg-slate-300 hover:bg-slate-400 text-slate-700'
-                                    }`}
-                                    title={(templateSettings[name] ?? true) ? t('settings.templates.shownInChat') : t('settings.templates.hiddenInChat')}
-                                  >
-                                    {(templateSettings[name] ?? true) ? <Eye size={14} /> : <EyeOff size={14} />}
-                                  </button>
+                                  <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                                    <button
+                                      onClick={() => toggleShowInChat(tmpl)}
+                                      className={`p-1.5 rounded-lg transition-all ${
+                                        (templateSettings[name] ?? true)
+                                          ? 'bg-emerald-500 hover:bg-emerald-600 text-white'
+                                          : 'bg-slate-300 hover:bg-slate-400 text-slate-700'
+                                      }`}
+                                      title={(templateSettings[name] ?? true) ? t('settings.templates.shownInChat') : t('settings.templates.hiddenInChat')}
+                                    >
+                                      {(templateSettings[name] ?? true) ? <Eye size={14} /> : <EyeOff size={14} />}
+                                    </button>
+                                    {can('wa_templates_manage.view') && (
+                                      <TemplateActionsMenu
+                                        deleting={ownWaTemplates.saving}
+                                        onEdit={() => {
+                                          setWaTemplateModalMode('edit');
+                                          setWaTemplateModalSource(tmpl);
+                                          ownWaTemplates.setError(null);
+                                          setShowWaTemplateModal(true);
+                                        }}
+                                        onDuplicate={() => {
+                                          setWaTemplateModalMode('duplicate');
+                                          setWaTemplateModalSource(tmpl);
+                                          ownWaTemplates.setError(null);
+                                          setShowWaTemplateModal(true);
+                                        }}
+                                        onDelete={() => ownWaTemplates.deleteTemplate(name)}
+                                      />
+                                    )}
+                                  </div>
                                 </div>
                                 <div
                                   className="flex items-center gap-0.5 bg-white border border-slate-200 rounded-lg p-0.5 w-fit"
@@ -2641,6 +2692,35 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
             </div>
           </div>
         </div>
+      )}
+
+      {/* ── Self-service WA Template Add/Edit/Duplicate Modal ── */}
+      {showWaTemplateModal && (
+        <TemplateFormModal
+          mode={waTemplateModalMode}
+          sourceTemplate={waTemplateModalSource}
+          token={token || ''}
+          saving={ownWaTemplates.saving}
+          serverError={ownWaTemplates.error}
+          onClose={() => setShowWaTemplateModal(false)}
+          onSubmit={({ mode, form, templateId }) => {
+            const components = buildComponentsPayload(form.components);
+            if (mode === 'edit' && templateId) {
+              ownWaTemplates.editTemplate({
+                template_id: templateId,
+                category: form.category,
+                components
+              });
+            } else {
+              ownWaTemplates.addTemplate({
+                name: form.name,
+                category: form.category,
+                language: form.language,
+                components
+              });
+            }
+          }}
+        />
       )}
 
       {/* ── Template Preview Modal ── */}

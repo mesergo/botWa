@@ -6,8 +6,11 @@ import {
   TemplateModalMode,
   TemplateCategory,
   CURATED_LANGUAGES,
+  TemplateFormErrors,
   emptyTemplateForm,
   componentsToFormState,
+  validateTemplateForm,
+  hasNoTemplateFormErrors,
 } from './types';
 
 const CATEGORY_OPTIONS: { value: TemplateCategory; label: string }[] = [
@@ -15,8 +18,6 @@ const CATEGORY_OPTIONS: { value: TemplateCategory; label: string }[] = [
   { value: 'UTILITY', label: 'שירותי (Utility)' },
   { value: 'AUTHENTICATION', label: 'אימות (Authentication)' },
 ];
-
-const NAME_REGEX = /^[a-z0-9_]+$/;
 
 interface TemplateFormModalProps {
   mode: TemplateModalMode;
@@ -27,6 +28,20 @@ interface TemplateFormModalProps {
   onClose: () => void;
   onSubmit: (payload: { mode: TemplateModalMode; form: TemplateFormState; templateId?: string }) => void;
 }
+
+// Defensively coerces a server error value into a plain, displayable string. The backend is
+// expected to always send a string (see backend/utils/dialog360TemplatesApi.js
+// formatDialog360Error), but this guards the shared modal against ever rendering a raw object
+// as a JSX child again, which crashes the whole page (caught by the global ErrorBoundary).
+const toDisplayString = (value: unknown): string | null => {
+  if (value == null) return null;
+  if (typeof value === 'string') return value.trim() ? value : null;
+  if (typeof value === 'object') {
+    const anyValue = value as any;
+    return anyValue.error_user_msg || anyValue.message || JSON.stringify(value);
+  }
+  return String(value);
+};
 
 const TemplateFormModal: React.FC<TemplateFormModalProps> = ({ mode, sourceTemplate, token, saving, serverError, onClose, onSubmit }) => {
   const [form, setForm] = useState<TemplateFormState>(() => {
@@ -39,24 +54,26 @@ const TemplateFormModal: React.FC<TemplateFormModalProps> = ({ mode, sourceTempl
       components: componentsToFormState(sourceTemplate.components || []),
     };
   });
-  const [nameError, setNameError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<TemplateFormErrors>({});
 
   useEffect(() => {
-    setNameError(null);
-  }, [form.name]);
+    setFieldErrors({});
+  }, [form]);
 
   const title = mode === 'add' ? 'הוספת תבנית חדשה' : mode === 'duplicate' ? 'שכפול תבנית' : 'עריכת תבנית';
   const isEdit = mode === 'edit';
 
   const handleSubmit = () => {
-    if (!isEdit && !NAME_REGEX.test(form.name)) {
-      setNameError('שם התבנית חייב להכיל אותיות אנגלית קטנות, ספרות וקו תחתון בלבד (a-z, 0-9, _)');
+    const errors = validateTemplateForm(form, isEdit);
+    if (!hasNoTemplateFormErrors(errors)) {
+      setFieldErrors(errors);
       return;
     }
+    setFieldErrors({});
     onSubmit({ mode, form, templateId: sourceTemplate?.id });
   };
 
-  const canSubmit = form.components.bodyText.trim().length > 0 && (isEdit || form.name.trim().length > 0);
+  const displayServerError = toDisplayString(serverError);
 
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -71,7 +88,7 @@ const TemplateFormModal: React.FC<TemplateFormModalProps> = ({ mode, sourceTempl
         <div className="space-y-5">
           {serverError && (
             <div className="bg-rose-50 border border-rose-200 rounded-xl p-4 text-sm font-bold text-rose-700">
-              {serverError}
+              {displayServerError}
             </div>
           )}
 
@@ -88,7 +105,7 @@ const TemplateFormModal: React.FC<TemplateFormModalProps> = ({ mode, sourceTempl
             {!isEdit && (
               <p className="text-[11px] text-slate-400 mt-1.5 font-medium">אותיות אנגלית קטנות, ספרות וקו תחתון בלבד</p>
             )}
-            {nameError && <p className="text-[11px] text-rose-600 mt-1.5 font-bold">{nameError}</p>}
+            {fieldErrors.name && <p className="text-[11px] text-rose-600 mt-1.5 font-bold">{fieldErrors.name}</p>}
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -122,6 +139,7 @@ const TemplateFormModal: React.FC<TemplateFormModalProps> = ({ mode, sourceTempl
             value={form.components}
             onChange={(components) => setForm(f => ({ ...f, components }))}
             token={token}
+            errors={fieldErrors}
           />
         </div>
 
@@ -134,7 +152,7 @@ const TemplateFormModal: React.FC<TemplateFormModalProps> = ({ mode, sourceTempl
           </button>
           <button
             onClick={handleSubmit}
-            disabled={saving || !canSubmit}
+            disabled={saving}
             className="flex-[2] py-3 bg-sky-600 text-white rounded-2xl font-bold text-sm shadow-lg hover:bg-sky-700 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
           >
             <Save size={16} />

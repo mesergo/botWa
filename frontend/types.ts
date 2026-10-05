@@ -292,6 +292,7 @@ export interface UserTypePermissions {
   sms_in:   { view: boolean };
   facebook_connect: { view: boolean };
   send_messages: { view: boolean; send: boolean };
+  wa_templates_manage?: { view: boolean };
 }  
 
 export interface UserType {

@@ -1,5 +1,7 @@
 import Dialog360TemplateSetting from '../models/Dialog360TemplateSetting.js';
-import { getEffectiveUserId } from '../middleware/auth.js';
+import User from '../models/User.js';
+import { getEffectiveUserId, resolvePermissions, hasPermission } from '../middleware/auth.js';
+import { resolveDialog360BotId, callDialog360TemplateAction, formatDialog360Error } from '../utils/dialog360TemplatesApi.js';
 
 // Normalize a stored setting: ensure `visibility` is set even on legacy records
 // that only had the boolean `showInChat` field.
@@ -186,3 +188,127 @@ export const deleteTemplateSetting = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
+
+// ── Self-service WhatsApp template management ──────────────────────────────
+// Lets a customer add/edit/duplicate/delete their OWN WhatsApp message templates
+// directly (Dashboard Settings → הודעות תבנית → תבניות WhatsApp), gated by the
+// per-account `wa_templates_manage_enabled` flag (see User.js / resolvePermissions).
+// Mirrors adminDialog360TemplateWriteController.js, but scoped to the logged-in
+// user instead of an arbitrary customer id.
+
+// Permission is checked on the actually-authenticated account (req.userId),
+// while the Dialog360 bot/template target uses the effective (owning) account,
+// so reps acting under a manager operate on the manager's templates.
+const ensureWaTemplatesManagePermission = async (req) => {
+  const authUser = await User.findById(req.userId);
+  if (!authUser) return { ok: false, status: 404, error: 'User not found' };
+  const permissions = await resolvePermissions(authUser);
+  if (!hasPermission(permissions, 'wa_templates_manage.view')) {
+    return { ok: false, status: 403, error: 'אין לך הרשאה לנהל תבניות WhatsApp' };
+  }
+  return { ok: true };
+};
+
+// POST /api/dialog360-templates/add
+export const addTemplate = async (req, res) => {
+  try {
+    const permCheck = await ensureWaTemplatesManagePermission(req);
+    if (!permCheck.ok) return res.status(permCheck.status).json({ error: permCheck.error, success: false });
+
+    const { name, category, language, components } = req.body;
+    if (!name || !category || !language || !Array.isArray(components)) {
+      return res.status(400).json({
+        error: 'name, category, language and components are required',
+        success: false
+      });
+    }
+
+    const userId = getEffectiveUserId(req);
+    const botId = await resolveDialog360BotId(userId);
+    if (!botId) {
+      return res.status(400).json({ error: 'Dialog360 Bot ID not configured for this account.', success: false });
+    }
+
+    const { ok, status, data } = await callDialog360TemplateAction(botId, 'add_template', {
+      name, category, language, components
+    });
+    if (!ok) {
+      return res.status(status).json({
+        error: formatDialog360Error(data, status),
+        details: data,
+        success: false
+      });
+    }
+
+    res.json({ success: true, result: data });
+  } catch (error) {
+    res.status(500).json({ error: error.message, success: false });
+  }
+};
+
+// POST /api/dialog360-templates/edit
+export const editTemplate = async (req, res) => {
+  try {
+    const permCheck = await ensureWaTemplatesManagePermission(req);
+    if (!permCheck.ok) return res.status(permCheck.status).json({ error: permCheck.error, success: false });
+
+    const { template_id, category, components } = req.body;
+    if (!template_id || !Array.isArray(components)) {
+      return res.status(400).json({ error: 'template_id and components are required', success: false });
+    }
+
+    const userId = getEffectiveUserId(req);
+    const botId = await resolveDialog360BotId(userId);
+    if (!botId) {
+      return res.status(400).json({ error: 'Dialog360 Bot ID not configured for this account.', success: false });
+    }
+
+    const { ok, status, data } = await callDialog360TemplateAction(botId, 'edit_template', {
+      template_id, category, components
+    });
+    if (!ok) {
+      return res.status(status).json({
+        error: formatDialog360Error(data, status),
+        details: data,
+        success: false
+      });
+    }
+
+    res.json({ success: true, result: data });
+  } catch (error) {
+    res.status(500).json({ error: error.message, success: false });
+  }
+};
+
+// POST /api/dialog360-templates/delete (deletes the actual WA template via the gateway —
+// not to be confused with the DELETE /:templateName route above, which only removes the
+// local visibility/settings record)
+export const deleteWaTemplate = async (req, res) => {
+  try {
+    const permCheck = await ensureWaTemplatesManagePermission(req);
+    if (!permCheck.ok) return res.status(permCheck.status).json({ error: permCheck.error, success: false });
+
+    const { name } = req.body;
+    if (!name) return res.status(400).json({ error: 'name is required', success: false });
+
+    const userId = getEffectiveUserId(req);
+    const botId = await resolveDialog360BotId(userId);
+    if (!botId) {
+      return res.status(400).json({ error: 'Dialog360 Bot ID not configured for this account.', success: false });
+    }
+
+    const { ok, status, data } = await callDialog360TemplateAction(botId, 'delete_template', { name });
+    if (!ok) {
+      return res.status(status).json({
+        error: formatDialog360Error(data, status),
+        details: data,
+        success: false
+      });
+    }
+
+    res.json({ success: true, result: data });
+  } catch (error) {
+    res.status(500).json({ error: error.message, success: false });
+  }
+};
+

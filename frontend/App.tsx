@@ -331,6 +331,7 @@ const FlowBuilder: React.FC = () => {
   const [sessionsOwnOnly, setSessionsOwnOnly] = useState(false);
   const [sessionsInitialPhone, setSessionsInitialPhone] = useState<string | null>(null);
   const [sessionsInitialBotPhone, setSessionsInitialBotPhone] = useState<string | null>(null);
+  const [sessionsInitialText, setSessionsInitialText] = useState<string | null>(null);
   const [contactsInitialPhone, setContactsInitialPhone] = useState<string | null>(null);
   const [isBotSettingsOpen, setIsBotSettingsOpen] = useState(false);
 
@@ -348,7 +349,7 @@ const FlowBuilder: React.FC = () => {
   // Clear initialPhone when navigating away so it doesn't re-open on return
   useEffect(() => {
     if (location.pathname !== '/contacts') setContactsInitialPhone(null);
-    if (location.pathname !== '/sessions') { setSessionsInitialPhone(null); setSessionsInitialBotPhone(null); }
+    if (location.pathname !== '/sessions') { setSessionsInitialPhone(null); setSessionsInitialBotPhone(null); setSessionsInitialText(null); }
   }, [location.pathname]);
 
   // Deep link support: /sessions?phone=<number>[&botPhone=<bot's WhatsApp number>] opens
@@ -375,6 +376,8 @@ const FlowBuilder: React.FC = () => {
     if (bots.length > 1 && !botDigits) return; // multiple bots — botPhone required to disambiguate
     setSessionsInitialPhone(normalized);
     if (botDigits) setSessionsInitialBotPhone(botDigits);
+    const rawText = params.get('text');
+    if (rawText) setSessionsInitialText(rawText);
     setSessionsOwnOnly(true);
   }, [location.pathname, location.search, bots]);
 
@@ -3057,6 +3060,7 @@ const FlowBuilder: React.FC = () => {
               ownOnly={sessionsOwnOnly}
               initialPhone={sessionsInitialPhone}
               initialBotPhone={sessionsInitialBotPhone}
+              initialText={sessionsInitialText}
               onOpenSettings={can('settings.view') ? () => navigate('/settings') : undefined}
               onOpenSubUsers={can('users.view') ? () => navigate('/users') : undefined}
               onStopImpersonation={handleStopImpersonation}

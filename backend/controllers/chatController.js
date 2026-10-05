@@ -1426,7 +1426,7 @@ export const respondToMessage = async (req, res) => {
     const isGetRequest = req.method === 'GET';
     const source = (isGetRequest ? req.query : req.body) || {};
     
-    const { phone, text = '', sender: rawSender = 'unknown', token: tokenParam, bot_id, name = '' } = source;
+    const { phone, text = '', sender: rawSender = 'unknown', token: tokenParam, bot_id, name = '', message_id = '' } = source;
     const sender = normalizePhone(rawSender);
     const token = req.headers.authorization?.replace('Bearer ', '') || tokenParam;
 
@@ -1482,10 +1482,16 @@ export const respondToMessage = async (req, res) => {
     // (is_agent=true, activated within the last 30 minutes), save the incoming
     // message but suppress the bot. Scoped by sender + flow_id so the same customer
     // can be in agent-mode on one bot and bot-mode on another.
+    // is_active:{$ne:false} excludes sessions that were already explicitly closed
+    // (closeConversation sets is_agent:false together with is_active:false, so this
+    // only matters for legacy/edge-case docs) — without it, a stale closed session
+    // could still be picked up here and wrongly suppress the bot for a brand-new
+    // customer message.
     const agentCheckSession = await BotSession.findOne({
       sender,
       flow_id: botFlowId,
-      is_agent: true
+      is_agent: true,
+      is_active: { $ne: false }
     }).sort({ updatedAt: -1 });
 
     if (agentCheckSession) {
@@ -1503,8 +1509,8 @@ export const respondToMessage = async (req, res) => {
         const { url: mediaUrl, caption: mediaCaption } = splitMediaUrlAndCaption(text);
         agentCheckSession.process_history.push(
           mediaType
-            ? { type: mediaType, url: mediaUrl, text: mediaCaption || undefined, sender: 'user', name: 'משתמש', node_id: 'user', created: new Date().toISOString() }
-            : { type: 'UserInput', text: String(text), sender: 'user', name: 'משתמש', node_id: 'user', created: new Date().toISOString() }
+            ? { type: mediaType, url: mediaUrl, text: mediaCaption || undefined, sender: 'user', name: 'משתמש', node_id: 'user', created: new Date().toISOString(), wamid: message_id || null }
+            : { type: 'UserInput', text: String(text), sender: 'user', name: 'משתמש', node_id: 'user', created: new Date().toISOString(), wamid: message_id || null }
         );
         console.log(`[BOT-MEDIA] ✅ Saved to process_history as ${mediaType || 'UserInput'}`);
         agentCheckSession.markModified('process_history');
@@ -1769,7 +1775,7 @@ export const respondToMessage = async (req, res) => {
         console.log(`[BOT-MEDIA]    url         : ${text.substring(0, 120)}`);
         console.log(`[BOT-MEDIA]    detected as : ${mediaType}`);
         const { url: mediaUrl, caption: mediaCaption } = splitMediaUrlAndCaption(text);
-        addToHistory(session, { type: mediaType, url: mediaUrl, text: mediaCaption || undefined }, 'user');
+        addToHistory(session, { type: mediaType, url: mediaUrl, text: mediaCaption || undefined, wamid: message_id || null }, 'user');
         session.markModified('process_history');
         await session.save();
         eventBus.emit('session:update', { userId: String(user._id), phone: sender });
@@ -1777,7 +1783,7 @@ export const respondToMessage = async (req, res) => {
         console.log(`${'═'.repeat(60)}\n`);
         return res.json({ StatusId: 1, StatusDescription: 'Media recorded', sender, messages: [] });
       }
-      addToHistory(session, { type: 'UserInput', text }, 'user');
+      addToHistory(session, { type: 'UserInput', text, wamid: message_id || null }, 'user');
       session.markModified('process_history');
       session.last_user_input = text; // Save for webservice
     }
