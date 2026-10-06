@@ -13,7 +13,7 @@ import {
   PlayCircle,
   Users,
   UserMinus, 
-  UserCheck,
+  UserCheck, 
   Zap,
   CornerUpLeft 
 } from 'lucide-react';

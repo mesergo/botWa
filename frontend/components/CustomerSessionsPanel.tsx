@@ -475,12 +475,10 @@ const CustomerSessionsPanel: React.FC<CustomerSessionsPanelProps> = ({ token, ap
                           )}
                           {item.type === 'Image' && item.url && (
                             <>
-                              <img
+                              <ChatImage
                                 src={item.url}
                                 alt={t('customerPanel.imageAlt')}
                                 className="rounded-xl max-w-[160px] h-auto mb-2"
-                                onLoad={() => console.log('[CustomerSessionsPanel][Image] ✅ loaded:', item.url)}
-                                onError={() => console.error('[CustomerSessionsPanel][Image] ❌ FAILED to load image. url=', item.url, '| full item=', item)}
                               />
                               {text && <p className="whitespace-pre-wrap leading-relaxed">{text}</p>}
                             </>

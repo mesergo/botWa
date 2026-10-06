@@ -42,7 +42,7 @@ const TrialExpiredScreen: React.FC<{ userName: string; onLogout: () => void }> =
         <div className="flex justify-center mb-8">
           <div className="w-20 h-20 bg-red-50 rounded-full flex items-center justify-center">
             <Lock className="w-10 h-10 text-red-500" strokeWidth={2} />
-          </div>
+          </div> 
         </div> 
         <h2 className="text-3xl font-black text-slate-800 mb-3">{t('trial.title')}</h2>
         <p className="text-slate-500 mb-2 font-medium">
@@ -352,14 +352,17 @@ const FlowBuilder: React.FC = () => {
     if (location.pathname !== '/sessions') { setSessionsInitialPhone(null); setSessionsInitialBotPhone(null); setSessionsInitialText(null); }
   }, [location.pathname]);
 
-  // Deep link support: /sessions?phone=<number>[&botPhone=<bot's WhatsApp number>] opens
-  // straight into that customer's chat, analogous to a wa.me/<phone> link.
-  // - If the account has only ONE connected bot, `phone` alone is enough (no ambiguity —
+  // Deep link support: /sessions?phone=<number>[&botPhone=<bot's WhatsApp number>][&text=<message>]
+  // opens straight into that customer's chat, analogous to a wa.me/<phone> link.
+  // - If the account has only one connected bot, `phone` alone is enough (no ambiguity —
   //   there's nothing else to mix in).
   // - If the account has MORE THAN ONE bot, `botPhone` is also required; without it the
   //   chat would show the combined/mixed conversation across every bot this contact has
   //   talked to, so the deep link is intentionally ignored (does nothing) until both fields
   //   are provided.
+  // - `text`, if present, is auto-sent as an agent message once the chat has loaded (see
+  //   SessionsPage's initialText handling) — so the link both opens the chat and shows it
+  //   with that message already sent, as long as the contact already has a conversation.
   // Waits for `bots` (fetched separately via loadBots) before deciding, so it doesn't act on
   // a still-empty bots list. Runs regardless of auth state so it also applies right after
   // login (see handleAuth / handleGoogleLogin redirect below).
@@ -380,6 +383,16 @@ const FlowBuilder: React.FC = () => {
     if (rawText) setSessionsInitialText(rawText);
     setSessionsOwnOnly(true);
   }, [location.pathname, location.search, bots]);
+
+  // Strips ?text= from the URL once SessionsPage has sent it, so refreshing/revisiting
+  // the same deep link doesn't re-send the message.
+  const clearDeepLinkText = useCallback(() => {
+    setSessionsInitialText(null);
+    const params = new URLSearchParams(location.search);
+    if (!params.has('text')) return;
+    params.delete('text');
+    navigate({ pathname: location.pathname, search: params.toString() }, { replace: true });
+  }, [location.pathname, location.search, navigate]);
 
   // Load bot from URL on direct navigation / refresh (e.g. /bot/:botId)
   useEffect(() => {
@@ -3061,6 +3074,7 @@ const FlowBuilder: React.FC = () => {
               initialPhone={sessionsInitialPhone}
               initialBotPhone={sessionsInitialBotPhone}
               initialText={sessionsInitialText}
+              onDeepLinkTextConsumed={clearDeepLinkText}
               onOpenSettings={can('settings.view') ? () => navigate('/settings') : undefined}
               onOpenSubUsers={can('users.view') ? () => navigate('/users') : undefined}
               onStopImpersonation={handleStopImpersonation}
