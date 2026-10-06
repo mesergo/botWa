@@ -71,6 +71,12 @@ export async function bootstrapPushNotifications(options) {
     deviceRepository,
     deduplicator: new InMemoryEventDeduplicator(),
     logger,
+    // Representatives never receive push — also covers devices they registered earlier
+    findExcludedUserIds: async (userIds) => {
+      const User = (await import('../../backend/models/User.js')).default;
+      const reps = await User.find({ _id: { $in: userIds }, role: 'rep' }).select('_id').lean();
+      return new Set(reps.map((u) => String(u._id)));
+    },
   });
 
   const router = createPushNotificationRouter({

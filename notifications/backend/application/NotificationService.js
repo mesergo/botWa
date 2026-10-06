@@ -17,6 +17,7 @@ export class NotificationService {
    * @param {import('./RecipientResolver.js').RecipientResolver} [deps.recipientResolver]
    * @param {{ tryClaim: (eventId: string) => boolean }} [deps.deduplicator]
    * @param {{ info?: Function, warn?: Function, error?: Function }} [deps.logger]
+   * @param {(userIds: string[]) => Promise<Set<string>>} [deps.findExcludedUserIds] users whose devices never receive pushes
    */
   constructor(deps) {
     if (!deps?.provider || !deps?.deviceRepository) {
@@ -27,6 +28,7 @@ export class NotificationService {
     this.recipientResolver = deps.recipientResolver || null;
     this.deduplicator = deps.deduplicator || new InMemoryEventDeduplicator();
     this.logger = deps.logger || console;
+    this.findExcludedUserIds = deps.findExcludedUserIds || null;
   }
 
   /**
@@ -52,10 +54,15 @@ export class NotificationService {
         return { success: true, skipped: true, reason: 'duplicate_event' };
       }
 
-      const devices = await this.deviceRepository.findEnabledByTenantAndBotLine({
+      let devices = await this.deviceRepository.findEnabledByTenantAndBotLine({
         tenantId: event.tenantId,
         botLineId: event.botLineId,
       });
+
+      if (this.findExcludedUserIds && devices.length) {
+        const excluded = await this.findExcludedUserIds([...new Set(devices.map((d) => String(d.userId)))]);
+        devices = devices.filter((d) => !excluded.has(String(d.userId)));
+      }
 
       const fids = [...new Set(devices.map((d) => d.fid).filter(Boolean))];
       if (!fids.length) {

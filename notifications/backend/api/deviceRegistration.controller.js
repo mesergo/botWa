@@ -28,6 +28,18 @@ export function resolveSessionIdentity(req) {
   return { userId: String(userId), tenantId: String(tenantId), role };
 }
 
+/** Representatives (role 'rep') do not receive push notifications. */
+function isPushBlockedRole(role) {
+  return role === 'rep';
+}
+
+/**
+ * @param {import('express').Response} res
+ */
+function sendRepBlocked(res) {
+  return res.status(403).json({ success: false, error: 'Push notifications are not available for representatives' });
+}
+
 /**
  * Bot lines the current user may subscribe to (tenant-owned, optionally allowed_bot_ids).
  * @param {{ tenantId: string, userId: string }} identity
@@ -81,6 +93,9 @@ export function createDeviceRegistrationController(notificationService) {
     async register(req, res) {
       try {
         const identity = resolveSessionIdentity(req);
+        if (isPushBlockedRole(identity.role)) {
+          return sendRepBlocked(res);
+        }
         const dto = parseRegisterDeviceDto(req.body);
 
         if (!dto.allBotLines) {
@@ -147,10 +162,8 @@ export function createDeviceRegistrationController(notificationService) {
      */
     async test(req, res) {
       try {
-        const isDev = (process.env.NODE_ENV || 'development') !== 'production';
-        const isAdmin = req.user?.role === 'admin';
-        if (!isDev && !isAdmin) {
-          return res.status(403).json({ success: false, error: 'Test endpoint available in development only' });
+        if (isPushBlockedRole(req.user?.role)) {
+          return sendRepBlocked(res);
         }
 
         if (!isFirebaseAdminReady()) {
