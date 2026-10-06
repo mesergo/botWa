@@ -1589,7 +1589,10 @@ export const getAllSessions = async (req, res) => {
 export const getSessionsByPhone = async (req, res) => {
   const userId = getEffectiveUserId(req);
   const phone = normalizePhone(req.query.phone || '');
-  const botId = req.query.botId || ''; // optional: filter to a specific bot/flow
+  // optional: filter to one or more specific bots/flows (comma-separated ids — multiple
+  // BotFlow documents can share the same connected phone number, so a "bot phone group"
+  // filter on the frontend may need to match sessions from any of them)
+  const botIdList = (req.query.botId || '').split(',').map(s => s.trim()).filter(Boolean);
   if (!phone) return res.status(400).json({ error: 'מספר טלפון הוא שדה חובה' });
 
   try {
@@ -1627,9 +1630,9 @@ export const getSessionsByPhone = async (req, res) => {
     const widgetFlowMap = {};
     allWidgets.forEach(w => { if (w.id) widgetFlowMap[w.id] = w.flow_id; });
 
-    // If botId provided, compute widget IDs that belong specifically to that bot
-    const botWidgetIds = botId
-      ? allWidgets.filter(w => w.flow_id?.toString() === botId).map(w => w.id).filter(Boolean)
+    // If botIdList provided, compute widget IDs that belong specifically to those bots
+    const botWidgetIds = botIdList.length > 0
+      ? allWidgets.filter(w => botIdList.includes(w.flow_id?.toString())).map(w => w.id).filter(Boolean)
       : null;
 
     const collection = mongoose.connection.collection('BotSession');
@@ -1644,11 +1647,11 @@ export const getSessionsByPhone = async (req, res) => {
           { widget_id: { $in: widgetIds } }
         ]
       }
-    ];
+    ]; 
 
-    if (botId && botWidgetIds !== null) {
-      // Filter to sessions belonging to this specific bot (by flow_id or widget_id)
-      const botOrConditions = [{ flow_id: botId }];
+    if (botIdList.length > 0) {
+      // Filter to sessions belonging to any of these bots (by flow_id or widget_id)
+      const botOrConditions = [{ flow_id: { $in: botIdList } }];
       if (botWidgetIds.length > 0) botOrConditions.push({ widget_id: { $in: botWidgetIds } });
       matchConditions.push({ $or: botOrConditions });
     }

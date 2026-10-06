@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useRef } from 'react';
+﻿import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { WhatsAppText } from '../utils/whatsappFormat';
 import { Clock, MessageSquare, Search, Bot, User, Phone, List, Users, ExternalLink, X, Headphones, RefreshCw, Settings, UserCog, Layers, Plus, UserPlus, Check, CheckCheck, AlertCircle, Paperclip, ChevronRight, ChevronLeft, Bell, MoreVertical, Ban, Megaphone, Repeat, Reply } from 'lucide-react';
 import ImpersonationBanner, { SiblingAccount } from './ImpersonationBanner';
@@ -204,11 +204,35 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
 
   // Bot picker state
   interface BotEntry { id: string; name: string; display_phone_number: string; }
+  // Two or more BotFlow documents can share the same connected display_phone_number
+  // (no unique constraint on that field) — a BotPhoneGroup collapses all bots sharing
+  // a normalized number into a single bot-picker card / filter unit.
+  interface BotPhoneGroup { key: string; displayPhoneNumber: string; label: string; botIds: string[]; }
   const [botList, setBotList] = useState<BotEntry[]>([]);
   const [botsLoading, setBotsLoading] = useState(true);
-  const [activeBotFilter, setActiveBotFilter] = useState<BotEntry | null>(null);
+  const [activeBotFilter, setActiveBotFilter] = useState<BotPhoneGroup | null>(null);
   // If initialPhone is provided, skip bot picker and show all contacts
   const [showBotPicker, setShowBotPicker] = useState<boolean>(!initialPhone);
+
+  // Group bots by normalized connected phone number so bots sharing a number collapse
+  // into one bot-picker card/filter instead of showing duplicate-looking cards.
+  const phoneGroups = useMemo<BotPhoneGroup[]>(() => {
+    const groups = new Map<string, BotPhoneGroup>();
+    botList.forEach(bot => {
+      const phone = (bot.display_phone_number || '').trim();
+      if (!phone) return;
+      const key = phone.replace(/\D/g, '');
+      if (!key) return;
+      const existing = groups.get(key);
+      if (existing) {
+        existing.botIds.push(bot.id);
+        existing.label = `${existing.label}, ${bot.name}`;
+      } else {
+        groups.set(key, { key, displayPhoneNumber: phone, label: bot.name, botIds: [bot.id] });
+      }
+    });
+    return Array.from(groups.values());
+  }, [botList]);
 
   // initialPhone often arrives asynchronously (e.g. App.tsx parses ?phone= from the URL in
   // an effect that runs after this component has already mounted with initialPhone still
@@ -353,12 +377,12 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
     if (!initialBotPhone || botList.length === 0) return;
     const targetDigits = initialBotPhone.replace(/\D/g, '');
     if (!targetDigits) return;
-    const match = botList.find(b => (b.display_phone_number || '').replace(/\D/g, '') === targetDigits);
-    if (match) {
-      setActiveBotFilter(match);
+    const group = phoneGroups.find(g => g.key === targetDigits);
+    if (group) {
+      setActiveBotFilter(group);
       setShowBotPicker(false);
-    }
-  }, [initialBotPhone, botList]);
+    } 
+  }, [initialBotPhone, botList, phoneGroups]);
 
   useEffect(() => {
     if (!selectedPhone || !token) {
@@ -366,7 +390,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
       return;
     }
     setPhoneSessionsLoading(true);
-    const botParam = activeBotFilter ? `&botId=${encodeURIComponent(activeBotFilter.id)}` : '';
+    const botParam = activeBotFilter ? `&botId=${encodeURIComponent(activeBotFilter.botIds.join(','))}` : '';
     fetch(`${API_BASE}/sessions/by-phone?phone=${encodeURIComponent(selectedPhone)}${botParam}`, {
       headers: { Authorization: `Bearer ${token}` }
     })
@@ -392,7 +416,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
   const fetchPhoneSessionsRef = useRef<(phone: string, botFilter: typeof activeBotFilter) => void>(() => {});
   useEffect(() => {
     fetchPhoneSessionsRef.current = (phone: string, botFilter: typeof activeBotFilter) => {
-      const botParam = botFilter ? `&botId=${encodeURIComponent(botFilter.id)}` : '';
+      const botParam = botFilter ? `&botId=${encodeURIComponent(botFilter.botIds.join(','))}` : '';
       fetch(`${API_BASE}/sessions/by-phone?phone=${encodeURIComponent(phone)}${botParam}`, {
         headers: { Authorization: `Bearer ${token}` }
       })
@@ -1915,10 +1939,10 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
     }
     if (statusFilter !== 'all' && c.status !== statusFilter) return false;
     if (activeBotFilter) {
-      // Match by bot flow id (widget-based sessions)
-      if (c.bots.some(b => b.id === activeBotFilter.id)) return true;
+      // Match by bot flow id (widget-based sessions) — any bot in the group
+      if (c.bots.some(b => activeBotFilter.botIds.includes(b.id))) return true;
       // Match by customer_phone (direct WhatsApp sessions without widget)
-      const filterDigits = (activeBotFilter.display_phone_number || '').replace(/\D/g, '');
+      const filterDigits = activeBotFilter.key;
       if (filterDigits && c.botPhones?.some(p => p.replace(/\D/g, '') === filterDigits)) return true;
       return false;
     }
@@ -2565,11 +2589,11 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                   </div>
                 </button>
 
-                {/* Per-bot cards — only bots with a connected phone number */}
-                {botList.filter(bot => bot.display_phone_number && bot.display_phone_number.trim()).map(bot => (
+                {/* Per-bot cards — grouped by connected phone number, so bots sharing a number collapse into one card */}
+                {phoneGroups.map(group => (
                   <button
-                    key={bot.id}
-                    onClick={() => { setActiveBotFilter(bot); setShowBotPicker(false); }}
+                    key={group.key}
+                    onClick={() => { setActiveBotFilter(group); setShowBotPicker(false); }}
                     className="group bg-white border-2 border-slate-200 hover:border-indigo-400 rounded-3xl p-6 flex flex-col items-center gap-3 transition-all hover:shadow-lg hover:-translate-y-0.5 text-center"
                   >
                     <div className="w-14 h-14 rounded-2xl bg-indigo-50 group-hover:bg-indigo-100 flex items-center justify-center transition-colors">
@@ -2577,9 +2601,9 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                     </div>
                     <div>
                       <p className="text-base font-black text-indigo-700 group-hover:text-indigo-800 transition-colors leading-tight">
-                        {bot.display_phone_number}
+                        {group.displayPhoneNumber}
                       </p>
-                      <p className="text-xs text-slate-400 font-semibold mt-1 truncate max-w-[9rem]">{bot.name}</p>
+                      <p className="text-xs text-slate-400 font-semibold mt-1 truncate max-w-[9rem]">{group.label}</p>
                     </div>
                   </button>
                 ))}
@@ -2603,7 +2627,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
             onLogout={onLogout}
             onOpenAdminPanel={onOpenAdminPanel}
             onBots={onBack && can('bots.view_tab') ? onBack : undefined}
-            onSessions={botList.length > 1 ? () => { setActiveBotFilter(null); setSelectedPhone(null); setShowBotPicker(true); } : undefined}
+            onSessions={phoneGroups.length > 1 ? () => { setActiveBotFilter(null); setSelectedPhone(null); setShowBotPicker(true); } : undefined}
             onContacts={onOpenContacts ? () => onOpenContacts() : undefined}
             onGroups={onOpenGroups}
             onSendMessages={onOpenSendMessages}
@@ -2618,14 +2642,14 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
           {/* Header */}
           <div className="flex-shrink-0 px-4 lg:px-5 py-3 lg:py-4 border-b border-slate-100">
             {/* Bot filter breadcrumb — only shown when there are multiple bots */}
-            {activeBotFilter && botList.length > 1 && (
+            {activeBotFilter && phoneGroups.length > 1 && (
               <button
                 onClick={() => { setActiveBotFilter(null); setShowBotPicker(true); setSelectedPhone(null); }}
                 className="flex items-center gap-1.5 text-xs font-bold text-indigo-500 hover:text-indigo-700 mb-3 transition-colors"
               >
                 {/* "back to the bot picker" — points along the reading direction */}
                 <ChevronRight size={14} />
-                <span className="truncate">{activeBotFilter.display_phone_number || activeBotFilter.name}</span>
+                <span className="truncate">{activeBotFilter.displayPhoneNumber || activeBotFilter.label}</span>
               </button>
             )}
             <div className="flex items-center justify-between gap-3 mb-3">
@@ -2709,12 +2733,12 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                     <div className="w-px self-stretch bg-slate-200 flex-shrink-0 mx-1" />
                   </>
                 )}
-                <div className="w-9 h-9 bg-sky-50 text-sky-600 rounded-xl flex items-center justify-center cursor-pointer flex-shrink-0" onClick={() => botList.length > 1 && setShowBotPicker(true)} title={botList.length > 1 ? t('sidebar.backToBotPicker') : undefined}>
+                <div className="w-9 h-9 bg-sky-50 text-sky-600 rounded-xl flex items-center justify-center cursor-pointer flex-shrink-0" onClick={() => phoneGroups.length > 1 && setShowBotPicker(true)} title={phoneGroups.length > 1 ? t('sidebar.backToBotPicker') : undefined}>
                   <Users size={18} />
                 </div>
                 <div className="min-w-0">
                   <h2 className="text-base font-black text-slate-900 truncate">
-                    {activeBotFilter ? (activeBotFilter.display_phone_number || activeBotFilter.name) : t('header.title')}
+                    {activeBotFilter ? (activeBotFilter.displayPhoneNumber || activeBotFilter.label) : t('header.title')}
                   </h2>
                   <p className="text-xs text-slate-400 font-semibold">{t('sidebar.contactsCount', { count: filteredContacts.length })}</p>
                 </div>
