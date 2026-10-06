@@ -511,28 +511,8 @@ export default function SmsInApp({
    * filters — an unreachable/unconfigured SMS database or a failed request both
    * return an empty list, which on its own is indistinguishable from "no matches".
    */
-  const smsDbNotice = useMemo(() => {
-    if (messagesLoadError === 'failed') {
-      return {
-        title: t('app.dbNotice.connectionFailed.title'),
-        detail: t('app.dbNotice.connectionFailed.detail'),
-      };
-    }
-    if (dbStatusChecked && !dbStatus.configured) {
-      return {
-        title: t('app.dbNotice.notConfigured.title'),
-        detail: dbStatus.message || t('app.dbNotice.notConfigured.detail'),
-      };
-    }
-    if (messagesLoadError === 'unavailable' || (dbStatusChecked && dbStatus.configured && !dbStatus.connected)) {
-      return {
-        title: t('app.dbNotice.disconnected.title'),
-        detail: dbStatus.message
-          || t('app.dbNotice.disconnected.detail'),
-      };
-    }
-    return null;
-  }, [messagesLoadError, dbStatus, dbStatusChecked, t]);
+  // Notice banner disabled per request — kept as a no-op so downstream references stay valid.
+  const smsDbNotice = null as { title: string; detail: string } | null;
 
   // Login handler
   const handleLogin = (e: React.FormEvent) => {

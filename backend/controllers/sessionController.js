@@ -2820,6 +2820,155 @@ export const sendAgentMessage = async (req, res) => {
   }
 };
 
+// Forward an existing message/media (text, image, video or document — copied from
+// any conversation this user can see) to another phone number. Reuses the last
+// existing session with that phone if one exists, otherwise bootstraps a new
+// session (mirrors sendTemplateToPhone's session-creation behavior below).
+export const forwardMessage = async (req, res) => {
+  try {
+    const { phone, message, mediaType, mediaUrl, mediaFilename } = req.body;
+    const hasMedia = !!(mediaType && mediaUrl);
+    if (!phone || !String(phone).trim()) {
+      return res.status(400).json({ error: 'מספר טלפון הוא שדה חובה' });
+    }
+    if (!hasMedia && (!message || !String(message).trim())) {
+      return res.status(400).json({ error: 'הודעה או מדיה הם שדה חובה' });
+    }
+    if (hasMedia && !['image', 'video', 'document'].includes(mediaType)) {
+      return res.status(400).json({ error: 'סוג מדיה לא נתמך' });
+    }
+
+    const ownerId = getEffectiveUserId(req);
+    const user = await User.findById(ownerId);
+    if (!user) return res.status(404).json({ error: 'המשתמש לא נמצא' });
+
+    const senderUser = await User.findById(req.userId).select('name email').lean();
+    const agentName = senderUser?.name || senderUser?.email || 'נציג';
+
+    const normalizedPhone = normalizePhone(phone);
+    if (!normalizedPhone || normalizedPhone === '972' || !/^\d{10,15}$/.test(normalizedPhone)) {
+      return res.status(400).json({ error: 'מספר טלפון לא תקין' });
+    }
+
+    // Resolve ownership the same tolerant way getSessionsByPhone does — BotSession.user_id
+    // is stored as a raw ObjectId for sessions created from real WhatsApp conversations
+    // (see chatController's BotSession.create), not a string, so matching only
+    // `user_id: String(ownerId)` misses those and would wrongly create a duplicate
+    // session instead of appending to the contact's existing conversation.
+    const userBots = await BotFlow.find({ user_id: ownerId }).select('_id').lean();
+    const botIds = userBots.map(b => b._id.toString());
+    const userWidgets = await Widget.find({
+      $or: [{ user_id: ownerId }, { user_id: String(ownerId) }, { flow_id: { $in: botIds } }]
+    }).select('id').lean();
+    const widgetIds = userWidgets.map(w => w.id).filter(Boolean);
+
+    const collection = mongoose.connection.collection('BotSession');
+    const existingSession = await collection.findOne(
+      {
+        $and: [
+          { $or: [{ sender: normalizedPhone }, { customer_phone: normalizedPhone }] },
+          { $or: [
+            { user_id: ownerId },
+            { user_id: String(ownerId) },
+            { widget_id: { $in: widgetIds } },
+            { flow_id: { $in: botIds } }
+          ] }
+        ]
+      },
+      { sort: { created_at: -1 } }
+    );
+    const bot = existingSession?.flow_id ? await BotFlow.findById(existingSession.flow_id).select('endpoint user_id').lean() : null;
+
+    const { endpoint } = await buildWACredentials(user, bot);
+    if (!endpoint) {
+      return res.status(400).json({ error: 'לא הוגדר חיבור WhatsApp עבור משתמש זה. יש להגדיר Bot ID / endpoint בהגדרות.' });
+    }
+
+    const msgText = String(message || '').trim();
+    const waMessages = hasMedia
+      ? [{ type: mediaType === 'video' ? 'Video' : mediaType === 'document' ? 'Document' : 'Image', url: mediaUrl, text: msgText, filename: mediaFilename || 'file' }]
+      : [{ type: 'Text', text: msgText }];
+
+    let waSent = false;
+    let waError = null;
+    try {
+      const pushResult = await pushMessagesToWhatsApp(normalizedPhone, waMessages, user, bot);
+      waSent = pushResult.anySuccess;
+      if (!waSent) waError = 'משלוח ה-WhatsApp נכשל';
+    } catch (waErr) {
+      waError = waErr.message;
+      console.error('[forwardMessage] WhatsApp exception:', waErr.message);
+    }
+
+    const now = new Date();
+    const created = now.toISOString();
+    const historyEntry = {
+      sender: 'agent',
+      name: 'נציג',
+      agent_name: agentName,
+      agent_user_id: String(req.userId || ''),
+      node_id: 'agent',
+      created,
+      wa_sent: waSent,
+      wa_error: waError || null,
+      forwarded: true
+    };
+    if (hasMedia) {
+      const waMediaType = mediaType === 'video' ? 'Video' : mediaType === 'document' ? 'Document' : 'Image';
+      historyEntry.type = waMediaType;
+      historyEntry.url = mediaUrl;
+      historyEntry.text = msgText;
+      if (waMediaType === 'Document') historyEntry.filename = mediaFilename || 'file';
+    } else {
+      historyEntry.type = 'Text';
+      historyEntry.text = msgText;
+    }
+
+    let sessionId;
+    if (existingSession) {
+      sessionId = existingSession._id.toString();
+      await collection.updateOne(
+        { _id: existingSession._id },
+        {
+          $push: { process_history: historyEntry },
+          $set: {
+            status: 'handling',
+            is_agent: true,
+            agent_since: now,
+            'reminder_case1.last_rep_message_at': now,
+            'reminder_case1.last_rep_user_id': String(req.userId || ''),
+            'reminder_case1.next_due_at': new Date(now.getTime() + CASE1_REMINDER_MS),
+            'reminder_case1.claim_until': null,
+            'reminder_case2.next_due_at': null,
+            'reminder_case2.claim_until': null
+          }
+        }
+      );
+    } else {
+      const sessionDoc = {
+        sender: normalizedPhone,
+        customer_phone: normalizedPhone,
+        user_id: ownerId,
+        is_agent: true,
+        agent_since: now,
+        status: 'handling',
+        is_active: true,
+        created_at: now,
+        process_history: [historyEntry]
+      };
+      const insertResult = await collection.insertOne(sessionDoc);
+      sessionId = insertResult.insertedId.toString();
+    }
+
+    eventBus.emit('session:update', { userId: String(ownerId), phone: normalizedPhone });
+
+    res.json({ success: true, waSent, waError, sessionId, historyEntry, phone: normalizedPhone });
+  } catch (err) {
+    console.error('forwardMessage error:', err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
 // Send a template message directly to a phone number (no session required — for new contacts)
 export const sendTemplateToPhone = async (req, res) => {
   try {

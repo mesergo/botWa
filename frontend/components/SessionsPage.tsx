@@ -1,6 +1,6 @@
 ﻿import React, { useState, useEffect, useRef } from 'react';
 import { WhatsAppText } from '../utils/whatsappFormat';
-import { Clock, MessageSquare, Search, Bot, User, Phone, List, Users, ExternalLink, X, Headphones, RefreshCw, Settings, UserCog, Layers, Plus, UserPlus, Check, CheckCheck, AlertCircle, Paperclip, ChevronRight, ChevronLeft, Bell, MoreVertical, Ban, Megaphone, Repeat } from 'lucide-react';
+import { Clock, MessageSquare, Search, Bot, User, Phone, List, Users, ExternalLink, X, Headphones, RefreshCw, Settings, UserCog, Layers, Plus, UserPlus, Check, CheckCheck, AlertCircle, Paperclip, ChevronRight, ChevronLeft, Bell, MoreVertical, Ban, Megaphone, Repeat, Forward } from 'lucide-react';
 import ImpersonationBanner, { SiblingAccount } from './ImpersonationBanner';
 import OnboardingBanner from './OnboardingBanner';
 import MigrationNoticeBanner from './MigrationNoticeBanner';
@@ -76,6 +76,10 @@ interface SessionsPageProps {
   ownOnly?: boolean;
   initialPhone?: string | null;
   initialBotPhone?: string | null;
+  /** Deep link support: /sessions?phone=...&text=... — auto-sent once the conversation loads. */
+  initialText?: string | null;
+  /** Called once initialText has been sent, so the caller can strip ?text= from the URL. */
+  onDeepLinkTextConsumed?: () => void;
 }
 
 const API_BASE = window.location.hostname === 'localhost'
@@ -88,7 +92,7 @@ const WhatsAppIcon = ({ size = 12, className = '' }: { size?: number; className?
   </svg>
 );
 
-const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack, onLogout, onOpenContacts, onOpenGroups, onOpenSendMessages, onOpenAdminPanel,onOpenSmsIn, onOpenSettings, onOpenSubUsers, onStopImpersonation, onSwitchAccount, onUpdateAvailability, onGoHome, initialPhone, initialBotPhone,onOpenInternalData }) => {
+const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack, onLogout, onOpenContacts, onOpenGroups, onOpenSendMessages, onOpenAdminPanel,onOpenSmsIn, onOpenSettings, onOpenSubUsers, onStopImpersonation, onSwitchAccount, onUpdateAvailability, onGoHome, initialPhone, initialBotPhone, initialText, onDeepLinkTextConsumed,onOpenInternalData }) => {
   // UI direction follows the active language (he -> rtl, en -> ltr).
   const { i18n } = useTranslation();
   const isRtl = i18n.dir() === 'rtl';
@@ -117,6 +121,13 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
   const [fileUploading, setFileUploading] = useState(false);
   const fileUploadRef = React.useRef<HTMLInputElement>(null);
   const agentMessageInputRef = React.useRef<HTMLTextAreaElement>(null);
+
+  // Forward message/media to another number
+  const [forwardModalItem, setForwardModalItem] = useState<any | null>(null);
+  const [forwardPhone, setForwardPhone] = useState('');
+  const [forwardSending, setForwardSending] = useState(false);
+  const [forwardError, setForwardError] = useState<string | null>(null);
+  const [forwardSuccess, setForwardSuccess] = useState(false);
 
   // Template dropdown state
   const [showTemplates, setShowTemplates] = useState(false);
@@ -372,6 +383,25 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
       .catch(e => console.error('Failed to load sessions for phone', e))
       .finally(() => setPhoneSessionsLoading(false));
   }, [selectedPhone, token, activeBotFilter]);
+
+  // Deep link support: /sessions?phone=...&botPhone=...&text=<message> — once the
+  // conversation for this phone (and bot, if disambiguation was required) has
+  // finished loading, auto-send `text` as an agent message so the link both opens
+  // the chat and shows it with the new message already sent. Requires an existing
+  // conversation — WhatsApp doesn't allow free text to a contact with no session
+  // (a template would be required to start one), so this is a no-op otherwise.
+  const deepLinkTextSentRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!initialText || selectedPhone !== initialPhone) return;
+    if (phoneSessionsLoading) return;
+    if (initialBotPhone && !activeBotFilter) return; // still resolving bot disambiguation
+    if (deepLinkTextSentRef.current === initialText) return; // already sent for this text
+    if (phoneSessions.length === 0) return; // no existing conversation to send into
+    deepLinkTextSentRef.current = initialText;
+    onDeepLinkTextConsumed?.();
+    activateAgent(initialText);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialText, initialPhone, selectedPhone, initialBotPhone, activeBotFilter, phoneSessionsLoading, phoneSessions]);
 
   // ── Real-time updates: SSE (instant) + 4s polling fallback ─────────────────
   //
@@ -1001,11 +1031,11 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
     setShowAgentConfirm(true);
   };
 
-  const activateAgent = async () => {
+  const activateAgent = async (overrideMessage?: string) => {
     const sid = agentSessionId || (phoneSessions.length > 0 ? phoneSessions[phoneSessions.length - 1].id : null);
     if (!sid) return;
     
-    const messageToSend = agentMessage.trim();
+    const messageToSend = (overrideMessage ?? agentMessage).trim();
     const capturedFile = attachedFile;
     
     try {
@@ -1222,8 +1252,9 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
     el.style.height = `${el.scrollHeight}px`;
   }, [agentMessage]);
 
-  const sendAgentMsg = async () => {
-    if (!agentMessage.trim() && !attachedFile || agentSending) return;
+  const sendAgentMsg = async (overrideMessage?: string) => {
+    const messageText = overrideMessage ?? agentMessage;
+    if (!messageText.trim() && !attachedFile || agentSending) return;
 
     // לקוח חדש ללא שיחות — שלח תבנית ישירות לטלפון (ללא session)
     if (phoneSessions.length === 0) {
@@ -1237,7 +1268,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
         alert(`יש למלא את כל המשתנים בתבנית לפני השליחה (חסר: ${missingVars.map(n => `{{${n}}}`).join(', ')})`);
         return;
       }
-      const msgText = agentMessage.trim();
+      const msgText = messageText.trim();
       setAgentSending(true);
       setAgentWaFailed(false);
       try {
@@ -1312,7 +1343,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
     const sessionId = agentSessionId || (phoneSessions.length > 0 ? phoneSessions[phoneSessions.length - 1].id : null);
     if (!sessionId) return;
     
-    const msgText = agentMessage.trim();
+    const msgText = messageText.trim();
     const currentAttachedFile = attachedFile;
     const created = new Date().toISOString();
     setAgentSending(true);
@@ -1959,6 +1990,66 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
     }
   };
 
+  /* ─── forward a message/media to another phone number ─── */
+  const canForwardMessage = (item: any): boolean => {
+    if (['Image', 'Video', 'Document'].includes(item.type)) return !!item.url;
+    if (item.type === 'Text' || item.type === 'UserInput' || !item.type || item.type.startsWith('input_')) {
+      return !!(item.text || item.content || '').trim();
+    }
+    return false;
+  };
+
+  const openForwardModal = (item: any) => {
+    setForwardModalItem(item);
+    setForwardPhone('');
+    setForwardError(null);
+    setForwardSuccess(false);
+  };
+
+  const submitForward = async () => {
+    if (!forwardModalItem || forwardSending || !token) return;
+    const validationError = validatePhoneInput(forwardPhone);
+    if (validationError) {
+      setForwardError(validationError);
+      return;
+    }
+    const sanitizedPhone = forwardPhone.replace(/[+\-\s()]/g, '');
+    setForwardSending(true);
+    setForwardError(null);
+    try {
+      const item = forwardModalItem;
+      const isMedia = ['Image', 'Video', 'Document'].includes(item.type) && !!item.url;
+      const body: any = { phone: sanitizedPhone, message: item.text || item.content || '' };
+      if (isMedia) {
+        body.mediaType = item.type.toLowerCase();
+        body.mediaUrl = item.url;
+        if (item.type === 'Document') body.mediaFilename = item.filename || 'document';
+      }
+      const r = await fetch(`${API_BASE}/sessions/forward-message`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(body)
+      });
+      const data = await r.json().catch(() => ({}));
+      if (r.ok && data.success) {
+        if (!data.waSent) {
+          setForwardError(data.waError || 'השליחה נכשלה בוואטסאפ');
+        } else {
+          setForwardSuccess(true);
+          fetchContacts();
+          setTimeout(() => { setForwardModalItem(null); setForwardSuccess(false); }, 1200);
+        }
+      } else {
+        setForwardError(data.error || 'שגיאה בהעברת ההודעה');
+      }
+    } catch (e) {
+      console.error('Failed to forward message', e);
+      setForwardError('שגיאת רשת');
+    } finally {
+      setForwardSending(false);
+    }
+  };
+
   /* ─── WhatsApp delivery-status tick, shared by bot and agent bubbles ─── */
   const renderDeliveryTick = (item: any) => {
     if (!item.deliveryStatus) return null;
@@ -2060,14 +2151,23 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 )}
               </div>
               <div className="flex flex-col gap-0.5 items-end">
+                <div className="relative group/bubble">
+                {canForwardMessage(item) && (
+                  <button
+                    type="button"
+                    onClick={() => openForwardModal(item)}
+                    title="העבר למספר אחר"
+                    className="absolute -top-2 -start-2 z-10 p-1 bg-white border border-slate-200 rounded-full shadow-sm opacity-0 group-hover/bubble:opacity-100 transition-opacity hover:bg-slate-50"
+                  >
+                    <Forward size={12} className="text-slate-500" />
+                  </button>
+                )}
                 <div className="px-3 py-1.5 rounded-2xl text-sm font-semibold shadow-sm text-start bg-purple-50 border border-purple-200 text-purple-900 rounded-ss-none">
                   {item.type === 'Image' && item.url && (
-                    <img
+                    <ChatImage
                       src={item.url}
                       alt="תמונה"
                       className="rounded-xl max-w-[200px] h-auto mb-2"
-                      onLoad={() => console.log('[Chat][Image][agent] ✅ loaded:', item.url)}
-                      onError={() => console.error('[Chat][Image][agent] ❌ FAILED to load image. url=', item.url, '| full item=', item)}
                     />
                   )} 
                   {item.type === 'Video' && item.url && (
@@ -2111,6 +2211,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                     </div>
                   )}
                 </div>
+                </div>
                 {item.wa_sent === false && (
                   <div className="flex items-center gap-1.5 px-1 flex-wrap">
                     <span className="text-[9px] text-red-500 font-black">⚠️ לא נשלח ללקוח</span>
@@ -2147,18 +2248,27 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 {msgDate && <span className="text-[9px] text-slate-400 font-semibold">{msgDate}</span>}
               </div>
               <div className="flex flex-col gap-0.5 items-end">
+                <div className="relative group/bubble">
+                {canForwardMessage(item) && (
+                  <button
+                    type="button"
+                    onClick={() => openForwardModal(item)}
+                    title="העבר למספר אחר"
+                    className="absolute -top-2 -start-2 z-10 p-1 bg-white border border-slate-200 rounded-full shadow-sm opacity-0 group-hover/bubble:opacity-100 transition-opacity hover:bg-slate-50"
+                  >
+                    <Forward size={12} className="text-slate-500" />
+                  </button>
+                )}
                 <div className="px-3 py-1.5 rounded-2xl text-sm font-semibold shadow-sm text-start bg-amber-50 border border-amber-200 text-amber-900 rounded-ss-none">
                   <p className="text-[9px] text-amber-500 font-black mb-0.5 uppercase tracking-widest">📢 שידור: {item.broadcast_group || item.name || 'רשימת תפוצה'}</p>
                   {item.template_name && (
                     <p className="text-[9px] text-amber-400 font-bold mb-1">תבנית: {item.template_name}</p>
                   )}
                   {item.type === 'Image' && item.url && (
-                    <img
+                    <ChatImage
                       src={item.url}
                       alt="תמונה"
                       className="rounded-xl max-w-[200px] h-auto mb-2"
-                      onLoad={() => console.log('[Chat][Image][broadcast] ✅ loaded:', item.url)}
-                      onError={() => console.error('[Chat][Image][broadcast] ❌ FAILED to load image. url=', item.url, '| full item=', item)}
                     />
                   )}  
                   {item.type === 'Video' && item.url && (
@@ -2202,6 +2312,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                     </div>
                   )}
                 </div>
+                </div>
               </div>
             </div>
           </div>
@@ -2230,6 +2341,17 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
               )}
             </div>
             <div className={`flex flex-col gap-0.5 ${isBot ? 'items-end' : 'items-start'}`}>
+              <div className="relative group/bubble">
+              {canForwardMessage(item) && (
+                <button
+                  type="button"
+                  onClick={() => openForwardModal(item)}
+                  title="העבר למספר אחר"
+                  className={`absolute -top-2 z-10 p-1 bg-white border border-slate-200 rounded-full shadow-sm opacity-0 group-hover/bubble:opacity-100 transition-opacity hover:bg-slate-50 ${isBot ? '-start-2' : '-end-2'}`}
+                >
+                  <Forward size={12} className="text-slate-500" />
+                </button>
+              )}
               <div className={`px-3 py-1.5 rounded-2xl text-sm font-semibold shadow-sm text-start
                 ${isBot
                   ? 'bg-white border border-slate-100 text-slate-900 rounded-ss-none'
@@ -2246,12 +2368,10 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 )}
                 {item.type === 'Image' && item.url && (
                   <>
-                    <img
+                    <ChatImage
                       src={item.url}
                       alt="תמונה"
                       className="rounded-xl max-w-[200px] h-auto mb-1"
-                      onLoad={() => console.log('[Chat][Image][bot/user] ✅ loaded:', item.url)}
-                      onError={() => console.error('[Chat][Image][bot/user] ❌ FAILED to load image. url=', item.url, '| full item=', item)}
                     />
                     {text && <WhatsAppText text={text} className="leading-snug" />}
                   </>
@@ -2334,6 +2454,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                     ))}
                   </div>
                 )}
+              </div>
               </div>
             </div>
           </div>
@@ -3275,7 +3396,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                     )}
 
                     <button
-                      onClick={sendAgentMsg}
+                      onClick={() => sendAgentMsg()}
                       /* ── הגבלת "לקוח חדש = תבנית בלבד" מבוטלת זמנית ──
                          גרסה מקורית:
                          disabled={!agentMessage.trim() || agentSending || (phoneSessions.length === 0 && !selectedTemplate)}
@@ -3550,6 +3671,78 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
         </div>
       )}
 
+      {/* Forward message/media modal */}
+      {forwardModalItem && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-sm w-full mx-4 overflow-hidden">
+            <div className="px-6 pt-6 pb-4">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-10 h-10 rounded-2xl bg-sky-100 flex items-center justify-center">
+                  <Forward size={20} className="text-sky-600" />
+                </div>
+                <h3 className="text-lg font-black text-slate-900">העברת הודעה למספר אחר</h3>
+              </div>
+
+              {/* Preview of what's being forwarded */}
+              <div className="mb-4 p-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm text-slate-600">
+                {['Image', 'Video', 'Document'].includes(forwardModalItem.type) && forwardModalItem.url ? (
+                  <div className="flex items-center gap-2">
+                    {forwardModalItem.type === 'Image' && <ChatImage src={forwardModalItem.url} alt="תמונה" className="rounded-lg w-12 h-12 object-cover flex-shrink-0" />}
+                    {forwardModalItem.type === 'Video' && <video src={forwardModalItem.url} className="rounded-lg w-12 h-12 object-cover flex-shrink-0" />}
+                    {forwardModalItem.type === 'Document' && <ExternalLink size={16} className="flex-shrink-0" />}
+                    <span className="truncate">{forwardModalItem.text || (forwardModalItem.type === 'Image' ? 'תמונה' : forwardModalItem.type === 'Video' ? 'סרטון' : 'מסמך')}</span>
+                  </div>
+                ) : (
+                  <p className="line-clamp-3 whitespace-pre-wrap">{forwardModalItem.text || forwardModalItem.content}</p>
+                )}
+              </div>
+
+              <p className="text-sm text-slate-500 mb-2">הזן מספר טלפון יעד</p>
+              <input
+                type="tel"
+                dir="ltr"
+                placeholder="לדוגמה: 972501234567 או 0501234567"
+                value={forwardPhone}
+                onChange={e => {
+                  const val = e.target.value.replace(/[^\d+\-\s()]/g, '');
+                  setForwardPhone(val);
+                  setForwardError(val ? validatePhoneInput(val) : null);
+                }}
+                onKeyDown={e => e.key === 'Enter' && !forwardSending && submitForward()}
+                className={`w-full px-4 py-2.5 border rounded-xl text-sm outline-none focus:ring-2 transition-all ${
+                  forwardError && forwardPhone
+                    ? 'border-red-400 focus:ring-red-500/20 focus:border-red-400'
+                    : 'border-slate-200 focus:ring-sky-500/20 focus:border-sky-400'
+                }`}
+                autoFocus
+              />
+              {forwardError && (
+                <p className="text-xs text-red-500 font-semibold mt-2">{forwardError}</p>
+              )}
+              {forwardSuccess && (
+                <p className="text-xs text-emerald-600 font-semibold mt-2">ההודעה הועברה בהצלחה</p>
+              )}
+            </div>
+            <div className="px-6 pb-6 flex gap-3 justify-end">
+              <button
+                onClick={() => setForwardModalItem(null)}
+                disabled={forwardSending}
+                className="px-5 py-2.5 rounded-2xl border border-slate-200 text-slate-700 text-sm font-bold hover:bg-slate-50 transition-colors disabled:opacity-50"
+              >
+                ביטול
+              </button>
+              <button
+                onClick={submitForward}
+                disabled={forwardSending || !forwardPhone.trim() || !!validatePhoneInput(forwardPhone)}
+                className="px-5 py-2.5 rounded-2xl bg-sky-500 text-white text-sm font-bold hover:bg-sky-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {forwardSending ? '...' : 'שלח'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Agent confirmation dialog */}
       {showAgentConfirm && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
@@ -3574,7 +3767,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 ביטול
               </button>
               <button
-                onClick={activateAgent}
+                onClick={() => activateAgent()}
                 className="px-5 py-2.5 rounded-2xl bg-sky-500 text-white text-sm font-bold hover:bg-sky-600 transition-colors"
               >
                 אישור — עבור למצב נציג
@@ -3772,10 +3965,11 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                           return (
                             <div className="w-full aspect-video bg-slate-200 flex items-center justify-center overflow-hidden">
                               {mediaUrl ? (
-                                <img 
-                                  src={mediaUrl} 
-                                  alt="תמונת תבנית" 
+                                <ChatImage
+                                  src={mediaUrl}
+                                  alt="תמונת תבנית"
                                   className="w-full h-full object-cover"
+                                  wrapperClassName="w-full h-full"
                                 />
                               ) : (
                                 <div className="flex flex-col items-center gap-3 text-slate-400 py-8">

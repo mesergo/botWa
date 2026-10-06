@@ -1,6 +1,6 @@
 
 import express from 'express';
-import { startSession, updateSessionParameters, addHistoryMessage, getContacts, searchMessageContent, getSessionsByPhone, getLastMessageByPhone, getUserSessions, getAllSessions, toggleSessionActive, deactivateSession, setAgentMode, clearAgentMode, closeConversation, markResolved, sendAgentMessage, sendAdminMessageToSession, sendExternalMessage, getSessionMessages, sendTemplateToPhone, transferConversation, getTransferTargets, streamEvents, getUserStats } from '../controllers/sessionController.js';
+import { startSession, updateSessionParameters, addHistoryMessage, getContacts, searchMessageContent, getSessionsByPhone, getLastMessageByPhone, getUserSessions, getAllSessions, toggleSessionActive, deactivateSession, setAgentMode, clearAgentMode, closeConversation, markResolved, sendAgentMessage, sendAdminMessageToSession, sendExternalMessage, getSessionMessages, sendTemplateToPhone, forwardMessage, transferConversation, getTransferTargets, streamEvents, getUserStats } from '../controllers/sessionController.js';
 import { authenticateToken, optionalAuthToken, requireAdmin } from '../middleware/auth.js';
 
 const router = express.Router();
@@ -43,6 +43,9 @@ router.post('/:id/send-agent-message', authenticateToken, sendAgentMessage);
 
 // Send a template to a phone number with no session
 router.post('/send-template-to-phone', authenticateToken, sendTemplateToPhone);
+
+// Forward an existing message/media to another phone number (new or existing conversation)
+router.post('/forward-message', authenticateToken, forwardMessage);
 
 // Admin route to send message to any session + activate agent mode
 router.post('/admin-send-message', authenticateToken, requireAdmin, sendAdminMessageToSession);
