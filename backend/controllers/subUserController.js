@@ -301,15 +301,42 @@ export const updateSubUser = async (req, res) => {
   try {
     const managerId = await getRootManagerId(req.userId);
     const { id } = req.params;
-    const { name, email, phone, role, password, rep_group_ids, allowed_bot_ids, allowDuplicateEmail } = req.body;
+    const { name, email, phone, role, password, rep_group_ids, allowed_bot_ids, user_type_id, allowDuplicateEmail } = req.body;
 
     const rep = await User.findOne({ _id: id, manager_id: managerId });
     if (!rep) {
       return res.status(404).json({ error: 'נציג לא נמצא' });
     }
 
-    const allowedRoles = ['rep', 'rep_manager'];
-    if (role && !allowedRoles.includes(role)) {
+    let effectiveRole = role;
+    if (user_type_id !== undefined) {
+      if (!user_type_id) {
+        return res.status(400).json({ error: 'יש לבחור סוג משתמש' });
+      }
+      const targetType = await UserType.findById(user_type_id).lean();
+      if (!targetType) {
+        return res.status(400).json({ error: 'סוג משתמש לא תקין' });
+      }
+
+      const actor = await User.findById(req.userId).select('role user_type_id').lean();
+      const actorType = actor?.user_type_id
+        ? await UserType.findById(actor.user_type_id).lean()
+        : actor?.role
+          ? await UserType.findOne({ system_role: actor.role, is_seeded: true }).lean()
+          : null;
+      const actorAllowedIds = Array.isArray(actorType?.allowed_user_type_ids)
+        ? actorType.allowed_user_type_ids.map(aid => aid.toString())
+        : [];
+      if (actor?.role !== 'admin' && actorAllowedIds.length > 0 && !actorAllowedIds.includes(targetType._id.toString())) {
+        return res.status(403).json({ error: 'אין הרשאה להקצות סוג משתמש זה' });
+      }
+
+      effectiveRole = targetType.system_role || role;
+      rep.user_type_id = targetType._id;
+    }
+
+    const allowedRoles = ['rep', 'rep_manager', 'user'];
+    if (effectiveRole && !allowedRoles.includes(effectiveRole)) {
       return res.status(400).json({ error: 'סוג משתמש לא תקין' });
     }
 
@@ -339,7 +366,7 @@ export const updateSubUser = async (req, res) => {
     }
     if (name && name.trim()) rep.name = name.trim();
     if (phone !== undefined) rep.phone = phone;
-    if (role) rep.role = role;
+    if (effectiveRole) rep.role = effectiveRole;
     if (password && password.trim()) rep.password = password.trim();
     // rep_group_ids: rep_managers always get []; reps get the provided array if sent
     if (rep.role === 'rep_manager') {
@@ -367,6 +394,7 @@ export const updateSubUser = async (req, res) => {
       role: rep.role,
       status: rep.status,
       createdAt: rep.createdAt,
+      user_type_id: rep.user_type_id || null,
       repGroupIds: (rep.rep_group_ids || []).map(id => id.toString()),
       allowedBotIds: (rep.allowed_bot_ids || []).map(id => id.toString()),
     });

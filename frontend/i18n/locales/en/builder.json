@@ -423,7 +423,10 @@
     "restartKeywordPlaceholder": "e.g.: Start over",
     "restartKeywordUpdated": "The keyword was updated successfully",
     "connectFacebook": "Facebook connection",
-    "connectFacebookButton": "Connect to Facebook"
+    "connectFacebookButton": "Connect to Facebook",
+    "noFacebookPermissionTitle": "You don't have permission to connect to Facebook",
+    "noFacebookPermissionBody": "Your account doesn't have permission to connect a WhatsApp number via Facebook. Please contact the office to get this permission : go@mesergo.co.il.",
+    "noFacebookPermissionClose": "Got it"
   },
   "simulator": {
     "active": "Simulator active",

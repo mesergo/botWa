@@ -423,7 +423,10 @@
     "restartKeywordPlaceholder": "לדוגמה: התחל מחדש",
     "restartKeywordUpdated": "מילת המפתח עודכנה בהצלחה",
     "connectFacebook": "חיבור לפייסבוק",
-    "connectFacebookButton": "חבר לפייסבוק"
+    "connectFacebookButton": "חבר לפייסבוק",
+    "noFacebookPermissionTitle": "אין לך הרשאה לחיבור לפייסבוק",
+    "noFacebookPermissionBody": "לחשבון שלך אין הרשאה לחבר מספר WhatsApp באמצעות פייסבוק. לצורך קבלת הרשאה יש לפנות למשרד : go@mesergo.co.il.",
+    "noFacebookPermissionClose": "הבנתי"
   },
   "simulator": {
     "active": "סימולטור פעיל",

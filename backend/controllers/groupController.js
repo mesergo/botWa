@@ -843,6 +843,20 @@ async function saveBroadcastToSessions(userId, flowId, broadcastId, groupName, s
 
   const TWENTY_MIN_MS = 20 * 60 * 1000;
 
+  // Applied whenever a broadcast push leaves (or puts) an EXISTING session in bot mode.
+  // Without this, the bot engine (chatController.js) resumes from whatever
+  // current_node_id/execution_stack this session happened to be at BEFORE the broadcast
+  // (e.g. mid-menu, waiting for free text) instead of restarting the flow from its opening
+  // node — the customer's reply doesn't match what that stale node expects, so the bot
+  // silently fails to respond until the conversation is manually closed (which resets these
+  // same fields) and the bot's self-heal logic kicks in on the next message.
+  const FLOW_RESET_FIELDS = {
+    current_node_id: null,
+    execution_stack: [],
+    waiting_text_input: false,
+    waiting_webservice: false,
+  };
+
   // Sessions come from two different creation paths in this codebase: the bot engine
   // (Mongoose `BotSession.create`, timestamps:true) gets an auto `createdAt`; agent/
   // template tools (raw `collection.insertOne` in sendTemplateToPhone / the 360-TEMPLATE
@@ -887,7 +901,13 @@ async function saveBroadcastToSessions(userId, flowId, broadcastId, groupName, s
       const update = { $push: { process_history: entry } };
       if (postSendMode !== 'no_change') {
         const postSendFields = buildPostSendModeFields(postSendMode, agentInfo.status);
-        if (postSendFields) update.$set = postSendFields;
+        if (postSendFields) {
+          update.$set = postSendFields;
+          // Flipping an agent-handled session to bot mode — reset its flow position so
+          // the bot restarts from the opening node instead of resuming wherever the
+          // agent conversation happened to leave current_node_id/execution_stack.
+          if (postSendMode === 'bot') Object.assign(update.$set, FLOW_RESET_FIELDS);
+        }
       }
       sessionOps.push({ updateOne: { filter: { _id: agentInfo.sessionId }, update } });
       continue;
@@ -901,6 +921,14 @@ async function saveBroadcastToSessions(userId, flowId, broadcastId, groupName, s
       if (postSendMode !== 'no_change') {
         const postSendFields = buildPostSendModeFields(postSendMode, nonAgentInfo.status);
         if (postSendFields) update.$set = postSendFields;
+      }
+      // Resulting status is 'bot' either because postSendMode explicitly set it to 'bot',
+      // or because postSendMode is 'no_change' and the session was already in bot mode —
+      // either way, reset its flow position so the bot restarts fresh instead of resuming
+      // a stale mid-flow node from before this broadcast.
+      const resultingStatus = postSendMode === 'no_change' ? nonAgentInfo.status : postSendMode;
+      if (resultingStatus === 'bot') {
+        update.$set = { ...(update.$set || {}), ...FLOW_RESET_FIELDS };
       }
       sessionOps.push({ updateOne: { filter: { _id: nonAgentInfo.sessionId }, update } });
       continue;

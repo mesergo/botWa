@@ -46,6 +46,7 @@ const BotSettingsModal: React.FC<BotSettingsModalProps> = ({
   const [savingRestartKeyword, setSavingRestartKeyword] = useState(false);
   const [restartKeywordError, setRestartKeywordError] = useState<string | null>(null);
   const [restartKeywordSuccess, setRestartKeywordSuccess] = useState(false);
+  const [showNoFacebookPermissionModal, setShowNoFacebookPermissionModal] = useState(false);
 
   const isAdminOrImpersonating = currentUser?.role === 'admin' || !!currentUser?.isImpersonating;
 
@@ -94,7 +95,9 @@ const BotSettingsModal: React.FC<BotSettingsModalProps> = ({
     }
   };
 
-  const canShowFacebook = !!onConnectFacebook;
+  // The Facebook-connect section is always shown; `hasFacebookPermission` gates whether
+  // clicking the button starts the real connect flow or shows a permission-denied popup.
+  const hasFacebookPermission = !!onConnectFacebook;
 
   const handleSaveRestartKeyword = async () => {
     if (!onUpdateBotRestartKeyword) return;
@@ -256,25 +259,53 @@ const BotSettingsModal: React.FC<BotSettingsModalProps> = ({
             </div>
           )}
 
-          {canShowFacebook && (
-            <div>
-              <h4 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
-                <FacebookIcon size={12} /> {t('botSettingsModal.connectFacebook')}
-              </h4>
-              <button
-                onClick={() => {
+          <div>
+            <h4 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+              <FacebookIcon size={12} /> {t('botSettingsModal.connectFacebook')}
+            </h4>
+            <button
+              onClick={() => {
+                if (hasFacebookPermission) {
                   onConnectFacebook?.(bot);
                   onClose();
-                }}
-                className="flex items-center gap-3 px-6 py-3 bg-[#1877F2] text-white rounded-2xl font-bold text-sm hover:bg-[#166FE5] transition-all"
-              >
-                <FacebookIcon size={18} />
-                {t('botSettingsModal.connectFacebookButton')}
-              </button>
-            </div>
-          )}
+                } else {
+                  setShowNoFacebookPermissionModal(true);
+                }
+              }}
+              className="flex items-center gap-3 px-6 py-3 bg-[#1877F2] text-white rounded-2xl font-bold text-sm hover:bg-[#166FE5] transition-all"
+            >
+              <FacebookIcon size={18} />
+              {t('botSettingsModal.connectFacebookButton')}
+            </button>
+          </div>
         </div>
       </div>
+
+      {showNoFacebookPermissionModal && (
+        <div
+          className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-[110] p-6"
+          onClick={() => setShowNoFacebookPermissionModal(false)}
+        >
+          <div
+            className="bg-white w-full max-w-sm rounded-[2.5rem] shadow-2xl p-8 border border-slate-100"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="w-14 h-14 bg-red-50 text-red-500 rounded-3xl flex items-center justify-center mb-5">
+              <FacebookIcon size={26} />
+            </div>
+            <h3 className="text-lg font-black text-slate-900 mb-2">{t('botSettingsModal.noFacebookPermissionTitle')}</h3>
+            <p className="text-slate-500 text-sm font-medium leading-relaxed mb-8">
+              {t('botSettingsModal.noFacebookPermissionBody')}
+            </p>
+            <button
+              onClick={() => setShowNoFacebookPermissionModal(false)}
+              className="w-full py-3.5 bg-blue-600 text-white rounded-2xl font-bold text-sm hover:bg-blue-700 transition-all"
+            >
+              {t('botSettingsModal.noFacebookPermissionClose')}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
