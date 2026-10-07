@@ -4,6 +4,8 @@
  *   POST   /registrations
  *   DELETE /registrations/:fid
  *   POST   /test
+ *   GET    /email-preference
+ *   PUT    /email-preference
  */
 
 import { Router } from '../../../backend/config/notificationsVendor.js';
@@ -29,6 +31,8 @@ export function createPushNotificationRouter(options) {
   router.post('/registrations', auth, (req, res) => controller.register(req, res));
   router.delete('/registrations/:fid', auth, (req, res) => controller.unregister(req, res));
   router.post('/test', auth, (req, res) => controller.test(req, res));
+  router.get('/email-preference', auth, (req, res) => controller.getEmailPreference(req, res));
+  router.put('/email-preference', auth, (req, res) => controller.setEmailPreference(req, res));
 
   return router;
 }
