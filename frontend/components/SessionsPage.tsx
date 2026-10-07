@@ -2487,7 +2487,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
           onMobileNavToggle={() => setMobileNavOpen((prev) => !prev)}
           rightSlot={(
             <div className="flex items-center gap-3">
-              {token ? (
+              {token && currentUser?.role !== 'rep' ? (
                 <RepPushNotifications token={token} />
               ) : null}
               {showAvailability ? (

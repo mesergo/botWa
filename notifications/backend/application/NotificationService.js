@@ -17,11 +17,8 @@ export class NotificationService {
    * @param {import('./RecipientResolver.js').RecipientResolver} [deps.recipientResolver]
    * @param {{ tryClaim: (eventId: string) => boolean }} [deps.deduplicator]
    * @param {{ info?: Function, warn?: Function, error?: Function }} [deps.logger]
-<<<<<<< Updated upstream
-=======
    * @param {(userIds: string[]) => Promise<Set<string>>} [deps.findExcludedUserIds] users whose devices never receive pushes
    * @param {(args: { userIds: string[], event: object }) => Promise<void>} [deps.emailNotifier] mirrors a waiting-customer push by email
->>>>>>> Stashed changes
    */
   constructor(deps) {
     if (!deps?.provider || !deps?.deviceRepository) {
@@ -32,11 +29,8 @@ export class NotificationService {
     this.recipientResolver = deps.recipientResolver || null;
     this.deduplicator = deps.deduplicator || new InMemoryEventDeduplicator();
     this.logger = deps.logger || console;
-<<<<<<< Updated upstream
-=======
     this.findExcludedUserIds = deps.findExcludedUserIds || null;
     this.emailNotifier = deps.emailNotifier || null;
->>>>>>> Stashed changes
   }
 
   /**
@@ -62,13 +56,11 @@ export class NotificationService {
         return { success: true, skipped: true, reason: 'duplicate_event' };
       }
 
-      const devices = await this.deviceRepository.findEnabledByTenantAndBotLine({
+      let devices = await this.deviceRepository.findEnabledByTenantAndBotLine({
         tenantId: event.tenantId,
         botLineId: event.botLineId,
       });
 
-<<<<<<< Updated upstream
-=======
       if (this.findExcludedUserIds && devices.length) {
         const excluded = await this.findExcludedUserIds([...new Set(devices.map((d) => String(d.userId)))]);
         devices = devices.filter((d) => !excluded.has(String(d.userId)));
@@ -81,7 +73,6 @@ export class NotificationService {
           .catch((err) => this.logger.error?.('[notifications] email notify error (isolated):', err?.message || err));
       }
 
->>>>>>> Stashed changes
       const fids = [...new Set(devices.map((d) => d.fid).filter(Boolean))];
       if (!fids.length) {
         return { success: true, skipped: true, reason: 'no_device_fids' };

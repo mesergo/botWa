@@ -60,9 +60,44 @@ async function sendMesergoEmail({ to, subject, htmlBody, campaignName }) {
 </InfoMailClient>`;
 
   const res = await fetch(`https://capi.mesergo.co.il/mail/api.php?xml=${encodeURIComponent(xmlString)}`, { method: 'GET' });
-  if (!res.ok) {
-    throw new Error(`Mesergo mail API responded ${res.status}`);
+  const rawText = await res.text().catch(() => '');
+  const status = rawText.match(/<Status>(.*?)<\/Status>/)?.[1]?.trim();
+  if (!res.ok || status !== 'Success') {
+    throw new Error(`Mesergo mail API responded ${res.status}: ${rawText.slice(0, 300)}`);
   }
+  console.log('[notifications] email sent to', to, 'campaign', rawText.match(/<CampaignId>(.*?)<\/CampaignId>/)?.[1]);
+}
+
+/**
+ * Test email for the "שלח התראת בדיקה" button — only when the user opted in to email alerts.
+ * @param {string} userId
+ * @returns {Promise<boolean>} true when an email was sent
+ */
+export async function sendTestEmailToUser(userId) {
+  const User = (await import('../../../../backend/models/User.js')).default;
+  const user = await User.findById(userId).select('email push_email_enabled role').lean();
+  if (!user?.push_email_enabled || !user.email || user.role === 'rep') {
+    console.log('[notifications] test email skipped:', {
+      userId,
+      push_email_enabled: user?.push_email_enabled,
+      hasEmail: Boolean(user?.email),
+      role: user?.role,
+    });
+    return false;
+  }
+
+  const link = `${getSystemBaseUrl()}/sessions`;
+  await sendMesergoEmail({
+    to: user.email,
+    subject: 'בדיקת התראות במייל',
+    htmlBody: `<div dir="rtl" style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
+  <h2 style="color:#2563eb;">התראות במייל עובדות ✓</h2>
+  <p>מעכשיו תקבל/י כאן מייל כשלקוח כותב בשיחה שממתינה למענה.</p>
+  <a href="${escapeHtml(link)}" style="display:inline-block;background:#2563eb;color:white;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:bold;font-size:16px;margin:16px 0;">מעבר לשיחות</a>
+</div>`,
+    campaignName: `בדיקת התראות במייל - ${userId}`,
+  });
+  return true;
 }
 
 /**

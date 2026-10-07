@@ -3100,7 +3100,7 @@ export const sendTemplateToPhone = async (req, res) => {
       process_history: initialHistory
     };
 
-// <<<<<<< HEAD
+
 //     // Per-template post-send mode: a brand-new session defaults to agent/waiting
 //     // (today's behavior), unless the template is configured to switch to bot mode.
 //     const postSendMode = await resolveTemplatePostSendMode(getEffectiveUserId(req), templateData.name, templateData.postSendModeOverride);
@@ -3108,7 +3108,7 @@ export const sendTemplateToPhone = async (req, res) => {
 //       sessionDoc.is_agent = false;
 //       sessionDoc.agent_since = null;
 //       sessionDoc.status = 'bot';
-// =======
+
     const postSendMode = await resolveTemplatePostSendMode(getEffectiveUserId(req), templateData.name);
     if (postSendMode === 'agent') {
       const postSendFields = buildPostSendModeFields('agent', 'bot');

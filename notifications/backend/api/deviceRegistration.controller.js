@@ -6,6 +6,7 @@
 import { parseRegisterDeviceDto } from './dto.js';
 import { NotificationModuleError, UnauthorizedError, ValidationError } from '../domain/errors.js';
 import { getFirebaseAdminInitError, isFirebaseAdminReady } from '../infrastructure/firebase/firebaseAdmin.js';
+import { sendTestEmailToUser } from '../infrastructure/email/waitingCustomerEmailNotifier.js';
 
 /**
  * Resolve identity strictly from the authenticated request.
@@ -26,6 +27,18 @@ export function resolveSessionIdentity(req) {
   }
 
   return { userId: String(userId), tenantId: String(tenantId), role };
+}
+
+/** Representatives (role 'rep') do not receive push notifications. */
+function isPushBlockedRole(role) {
+  return role === 'rep';
+}
+
+/**
+ * @param {import('express').Response} res
+ */
+function sendRepBlocked(res) {
+  return res.status(403).json({ success: false, error: 'Push notifications are not available for representatives' });
 }
 
 /**
@@ -81,6 +94,9 @@ export function createDeviceRegistrationController(notificationService) {
     async register(req, res) {
       try {
         const identity = resolveSessionIdentity(req);
+        if (isPushBlockedRole(identity.role)) {
+          return sendRepBlocked(res);
+        }
         const dto = parseRegisterDeviceDto(req.body);
 
         if (!dto.allBotLines) {
@@ -147,10 +163,16 @@ export function createDeviceRegistrationController(notificationService) {
      */
     async test(req, res) {
       try {
-        const isDev = (process.env.NODE_ENV || 'development') !== 'production';
-        const isAdmin = req.user?.role === 'admin';
-        if (!isDev && !isAdmin) {
-          return res.status(403).json({ success: false, error: 'Test endpoint available in development only' });
+        if (isPushBlockedRole(req.user?.role)) {
+          return sendRepBlocked(res);
+        }
+
+        // Email test goes out independently of Firebase — only when the user opted in
+        let emailSent = false;
+        try {
+          emailSent = await sendTestEmailToUser(resolveSessionIdentity(req).userId);
+        } catch (emailErr) {
+          console.error('[notifications] test email failed:', emailErr?.message || emailErr);
         }
 
         if (!isFirebaseAdminReady()) {
@@ -172,6 +194,7 @@ export function createDeviceRegistrationController(notificationService) {
           reason: result.reason,
           sentCount: result.sentCount ?? 0,
           failedCount: result.failedCount ?? 0,
+          emailSent,
         });
       } catch (err) {
         return sendError(res, err);
