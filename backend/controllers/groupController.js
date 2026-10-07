@@ -839,22 +839,22 @@ function buildBroadcastHistoryEntry(groupName, broadcastId, flowId, { isTemplate
 // params (__field:full_name etc.) show the real value for that specific contact.
 async function saveBroadcastToSessions(userId, flowId, broadcastId, groupName, sendOpts, phonesArr, postSendMode = 'no_change') {
   const normalizedPhones = phonesArr.map(p => p.phone);
+  console.log(`[saveBroadcastToSessions] ▶ START broadcast=${broadcastId} flow_id=${flowId} postSendMode=${postSendMode} isTemplate=${!!sendOpts.isTemplate} phones=${normalizedPhones.join(',')}`);
   if (normalizedPhones.length === 0) return;
 
   const TWENTY_MIN_MS = 20 * 60 * 1000;
 
   // Applied whenever a broadcast push leaves (or puts) an EXISTING session in bot mode.
-  // Without this, the bot engine (chatController.js) resumes from whatever
-  // current_node_id/execution_stack this session happened to be at BEFORE the broadcast
-  // (e.g. mid-menu, waiting for free text) instead of restarting the flow from its opening
-  // node — the customer's reply doesn't match what that stale node expects, so the bot
-  // silently fails to respond until the conversation is manually closed (which resets these
-  // same fields) and the bot's self-heal logic kicks in on the next message.
+  // Rather than trying to reset current_node_id/execution_stack in-place and relying on
+  // chatController.js's self-heal logic to recover, we close the session outright —
+  // identical to the manual "close conversation" button (buildConversationClosedSetFragment
+  // in utils/conversationActions.js). is_active:false means the customer's next incoming
+  // message won't re-attach to this (now stale) session (BotSession lookups filter on
+  // is_active:true); a brand-new session is created instead, starting fresh at the bot's
+  // opening node (automatic_responses), which is exactly the proven, already-working code
+  // path (same one a manual close-conversation + new message goes through).
   const FLOW_RESET_FIELDS = {
-    current_node_id: null,
-    execution_stack: [],
-    waiting_text_input: false,
-    waiting_webservice: false,
+    is_active: false,
   };
 
   // Sessions come from two different creation paths in this codebase: the bot engine
@@ -898,17 +898,23 @@ async function saveBroadcastToSessions(userId, flowId, broadcastId, groupName, s
     // Layer 1: open agent conversation — always append in-place, never a new session.
     const agentInfo = agentSessionByPhone.get(p.phone);
     if (agentInfo?.sessionId) {
+      console.log(`[saveBroadcastToSessions] phone=${p.phone} → Layer1 AGENT session found id=${agentInfo.sessionId} status=${agentInfo.status}`);
       const update = { $push: { process_history: entry } };
       if (postSendMode !== 'no_change') {
         const postSendFields = buildPostSendModeFields(postSendMode, agentInfo.status);
         if (postSendFields) {
           update.$set = postSendFields;
-          // Flipping an agent-handled session to bot mode — reset its flow position so
-          // the bot restarts from the opening node instead of resuming wherever the
-          // agent conversation happened to leave current_node_id/execution_stack.
-          if (postSendMode === 'bot') Object.assign(update.$set, FLOW_RESET_FIELDS);
+          // Flipping an agent-handled session to bot mode — close this session outright so
+          // the customer's next message starts a brand-new bot session at the opening node,
+          // instead of resuming wherever the agent conversation happened to leave
+          // current_node_id/execution_stack.
+          if (postSendMode === 'bot') {
+            Object.assign(update.$set, FLOW_RESET_FIELDS);
+            console.log(`[saveBroadcastToSessions] phone=${p.phone} session=${agentInfo.sessionId} → CLOSING session (postSendMode=bot, is_active:false)`);
+          }
         }
       }
+      console.log(`[saveBroadcastToSessions] phone=${p.phone} → Layer1 update.$set=${JSON.stringify(update.$set || {})}`);
       sessionOps.push({ updateOne: { filter: { _id: agentInfo.sessionId }, update } });
       continue;
     }
@@ -916,6 +922,12 @@ async function saveBroadcastToSessions(userId, flowId, broadcastId, groupName, s
     // Layer 2: recent (< 20 min) non-agent session — append in-place.
     const nonAgentInfo = nonAgentSessionByPhone.get(p.phone);
     const withinWindow = !!nonAgentInfo?.sortTime && (Date.now() - new Date(nonAgentInfo.sortTime).getTime()) <= TWENTY_MIN_MS;
+    if (nonAgentInfo) {
+      const ageMin = nonAgentInfo.sortTime ? ((Date.now() - new Date(nonAgentInfo.sortTime).getTime()) / 60000).toFixed(1) : 'n/a';
+      console.log(`[saveBroadcastToSessions] phone=${p.phone} → Layer2 non-agent session found id=${nonAgentInfo.sessionId} status=${nonAgentInfo.status} ageMin=${ageMin} withinWindow=${withinWindow}`);
+    } else {
+      console.log(`[saveBroadcastToSessions] phone=${p.phone} → no non-agent session found`);
+    }
     if (withinWindow) {
       const update = { $push: { process_history: entry } };
       if (postSendMode !== 'no_change') {
@@ -924,12 +936,15 @@ async function saveBroadcastToSessions(userId, flowId, broadcastId, groupName, s
       }
       // Resulting status is 'bot' either because postSendMode explicitly set it to 'bot',
       // or because postSendMode is 'no_change' and the session was already in bot mode —
-      // either way, reset its flow position so the bot restarts fresh instead of resuming
-      // a stale mid-flow node from before this broadcast.
+      // either way, close this session so the customer's next message starts a brand-new
+      // bot session at the opening node, instead of resuming a stale mid-flow node from
+      // before this broadcast.
       const resultingStatus = postSendMode === 'no_change' ? nonAgentInfo.status : postSendMode;
       if (resultingStatus === 'bot') {
         update.$set = { ...(update.$set || {}), ...FLOW_RESET_FIELDS };
+        console.log(`[saveBroadcastToSessions] phone=${p.phone} session=${nonAgentInfo.sessionId} → CLOSING session (resultingStatus=bot, is_active:false)`);
       }
+      console.log(`[saveBroadcastToSessions] phone=${p.phone} → Layer2 update.$set=${JSON.stringify(update.$set || {})}`);
       sessionOps.push({ updateOne: { filter: { _id: nonAgentInfo.sessionId }, update } });
       continue;
     }
@@ -937,6 +952,7 @@ async function saveBroadcastToSessions(userId, flowId, broadcastId, groupName, s
     // Neither found — start a fresh session (mirrors sendTemplateToPhone's sessionDoc
     // shape). Also drain any older broadcast messages queued on the contact while no
     // session existed yet, so they appear in chronological order ahead of this one.
+    console.log(`[saveBroadcastToSessions] phone=${p.phone} → NEITHER agent nor non-agent-within-window found → will create BRAND-NEW session`);
     const pending = Array.isArray(p.contact?.pending_history) ? p.contact.pending_history : [];
     const initialHistory = pending.length > 0
       ? [...pending].sort((a, b) => new Date(a.created) - new Date(b.created)).concat(entry)
@@ -981,12 +997,14 @@ async function saveBroadcastToSessions(userId, flowId, broadcastId, groupName, s
       const postSendFields = buildPostSendModeFields(postSendMode, 'waiting');
       if (postSendFields) Object.assign(sessionDoc, postSendFields);
     }
+    console.log(`[saveBroadcastToSessions] phone=${p.phone} → new sessionDoc status=${sessionDoc.status} is_active=${sessionDoc.is_active}`);
     sessionsToCreate.push(sessionDoc);
     if (pending.length > 0 && p.contact?._id) {
       contactOps.push({ updateOne: { filter: { _id: p.contact._id }, update: { $set: { pending_history: [] } } } });
     }
   }
 
+  console.log(`[saveBroadcastToSessions] ▶ END — updateOps=${sessionOps.length} newSessions=${sessionsToCreate.length} contactOps=${contactOps.length}`);
   if (sessionOps.length > 0) await BotSession.bulkWrite(sessionOps);
   if (sessionsToCreate.length > 0) await BotSession.insertMany(sessionsToCreate);
   if (contactOps.length > 0) await Contact.bulkWrite(contactOps);
