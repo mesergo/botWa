@@ -105,7 +105,7 @@
     "backToBotPicker": "Back to bot selection",
     "contactsCount": "{{count}} contacts",
     "newChat": "New conversation",
-    "searchPlaceholder": "Search contact...",
+    "searchPlaceholder": "Search contact by phone, intro text...",
     "filterAll": "All",
     "filterWaiting": "Waiting",
     "filterHandling": "In progress",
@@ -129,6 +129,8 @@
   "chatPanel": {
     "selectContactToView": "Select a contact to view conversations",
     "selectContactHint": "Select a contact from the panel on the right",
+    "introTextLabel": "Intro text",
+    "dismissIntroText": "Dismiss intro text",
     "markPhoneHandled": "Mark phone call as handled",
     "handled": "Handled",
     "conversationActions": "Conversation actions",

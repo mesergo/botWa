@@ -13,6 +13,8 @@ const contactSchema = new mongoose.Schema({
   // Group-broadcast messages sent to this contact before any BotSession existed.
   // Drained into the new session's process_history as soon as one is created (see chatController.js).
   pending_history: { type: [mongoose.Schema.Types.Mixed], default: [] },
+  // Opening text passed via the /sessions?text= link; shown in the chat header until dismissed.
+  intro_text: { type: String, default: '' },
 }, {
   timestamps: true,
   collection: 'Contact'

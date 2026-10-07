@@ -1168,16 +1168,43 @@ export const getContacts = async (req, res) => {
       };
     });
 
+    // Contacts that have an intro text (from the /sessions?text= link) must be listed even
+    // when they have no BotSession yet — the aggregation above only sees session-backed contacts.
+    const sessionPhones = new Set(result.map(c => c.phone));
+    const introOnlyDocs = await Contact.find({
+      user_id: userId,
+      intro_text: { $exists: true, $ne: '' }
+    }).select('phone updatedAt').lean();
+    introOnlyDocs.forEach(d => {
+      if (sessionPhones.has(d.phone)) return;
+      result.push({
+        phone: d.phone,
+        sessionCount: 0,
+        lastSeen: d.updatedAt || null,
+        lastMessageAt: d.updatedAt || null,
+        bots: [],
+        botPhones: [],
+        repGroupId: null,
+        repUserId: null,
+        status: 'bot',
+        wants_phone: false,
+        repHistory: []
+      });
+    });
+    result.sort((a, b) => new Date(b.lastMessageAt || 0) - new Date(a.lastMessageAt || 0));
+
     // Enrich with assigned_to from Contact collection
     const phones = result.map(c => c.phone);
-    const contactDocs = await Contact.find({ user_id: userId, phone: { $in: phones } }).select('phone assigned_to whatsapp_name full_name').lean();
+    const contactDocs = await Contact.find({ user_id: userId, phone: { $in: phones } }).select('phone assigned_to whatsapp_name full_name intro_text').lean();
     const assignedToMap = {};
     const whatsappNameMap = {};
     const fullNameMap = {};
+    const introTextMap = {};
     contactDocs.forEach(c => {
       assignedToMap[c.phone] = (c.assigned_to || []).map(id => id.toString());
       whatsappNameMap[c.phone] = c.whatsapp_name || '';
       fullNameMap[c.phone] = c.full_name || '';
+      introTextMap[c.phone] = c.intro_text || '';
     });
 
     let finalResult = result.map(c => ({
@@ -1185,6 +1212,7 @@ export const getContacts = async (req, res) => {
       assigned_to: assignedToMap[c.phone] || [],
       whatsapp_name: whatsappNameMap[c.phone] || '',
       full_name: fullNameMap[c.phone] || '',
+      intro_text: introTextMap[c.phone] || '',
     }));
 
     // Fetch rep user doc once (used for both restrictions below)

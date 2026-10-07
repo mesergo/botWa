@@ -182,6 +182,49 @@ export const upsertContactByPhone = async (req, res) => {
   }
 };
 
+const INTRO_TEXT_MAX_LENGTH = 2000;
+
+// GET /api/contacts/intro-text?phone=
+export const getIntroText = async (req, res) => {
+  const userId = getEffectiveUserId(req);
+  const { phone } = req.query;
+  if (typeof phone !== 'string' || !phone.trim()) {
+    return res.status(400).json({ error: 'Phone is required' });
+  }
+  try {
+    const contact = await Contact.findOne(
+      { user_id: userId, phone: normalizePhone(phone.trim()) },
+      { intro_text: 1 }
+    ).lean();
+    res.json({ text: contact?.intro_text || '' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// PUT /api/contacts/intro-text  body: { phone, text }  (empty text clears it)
+export const setIntroText = async (req, res) => {
+  const userId = getEffectiveUserId(req);
+  const { phone, text } = req.body || {};
+  if (typeof phone !== 'string' || !phone.trim()) {
+    return res.status(400).json({ error: 'Phone is required' });
+  }
+  if (text !== undefined && text !== null && typeof text !== 'string') {
+    return res.status(400).json({ error: 'Text must be a string' });
+  }
+  const clean = (text || '').trim().slice(0, INTRO_TEXT_MAX_LENGTH);
+  try {
+    await Contact.findOneAndUpdate(
+      { user_id: userId, phone: normalizePhone(phone.trim()) },
+      { $set: { intro_text: clean } },
+      { upsert: true }
+    );
+    res.json({ text: clean });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
 // POST /api/contacts/import — bulk import from Excel/CSV file
 export const importContacts = async (req, res) => {
   const userId = getEffectiveUserId(req);

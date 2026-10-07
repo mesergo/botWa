@@ -4350,12 +4350,12 @@ const openRestoreConversations = async () => {
                  </button>
                </div>
 
-               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-6 items-start">
+               <div className="flex flex-row gap-6 items-start overflow-x-auto overflow-y-hidden pt-6 pb-6 px-3 snap-x">
                  {(['Unlimited', 'Pro', 'Premium', 'Basic', 'Trial'] as const).map(plan => {
                    const isPremium = plan === 'Premium';
                    const isTrial = plan === 'Trial';
                    return (
-                   <div key={plan} className={`relative rounded-[28px] overflow-hidden transition-all duration-300 group ${
+                   <div key={plan} className={`relative flex-shrink-0 snap-start w-[300px] sm:w-[340px] rounded-[28px] overflow-hidden transition-all duration-300 group ${
                      isPremium
                        ? 'bg-gradient-to-b from-sky-600 to-blue-700 text-white shadow-2xl shadow-sky-200 md:-translate-y-3 ring-4 ring-sky-100'
                        : isTrial

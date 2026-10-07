@@ -105,7 +105,7 @@
     "backToBotPicker": "חזור לבחירת בוט",
     "contactsCount": "{{count}} קשרים",
     "newChat": "שיחה חדשה",
-    "searchPlaceholder": "חיפוש איש קשר...",
+    "searchPlaceholder": "חיפוש איש קשר לפי טלפון, טקסט פתיח...",
     "filterAll": "הכל",
     "filterWaiting": "ממתין",
     "filterHandling": "בטיפול",
@@ -129,6 +129,8 @@
   "chatPanel": {
     "selectContactToView": "בחר איש קשר לצפייה בשיחות",
     "selectContactHint": "בחר איש קשר מהפאנל מימין",
+    "introTextLabel": "טקסט פתיח",
+    "dismissIntroText": "הסר טקסט פתיח",
     "markPhoneHandled": "סמן שיחת טלפון כטופלה",
     "handled": "טופל",
     "conversationActions": "פעולות שיחה",

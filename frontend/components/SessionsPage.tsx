@@ -54,6 +54,7 @@ interface Contact {
   wants_phone?: boolean;
   whatsapp_name?: string;
   full_name?: string;
+  intro_text?: string;
 }
 
 interface SessionsPageProps {
@@ -98,6 +99,22 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [contactsLoading, setContactsLoading] = useState(true);
   const [contactSearch, setContactSearch] = useState('');
+
+  // Intro text (from the /sessions?text= link) saved on the contact and shown in the chat header
+  const [introText, setIntroText] = useState('');
+  const introTextVersionRef = useRef(0);
+  // Points at fetchContacts (declared further below) so saving can refresh the sidebar list,
+  // which must include contacts that have an intro text but no sessions yet.
+  const refreshContactsRef = useRef<() => void>(() => {});
+  const saveIntroText = (phone: string, text: string) => {
+    fetch(`${API_BASE}/contacts/intro-text`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ phone, text }),
+    })
+      .then(() => refreshContactsRef.current())
+      .catch(() => { /* non-critical */ });
+  };
 
   // Selected contact sessions
   const [selectedPhone, setSelectedPhone] = useState<string | null>(initialPhone ?? null);
@@ -263,6 +280,10 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
       .catch(e => console.error('Failed to load contacts', e))
       .finally(() => { if (!silent) setContactsLoading(false); });
   }, [token]);
+
+  useEffect(() => {
+    refreshContactsRef.current = () => fetchContacts(true);
+  }, [fetchContacts]);
 
   useEffect(() => {
     fetchContacts();
@@ -643,6 +664,28 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
     prevScrollHeightRef.current = 0;
   }, [selectedPhone]);
 
+  // Load the saved intro text for the selected contact (stored on the Contact document,
+  // not taken from the sessions-derived contacts list, which may not include new contacts).
+  // Declared BEFORE the deep-link apply effect below so that, within one commit, the apply
+  // effect runs last and its text is not wiped by the reset here.
+  useEffect(() => {
+    setIntroText('');
+    if (!selectedPhone || isSimulator(selectedPhone) || !token) return;
+    const version = introTextVersionRef.current;
+    let cancelled = false;
+    fetch(`${API_BASE}/contacts/intro-text?phone=${encodeURIComponent(selectedPhone)}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then(r => (r.ok ? r.json() : null))
+      .then(data => {
+        // Ignore if an apply/dismiss happened while the request was in flight
+        if (cancelled || !data || version !== introTextVersionRef.current) return;
+        setIntroText(typeof data.text === 'string' ? data.text : '');
+      })
+      .catch(() => { /* non-critical */ });
+    return () => { cancelled = true; };
+  }, [selectedPhone, token]);
+
   // Deep link support: /sessions?phone=...&text=<message> — pre-fill the compose box with
   // the given text (un-sent, editable), mirroring wa.me's ?text= param. Applied once
   // (appliedInitialTextRef) so later contact switches don't re-apply it.
@@ -656,14 +699,26 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
   // a LATER commit still re-triggers this effect and applies the text (a version merged into
   // the clear effect — keyed on selectedPhone alone — would miss a later-arriving initialText
   // entirely, since its dependency array wouldn't change again).
-  const appliedInitialTextRef = useRef(false);
+  const appliedInitialTextRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!initialText) return;
+    if (!initialText || !selectedPhone) return;
     if (selectedPhone !== initialPhone) return;
-    if (appliedInitialTextRef.current) return;
-    appliedInitialTextRef.current = true;
+    const key = `${selectedPhone}|${initialText}`;
+    if (appliedInitialTextRef.current === key) return;
+    appliedInitialTextRef.current = key;
     setAgentMessage(initialText);
+    // Persist on the contact so the text stays visible in the chat header across reloads/reps.
+    introTextVersionRef.current += 1;
+    setIntroText(initialText);
+    saveIntroText(selectedPhone as string, initialText);
   }, [selectedPhone, initialText, initialPhone]);
+
+  const dismissIntroText = () => {
+    if (!selectedPhone) return;
+    introTextVersionRef.current += 1;
+    setIntroText('');
+    saveIntroText(selectedPhone, '');
+  };
 
   // Restore scroll position after loading older messages
   useEffect(() => {
@@ -1935,7 +1990,8 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
       const q = contactSearch.toLowerCase();
       const matchesPhone = c.phone.toLowerCase().includes(q);
       const matchesName = (c.whatsapp_name || '').toLowerCase().includes(q) || (c.full_name || '').toLowerCase().includes(q);
-      if (!matchesPhone && !matchesName) return false;
+      const matchesIntro = (c.intro_text || '').toLowerCase().includes(q);
+      if (!matchesPhone && !matchesName && !matchesIntro) return false;
     }
     if (statusFilter !== 'all' && c.status !== statusFilter) return false;
     if (activeBotFilter) {
@@ -2998,7 +3054,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                   ${isSimulator(selectedPhone) ? 'bg-blue-50 text-blue-400' : 'bg-sky-50 text-sky-500'}`}>
                   {isSimulator(selectedPhone) ? <MessageSquare size={20} /> : <Phone size={20} />}
                 </div>
-                <div className="flex-1 min-w-0">
+                <div className="min-w-0">
                   <div className="flex items-center gap-2">
                     <p className="text-base font-black text-slate-900 flex items-center gap-1.5 flex-wrap">
                       {isSimulator(selectedPhone) ? t('sidebar.simulator') : selectedPhone}
@@ -3035,6 +3091,33 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                     )}
                   </p>
                 </div>
+                {/* Intro text from the /sessions?text= link */}
+                {!isSimulator(selectedPhone) && introText && (
+                  <div className="flex items-start gap-1.5 max-w-xs flex-shrink min-w-0 px-2.5 py-1.5 rounded-xl bg-amber-50 ring-1 ring-amber-300/60 text-amber-800">
+                    <div className="min-w-0 flex flex-col">
+                      <span className="text-[10px] font-bold leading-none mb-0.5 text-amber-600">
+                        {t('chatPanel.introTextLabel')}
+                      </span>
+                      <span
+                        title={introText}
+                        className="text-xs font-semibold leading-snug break-words overflow-hidden whitespace-pre-wrap min-w-0"
+                        style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}
+                      >
+                        {introText}
+                      </span>
+                    </div>
+                    <button
+                      onClick={dismissIntroText}
+                      title={t('chatPanel.dismissIntroText')}
+                      aria-label={t('chatPanel.dismissIntroText')}
+                      className="flex-shrink-0 p-0.5 rounded-md text-amber-600 hover:text-amber-900 hover:bg-amber-100 transition-colors"
+                    >
+                      <X size={12} />
+                    </button>
+                  </div>
+                )}
+                {/* Spacer keeps the status badge / actions pushed to the far end */}
+                <div className="flex-1" />
                 {/* Conversation status badge */}
                 {!isSimulator(selectedPhone) && phoneSessions.length > 0 && (
                   <div className="flex-shrink-0">{renderStatusBadge(currentStatus)}</div>

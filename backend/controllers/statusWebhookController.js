@@ -105,35 +105,39 @@ const applyStatusEntry = async ({ wamid, status, timestamp, errors }) => {
 // POST /api/360/status — receives delivery-status webhooks forwarded from
 // dialog360.js. Accepts either { statuses: [...] } (batch) or a single
 // { wamid, status, timestamp, errors } object.
+//
+// IMPORTANT: dialog360.js's forward call uses a 5s axios timeout and never
+// retries. findSessionByWamid's retry loop alone can take ~4.2s+ (plus Mongo
+// query time), so under any extra latency (Mongo hiccups, concurrent status
+// bursts, etc.) the combined time regularly exceeded 5s — causing dialog360
+// to time out and drop the status, even though we'd often still process it
+// successfully moments later. To remove that race entirely, we ack the
+// webhook immediately (right after auth/validation) and do the actual
+// find+update work after the response is sent, so our response time can
+// never cause dialog360's request to time out.
 export const updateMessageStatus = async (req, res) => {
-  try {
-    if (!isAuthorized(req)) {
-      return res.status(401).json({ error: 'unauthorized' });
-    }
-
-    const statuses = Array.isArray(req.body?.statuses)
-      ? req.body.statuses
-      : (req.body?.wamid ? [req.body] : []);
-
-    if (!statuses.length) {
-      return res.status(200).json({ results: [] });
-    }
-
-    // Applied in parallel — each entry retries independently (see
-    // findSessionByWamid), so running them sequentially would needlessly
-    // stack up their retry delays when a batch contains several statuses.
-    const results = await Promise.all(statuses.map(async (entry) => {
-      try {
-        return await applyStatusEntry(entry);
-      } catch (e) {
-        console.error('[status-webhook] failed to apply entry:', e.message);
-        return { wamid: entry?.wamid, applied: false, reason: 'error' };
-      }
-    }));
-
-    return res.status(200).json({ results });
-  } catch (e) {
-    console.error('[status-webhook] unexpected error:', e);
-    return res.status(500).json({ error: 'internal_error' });
+  if (!isAuthorized(req)) {
+    return res.status(401).json({ error: 'unauthorized' });
   }
+
+  const statuses = Array.isArray(req.body?.statuses)
+    ? req.body.statuses
+    : (req.body?.wamid ? [req.body] : []);
+
+  if (!statuses.length) {
+    return res.status(200).json({ accepted: 0 });
+  }
+
+  // Ack immediately — dialog360 only checks for a network-level
+  // error/timeout (see its `.catch`), it does not inspect the response body,
+  // so changing the shape here is safe.
+  res.status(200).json({ accepted: statuses.length });
+
+  // Process in the background. Each entry is individually try/caught so one
+  // failure can't take down the others or produce an unhandled rejection.
+  statuses.forEach((entry) => {
+    applyStatusEntry(entry).catch((e) => {
+      console.error('[status-webhook] background processing failed:', e.message);
+    });
+  });
 };
