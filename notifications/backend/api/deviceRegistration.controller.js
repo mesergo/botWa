@@ -177,6 +177,47 @@ export function createDeviceRegistrationController(notificationService) {
         return sendError(res, err);
       }
     },
+
+    /**
+     * GET /email-preference
+     */
+    async getEmailPreference(req, res) {
+      try {
+        const identity = resolveSessionIdentity(req);
+        if (isPushBlockedRole(identity.role)) {
+          return sendRepBlocked(res);
+        }
+        const User = (await import('../../../backend/models/User.js')).default;
+        const user = await User.findById(identity.userId).select('email push_email_enabled').lean();
+        res.status(200).json({ success: true, enabled: Boolean(user?.push_email_enabled), email: user?.email || '' });
+      } catch (err) {
+        return sendError(res, err);
+      }
+    },
+
+    /**
+     * PUT /email-preference  body: { enabled: boolean }
+     */
+    async setEmailPreference(req, res) {
+      try {
+        const identity = resolveSessionIdentity(req);
+        if (isPushBlockedRole(identity.role)) {
+          return sendRepBlocked(res);
+        }
+        if (typeof req.body?.enabled !== 'boolean') {
+          throw new ValidationError('enabled must be a boolean');
+        }
+        const User = (await import('../../../backend/models/User.js')).default;
+        const user = await User.findByIdAndUpdate(
+          identity.userId,
+          { $set: { push_email_enabled: req.body.enabled } },
+          { new: true }
+        ).select('email push_email_enabled').lean();
+        res.status(200).json({ success: true, enabled: Boolean(user?.push_email_enabled), email: user?.email || '' });
+      } catch (err) {
+        return sendError(res, err);
+      }
+    },
   };
 }
 
