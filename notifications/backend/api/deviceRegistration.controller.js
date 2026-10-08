@@ -241,6 +241,108 @@ export function createDeviceRegistrationController(notificationService) {
         return sendError(res, err);
       }
     },
+
+    /**
+     * POST /presence — heartbeat from any open page of the app.
+     * Marks the user as connected and re-arms the one-time offline email alert.
+     */
+    async presence(req, res) {
+      try {
+        const identity = resolveSessionIdentity(req);
+        // An admin impersonating a customer does not make the customer "connected"
+        if (req.user?.isImpersonating) {
+          return res.status(204).end();
+        }
+        const User = (await import('../../../backend/models/User.js')).default;
+        await User.updateOne(
+          { _id: identity.userId },
+          { $set: { last_active_at: new Date(), offline_alert_sent_at: null } }
+        );
+        res.status(204).end();
+      } catch (err) {
+        return sendError(res, err);
+      }
+    },
+
+    /**
+     * GET /alert-settings — offline email alert + daily summary preferences.
+     */
+    async getAlertSettings(req, res) {
+      try {
+        const identity = resolveSessionIdentity(req);
+        if (isPushBlockedRole(identity.role)) {
+          return sendRepBlocked(res);
+        }
+        const User = (await import('../../../backend/models/User.js')).default;
+        const user = await User.findById(identity.userId).select('email offline_email_enabled daily_summary').lean();
+        res.status(200).json({ success: true, ...toAlertSettingsDto(user) });
+      } catch (err) {
+        return sendError(res, err);
+      }
+    },
+
+    /**
+     * PUT /alert-settings  body: { offlineEmail: boolean, dailySummary: { enabled, days: number[], hour: number } }
+     */
+    async setAlertSettings(req, res) {
+      try {
+        const identity = resolveSessionIdentity(req);
+        if (isPushBlockedRole(identity.role)) {
+          return sendRepBlocked(res);
+        }
+        const body = req.body || {};
+        const ds = body.dailySummary || {};
+        if (typeof body.offlineEmail !== 'boolean') {
+          throw new ValidationError('offlineEmail must be a boolean');
+        }
+        if (typeof ds.enabled !== 'boolean') {
+          throw new ValidationError('dailySummary.enabled must be a boolean');
+        }
+        const days = Array.isArray(ds.days) ? ds.days : [];
+        if (days.some((d) => !Number.isInteger(d) || d < 0 || d > 6)) {
+          throw new ValidationError('dailySummary.days must be integers 0-6');
+        }
+        if (!Number.isInteger(ds.hour) || ds.hour < 0 || ds.hour > 23) {
+          throw new ValidationError('dailySummary.hour must be an integer 0-23');
+        }
+        if (ds.enabled && !days.length) {
+          throw new ValidationError('Select at least one day for the daily summary');
+        }
+
+        const User = (await import('../../../backend/models/User.js')).default;
+        const user = await User.findByIdAndUpdate(
+          identity.userId,
+          {
+            $set: {
+              offline_email_enabled: body.offlineEmail,
+              'daily_summary.enabled': ds.enabled,
+              'daily_summary.days': [...new Set(days)].sort(),
+              'daily_summary.hour': ds.hour,
+            },
+          },
+          { new: true }
+        ).select('email offline_email_enabled daily_summary').lean();
+        res.status(200).json({ success: true, ...toAlertSettingsDto(user) });
+      } catch (err) {
+        return sendError(res, err);
+      }
+    },
+  };
+}
+
+/**
+ * @param {any} user
+ */
+function toAlertSettingsDto(user) {
+  const ds = user?.daily_summary || {};
+  return {
+    email: user?.email || '',
+    offlineEmail: Boolean(user?.offline_email_enabled),
+    dailySummary: {
+      enabled: Boolean(ds.enabled),
+      days: Array.isArray(ds.days) ? ds.days : [0, 1, 2, 3, 4],
+      hour: Number.isInteger(ds.hour) ? ds.hour : 20,
+    },
   };
 }
 

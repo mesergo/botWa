@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Plus, Bot, ArrowLeft, ArrowRight, Trash2, Calendar, LogOut, Shield, UserCog, Users, List, Settings, Save, User as UserIcon, Phone, Mail, Star, Copy, Check, Wifi, Gauge, MessageSquare, MessageCircle, Globe, Layers, CheckCircle, Eye, EyeOff, X, Menu, Image as ImageIcon, FileText, Link as LinkIcon, Unlink, UserMinus, AlertTriangle, RefreshCcw, ToggleLeft, ToggleRight, Zap, GitFork, Edit2, KeyRound } from 'lucide-react';
+import { Plus, Bot, ArrowLeft, ArrowRight, Trash2, Calendar, LogOut, Shield, UserCog, Users, List, Settings, Save, User as UserIcon, Phone, Mail, Star, Copy, Check, Wifi, Gauge, MessageSquare, MessageCircle, Globe, Layers, CheckCircle, Eye, EyeOff, X, Menu, Image as ImageIcon, FileText, Link as LinkIcon, Unlink, UserMinus, AlertTriangle, RefreshCcw, ToggleLeft, ToggleRight, Zap, GitFork, Edit2, KeyRound, Bell } from 'lucide-react';
 import ImpersonationBanner from './ImpersonationBanner';
 import OnboardingBanner from './OnboardingBanner';
 import MigrationNoticeBanner from './MigrationNoticeBanner';
@@ -17,6 +17,7 @@ import LanguageSwitcher from './LanguageSwitcher';
 import SmsInApp from './sms-in/SmsInApp';
 import PaymentCountriesSelect from './admin/PaymentCountriesSelect';
 import ApiTokensPanel from './apiTokens/ApiTokensPanel';
+import NotificationAlertsPanel from './notifications/NotificationAlertsPanel';
 import TemplateActionsMenu from './admin/templates/TemplateActionsMenu';
 import TemplateFormModal from './admin/templates/TemplateFormModal';
 import { buildComponentsPayload, TemplateModalMode } from './admin/templates/types';
@@ -235,7 +236,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
   }, []);
 
   // Settings tab section
-  type SettingsSection = 'profile' | 'account' | 'connection' | 'quota' | 'numbers' | 'routing' | 'templates' | 'removal' | 'api_tokens';
+  type SettingsSection = 'profile' | 'account' | 'connection' | 'quota' | 'numbers' | 'routing' | 'templates' | 'removal' | 'api_tokens' | 'notifications';
   // Sub-tab within the 'templates' settings section: official WA templates vs. internal (self-authored) ones
   type TemplatesSubTab = 'wa' | 'internal';
   const [templatesSubTab, setTemplatesSubTab] = useState<TemplatesSubTab>('wa');
@@ -1188,6 +1189,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
               { key: 'templates',  label: t('settingsNav.templates'),      icon: <MessageSquare size={16} /> },
               { key: 'removal',    label: t('settingsNav.removal'), icon: <UserMinus size={16} /> },
               { key: 'api_tokens', label: t('settingsNav.apiTokens'), icon: <KeyRound size={16} /> },
+              ...(currentUser?.role !== 'rep' ? [{ key: 'notifications' as const, label: t('settingsNav.notifications'), icon: <Bell size={16} /> }] : []),
             ] as { key: SettingsSection; label: string; icon: React.ReactNode }[]).map(({ key, label, icon }) => (
               <button
                 key={key}
@@ -2392,6 +2394,10 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
 
               {settingsSection === 'api_tokens' && (
                 <ApiTokensPanel token={token} apiBase={API_BASE} />
+              )}
+
+              {settingsSection === 'notifications' && currentUser?.role !== 'rep' && (
+                <NotificationAlertsPanel token={token} apiBase={API_BASE} />
               )}
 
               </>

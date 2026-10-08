@@ -19,7 +19,8 @@
     "routing": "SMS line routing",
     "templates": "Template messages",
     "removal": "Group removal management",
-    "apiTokens": "API Tokens"
+    "apiTokens": "API Tokens",
+    "notifications": "Notifications"
   },
   "settings": {
     "loading": "Loading details...",
@@ -208,6 +209,33 @@
       "expired": "Expired",
       "noExpiry": "No expiry",
       "createdAt": "Created on"
+    },
+    "notifications": {
+      "heading": "Email notifications",
+      "intro": "Choose which notifications to receive by email. Each one is sent only if it is checked.",
+      "sentTo": "Emails will be sent to: {{email}}",
+      "noEmail": "No email is set on this account — add one in Personal details to receive notifications.",
+      "offlineTitle": "Alert me when I am not connected",
+      "offlineDesc": "When a new inquiry arrives and you have no open window of the system, one email is sent immediately. No more emails are sent until you open the system again.",
+      "dailyTitle": "Daily summary email",
+      "dailyDesc": "A summary of the day's activity: new conversations, conversations waiting for a reply, transfers and reminders, and alerts that were sent.",
+      "days": "Days",
+      "hour": "Send at",
+      "dayNames": [
+        "Sun",
+        "Mon",
+        "Tue",
+        "Wed",
+        "Thu",
+        "Fri",
+        "Sat"
+      ],
+      "noDays": "Select at least one day",
+      "save": "Save",
+      "saving": "Saving...",
+      "saved": "Settings saved",
+      "saveError": "Failed to save settings",
+      "loadError": "Could not load notification settings"
     }
   },
   "bots": {

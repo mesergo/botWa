@@ -41,6 +41,7 @@ import { authenticateToken } from './middleware/auth.js';
 import { setPushNotificationService } from './config/pushNotificationsRuntime.js';
 import { registerExpoPushNotifier } from './utils/expoPushNotifier.js';
 import './utils/activeContactsTicker.js';
+import './utils/dailySummaryTicker.js';
 import './internal-data/internalDataSyncTicker.js';
  
 const __filename = fileURLToPath(import.meta.url);
