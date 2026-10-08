@@ -914,6 +914,8 @@ async function saveBroadcastToSessions(userId, flowId, broadcastId, groupName, s
           }
         }
       }
+      // Template broadcast — always mark the session inactive right after the send.
+      if (sendOpts.isTemplate) update.$set = { ...(update.$set || {}), ...FLOW_RESET_FIELDS };
       console.log(`[saveBroadcastToSessions] phone=${p.phone} → Layer1 update.$set=${JSON.stringify(update.$set || {})}`);
       sessionOps.push({ updateOne: { filter: { _id: agentInfo.sessionId }, update } });
       continue;
@@ -944,6 +946,8 @@ async function saveBroadcastToSessions(userId, flowId, broadcastId, groupName, s
         update.$set = { ...(update.$set || {}), ...FLOW_RESET_FIELDS };
         console.log(`[saveBroadcastToSessions] phone=${p.phone} session=${nonAgentInfo.sessionId} → CLOSING session (resultingStatus=bot, is_active:false)`);
       }
+      // Template broadcast — always mark the session inactive right after the send.
+      if (sendOpts.isTemplate) update.$set = { ...(update.$set || {}), ...FLOW_RESET_FIELDS };
       console.log(`[saveBroadcastToSessions] phone=${p.phone} → Layer2 update.$set=${JSON.stringify(update.$set || {})}`);
       sessionOps.push({ updateOne: { filter: { _id: nonAgentInfo.sessionId }, update } });
       continue;
@@ -993,6 +997,8 @@ async function saveBroadcastToSessions(userId, flowId, broadcastId, groupName, s
         const postSendFields = buildPostSendModeFields('agent', 'bot');
         if (postSendFields) Object.assign(sessionDoc, postSendFields);
       }
+      // Template broadcast — the new session is created already inactive.
+      Object.assign(sessionDoc, FLOW_RESET_FIELDS);
     } else if (postSendMode !== 'no_change') {
       const postSendFields = buildPostSendModeFields(postSendMode, 'waiting');
       if (postSendFields) Object.assign(sessionDoc, postSendFields);
