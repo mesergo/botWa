@@ -22,7 +22,7 @@ import { pushMessagesToWhatsApp, debugCheckMediaUrl } from '../utils/whatsappSen
 import eventBus from '../utils/eventBus.js';
 import { applyConversationClosedToDoc, resolveClosingMessage } from '../utils/conversationActions.js';
 
-import { notifyWaitingCustomerMessage } from '../config/pushNotificationsRuntime.js';
+import { notifyWaitingCustomerMessage, notifyOfflineAlert } from '../config/pushNotificationsRuntime.js';
 import { sendExpoPushToUser } from '../utils/expoPush.js';
  
 const __filename = fileURLToPath(import.meta.url);
@@ -1544,6 +1544,16 @@ export const respondToMessage = async (req, res) => {
           previewText: String(text || '').slice(0, 80),
           clickAction: `/sessions?phone=${encodeURIComponent(sender)}`,
         });
+        // Email to opted-in users who are not connected (one per offline period)
+        notifyOfflineAlert({
+          tenantId: String(user._id),
+          sessionId: String(agentCheckSession._id),
+          customerName: name || '',
+          customerPhone: sender,
+          previewText: String(text || '').slice(0, 200),
+          clickAction: `/sessions?phone=${encodeURIComponent(sender)}`,
+          isNewConversation: false,
+        });
         // Expo push (mobile) — same trigger, fire-and-forget, never blocks the bot pipeline
         void sendExpoPushToUser(agentCheckSession.rep_user_id || String(user._id), {
           title: name || sender || 'לקוח',
@@ -1715,6 +1725,16 @@ export const respondToMessage = async (req, res) => {
       // Auto-add contact — only for real WhatsApp numbers (not simulator)
       const isSimulatedPhone = !sender || sender === 'Simulated' || sender.toLowerCase() === 'simulator';
       if (!isSimulatedPhone && sender) {
+        // New inquiry — email opted-in users who are not connected (one per offline period)
+        notifyOfflineAlert({
+          tenantId: String(user._id),
+          sessionId: String(session._id),
+          customerName: name || '',
+          customerPhone: sender,
+          previewText: String(text || '').slice(0, 200),
+          clickAction: `/sessions?phone=${encodeURIComponent(sender)}`,
+          isNewConversation: true,
+        });
         const contactSet = {};
         const contactSetOnInsert = { full_name: '', email: '' };
         // Always update whatsapp_name if a name was provided
@@ -2425,6 +2445,16 @@ export const respondToMessage = async (req, res) => {
         createdAt: new Date().toISOString(),
         previewText: String(text || '').slice(0, 80),
         clickAction: `/sessions?phone=${encodeURIComponent(sender)}`,
+      });
+      // Email to opted-in users who are not connected (one per offline period)
+      notifyOfflineAlert({
+        tenantId: String(user._id),
+        sessionId: String(session._id),
+        customerName: name || '',
+        customerPhone: sender,
+        previewText: String(text || '').slice(0, 200),
+        clickAction: `/sessions?phone=${encodeURIComponent(sender)}`,
+        isNewConversation: false,
       });
       // Expo push (mobile) — same trigger, fire-and-forget, never blocks the bot pipeline
       void sendExpoPushToUser(session.rep_user_id || String(user._id), {

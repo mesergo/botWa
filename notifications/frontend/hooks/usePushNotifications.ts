@@ -167,6 +167,16 @@ export function usePushNotifications(options: UsePushNotificationsOptions): UseP
           });
         } else if (restoredFid) {
           await opts.getServiceWorkerRegistration?.();
+          if (cancelled) return;
+          // The stored FID belongs to this browser, not to a user. Re-bind it to whoever is
+          // logged in now (login switch / admin impersonation) — upsert by FID is idempotent.
+          await opts.deviceService.register({
+            fid: restoredFid,
+            userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : undefined,
+            platform: 'web',
+            allBotLines: restoredAllBotLines,
+            botLineIds: restoredAllBotLines ? [] : restoredBotLineIds,
+          });
         }
 
         if (!restoredFid || cancelled) return;
@@ -297,7 +307,11 @@ export function usePushNotifications(options: UsePushNotificationsOptions): UseP
     try {
       const result = await opts.deviceService.sendTest();
       if (!result.success) {
-        setError(result.reason || 'שליחת בדיקה נכשלה');
+        setError(
+          result.reason === 'no_device_fids'
+            ? 'הדפדפן הזה לא רשום להתראות עבור המשתמש הנוכחי. יש ללחוץ "השבת התראות" ואז להפעיל מחדש.'
+            : result.reason || 'שליחת בדיקה נכשלה'
+        );
         return false;
       }
       return true;
