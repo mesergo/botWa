@@ -1,5 +1,7 @@
+import mongoose from 'mongoose';
 import User from '../models/User.js';
 import BotSession from '../models/BotSession.js';
+import { buildConversationClosedSetFragment } from '../utils/conversationActions.js';
 import BotFlow from '../models/BotFlow.js';
 import AuditLog from '../models/AuditLog.js';
 import SystemSetting from '../models/SystemSetting.js';
@@ -1242,6 +1244,48 @@ export const createUser = async (req, res) => {
         createdAt: user.createdAt
       }
     });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// Resolves the target user and the exact filter used to find/close their active sessions.
+// Filters strictly by the customer's user_id + is_active:true (same as close-all-user-sessions.js).
+const resolveActiveSessionsFilter = async (userIdParam) => {
+  if (!mongoose.Types.ObjectId.isValid(userIdParam)) return { status: 400, error: 'Invalid user id' };
+  const user = await User.findById(userIdParam).select('_id email').lean();
+  if (!user) return { status: 404, error: 'User not found' };
+  const userId = String(user._id);
+  return { user, userId, filter: { user_id: userId, is_active: true } };
+};
+
+export const getUserActiveSessionsCount = async (req, res) => {
+  try {
+    const resolved = await resolveActiveSessionsFilter(req.params.userId);
+    if (resolved.error) return res.status(resolved.status).json({ error: resolved.error });
+    const count = await BotSession.countDocuments(resolved.filter);
+    res.json({ count });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+export const closeAllUserSessions = async (req, res) => {
+  try {
+    const resolved = await resolveActiveSessionsFilter(req.params.userId);
+    if (resolved.error) return res.status(resolved.status).json({ error: resolved.error });
+
+    const result = await BotSession.updateMany(
+      resolved.filter,
+      { $set: buildConversationClosedSetFragment(new Date()) }
+    );
+    const closed = result.modifiedCount || 0;
+
+    await logAdminAction(req.userId, req.user?.email, 'CLOSE_ALL_USER_SESSIONS', resolved.userId, 'User', {
+      email: resolved.user.email,
+      closed
+    });
+    res.json({ success: true, closed });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
