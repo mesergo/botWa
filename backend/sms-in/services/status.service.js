@@ -1,63 +1,33 @@
-import {
-  isSmsConfigured,
-  isSmsConnected,
-  pingSmsDb,
-  listSmsCollections,
-  getSmsDbName,
-  getSmsCollectionName,
-} from '../smsDb.js';
+import mongoose from 'mongoose';
+import SmsExternalLog from '../../models/SmsExternalLog.js';
 
-const DISCONNECTED_MESSAGE =
-  'Could not connect to SMS MongoDB — check SMS_MONGODB_URI';
-const CONNECTED_MESSAGE = 'מחובר לטבלת SMS אמיתית';
-
-function buildConnectedStatus({ dbName, collection, names }) {
-  return {
-    connected: true,
-    configured: true,
-    dbName,
-    collection,
-    exists: names.includes(collection),
-    collectionsDetected: names,
-    message: CONNECTED_MESSAGE,
-  };
-}
+// The SMS inbox now reads from our own internal MongoDB (collection `sms`),
+// so the status reflects the internal connection, not the external ilbot DB.
+// (The previous external-DB status check was removed along with the startup
+// connectSmsDb() call; smsDb.js is kept for the migration script / old code.)
+const DISCONNECTED_MESSAGE = 'Internal MongoDB is not connected';
+const CONNECTED_MESSAGE = 'מחובר לטבלת SMS פנימית';
 
 export async function getStatus() {
-  const collection = getSmsCollectionName();
-  const dbName = getSmsDbName();
+  const dbName = 'internal';
+  const collection = SmsExternalLog.collection?.collectionName || 'sms';
+  const connected = mongoose.connection.readyState === 1;
 
-  if (!isSmsConfigured()) {
+  if (!connected) {
     return {
       connected: false,
-      configured: false,
-      message: 'Missing SMS_MONGODB_URI in backend/.env',
+      configured: true,
+      message: DISCONNECTED_MESSAGE,
       dbName,
       collection,
     };
   }
 
-  if (isSmsConnected()) {
-    try {
-      await pingSmsDb();
-      const names = await listSmsCollections();
-      return buildConnectedStatus({ dbName, collection, names });
-    } catch {
-      // fall through to disconnected state
-    }
-  }
-
-  const reachable = await pingSmsDb();
-  if (reachable) {
-    const names = await listSmsCollections();
-    return buildConnectedStatus({ dbName, collection, names });
-  }
-
   return {
-    connected: false,
+    connected: true,
     configured: true,
-    message: DISCONNECTED_MESSAGE,
     dbName,
     collection,
+    message: CONNECTED_MESSAGE,
   };
 }

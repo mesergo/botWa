@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import ChatImage from './shared/ChatImage';
 import {
   Search, List, Phone, Bot, Clock, ToggleLeft, ToggleRight, ChevronDown, ChevronUp,
-  MessageSquare, X, User as UserIcon, ExternalLink
+  MessageSquare, X, User as UserIcon, ExternalLink, Power, AlertTriangle
 } from 'lucide-react';
 
 /**
@@ -37,6 +38,53 @@ const CustomerSessionsPanel: React.FC<CustomerSessionsPanelProps> = ({ token, ap
   const [botsList, setBotsList] = useState<{ id: string; name: string }[]>([]);
   const [showBotDropdown, setShowBotDropdown] = useState(false);
   const searchBoxRef = useRef<HTMLDivElement>(null);
+
+  // Close-all-active-sessions modal
+  const [closeAllOpen, setCloseAllOpen] = useState(false);
+  const [closeAllCount, setCloseAllCount] = useState<number | null>(null);
+  const [closeAllSubmitting, setCloseAllSubmitting] = useState(false);
+  const [closeAllError, setCloseAllError] = useState('');
+
+  const openCloseAllModal = async () => {
+    setCloseAllOpen(true);
+    setCloseAllCount(null);
+    setCloseAllError('');
+    try {
+      const response = await fetch(`${apiBase}/admin/users/${userId}/sessions/active-count`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await response.json().catch(() => ({}));
+      if (response.ok) {
+        setCloseAllCount(typeof data.count === 'number' ? data.count : 0);
+      } else {
+        setCloseAllError(data.error || t('customerPanel.closeAllError'));
+      }
+    } catch (err) {
+      setCloseAllError(t('customerPanel.closeAllError'));
+    }
+  };
+
+  const confirmCloseAll = async () => {
+    setCloseAllSubmitting(true);
+    setCloseAllError('');
+    try {
+      const response = await fetch(`${apiBase}/admin/users/${userId}/sessions/close-all`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await response.json().catch(() => ({}));
+      if (response.ok) {
+        setCloseAllOpen(false);
+        fetchSessions(sessionsPage, sessionsSearch);
+      } else {
+        setCloseAllError(data.error || t('customerPanel.closeAllError'));
+      }
+    } catch (err) {
+      setCloseAllError(t('customerPanel.closeAllError'));
+    } finally {
+      setCloseAllSubmitting(false);
+    }
+  };
 
   const filteredBots = botsList.filter(b =>
     !sessionsSearchInput.trim() || (b.name || '').toLowerCase().includes(sessionsSearchInput.trim().toLowerCase())
@@ -158,6 +206,14 @@ const CustomerSessionsPanel: React.FC<CustomerSessionsPanelProps> = ({ token, ap
                 {t('customerPanel.countSummary', { total: sessionsTotal, page: sessionsPage, totalPages: sessionsTotalPages })}
               </p>
             ) : <span />}
+            <button
+              type="button"
+              onClick={openCloseAllModal}
+              className="flex items-center gap-2 px-4 py-3 bg-red-600 hover:bg-red-700 text-white text-sm font-bold rounded-xl shadow-sm transition-colors whitespace-nowrap"
+            >
+              <Power size={16} />
+              {t('customerPanel.closeAllButton')}
+            </button>
             <div className="relative max-w-md w-full sm:w-auto sm:flex-1" ref={searchBoxRef}>
               <Search size={16} className="absolute start-4 top-1/2 -translate-y-1/2 text-slate-300" />
               <input
@@ -579,6 +635,58 @@ const CustomerSessionsPanel: React.FC<CustomerSessionsPanelProps> = ({ token, ap
           </div>
         );
       })()}
+
+      {/* Close-all-active-sessions confirmation modal */}
+      {closeAllOpen && createPortal(
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-red-50 text-red-600 flex items-center justify-center flex-shrink-0">
+                <AlertTriangle size={20} />
+              </div>
+              <h3 className="text-lg font-black text-slate-800">{t('customerPanel.closeAllTitle')}</h3>
+            </div>
+
+            {closeAllCount === null && !closeAllError ? (
+              <p className="text-sm font-bold text-slate-400">{t('customerPanel.closeAllCountLoading')}</p>
+            ) : closeAllCount !== null && (
+              <p className="text-sm font-bold text-slate-700">
+                {closeAllCount === 0
+                  ? t('customerPanel.closeAllNone')
+                  : t('customerPanel.closeAllCountMessage', { count: closeAllCount })}
+              </p>
+            )}
+
+            <p className="text-xs font-bold text-red-600 bg-red-50 border border-red-100 rounded-xl px-3 py-2">
+              {t('customerPanel.closeAllWarning')}
+            </p>
+
+            {closeAllError && (
+              <p className="text-xs font-bold text-red-600">{closeAllError}</p>
+            )}
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setCloseAllOpen(false)}
+                disabled={closeAllSubmitting}
+                className="px-4 py-2.5 text-sm font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors disabled:opacity-50"
+              >
+                {t('customerPanel.closeAllCancel')}
+              </button>
+              <button
+                type="button"
+                onClick={confirmCloseAll}
+                disabled={closeAllSubmitting || closeAllCount === null || closeAllCount === 0}
+                className="px-4 py-2.5 text-sm font-bold text-white bg-red-600 hover:bg-red-700 rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {closeAllSubmitting ? t('customerPanel.closeAllSubmitting') : t('customerPanel.closeAllConfirm')}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 };
