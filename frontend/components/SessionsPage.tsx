@@ -8,6 +8,7 @@ import { TemplateHeaderMediaField } from './TemplateHeaderMediaField';
 import QuickInsertMenu from './shared/QuickInsertMenu';
 import ChatImage from './shared/ChatImage';
 import { getMissingTemplateVars } from './shared/templateValidation';
+import { applyDefaultBodyParams, FIELD_PREFIX } from './shared/templateDefaultParams';
 import { usePermission } from '../hooks/usePermission';
 import PageTopBar from './PageTopBar';
 import ProfileMenuContent from './ProfileMenuContent';
@@ -150,6 +151,8 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
   // What the template is configured to do to the conversation right after it's sent
   // ('no_change' | 'agent' | 'bot'), per template name — from Dialog360TemplateSetting.
   const [templatePostSendMode, setTemplatePostSendMode] = useState<Record<string, 'no_change' | 'agent' | 'bot'>>({});
+  // Fixed BODY param values per template name (see shared/templateDefaultParams.ts).
+  const [templateDefaultParams, setTemplateDefaultParams] = useState<Record<string, string[]>>({});
   // Per-send override: null = use the template's configured default above.
   const [sendPostSendModeOverride, setSendPostSendModeOverride] = useState<'no_change' | 'agent' | 'bot' | null>(null);
 
@@ -1575,16 +1578,19 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
         const settingsMap: Record<string, 'hidden' | 'manager' | 'agent'> = {};
         const defaultMediaMap: Record<string, { url: string; type: 'image' | 'video' | 'document' }> = {};
         const postSendModeMap: Record<string, 'no_change' | 'agent' | 'bot'> = {};
+        const defaultParamsMap: Record<string, string[]> = {};
         settingsList.forEach((s: any) => {
           settingsMap[s.templateName] = s.visibility || (s.showInChat === false ? 'hidden' : 'manager');
           if (s.defaultHeaderMediaUrl && s.defaultHeaderMediaType) {
             defaultMediaMap[s.templateName] = { url: s.defaultHeaderMediaUrl, type: s.defaultHeaderMediaType };
           }
           postSendModeMap[s.templateName] = s.postSendMode || 'no_change';
+          if (Array.isArray(s.defaultBodyParams)) defaultParamsMap[s.templateName] = s.defaultBodyParams;
         });
         setTemplateSettings(settingsMap);
         setTemplateDefaultMedia(defaultMediaMap);
         setTemplatePostSendMode(postSendModeMap);
+        setTemplateDefaultParams(defaultParamsMap);
       }
     } catch (err) {
       console.error('Error fetching template settings:', err);
@@ -1604,6 +1610,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
     if (needsParams) {
       // Initialize params structure
       const initialParams: Record<string, any> = {};
+      const defaults = templateDefaultParams[templateName];
       if (template.components && Array.isArray(template.components)) {
         template.components.forEach((comp: any) => {
           if (comp.type === 'HEADER' && ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(comp.format)) {
@@ -1623,7 +1630,9 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
             // Extract {{1}}, {{2}} etc from body text
             const matches = comp.text.match(/\{\{\d+\}\}/g);
             if (matches) {
-              initialParams.body = matches.map((m: string) => '');
+              // Pre-fill configured fixed params; contact-field ones are filled in
+              // below once this contact's record has loaded.
+              initialParams.body = applyDefaultBodyParams(matches.length, defaults, currentUser?.name, () => '');
             }
           }
         });
@@ -1639,12 +1648,41 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
           .then(data => {
             const rec = data?.contacts?.[0] ?? null;
             setContactRecord(rec);
+            if (rec && defaults?.some(d => d?.startsWith(FIELD_PREFIX))) {
+              setTemplateParams(prev => {
+                if (!Array.isArray(prev.body)) return prev;
+                const body = [...prev.body];
+                defaults.forEach((d, i) => {
+                  // Don't overwrite anything the agent already typed meanwhile.
+                  if (d?.startsWith(FIELD_PREFIX) && i < body.length && !body[i]) {
+                    body[i] = resolveContactFieldRef(rec, d.slice(FIELD_PREFIX.length));
+                  }
+                });
+                return { ...prev, body };
+              });
+            }
           })
           .catch(() => setContactRecord(null));
       }
     }
   };
-  
+
+  // Resolve a contact-field ref (full_name / phone / custom:<id>...) against a contact
+  // record — same lookup as the params modal's "choose contact field" dropdown.
+  const resolveContactFieldRef = (rec: Record<string, any>, ref: string): string => {
+    if (ref.startsWith('custom:')) {
+      const fieldId = ref.slice(7);
+      // Bot-flow saves use _id as key; manual edits use the slug key — check both
+      const fieldDef = contactFieldDefs.find(f => f._id === fieldId);
+      return String(
+        rec.custom_field_values?.[fieldId] ??
+        (fieldDef ? rec.custom_field_values?.[fieldDef.key] : undefined) ??
+        ''
+      );
+    }
+    return String(rec[ref] ?? '');
+  };
+
   // Check if template needs parameters
   const checkTemplateNeedsParams = (template: any): boolean => {
     if (!template.components || !Array.isArray(template.components)) return false;

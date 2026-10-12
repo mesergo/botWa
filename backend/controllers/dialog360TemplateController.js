@@ -175,6 +175,41 @@ export const updatePostSendMode = async (req, res) => {
 };
 
 /**
+ * Set the fixed (default) BODY param values for a template — see
+ * `defaultBodyParams` in models/Dialog360TemplateSetting.js for the value format.
+ */
+export const setDefaultParams = async (req, res) => {
+  try {
+    const { templateName, templateId, defaultBodyParams } = req.body;
+    const userId = getEffectiveUserId(req);
+
+    if (!templateName) {
+      res.locals.errorAlreadyLogged = true;
+      return res.status(400).json({ error: 'templateName is required' });
+    }
+    if (!Array.isArray(defaultBodyParams)) {
+      return res.status(400).json({ error: 'defaultBodyParams must be an array' });
+    }
+
+    const update = {
+      templateId,
+      defaultBodyParams: defaultBodyParams.map(v => (v == null ? '' : String(v))),
+      userId,
+    };
+
+    const setting = await Dialog360TemplateSetting.findOneAndUpdate(
+      { templateName, userId },
+      { $set: update },
+      { upsert: true, new: true }
+    );
+
+    res.json({ success: true, setting: normalizeSetting(setting) });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+/**
  * Delete a template setting
  */
 export const deleteTemplateSetting = async (req, res) => {

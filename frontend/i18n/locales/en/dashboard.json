@@ -142,7 +142,14 @@
       "noneInternalHint": "Internal templates are sent as a regular text/media message within an active conversation, not through WhatsApp's official API",
       "edit": "Edit",
       "confirmDelete": "Confirm delete",
-      "delete": "Delete"
+      "delete": "Delete",
+      "defaultParamsLabel": "Fixed parameters",
+      "defaultParamNone": "None (fill manually)",
+      "defaultParamAgentName": "Agent name",
+      "defaultParamText": "Fixed text",
+      "defaultParamBaseFields": "Basic contact fields",
+      "defaultParamCustomFields": "Custom fields",
+      "defaultParamTextPlaceholder": "Enter a fixed value"
     },
     "removal": {
       "heading": "Group removal management",
