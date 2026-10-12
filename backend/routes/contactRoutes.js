@@ -15,7 +15,8 @@ import {
   assignRep,
   getContactGroupsMap,
   getIntroText,
-  setIntroText,
+  setIntroText, 
+  setBotBlock,
 } from '../controllers/contactController.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -50,6 +51,7 @@ router.post('/import', upload.single('file'), importContacts);
 router.patch('/assign-rep', assignRep);
 router.get('/intro-text', getIntroText);
 router.put('/intro-text', setIntroText);
+router.patch('/bot-block', setBotBlock);
 
 router.get('/', getContacts);
 router.post('/', createContact);

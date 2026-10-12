@@ -10,7 +10,8 @@
     "transferFailed": "שגיאה בהעברת השיחה",
     "groupsLoadFailed": "שגיאה בטעינת הקבוצות",
     "blocklistNotFound": "לא נמצאה רשימת הסרה במערכת",
-    "blocklistAddFailed": "שגיאה בהוספה לרשימת הסרה"
+    "blocklistAddFailed": "שגיאה בהוספה לרשימת הסרה",
+    "botBlockFailed": "שגיאה בעדכון חסימת הבוט"
   },
   "dateLabels": {
     "unknown": "לא ידוע",
@@ -93,7 +94,7 @@
     "openLink": "פתח",
     "replyTooltip": "הגב להודעה זו",
     "customerLabel": "לקוח"
-  },
+  }, 
   "header": {
     "title": "שיחות",
     "chooseBotSubtitle": "בחר מספר מחובר לצפייה בשיחות",
@@ -112,6 +113,7 @@
     "filterResolved": "טופל",
     "filterBot": "בוט",
     "filterClosed": "סיום",
+    "lastReplyBy": "בטיפול ע״י {{name}}",
     "noContacts": "אין אנשי קשר",
     "noResultsByNameOrNumber": "לא נמצאו תוצאות לפי שם / מספר",
     "simulator": "סימולטור",
@@ -143,6 +145,10 @@
     "addingToBlocklist": "מוסיף...",
     "addToBlocklist": "הוספה לרשימת הסרה",
     "addedToBlocklist": "נוסף לרשימת הסרה",
+    "blockBot": "חסימת בוט — מצב נציג קבוע",
+    "unblockBot": "ביטול חסימת בוט",
+    "botBlockTooltip": "כשחסום, הבוט לא ישיב יותר למספר זה — השיחה תישאר תמיד במצב נציג עד ביטול",
+    "botBlockedBanner": "מספר זה נעול תמיד במצב נציג — הבוט חסום ולא ישיב אוטומטית להודעות מהלקוח.",
     "agentModeActive": "מצב נציג פעיל — הבוט מושהה. הודעות מהלקוח לא יקבלו מענה אוטומטי.",
     "activatedAt": "הופעל {{time}}",
     "waSendFailedPrefix": "⚠️ ההודעה נשמרה בהיסטוריה אך",

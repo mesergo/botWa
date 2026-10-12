@@ -1082,7 +1082,24 @@ export const getContacts = async (req, res) => {
   // message OR an outgoing agent/bot message) — used below to derive the
   // real "last activity" timestamp, since _date only reflects when the
   // session document itself was created, not later messages appended to it.
-  _lastHistoryEntry: { $arrayElemAt: ['$process_history', -1] }
+  _lastHistoryEntry: { $arrayElemAt: ['$process_history', -1] },
+  _lastAgentHistoryEntry: {
+    $arrayElemAt: [
+      {
+        $filter: {
+          input: { $ifNull: ['$process_history', []] },
+          as: 'entry',
+          cond: {
+            $and: [
+              { $eq: ['$$entry.sender', 'agent'] },
+              { $ne: ['$$entry.wa_sent', false] }
+            ]
+          }
+        }
+      },
+      -1
+    ]
+  }
 }
       },
       {
@@ -1119,6 +1136,8 @@ export const getContacts = async (req, res) => {
           latestStatus: { $first: '$status' },
           latestSessionDate: { $first: '$_date' },
           latestWantsPhone: { $first: '$wants_phone' },
+          latestResponderName: { $first: '$_lastAgentHistoryEntry.agent_name' },
+          latestResponderUserId: { $first: '$_lastAgentHistoryEntry.agent_user_id' },
           // Routing of the MOST RECENT session only — used to display the contact's
           // current status/badge. Visibility for restricted reps is decided below
           // using the full per-session history instead (repHistory), so a rep keeps
@@ -1159,6 +1178,8 @@ export const getContacts = async (req, res) => {
         repGroupId: c.latestRepGroupId ? String(c.latestRepGroupId) : null,
         repUserId: c.latestRepUserId ? String(c.latestRepUserId) : null,
         status: c.latestStatus || 'bot',
+        lastResponderName: c.latestResponderName || null,
+        lastResponderUserId: c.latestResponderUserId ? String(c.latestResponderUserId) : null,
         wants_phone: !!c.latestWantsPhone,
         repHistory: (c.repHistory || []).map(h => ({
           repGroupId: h.repGroupId ? String(h.repGroupId) : null,
@@ -1167,7 +1188,7 @@ export const getContacts = async (req, res) => {
         }))
       };
     });
-
+ 
     // Contacts that have an intro text (from the /sessions?text= link) must be listed even
     // when they have no BotSession yet — the aggregation above only sees session-backed contacts.
     const sessionPhones = new Set(result.map(c => c.phone));
@@ -1187,24 +1208,45 @@ export const getContacts = async (req, res) => {
         repGroupId: null,
         repUserId: null,
         status: 'bot',
+        lastResponderName: null,
         wants_phone: false,
         repHistory: []
       });
     });
     result.sort((a, b) => new Date(b.lastMessageAt || 0) - new Date(a.lastMessageAt || 0));
 
+    const responderUserIds = [...new Set(
+      result
+        .filter(c => c.status === 'handling' && !c.lastResponderName && c.lastResponderUserId && mongoose.Types.ObjectId.isValid(c.lastResponderUserId))
+        .map(c => c.lastResponderUserId)
+    )];
+    if (responderUserIds.length > 0) {
+      const responderUsers = await User.find({
+        _id: { $in: responderUserIds.map(id => new mongoose.Types.ObjectId(id)) }
+      }).select('name email').lean();
+      const responderNameMap = new Map(
+        responderUsers.map(rep => [rep._id.toString(), rep.name || rep.email || ''])
+      );
+      result.forEach(c => {
+        if (c.status !== 'handling' || c.lastResponderName || !c.lastResponderUserId) return;
+        c.lastResponderName = responderNameMap.get(c.lastResponderUserId) || c.lastResponderName;
+      });
+    }
+ 
     // Enrich with assigned_to from Contact collection
     const phones = result.map(c => c.phone);
-    const contactDocs = await Contact.find({ user_id: userId, phone: { $in: phones } }).select('phone assigned_to whatsapp_name full_name intro_text').lean();
+    const contactDocs = await Contact.find({ user_id: userId, phone: { $in: phones } }).select('phone assigned_to whatsapp_name full_name intro_text bot_blocked').lean();
     const assignedToMap = {};
     const whatsappNameMap = {};
     const fullNameMap = {};
     const introTextMap = {};
+    const botBlockedMap = {};
     contactDocs.forEach(c => {
       assignedToMap[c.phone] = (c.assigned_to || []).map(id => id.toString());
       whatsappNameMap[c.phone] = c.whatsapp_name || '';
       fullNameMap[c.phone] = c.full_name || '';
       introTextMap[c.phone] = c.intro_text || '';
+      botBlockedMap[c.phone] = !!c.bot_blocked;
     });
 
     let finalResult = result.map(c => ({
@@ -1213,6 +1255,7 @@ export const getContacts = async (req, res) => {
       whatsapp_name: whatsappNameMap[c.phone] || '',
       full_name: fullNameMap[c.phone] || '',
       intro_text: introTextMap[c.phone] || '',
+      bot_blocked: botBlockedMap[c.phone] || false,
     }));
 
     // Fetch rep user doc once (used for both restrictions below)
@@ -3059,6 +3102,7 @@ export const sendTemplateToPhone = async (req, res) => {
       sender: 'agent',
       name: 'נציג',
       agent_name: agentName,
+      agent_user_id: String(req.userId || ''),
       node_id: 'agent',
       created,
       wa_sent: waSent,
@@ -3345,6 +3389,7 @@ export const sendAdminMessageToSession = async (req, res) => {
       sender: 'agent',
       name: 'נציג',
       agent_name: agentName,
+      agent_user_id: String(req.userId || ''),
       node_id: 'agent',
       created,
       wa_sent: waSent,

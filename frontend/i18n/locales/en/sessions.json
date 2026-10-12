@@ -10,8 +10,9 @@
     "transferFailed": "Failed to transfer the conversation",
     "groupsLoadFailed": "Failed to load groups",
     "blocklistNotFound": "Blocklist not found in the system",
-    "blocklistAddFailed": "Failed to add to the blocklist"
-  },
+    "blocklistAddFailed": "Failed to add to the blocklist",
+    "botBlockFailed": "Failed to update the bot-block state"
+  }, 
   "dateLabels": {
     "unknown": "Unknown",
     "yesterday": "Yesterday",
@@ -112,6 +113,7 @@
     "filterResolved": "Handled",
     "filterBot": "Bot",
     "filterClosed": "Ended",
+    "lastReplyBy": "In progress by {{name}}",
     "noContacts": "No contacts",
     "noResultsByNameOrNumber": "No results found by name / number",
     "simulator": "Simulator",
@@ -143,6 +145,10 @@
     "addingToBlocklist": "Adding...",
     "addToBlocklist": "Add to blocklist",
     "addedToBlocklist": "Added to blocklist",
+    "blockBot": "Block bot — always agent mode",
+    "unblockBot": "Unblock bot",
+    "botBlockTooltip": "Once blocked, the bot will no longer respond to this number — the conversation always stays in agent mode until unblocked",
+    "botBlockedBanner": "This number is permanently pinned to agent mode — the bot is blocked and will not reply automatically to the customer.",
     "agentModeActive": "Agent mode active — the bot is paused. Customer messages will not receive automatic replies.",
     "activatedAt": "Activated {{time}}",
     "waSendFailedPrefix": "⚠️ The message was saved to history but",

@@ -15,7 +15,11 @@ const contactSchema = new mongoose.Schema({
   pending_history: { type: [mongoose.Schema.Types.Mixed], default: [] },
   // Opening text passed via the /sessions?text= link; shown in the chat header until dismissed.
   intro_text: { type: String, default: '' },
-}, {
+  // When true, this phone is permanently pinned to representative (agent) mode:
+  // the bot never auto-replies and reps can always free-send, regardless of any
+  // session's normal 30-minute agent-mode expiry. See chatController.js.
+  bot_blocked: { type: Boolean, default: false },
+}, { 
   timestamps: true,
   collection: 'Contact'
 });

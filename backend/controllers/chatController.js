@@ -22,7 +22,7 @@ import { pushMessagesToWhatsApp, debugCheckMediaUrl } from '../utils/whatsappSen
 import eventBus from '../utils/eventBus.js';
 import { applyConversationClosedToDoc, resolveClosingMessage } from '../utils/conversationActions.js';
 
-import { notifyWaitingCustomerMessage, notifyOfflineAlert } from '../config/pushNotificationsRuntime.js';
+import { notifyWaitingCustomerMessage } from '../config/pushNotificationsRuntime.js';
 import { sendExpoPushToUser } from '../utils/expoPush.js';
  
 const __filename = fileURLToPath(import.meta.url);
@@ -1477,6 +1477,14 @@ export const respondToMessage = async (req, res) => {
     // talking to multiple bots doesn't share state across them.
     const botFlowId = tokenBot._id.toString();
 
+    // ── Always-agent (bot-blocked) override ─────────────────────────────────
+    // A specific customer phone can be permanently pinned to representative mode
+    // (Contact.bot_blocked) — e.g. numbers that must never receive an automated
+    // reply. Unlike the normal 30-minute agent-mode window below, this override
+    // never expires on its own; only unblocking the contact restores the bot.
+    const blockedContact = await Contact.findOne({ user_id: String(user._id), phone: sender }).select('bot_blocked').lean();
+    const alwaysAgent = !!blockedContact?.bot_blocked;
+
     // ── Agent mode bypass ────────────────────────────────────────────────────
     // If a human agent has taken over THIS bot's conversation with this customer
     // (is_agent=true, activated within the last 30 minutes), save the incoming
@@ -1496,7 +1504,7 @@ export const respondToMessage = async (req, res) => {
 
     if (agentCheckSession) {
       const agentAgeMinutes = (Date.now() - new Date(agentCheckSession.agent_since).getTime()) / 60000;
-      if (agentAgeMinutes <= 30) {
+      if (alwaysAgent || agentAgeMinutes <= 30) {
         // Active agent — record user message only, return empty bot response
         agentCheckSession.process_history = agentCheckSession.process_history || [];
         const mediaType = detectMediaType(String(text));
@@ -1544,16 +1552,6 @@ export const respondToMessage = async (req, res) => {
           previewText: String(text || '').slice(0, 80),
           clickAction: `/sessions?phone=${encodeURIComponent(sender)}`,
         });
-        // Email to opted-in users who are not connected (one per offline period)
-        notifyOfflineAlert({
-          tenantId: String(user._id),
-          sessionId: String(agentCheckSession._id),
-          customerName: name || '',
-          customerPhone: sender,
-          previewText: String(text || '').slice(0, 200),
-          clickAction: `/sessions?phone=${encodeURIComponent(sender)}`,
-          isNewConversation: false,
-        });
         // Expo push (mobile) — same trigger, fire-and-forget, never blocks the bot pipeline
         void sendExpoPushToUser(agentCheckSession.rep_user_id || String(user._id), {
           title: name || sender || 'לקוח',
@@ -1586,6 +1584,51 @@ export const respondToMessage = async (req, res) => {
         await agentCheckSession.save();
         console.log(`[BOT] 🔓 Agent mode expired — closed session ${agentCheckSession._id}, will create fresh session for ${sender}`);
       }
+    } else if (alwaysAgent) {
+      // No existing agent session (first message ever, or the previous one was
+      // closed) but this phone is permanently blocked from the bot — open a
+      // brand-new session directly in agent/waiting mode instead of running the
+      // bot flow at all.
+      const mediaType = detectMediaType(String(text));
+      const { url: mediaUrl, caption: mediaCaption } = splitMediaUrlAndCaption(text);
+      const historyEntry = mediaType
+        ? { type: mediaType, url: mediaUrl, text: mediaCaption || undefined, sender: 'user', name: 'משתמש', node_id: 'user', created: new Date().toISOString(), wamid: message_id || null }
+        : { type: 'UserInput', text: String(text), sender: 'user', name: 'משתמש', node_id: 'user', created: new Date().toISOString(), wamid: message_id || null };
+
+      const newAgentSession = await BotSession.create({
+        user_id: user._id,
+        flow_id: botFlowId,
+        customer_phone: phone,
+        sender,
+        is_active: true,
+        is_agent: true,
+        agent_since: new Date(),
+        status: 'waiting',
+        parameters: { waPhone: sender, waName: name || '' },
+        process_history: [historyEntry]
+      });
+
+      eventBus.emit('session:update', { userId: String(user._id), phone: sender });
+      notifyWaitingCustomerMessage({
+        eventId: `msg_${newAgentSession._id}_0_${Date.now()}`,
+        tenantId: String(user._id),
+        botLineId: botFlowId,
+        conversationId: String(newAgentSession._id),
+        messageId: 'hist_0',
+        senderDisplayName: name || sender || 'לקוח',
+        createdAt: new Date().toISOString(),
+        previewText: String(text || '').slice(0, 80),
+        clickAction: `/sessions?phone=${encodeURIComponent(sender)}`,
+      });
+      void sendExpoPushToUser(String(user._id), {
+        title: name || sender || 'לקוח',
+        body: 'הודעה חדשה מלקוח',
+        data: { sessionId: String(newAgentSession._id) },
+      }).catch((err) => console.error('[EXPO-PUSH] chatController isolated error:', err?.message || err));
+
+      console.log(`[BOT] 🙋 Created new AGENT-mode session (bot_blocked) id=${newAgentSession._id} phone=${phone}`);
+      console.log(`${'═'.repeat(80)}\n`);
+      return res.json({ StatusId: 1, StatusDescription: 'Agent mode active (blocked)', sender, messages: [], agentMode: true });
     }
     // ─────────────────────────────────────────────────────────────────────────
 
@@ -1725,16 +1768,6 @@ export const respondToMessage = async (req, res) => {
       // Auto-add contact — only for real WhatsApp numbers (not simulator)
       const isSimulatedPhone = !sender || sender === 'Simulated' || sender.toLowerCase() === 'simulator';
       if (!isSimulatedPhone && sender) {
-        // New inquiry — email opted-in users who are not connected (one per offline period)
-        notifyOfflineAlert({
-          tenantId: String(user._id),
-          sessionId: String(session._id),
-          customerName: name || '',
-          customerPhone: sender,
-          previewText: String(text || '').slice(0, 200),
-          clickAction: `/sessions?phone=${encodeURIComponent(sender)}`,
-          isNewConversation: true,
-        });
         const contactSet = {};
         const contactSetOnInsert = { full_name: '', email: '' };
         // Always update whatsapp_name if a name was provided
@@ -2445,16 +2478,6 @@ export const respondToMessage = async (req, res) => {
         createdAt: new Date().toISOString(),
         previewText: String(text || '').slice(0, 80),
         clickAction: `/sessions?phone=${encodeURIComponent(sender)}`,
-      });
-      // Email to opted-in users who are not connected (one per offline period)
-      notifyOfflineAlert({
-        tenantId: String(user._id),
-        sessionId: String(session._id),
-        customerName: name || '',
-        customerPhone: sender,
-        previewText: String(text || '').slice(0, 200),
-        clickAction: `/sessions?phone=${encodeURIComponent(sender)}`,
-        isNewConversation: false,
       });
       // Expo push (mobile) — same trigger, fire-and-forget, never blocks the bot pipeline
       void sendExpoPushToUser(session.rep_user_id || String(user._id), {
