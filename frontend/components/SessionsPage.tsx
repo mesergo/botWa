@@ -2310,7 +2310,12 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 <div className="w-6 h-6 rounded-lg flex items-center justify-center shadow-sm bg-amber-100 border border-amber-200 text-amber-700">
                   <Megaphone size={12} />
                 </div>
-                {msgDate && <span className="text-[9px] text-slate-400 font-semibold">{msgDate}</span>}
+                {(msgDate || item.deliveryStatus) && (
+                  <span className="flex items-center gap-0.5 text-[9px] text-slate-400 font-semibold">
+                    {msgDate}
+                    {renderDeliveryTick(item)}
+                  </span>
+                )}
               </div>
               <div className="flex flex-col gap-0.5 items-end">
                 <div className="px-3 py-1.5 rounded-2xl text-sm font-semibold shadow-sm text-start bg-amber-50 border border-amber-200 text-amber-900 rounded-ss-none">

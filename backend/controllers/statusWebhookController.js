@@ -28,12 +28,28 @@ const findSessionByWamid = async (wamid) => {
   for (let attempt = 0; attempt <= FIND_SESSION_RETRIES; attempt++) {
     const session = await BotSession.findOne(
       { 'process_history.wamid': wamid },
-      { user_id: 1, sender: 1, customer_phone: 1, 'process_history.$': 1 }
+      { user_id: 1, sender: 1, customer_phone: 1 }
     );
     if (session) return session;
     if (attempt < FIND_SESSION_RETRIES) await sleep(FIND_SESSION_RETRY_DELAY_MS);
   }
   return null;
+};
+
+// A 401 used to be completely silent (e.g. when WA_STATUS_WEBHOOK_SECRET was
+// missing from .env, every status was dropped for days with no log). Warn, but
+// at most once a minute so a burst of rejected webhooks can't flood the log.
+const UNAUTHORIZED_WARN_INTERVAL_MS = 60 * 1000;
+let lastUnauthorizedWarnAt = 0;
+const warnUnauthorized = () => {
+  const now = Date.now();
+  if (now - lastUnauthorizedWarnAt < UNAUTHORIZED_WARN_INTERVAL_MS) return;
+  lastUnauthorizedWarnAt = now;
+  console.warn(
+    process.env.WA_STATUS_WEBHOOK_SECRET
+      ? '[status-webhook] 401 unauthorized: x-status-token missing or does not match WA_STATUS_WEBHOOK_SECRET'
+      : '[status-webhook] 401 unauthorized: WA_STATUS_WEBHOOK_SECRET is NOT SET on this server — all delivery statuses are being dropped'
+  );
 };
 
 const isAuthorized = (req) => {
@@ -70,28 +86,40 @@ const applyStatusEntry = async ({ wamid, status, timestamp, errors }) => {
     return { wamid, status, applied: false, reason: 'not_found' };
   }
 
-  const existingStatus = session.process_history?.[0]?.deliveryStatus;
-  const shouldApply = !existingStatus
-    || status === 'failed'
-    || (STATUS_RANK[status] || 0) > (STATUS_RANK[existingStatus] || 0);
-
-  if (!shouldApply) {
-    return { wamid, status, applied: false, reason: 'stale' };
-  }
-
   const deliveryStatusAt = timestamp ? new Date(Number(timestamp) * 1000) : new Date();
   const setFields = {
-    'process_history.$.deliveryStatus': status,
-    'process_history.$.deliveryStatusAt': deliveryStatusAt,
+    'process_history.$[h].deliveryStatus': status,
+    'process_history.$[h].deliveryStatusAt': deliveryStatusAt,
   };
   if (errors) {
-    setFields['process_history.$.deliveryError'] = errors;
+    setFields['process_history.$[h].deliveryError'] = errors;
   }
 
-  await BotSession.updateOne(
-    { _id: session._id, 'process_history.wamid': wamid },
-    { $set: setFields }
+  // Every history entry carrying this wamid is updated (text + options can be
+  // merged into one WhatsApp message and so share a wamid). The rank guard
+  // lives in the arrayFilter so it is evaluated per entry, atomically: a status
+  // never moves backwards, and 'failed' is terminal (always wins, never
+  // overwritten by a later non-failed status).
+  const entryFilter = { 'h.wamid': wamid };
+  if (status !== 'failed') {
+    const rank = STATUS_RANK[status] || 0;
+    entryFilter['h.deliveryStatus'] = {
+      $nin: ['failed', ...Object.keys(STATUS_RANK).filter((s) => STATUS_RANK[s] >= rank)],
+    };
+  }
+
+  // Native collection: process_history is a Mixed array, so Mongoose's
+  // arrayFilters casting is unreliable on it.
+  const result = await BotSession.collection.updateOne(
+    { _id: session._id },
+    { $set: setFields },
+    { arrayFilters: [entryFilter] }
   );
+
+  if (!result.modifiedCount) {
+    console.log('[status-webhook] not applied (stale/duplicate)', { wamid, status });
+    return { wamid, status, applied: false, reason: 'stale' };
+  }
 
   const userId = String(session.user_id || '');
   const phone = session.sender || session.customer_phone || '';
@@ -117,6 +145,7 @@ const applyStatusEntry = async ({ wamid, status, timestamp, errors }) => {
 // never cause dialog360's request to time out.
 export const updateMessageStatus = async (req, res) => {
   if (!isAuthorized(req)) {
+    warnUnauthorized();
     return res.status(401).json({ error: 'unauthorized' });
   }
 

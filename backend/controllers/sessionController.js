@@ -2009,7 +2009,7 @@ export const closeConversation = async (req, res) => {
     if (closingMessage && phone) {
       const user = await User.findById(ownerId).select('dialog360_bot_id').lean();
       const bot = session.flow_id ? await BotFlow.findById(session.flow_id).select('endpoint').lean() : null;
-      const { anySuccess } = await pushMessagesToWhatsApp(phone, [{ type: 'Text', text: closingMessage }], user, bot);
+      const { anySuccess, wamidPerMsg: closingWamids } = await pushMessagesToWhatsApp(phone, [{ type: 'Text', text: closingMessage }], user, bot);
       closingMessageSent = anySuccess;
       historyEntries.push({
         type: 'Text',
@@ -2019,6 +2019,8 @@ export const closeConversation = async (req, res) => {
         node_id: 'system',
         event: 'closing_message_sent',
         wa_sent: anySuccess,
+        wamid: closingWamids?.[0] || null,
+        deliveryStatus: null,
         created: new Date().toISOString()
       });
     }
@@ -2115,7 +2117,7 @@ export const applyCase1ReminderAction = async ({ notificationId, userId, action 
       if (closingMessage && phone) {
         const owner = requester?.manager_id ? await User.findById(ownerId).select('dialog360_bot_id').lean() : requester;
         const bot = session.flow_id ? await BotFlow.findById(session.flow_id).select('endpoint').lean() : null;
-        const { anySuccess } = await pushMessagesToWhatsApp(phone, [{ type: 'Text', text: closingMessage }], owner, bot);
+        const { anySuccess, wamidPerMsg: closingWamids } = await pushMessagesToWhatsApp(phone, [{ type: 'Text', text: closingMessage }], owner, bot);
         await collection.updateOne(
           { _id: new mongoose.Types.ObjectId(sessionId) },
           {
@@ -2128,6 +2130,8 @@ export const applyCase1ReminderAction = async ({ notificationId, userId, action 
                 node_id: 'system',
                 event: 'closing_message_sent',
                 wa_sent: anySuccess,
+                wamid: closingWamids?.[0] || null,
+                deliveryStatus: null,
                 created: new Date().toISOString()
               }
             }
@@ -2385,6 +2389,7 @@ export const transferConversation = async (req, res) => {
 
     if (!someoneAvailable && groupUnavailableMessage) {
       // Send the unavailableMessage to the customer via WhatsApp
+      let unavailWamid = null;
       try {
         const owner = await User.findById(ownerId);
         // Prefer the bot's own endpoint (from the session's flow_id)
@@ -2412,6 +2417,9 @@ export const transferConversation = async (req, res) => {
           });
           const transferRespBody = await transferWaRes.text().catch(() => '');
           console.log(`[transferConversation] ⬅️  RESPONSE HTTP ${transferWaRes.status} | body: ${transferRespBody}`);
+          if (transferWaRes.ok) {
+            try { unavailWamid = JSON.parse(transferRespBody)?.messages?.[0]?.id || null; } catch { /* non-JSON body */ }
+          }
           console.log(`[transferConversation] ⚠️ No one available — sent unavailableMessage to ${normalizedPhone}`);
         }
       } catch (waErr) {
@@ -2424,7 +2432,9 @@ export const transferConversation = async (req, res) => {
         sender: 'bot',
         name: 'מערכת',
         event: 'unavailable_message_sent',
-        created: new Date().toISOString()
+        created: new Date().toISOString(),
+        wamid: unavailWamid,
+        deliveryStatus: null
       });
     }
     // ────────────────────────────────────────────────────────────────────────
@@ -2713,6 +2723,7 @@ export const sendAgentMessage = async (req, res) => {
             waSent = true;
             waError = null;
             waRetryable = false;
+            try { agentWamid = JSON.parse(responseBody)?.messages?.[0]?.id || null; } catch (_) {}
             console.log(`[sendAgentMessage] ✅ WhatsApp OK | attempt=${attempt + 1} | phone=${normalizedPhone}`);
             break;
           } else {
@@ -3008,6 +3019,7 @@ export const sendTemplateToPhone = async (req, res) => {
 
     let waSent = false;
     let waError = null;
+    let tplWamid = null;
     const sendUrl = `https://wa.message.co.il/api/${endpoint}/send`;
     console.log(`\n${'─'.repeat(60)}`);
     console.log(`[sendTemplateToPhone] 📤 URL:     ${sendUrl}`);
@@ -3025,6 +3037,7 @@ export const sendTemplateToPhone = async (req, res) => {
       console.log(`[sendTemplateToPhone] ⬅️  RESPONSE HTTP ${waRes.status} | body: ${responseBody}`);
       if (waRes.ok) {
         waSent = true;
+        try { tplWamid = JSON.parse(responseBody)?.messages?.[0]?.id || null; } catch { /* non-JSON body */ }
         console.log(`[sendTemplateToPhone] ✅ WhatsApp OK | phone=${normalizedPhone} | status=${waRes.status}`);
       } else {
         waError = `HTTP ${waRes.status}: ${responseBody}`;
@@ -3062,6 +3075,8 @@ export const sendTemplateToPhone = async (req, res) => {
       node_id: 'agent',
       created,
       wa_sent: waSent,
+      wamid: tplWamid,
+      deliveryStatus: null,
       type: 'Text',
       text: displayText || message
     };
@@ -3307,6 +3322,7 @@ export const sendAdminMessageToSession = async (req, res) => {
 
     let waSent = false;
     let waError = null;
+    let adminWamid = null;
     const sendUrl = `https://wa.message.co.il/api/${endpoint}/send`;
     console.log(`\n${'─'.repeat(60)}`);
     console.log(`[sendAdminMessageToSession] 📤 URL:     ${sendUrl}`);
@@ -3330,6 +3346,7 @@ export const sendAdminMessageToSession = async (req, res) => {
       console.log(`[sendAdminMessageToSession] ⬅️  RESPONSE HTTP ${waRes.status} | body: ${responseBody}`);
       if (waRes.ok) { 
         waSent = true;
+        try { adminWamid = JSON.parse(responseBody)?.messages?.[0]?.id || null; } catch { /* non-JSON body */ }
         console.log(`[sendAdminMessageToSession] ✅ WhatsApp OK | phone=${normalizedPhone} | status=${waRes.status}`);
       } else {
         waError = `HTTP ${waRes.status}: ${responseBody}`;
@@ -3348,7 +3365,7 @@ export const sendAdminMessageToSession = async (req, res) => {
       node_id: 'agent',
       created,
       wa_sent: waSent,
-      wamid: null,
+      wamid: adminWamid,
       deliveryStatus: null
     };
     

@@ -159,6 +159,9 @@ async function startServer() {
     app.listen(PORT, () => {
       console.log(`🚀 Backend server running on http://localhost:${PORT}`);
       console.log(`📝 Environment: ${process.env.NODE_ENV || 'development'}`);
+      if (!process.env.WA_STATUS_WEBHOOK_SECRET) {
+        console.warn('⚠️  WA_STATUS_WEBHOOK_SECRET is not set — POST /api/360/status will reject every delivery-status webhook (401).');
+      }
     });
   } catch (error) {
     console.error('❌ Failed to connect to database. Server will not start.');

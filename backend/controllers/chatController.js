@@ -19,6 +19,7 @@ import { handleWebService, findMatchingOption } from '../utils/webserviceHandler
 import { normalizePhone } from '../utils/phone.js';
 import { getEffectiveRemovalConfig, matchRemovalKeywordWithLang, DEFAULT_REMOVAL_CONFIG } from '../utils/removalConfig.js';
 import { pushMessagesToWhatsApp, debugCheckMediaUrl } from '../utils/whatsappSender.js';
+import { newHistoryId, saveWamidsByHid } from '../utils/historyWamids.js';
 import eventBus from '../utils/eventBus.js';
 import { applyConversationClosedToDoc, resolveClosingMessage } from '../utils/conversationActions.js';
 
@@ -403,13 +404,20 @@ const findNextNode = (nodeId, edges, handleId = null) => {
 const addToHistory = (session, message, nodeId) => {
   const history = session.process_history || [];
   const isUser = nodeId === 'user';
+  // 'System' entries are internal notes that are never sent over WhatsApp, so
+  // they get no hid/wamid/deliveryStatus.
+  const isSent = !isUser && message?.type !== 'System';
+  // The hid is stamped on the ORIGINAL message object too, so callers that
+  // later pass the same object to pushMessagesToWhatsApp can map each returned
+  // wamid back to exactly this history entry (see utils/historyWamids.js).
+  if (isSent) message.hid = newHistoryId();
   history.push({
     ...message,
     node_id: nodeId,
     sender: isUser ? 'user' : 'bot',
     name: isUser ? 'משתמש' : 'בוט',
     created: new Date().toISOString(),
-    ...(!isUser ? { wamid: null, deliveryStatus: null } : {})
+    ...(isSent ? { wamid: null, deliveryStatus: null } : {})
   });
   session.process_history = history;
 };
@@ -1400,22 +1408,25 @@ const performAutoRemoval = async (user, sender, phone, text, name = '') => {
 };
 
 // Saves wamids returned from pushMessagesToWhatsApp into the matching process_history entries.
+// Matching is done by each message's `hid` (stamped by addToHistory), not by
+// position, and the write is a targeted update (no session.save()).
 const applyWamids = async (sess, msgs, wamidPerMsg) => {
   if (!wamidPerMsg || !wamidPerMsg.some(Boolean)) return;
-  const histLen = sess.process_history ? sess.process_history.length : 0;
-  const startIdx = histLen - msgs.length;
-  if (startIdx < 0) return;
-  let changed = false;
-  wamidPerMsg.forEach((wamid, i) => {
-    if (wamid && sess.process_history[startIdx + i]) {
-      sess.process_history[startIdx + i].wamid = wamid;
-      changed = true;
-    }
-  });
-  if (changed) {
-    sess.markModified('process_history');
-    await sess.save();
+  const expected = wamidPerMsg.filter(Boolean).length;
+  const modified = await saveWamidsByHid(sess._id, msgs, wamidPerMsg);
+  if (!modified && expected) {
+    console.warn(`[BOT] applyWamids: no history entry updated | session=${sess._id} | wamids=${expected}`);
   }
+};
+
+// Records bot messages that are sent to the customer but are not produced by
+// walkChain (validation errors, removal confirmation, restart notice) in
+// process_history, so they get an hid and can receive a wamid/delivery status.
+const recordBotMessages = (session, msgs, nodeId = 'system') => {
+  (msgs || []).forEach(m => {
+    if (m && m.type !== 'Wait') addToHistory(session, m, nodeId);
+  });
+  session.markModified('process_history');
 };
 
 // Main API endpoint
@@ -1902,12 +1913,14 @@ export const respondToMessage = async (req, res) => {
           session.waiting_text_input = false;
           session.waiting_webservice = false;
           session.execution_stack   = [];
+          recordBotMessages(session, restartOutMsg);
           await session.save();
         } catch (sessSaveErr) {
           console.error('[BOT] failed to reset session after restart keyword:', sessSaveErr.message);
         }
         console.log(`[BOT] 🔄 restart keyword matched: "${textLower}" | session=${session._id}`);
-        const { anySuccess: waPushed } = await pushMessagesToWhatsApp(sender, restartOutMsg, user, tokenBot);
+        const { anySuccess: waPushed, wamidPerMsg: restartWamids } = await pushMessagesToWhatsApp(sender, restartOutMsg, user, tokenBot);
+        try { await applyWamids(session, restartOutMsg, restartWamids); } catch (e) { console.error('[BOT] applyWamids failed (non-critical):', e.message); }
         return res.json({
           StatusId: 1,
           StatusDescription: 'Restarted by keyword',
@@ -2062,13 +2075,15 @@ export const respondToMessage = async (req, res) => {
           session.current_node_id = null;
           session.waiting_text_input = false;
           session.waiting_webservice = false;
+          recordBotMessages(session, removalResult.outMessages);
           await session.save();
         } catch (sessSaveErr) {
           console.error('[BOT] failed to close current session after removal:', sessSaveErr.message);
         }
-        const { anySuccess: waPushed } = removalResult.outMessages.length > 0
+        const { anySuccess: waPushed, wamidPerMsg: removalWamids } = removalResult.outMessages.length > 0
           ? await pushMessagesToWhatsApp(sender, removalResult.outMessages, user, tokenBot)
-          : { anySuccess: false };
+          : { anySuccess: false, wamidPerMsg: [] };
+        try { await applyWamids(session, removalResult.outMessages, removalWamids); } catch (e) { console.error('[BOT] applyWamids failed (non-critical):', e.message); }
         return res.json({
           StatusId: 1,
           StatusDescription: 'Removed by keyword',
@@ -2110,13 +2125,15 @@ export const respondToMessage = async (req, res) => {
             session.current_node_id = null;
             session.waiting_text_input = false;
             session.waiting_webservice = false;
+            recordBotMessages(session, removalResult.outMessages);
             await session.save();
           } catch (sessSaveErr) {
             console.error('[BOT] failed to close current session after removal:', sessSaveErr.message);
           }
-          const { anySuccess: waPushed } = removalResult.outMessages.length > 0
+          const { anySuccess: waPushed, wamidPerMsg: removalWamids } = removalResult.outMessages.length > 0
             ? await pushMessagesToWhatsApp(sender, removalResult.outMessages, user, tokenBot)
-            : { anySuccess: false };
+            : { anySuccess: false, wamidPerMsg: [] };
+          try { await applyWamids(session, removalResult.outMessages, removalWamids); } catch (e) { console.error('[BOT] applyWamids failed (non-critical):', e.message); }
           return res.json({
             StatusId: 1,
             StatusDescription: 'Removed by keyword',
@@ -2155,10 +2172,15 @@ export const respondToMessage = async (req, res) => {
       const validationType = currentNode.data.validationType;
       if (currentNode.type === 'input_text' && validationType && !validateInput(validationType, text)) {
         // Invalid input — notify user and re-prompt without advancing
-        messages.push({ type: 'Text', text: 'הערך שהוזן אינו חוקי, אנא הזן ערך מתאים.', created: new Date().toISOString() });
+        const invalidMsg = { type: 'Text', text: 'הערך שהוזן אינו חוקי, אנא הזן ערך מתאים.', created: new Date().toISOString() };
+        messages.push(invalidMsg);
+        addToHistory(session, invalidMsg, currentNode.id);
         if (currentNode.data.label) {
-          messages.push({ type: 'Text', text: replaceParameters(currentNode.data.label, params), created: new Date().toISOString() });
+          const reprompt = { type: 'Text', text: replaceParameters(currentNode.data.label, params), created: new Date().toISOString() };
+          messages.push(reprompt);
+          addToHistory(session, reprompt, currentNode.id);
         }
+        session.markModified('process_history');
         session.waiting_text_input = true;
         // current_node_id stays unchanged — fall through to session.save()
       } else if (currentNode.type === 'input_date' && !validateDateTimeInput(currentNode.data.dateTimeMode || 'date', text)) {
@@ -2166,10 +2188,15 @@ export const respondToMessage = async (req, res) => {
         const formatHint = dtMode === 'time'     ? 'HH:MM (לדוגמה: 14:30)' :
                            dtMode === 'datetime' ? 'DD/MM/YYYY HH:MM (לדוגמה: 25/06/2025 14:30)' :
                                                    'DD/MM/YYYY (לדוגמה: 25/06/2025)';
-        messages.push({ type: 'Text', text: `הפורמט שהוזן אינו תקין. אנא הזן בפורמט ${formatHint}`, created: new Date().toISOString() });
+        const badFormatMsg = { type: 'Text', text: `הפורמט שהוזן אינו תקין. אנא הזן בפורמט ${formatHint}`, created: new Date().toISOString() };
+        messages.push(badFormatMsg);
+        addToHistory(session, badFormatMsg, currentNode.id);
         if (currentNode.data.label) {
-          messages.push({ type: 'Text', text: replaceParameters(currentNode.data.label, params), created: new Date().toISOString() });
+          const reprompt = { type: 'Text', text: replaceParameters(currentNode.data.label, params), created: new Date().toISOString() };
+          messages.push(reprompt);
+          addToHistory(session, reprompt, currentNode.id);
         }
+        session.markModified('process_history');
         session.waiting_text_input = true;
         // current_node_id stays unchanged — fall through to session.save()
       } else {
@@ -2357,18 +2384,23 @@ export const respondToMessage = async (req, res) => {
           }
         } else {
           // No default edge — tell the user to pick from the menu and re-display it
-          messages.push({
+          const chooseOnlyMsg = {
             type: 'Text',
             text: 'בחר רק מהאפשרויות',
             created: new Date().toISOString()
-          });
+          };
+          messages.push(chooseOnlyMsg);
+          addToHistory(session, chooseOnlyMsg, currentNode.id);
           const menuOptions = (currentNode.data.options || []).filter(opt => opt !== 'default');
-          messages.push({
+          const menuRedisplayMsg = {
             type: 'Options',
             text: replaceParameters(currentNode.data.content || '', params),
             options: menuOptions,
             created: new Date().toISOString()
-          });
+          };
+          messages.push(menuRedisplayMsg);
+          addToHistory(session, menuRedisplayMsg, currentNode.id);
+          session.markModified('process_history');
           // Keep session.current_node_id pointing to this menu node so the next
           // incoming message is handled by the output_menu branch again.
         }
@@ -2397,13 +2429,15 @@ export const respondToMessage = async (req, res) => {
             session.current_node_id = null;
             session.waiting_text_input = false;
             session.waiting_webservice = false;
+            recordBotMessages(session, removalResult.outMessages);
             await session.save();
           } catch (sessSaveErr) {
             console.error('[BOT] failed to close current session after removal:', sessSaveErr.message);
           }
-          const { anySuccess: waPushed } = removalResult.outMessages.length > 0
+          const { anySuccess: waPushed, wamidPerMsg: removalWamids } = removalResult.outMessages.length > 0
             ? await pushMessagesToWhatsApp(sender, removalResult.outMessages, user, tokenBot)
-            : { anySuccess: false };
+            : { anySuccess: false, wamidPerMsg: [] };
+          try { await applyWamids(session, removalResult.outMessages, removalWamids); } catch (e) { console.error('[BOT] applyWamids failed (non-critical):', e.message); }
           return res.json({
             StatusId: 1,
             StatusDescription: 'Removed by keyword',
@@ -2818,7 +2852,7 @@ export const sendTemplateExternal = async (req, res) => {
       ...(templateButtons ? { template_buttons: templateButtons } : {}),
       wa_sent: waSent,
       created: now.toISOString(),
-      wamid: null,
+      wamid: (waSent && typeof waResponseBody === 'object' && waResponseBody?.messages?.[0]?.id) || null,
       deliveryStatus: null,
     };
 
