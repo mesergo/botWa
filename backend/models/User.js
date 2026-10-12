@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { normalizePhone } from '../utils/phone.js';
 
 const userSchema = new mongoose.Schema({
   name: { type: String, required: true },
@@ -23,7 +24,7 @@ const userSchema = new mongoose.Schema({
     type: [{
       phone_number_id: { type: String, required: true },
       waba_id: { type: String, default: '' },
-      display_phone_number: { type: String, default: '' },
+      display_phone_number: { type: String, default: '', set: normalizePhone },
       verified_name: { type: String, default: '' },
       quality_rating: { type: String, default: '' },
       whatsapp_status: { type: String, default: '' },

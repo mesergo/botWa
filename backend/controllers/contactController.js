@@ -225,6 +225,27 @@ export const setIntroText = async (req, res) => {
   }
 };
 
+// PATCH /api/contacts/bot-block  body: { phone, blocked }
+// Permanently pins/unpins a phone to representative (agent) mode — see
+// chatController.js's "always-agent" bypass for how this is enforced.
+export const setBotBlock = async (req, res) => {
+  const userId = getEffectiveUserId(req);
+  const { phone, blocked } = req.body || {};
+  if (typeof phone !== 'string' || !phone.trim()) {
+    return res.status(400).json({ error: 'Phone is required' });
+  }
+  try {
+    const contact = await Contact.findOneAndUpdate(
+      { user_id: userId, phone: normalizePhone(phone.trim()) },
+      { $set: { bot_blocked: !!blocked } },
+      { upsert: true, new: true }
+    );
+    res.json({ success: true, bot_blocked: contact.bot_blocked });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
 // POST /api/contacts/import — bulk import from Excel/CSV file
 export const importContacts = async (req, res) => {
   const userId = getEffectiveUserId(req);

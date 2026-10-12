@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { normalizePhone } from '../utils/phone.js';
 
 const botFlowSchema = new mongoose.Schema({
   name: { type: String, required: true },
@@ -11,7 +12,7 @@ const botFlowSchema = new mongoose.Schema({
   // ── WhatsApp Business / Meta Embedded Signup data ──
   waba_id: { type: String, default: '' },
   phone_number_id: { type: String, default: '' },
-  display_phone_number: { type: String, default: '' },
+  display_phone_number: { type: String, default: '', set: normalizePhone },
   whatsapp_verified_name: { type: String, default: '' },
   whatsapp_access_token: { type: String, default: '' },
   whatsapp_quality_rating: { type: String, default: '' },

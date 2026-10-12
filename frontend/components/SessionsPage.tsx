@@ -1,6 +1,6 @@
 ﻿import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { WhatsAppText } from '../utils/whatsappFormat';
-import { Clock, MessageSquare, Search, Bot, User, Phone, List, Users, ExternalLink, X, Headphones, RefreshCw, Settings, UserCog, Layers, Plus, UserPlus, Check, CheckCheck, AlertCircle, Paperclip, ChevronRight, ChevronLeft, Bell, MoreVertical, Ban, Megaphone, Repeat, Reply } from 'lucide-react';
+import { Clock, MessageSquare, Search, Bot, User, Phone, List, Users, ExternalLink, X, Headphones, RefreshCw, Settings, UserCog, Layers, Plus, UserPlus, Check, CheckCheck, AlertCircle, Paperclip, ChevronRight, ChevronLeft, Bell, MoreVertical, Ban, Megaphone, Repeat, Reply, Lock, Unlock } from 'lucide-react';
 import ImpersonationBanner, { SiblingAccount } from './ImpersonationBanner';
 import OnboardingBanner from './OnboardingBanner';
 import MigrationNoticeBanner from './MigrationNoticeBanner';
@@ -16,7 +16,7 @@ import AppNav from './AppNav';
 import { useContactFields } from '../context/ContactFieldsContext';
 import RepPushNotifications from './RepPushNotifications';
 import { useTranslation } from 'react-i18next';
- 
+  
 interface Session {  
   id: string;
   phone: string;
@@ -51,10 +51,12 @@ interface Contact {
   botPhones?: string[];
   assigned_to?: string[];
   status?: 'bot' | 'waiting' | 'handling' | 'closed' | 'resolved';
+  lastResponderName?: string | null;
   wants_phone?: boolean;
   whatsapp_name?: string;
   full_name?: string;
   intro_text?: string;
+  bot_blocked?: boolean;
 }
 
 interface SessionsPageProps {
@@ -181,6 +183,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
   const [showActionsMenu, setShowActionsMenu] = useState(false);
   const [addingToBlocklist, setAddingToBlocklist] = useState(false);
   const [blocklistSuccess, setBlocklistSuccess] = useState(false);
+  const [botBlockLoading, setBotBlockLoading] = useState(false);
   const actionsMenuRef = useRef<HTMLDivElement>(null);
 
   // Transfer conversation modal state
@@ -1881,6 +1884,30 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
     }
   };
 
+  const toggleBotBlock = async () => {
+    if (!selectedPhone || botBlockLoading) return;
+    setShowActionsMenu(false);
+    const nextBlocked = !selectedContact?.bot_blocked;
+    setBotBlockLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/contacts/bot-block`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: selectedPhone, blocked: nextBlocked })
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || t('errors.botBlockFailed'));
+      }
+      setContacts(prev => prev.map(c => c.phone === selectedPhone ? { ...c, bot_blocked: nextBlocked } : c));
+    } catch (e: any) {
+      console.error('Failed to toggle bot block', e);
+      alert(e.message || t('errors.botBlockFailed'));
+    } finally {
+      setBotBlockLoading(false);
+    }
+  };
+
   const handleAvailabilitySelect = async (s: 'available' | 'unavailable' | 'on_break') => {
     if (!onUpdateAvailability) return;
     if (s === (currentUser?.availability_status || 'available')) { setAvailabilityOpen(false); return; }
@@ -2924,6 +2951,16 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                               {t('sidebar.sessionsCountBadge', { count: contact.sessionCount })}
                             </span>
                             {!sim && renderStatusBadge(contact.status)}
+                            {!sim && contact.status === 'handling' && contact.lastResponderName && (
+                              <span className="text-[9px] font-semibold text-slate-500">
+                                {t('sidebar.lastReplyBy', {
+                                  name: contact.lastResponderName,
+                                  defaultValue: i18n.language === 'en'
+                                    ? `In progress by ${contact.lastResponderName}`
+                                    : `בטיפול ע״י ${contact.lastResponderName}`
+                                })}
+                              </span>
+                            )}
                             {contact.wants_phone && (
                               <span className="flex items-center gap-0.5 text-[9px] font-black px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 ring-1 ring-green-400/60 animate-pulse">
                                 <Phone size={9} />{t('sidebar.phoneOnlyBadge')}
@@ -3183,7 +3220,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                             {t('chatPanel.handled')}
                           </button>
                         )}
-                        {!isSimulator(selectedPhone!) && isAgentMode && (
+                        {!isSimulator(selectedPhone!) && isAgentMode && !selectedContact?.bot_blocked && (
                           <button
                             onClick={() => { setShowActionsMenu(false); deactivateAgent(); }}
                             className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-emerald-50 hover:text-emerald-700 transition-colors text-start"
@@ -3219,6 +3256,17 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                             {addingToBlocklist ? t('chatPanel.addingToBlocklist') : t('chatPanel.addToBlocklist')}
                           </button>
                         )}
+                        {!isSimulator(selectedPhone!) && (
+                          <button
+                            onClick={toggleBotBlock}
+                            disabled={botBlockLoading}
+                            className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-amber-50 hover:text-amber-700 transition-colors text-start disabled:opacity-60"
+                            title={t('chatPanel.botBlockTooltip')}
+                          >
+                            {selectedContact?.bot_blocked ? <Unlock size={15} /> : <Lock size={15} />}
+                            {selectedContact?.bot_blocked ? t('chatPanel.unblockBot') : t('chatPanel.blockBot')}
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>
@@ -3246,8 +3294,18 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 </button>
               </div>
 
+              {/* Permanent bot-block banner — takes precedence over the regular (session-scoped) agent banner */}
+              {selectedContact?.bot_blocked && (
+                <div className="flex-shrink-0 px-6 py-2.5 bg-red-50 border-b border-red-200 flex items-center gap-3">
+                  <Lock size={14} className="text-red-500 flex-shrink-0" />
+                  <p className="text-xs font-black text-red-800 flex-1">
+                    {t('chatPanel.botBlockedBanner')}
+                  </p>
+                </div>
+              )}
+
               {/* Agent mode banner */}
-              {isAgentMode && (
+              {isAgentMode && !selectedContact?.bot_blocked && (
                 <div className="flex-shrink-0 px-6 py-2.5 bg-amber-50 border-b border-amber-200 flex items-center gap-3">
                   <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse flex-shrink-0" />
                   <p className="text-xs font-black text-amber-800 flex-1">
