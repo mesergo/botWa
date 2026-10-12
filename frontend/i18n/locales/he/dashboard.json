@@ -142,7 +142,14 @@
       "noneInternalHint": "תבניות פנימיות נשלחות כהודעת טקסט/מדיה רגילה בתוך שיחה פעילה, ולא דרך ה-API הרשמי של WhatsApp",
       "edit": "ערוך",
       "confirmDelete": "אשר מחיקה",
-      "delete": "מחק"
+      "delete": "מחק",
+      "defaultParamsLabel": "פרמטרים קבועים",
+      "defaultParamNone": "ללא (מילוי ידני)",
+      "defaultParamAgentName": "שם הנציג",
+      "defaultParamText": "טקסט קבוע",
+      "defaultParamBaseFields": "שדות איש קשר בסיסיים",
+      "defaultParamCustomFields": "שדות מותאמים אישית",
+      "defaultParamTextPlaceholder": "הקלד ערך קבוע"
     },
     "removal": {
       "heading": "ניהול הסרה מקבוצה",

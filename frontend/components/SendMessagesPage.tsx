@@ -14,6 +14,7 @@ import BroadcastsView from './send-messages/BroadcastsView';
 import TemplatePickerModal from './send-messages/TemplatePickerModal';
 import ScheduleDialog from './send-messages/ScheduleDialog';
 import { getMissingTemplateVars } from './shared/templateValidation';
+import { applyDefaultBodyParams } from './shared/templateDefaultParams';
 
 interface ContactRecord {
   _id: string;
@@ -124,6 +125,8 @@ const SendMessagesPage: React.FC<SendMessagesPageProps> = ({
   const [selectedTemplate, setSelectedTemplate] = useState<any | null>(null);
   const [templateParams, setTemplateParams] = useState<any>({});
   const [templatePostSendMode, setTemplatePostSendMode] = useState<Record<string, 'no_change' | 'agent' | 'bot'>>({});
+  // Fixed BODY param values per template name (see shared/templateDefaultParams.ts).
+  const [templateDefaultParams, setTemplateDefaultParams] = useState<Record<string, string[]>>({});
   const [sendPostSendModeOverride, setSendPostSendModeOverride] = useState<'no_change' | 'agent' | 'bot' | null>(null);
 
   const [sendBots, setSendBots] = useState<SendBot[]>([]);
@@ -197,6 +200,7 @@ const SendMessagesPage: React.FC<SendMessagesPageProps> = ({
 
   const initTemplateParams = (template: any) => {
     const params: any = {};
+    const templateName = template.name || template.elementName || template.template_name || '';
     if (template.components && Array.isArray(template.components)) {
       template.components.forEach((comp: any) => {
         if (comp.type === 'HEADER' && ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(comp.format)) {
@@ -204,7 +208,8 @@ const SendMessagesPage: React.FC<SendMessagesPageProps> = ({
         }
         if (comp.type === 'BODY' && comp.text) {
           const matches = comp.text.match(/\{\{\d+\}\}/g);
-          if (matches) params.body = matches.map(() => '');
+          // Contact-field defaults stay as __field: tokens — resolved per recipient on send.
+          if (matches) params.body = applyDefaultBodyParams(matches.length, templateDefaultParams[templateName], currentUser?.name);
         }
       });
     }
@@ -228,10 +233,13 @@ const SendMessagesPage: React.FC<SendMessagesPageProps> = ({
       const data = await res.json();
       const settingsList = data.success && Array.isArray(data.settings) ? data.settings : [];
       const postSendModeMap: Record<string, 'no_change' | 'agent' | 'bot'> = {};
+      const defaultParamsMap: Record<string, string[]> = {};
       settingsList.forEach((s: any) => {
         postSendModeMap[s.templateName] = s.postSendMode || 'no_change';
+        if (Array.isArray(s.defaultBodyParams)) defaultParamsMap[s.templateName] = s.defaultBodyParams;
       });
       setTemplatePostSendMode(postSendModeMap);
+      setTemplateDefaultParams(defaultParamsMap);
     } catch (e) {
       console.error('Failed to fetch template post-send mode', e);
     }

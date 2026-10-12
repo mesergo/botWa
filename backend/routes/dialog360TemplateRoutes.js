@@ -5,6 +5,7 @@ import {
   toggleShowInChat,
   setDefaultMedia,
   updatePostSendMode,
+  setDefaultParams,
   deleteTemplateSetting,
   addTemplate,
   editTemplate,
@@ -28,6 +29,9 @@ router.post('/default-media', authenticateToken, setDefaultMedia);
 
 // Set the post-send mode (no_change / agent / bot) for a template
 router.post('/post-send-mode', authenticateToken, updatePostSendMode);
+
+// Set the fixed (default) BODY param values ({{1}}, {{2}}...) for a template
+router.post('/default-params', authenticateToken, setDefaultParams);
 
 // Self-service add/edit/delete of the customer's OWN WhatsApp message templates,
 // gated by `wa_templates_manage_enabled` (checked inside the controller).

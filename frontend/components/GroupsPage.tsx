@@ -13,6 +13,7 @@ import { TemplateHeaderMediaField } from './TemplateHeaderMediaField';
 import ImportContactsModal from './ImportContactsModal';
 import TemplateBodyParamsEditor from './TemplateBodyParamsEditor';
 import { getMissingTemplateVars } from './shared/templateValidation';
+import { applyDefaultBodyParams } from './shared/templateDefaultParams';
 import PersonalizedTextarea from './shared/PersonalizedTextarea';
 import ExcludeGroupSelector from './shared/ExcludeGroupSelector';
 import { usePermission } from '../hooks/usePermission';
@@ -150,6 +151,8 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
   // What each template is configured to do to the conversation right after it's sent
   // ('no_change' | 'agent' | 'bot'), per template name — from Dialog360TemplateSetting.
   const [templatePostSendMode, setTemplatePostSendMode] = useState<Record<string, 'no_change' | 'agent' | 'bot'>>({});
+  // Fixed BODY param values per template name (see shared/templateDefaultParams.ts).
+  const [templateDefaultParams, setTemplateDefaultParams] = useState<Record<string, string[]>>({});
   // Per-broadcast override: null = use the template's configured default above.
   const [sendPostSendModeOverride, setSendPostSendModeOverride] = useState<'no_change' | 'agent' | 'bot' | null>(null);
 
@@ -608,14 +611,17 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
       const settingsList = data.success && Array.isArray(data.settings) ? data.settings : [];
       const defaultMediaMap: Record<string, { url: string; type: 'image' | 'video' | 'document' }> = {};
       const postSendModeMap: Record<string, 'no_change' | 'agent' | 'bot'> = {};
+      const defaultParamsMap: Record<string, string[]> = {};
       settingsList.forEach((s: any) => {
         if (s.defaultHeaderMediaUrl && s.defaultHeaderMediaType) {
           defaultMediaMap[s.templateName] = { url: s.defaultHeaderMediaUrl, type: s.defaultHeaderMediaType };
         }
         postSendModeMap[s.templateName] = s.postSendMode || 'no_change';
+        if (Array.isArray(s.defaultBodyParams)) defaultParamsMap[s.templateName] = s.defaultBodyParams;
       });
       setTemplateDefaultMedia(defaultMediaMap);
       setTemplatePostSendMode(postSendModeMap);
+      setTemplateDefaultParams(defaultParamsMap);
     } catch (e) {
       console.error('Failed to fetch template default media', e);
     }
@@ -632,7 +638,8 @@ const GroupsPage: React.FC<GroupsPageProps> = ({
         }
         if (comp.type === 'BODY' && comp.text) {
           const matches = comp.text.match(/\{\{\d+\}\}/g);
-          if (matches) params.body = matches.map(() => '');
+          // Contact-field defaults stay as __field: tokens — resolved per recipient on send.
+          if (matches) params.body = applyDefaultBodyParams(matches.length, templateDefaultParams[templateName], currentUser?.name);
         }
       });
     }

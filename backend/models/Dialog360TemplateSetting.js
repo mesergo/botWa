@@ -29,7 +29,14 @@ const dialog360TemplateSettingSchema = new mongoose.Schema({
   //   'no_change' – preserve each send-path's existing default behavior (default)
   //   'agent'     – switch conversation to agent mode after send
   //   'bot'       – switch conversation to bot mode after send
-  postSendMode: { type: String, enum: ['no_change', 'agent', 'bot'], default: 'no_change' }
+  postSendMode: { type: String, enum: ['no_change', 'agent', 'bot'], default: 'no_change' },
+  // Fixed (default) values for the template's BODY params, by position ({{1}} → [0]).
+  // Pre-filled automatically whenever the template is picked for sending. Each entry is:
+  //   ''              – no default (filled in manually when sending)
+  //   '__agent_name'  – the name of the agent/user sending the template
+  //   '__field:<ref>' – a contact field (full_name / whatsapp_name / phone / email / custom:<id>)
+  //   any other text  – a fixed literal value
+  defaultBodyParams: { type: [String], default: [] }
 }, {
   timestamps: true,
   collection: 'dialog360_template_settings'
