@@ -1082,7 +1082,24 @@ export const getContacts = async (req, res) => {
   // message OR an outgoing agent/bot message) — used below to derive the
   // real "last activity" timestamp, since _date only reflects when the
   // session document itself was created, not later messages appended to it.
-  _lastHistoryEntry: { $arrayElemAt: ['$process_history', -1] }
+  _lastHistoryEntry: { $arrayElemAt: ['$process_history', -1] },
+  _lastAgentHistoryEntry: {
+    $arrayElemAt: [
+      {
+        $filter: {
+          input: { $ifNull: ['$process_history', []] },
+          as: 'entry',
+          cond: {
+            $and: [
+              { $eq: ['$$entry.sender', 'agent'] },
+              { $ne: ['$$entry.wa_sent', false] }
+            ]
+          }
+        }
+      },
+      -1
+    ]
+  }
 }
       },
       {
@@ -1119,6 +1136,8 @@ export const getContacts = async (req, res) => {
           latestStatus: { $first: '$status' },
           latestSessionDate: { $first: '$_date' },
           latestWantsPhone: { $first: '$wants_phone' },
+          latestResponderName: { $first: '$_lastAgentHistoryEntry.agent_name' },
+          latestResponderUserId: { $first: '$_lastAgentHistoryEntry.agent_user_id' },
           // Routing of the MOST RECENT session only — used to display the contact's
           // current status/badge. Visibility for restricted reps is decided below
           // using the full per-session history instead (repHistory), so a rep keeps
@@ -1159,6 +1178,8 @@ export const getContacts = async (req, res) => {
         repGroupId: c.latestRepGroupId ? String(c.latestRepGroupId) : null,
         repUserId: c.latestRepUserId ? String(c.latestRepUserId) : null,
         status: c.latestStatus || 'bot',
+        lastResponderName: c.latestResponderName || null,
+        lastResponderUserId: c.latestResponderUserId ? String(c.latestResponderUserId) : null,
         wants_phone: !!c.latestWantsPhone,
         repHistory: (c.repHistory || []).map(h => ({
           repGroupId: h.repGroupId ? String(h.repGroupId) : null,
@@ -1167,17 +1188,65 @@ export const getContacts = async (req, res) => {
         }))
       };
     });
+ 
+    // Contacts that have an intro text (from the /sessions?text= link) must be listed even
+    // when they have no BotSession yet — the aggregation above only sees session-backed contacts.
+    const sessionPhones = new Set(result.map(c => c.phone));
+    const introOnlyDocs = await Contact.find({
+      user_id: userId,
+      intro_text: { $exists: true, $ne: '' }
+    }).select('phone updatedAt').lean();
+    introOnlyDocs.forEach(d => {
+      if (sessionPhones.has(d.phone)) return;
+      result.push({
+        phone: d.phone,
+        sessionCount: 0,
+        lastSeen: d.updatedAt || null,
+        lastMessageAt: d.updatedAt || null,
+        bots: [],
+        botPhones: [],
+        repGroupId: null,
+        repUserId: null,
+        status: 'bot',
+        lastResponderName: null,
+        wants_phone: false,
+        repHistory: []
+      });
+    });
+    result.sort((a, b) => new Date(b.lastMessageAt || 0) - new Date(a.lastMessageAt || 0));
 
+    const responderUserIds = [...new Set(
+      result
+        .filter(c => c.status === 'handling' && !c.lastResponderName && c.lastResponderUserId && mongoose.Types.ObjectId.isValid(c.lastResponderUserId))
+        .map(c => c.lastResponderUserId)
+    )];
+    if (responderUserIds.length > 0) {
+      const responderUsers = await User.find({
+        _id: { $in: responderUserIds.map(id => new mongoose.Types.ObjectId(id)) }
+      }).select('name email').lean();
+      const responderNameMap = new Map(
+        responderUsers.map(rep => [rep._id.toString(), rep.name || rep.email || ''])
+      );
+      result.forEach(c => {
+        if (c.status !== 'handling' || c.lastResponderName || !c.lastResponderUserId) return;
+        c.lastResponderName = responderNameMap.get(c.lastResponderUserId) || c.lastResponderName;
+      });
+    }
+ 
     // Enrich with assigned_to from Contact collection
     const phones = result.map(c => c.phone);
-    const contactDocs = await Contact.find({ user_id: userId, phone: { $in: phones } }).select('phone assigned_to whatsapp_name full_name').lean();
+    const contactDocs = await Contact.find({ user_id: userId, phone: { $in: phones } }).select('phone assigned_to whatsapp_name full_name intro_text bot_blocked').lean();
     const assignedToMap = {};
     const whatsappNameMap = {};
     const fullNameMap = {};
+    const introTextMap = {};
+    const botBlockedMap = {};
     contactDocs.forEach(c => {
       assignedToMap[c.phone] = (c.assigned_to || []).map(id => id.toString());
       whatsappNameMap[c.phone] = c.whatsapp_name || '';
       fullNameMap[c.phone] = c.full_name || '';
+      introTextMap[c.phone] = c.intro_text || '';
+      botBlockedMap[c.phone] = !!c.bot_blocked;
     });
 
     let finalResult = result.map(c => ({
@@ -1185,6 +1254,8 @@ export const getContacts = async (req, res) => {
       assigned_to: assignedToMap[c.phone] || [],
       whatsapp_name: whatsappNameMap[c.phone] || '',
       full_name: fullNameMap[c.phone] || '',
+      intro_text: introTextMap[c.phone] || '',
+      bot_blocked: botBlockedMap[c.phone] || false,
     }));
 
     // Fetch rep user doc once (used for both restrictions below)
@@ -1981,7 +2052,7 @@ export const closeConversation = async (req, res) => {
     if (closingMessage && phone) {
       const user = await User.findById(ownerId).select('dialog360_bot_id').lean();
       const bot = session.flow_id ? await BotFlow.findById(session.flow_id).select('endpoint').lean() : null;
-      const { anySuccess } = await pushMessagesToWhatsApp(phone, [{ type: 'Text', text: closingMessage }], user, bot);
+      const { anySuccess, wamidPerMsg: closingWamids } = await pushMessagesToWhatsApp(phone, [{ type: 'Text', text: closingMessage }], user, bot);
       closingMessageSent = anySuccess;
       historyEntries.push({
         type: 'Text',
@@ -1991,6 +2062,8 @@ export const closeConversation = async (req, res) => {
         node_id: 'system',
         event: 'closing_message_sent',
         wa_sent: anySuccess,
+        wamid: closingWamids?.[0] || null,
+        deliveryStatus: null,
         created: new Date().toISOString()
       });
     }
@@ -2087,7 +2160,7 @@ export const applyCase1ReminderAction = async ({ notificationId, userId, action 
       if (closingMessage && phone) {
         const owner = requester?.manager_id ? await User.findById(ownerId).select('dialog360_bot_id').lean() : requester;
         const bot = session.flow_id ? await BotFlow.findById(session.flow_id).select('endpoint').lean() : null;
-        const { anySuccess } = await pushMessagesToWhatsApp(phone, [{ type: 'Text', text: closingMessage }], owner, bot);
+        const { anySuccess, wamidPerMsg: closingWamids } = await pushMessagesToWhatsApp(phone, [{ type: 'Text', text: closingMessage }], owner, bot);
         await collection.updateOne(
           { _id: new mongoose.Types.ObjectId(sessionId) },
           {
@@ -2100,6 +2173,8 @@ export const applyCase1ReminderAction = async ({ notificationId, userId, action 
                 node_id: 'system',
                 event: 'closing_message_sent',
                 wa_sent: anySuccess,
+                wamid: closingWamids?.[0] || null,
+                deliveryStatus: null,
                 created: new Date().toISOString()
               }
             }
@@ -2357,6 +2432,7 @@ export const transferConversation = async (req, res) => {
 
     if (!someoneAvailable && groupUnavailableMessage) {
       // Send the unavailableMessage to the customer via WhatsApp
+      let unavailWamid = null;
       try {
         const owner = await User.findById(ownerId);
         // Prefer the bot's own endpoint (from the session's flow_id)
@@ -2384,6 +2460,9 @@ export const transferConversation = async (req, res) => {
           });
           const transferRespBody = await transferWaRes.text().catch(() => '');
           console.log(`[transferConversation] ⬅️  RESPONSE HTTP ${transferWaRes.status} | body: ${transferRespBody}`);
+          if (transferWaRes.ok) {
+            try { unavailWamid = JSON.parse(transferRespBody)?.messages?.[0]?.id || null; } catch { /* non-JSON body */ }
+          }
           console.log(`[transferConversation] ⚠️ No one available — sent unavailableMessage to ${normalizedPhone}`);
         }
       } catch (waErr) {
@@ -2396,7 +2475,9 @@ export const transferConversation = async (req, res) => {
         sender: 'bot',
         name: 'מערכת',
         event: 'unavailable_message_sent',
-        created: new Date().toISOString()
+        created: new Date().toISOString(),
+        wamid: unavailWamid,
+        deliveryStatus: null
       });
     }
     // ────────────────────────────────────────────────────────────────────────
@@ -2528,6 +2609,7 @@ export const sendAgentMessage = async (req, res) => {
     const { id } = req.params;
     const { message, isTemplate, templateData, mediaType, mediaUrl, mediaFilename, quotedWamid, quotedText, quotedSender } = req.body;
     const hasMedia = !!(mediaType && mediaUrl);
+    console.log(`[REPLY] IN session=${id} quotedWamid=${quotedWamid || 'NONE'} quotedText=${quotedText ? 'yes' : 'no'} isTemplate=${!!isTemplate} hasMedia=${hasMedia}`);
     if (!hasMedia && (!message || !String(message).trim())) {
       return res.status(400).json({ error: 'הודעה או מדיה הם שדה חובה' });
     }
@@ -2685,6 +2767,7 @@ export const sendAgentMessage = async (req, res) => {
             waSent = true;
             waError = null;
             waRetryable = false;
+            try { agentWamid = JSON.parse(responseBody)?.messages?.[0]?.id || null; } catch (_) {}
             console.log(`[sendAgentMessage] ✅ WhatsApp OK | attempt=${attempt + 1} | phone=${normalizedPhone}`);
             break;
           } else {
@@ -2716,6 +2799,8 @@ export const sendAgentMessage = async (req, res) => {
         const quotedPrefix = `↪ ${quotedSender || ''}: ${quotedText}`.trim();
         outboundText = outboundText ? `${quotedPrefix}\n\n${outboundText}` : quotedPrefix;
       }
+      const replyMode = replyTo ? 'NATIVE(replyTo)' : quotedText ? 'FALLBACK(text prefix, no wamid)' : 'NONE';
+      console.log(`[REPLY] mode=${replyMode} replyTo=${replyTo || '-'}`);
       const waMessages = hasMedia
         ? [{ type: mediaType === 'video' ? 'Video' : mediaType === 'document' ? 'Document' : 'Image', url: mediaUrl, text: outboundText, filename: mediaFilename || 'file', ...(replyTo ? { replyTo } : {}) }]
         : [{ type: 'Text', text: outboundText, ...(replyTo ? { replyTo } : {}) }];
@@ -2980,6 +3065,7 @@ export const sendTemplateToPhone = async (req, res) => {
 
     let waSent = false;
     let waError = null;
+    let tplWamid = null;
     const sendUrl = `https://wa.message.co.il/api/${endpoint}/send`;
     console.log(`\n${'─'.repeat(60)}`);
     console.log(`[sendTemplateToPhone] 📤 URL:     ${sendUrl}`);
@@ -2997,6 +3083,7 @@ export const sendTemplateToPhone = async (req, res) => {
       console.log(`[sendTemplateToPhone] ⬅️  RESPONSE HTTP ${waRes.status} | body: ${responseBody}`);
       if (waRes.ok) {
         waSent = true;
+        try { tplWamid = JSON.parse(responseBody)?.messages?.[0]?.id || null; } catch { /* non-JSON body */ }
         console.log(`[sendTemplateToPhone] ✅ WhatsApp OK | phone=${normalizedPhone} | status=${waRes.status}`);
       } else {
         waError = `HTTP ${waRes.status}: ${responseBody}`;
@@ -3031,9 +3118,12 @@ export const sendTemplateToPhone = async (req, res) => {
       sender: 'agent',
       name: 'נציג',
       agent_name: agentName,
+      agent_user_id: String(req.userId || ''),
       node_id: 'agent',
       created,
       wa_sent: waSent,
+      wamid: tplWamid,
+      deliveryStatus: null,
       type: 'Text',
       text: displayText || message
     };
@@ -3100,7 +3190,7 @@ export const sendTemplateToPhone = async (req, res) => {
       process_history: initialHistory
     };
 
-// <<<<<<< HEAD
+
 //     // Per-template post-send mode: a brand-new session defaults to agent/waiting
 //     // (today's behavior), unless the template is configured to switch to bot mode.
 //     const postSendMode = await resolveTemplatePostSendMode(getEffectiveUserId(req), templateData.name, templateData.postSendModeOverride);
@@ -3108,7 +3198,7 @@ export const sendTemplateToPhone = async (req, res) => {
 //       sessionDoc.is_agent = false;
 //       sessionDoc.agent_since = null;
 //       sessionDoc.status = 'bot';
-// =======
+
     const postSendMode = await resolveTemplatePostSendMode(getEffectiveUserId(req), templateData.name);
     if (postSendMode === 'agent') {
       const postSendFields = buildPostSendModeFields('agent', 'bot');
@@ -3279,6 +3369,7 @@ export const sendAdminMessageToSession = async (req, res) => {
 
     let waSent = false;
     let waError = null;
+    let adminWamid = null;
     const sendUrl = `https://wa.message.co.il/api/${endpoint}/send`;
     console.log(`\n${'─'.repeat(60)}`);
     console.log(`[sendAdminMessageToSession] 📤 URL:     ${sendUrl}`);
@@ -3302,6 +3393,7 @@ export const sendAdminMessageToSession = async (req, res) => {
       console.log(`[sendAdminMessageToSession] ⬅️  RESPONSE HTTP ${waRes.status} | body: ${responseBody}`);
       if (waRes.ok) { 
         waSent = true;
+        try { adminWamid = JSON.parse(responseBody)?.messages?.[0]?.id || null; } catch { /* non-JSON body */ }
         console.log(`[sendAdminMessageToSession] ✅ WhatsApp OK | phone=${normalizedPhone} | status=${waRes.status}`);
       } else {
         waError = `HTTP ${waRes.status}: ${responseBody}`;
@@ -3317,10 +3409,11 @@ export const sendAdminMessageToSession = async (req, res) => {
       sender: 'agent',
       name: 'נציג',
       agent_name: agentName,
+      agent_user_id: String(req.userId || ''),
       node_id: 'agent',
       created,
       wa_sent: waSent,
-      wamid: null,
+      wamid: adminWamid,
       deliveryStatus: null
     };
     

@@ -241,6 +241,7 @@ export const pushMessagesToWhatsApp = async (phone, messages, user = null, bot =
   const sendOne = async (body) => {
     const fullPayload = { ...body, phone: normalizedPhone, fromMe: 1 };
     const url = `https://wa.message.co.il/api/${endpoint}/send`;
+    if (body.replyTo) console.log(`[WA-PUSH] ↪ replyTo=${body.replyTo} will be sent`);
     console.log(`[WA-PUSH] 📤 REQUEST → ${url}`);
     console.log(`[WA-PUSH] 📤 TOKEN: ${waToken ? waToken.substring(0, 10) + '…' : '(none)'}`);
     console.log(`[WA-PUSH] 📤 PAYLOAD:\n${JSON.stringify(fullPayload, null, 2)}`);
@@ -257,7 +258,7 @@ export const pushMessagesToWhatsApp = async (phone, messages, user = null, bot =
       const respText = await res.text().catch(() => '');
       console.log(`[WA-PUSH] ⬅️  RESPONSE HTTP ${res.status} | body: ${respText}`);
       if (!res.ok) {
-        console.error(`[WA-PUSH] ❌ HTTP ${res.status} | resp: ${respText}`);
+        console.error(`[WA-PUSH] ❌ HTTP ${res.status} | replyTo=${body.replyTo || 'no'} | resp: ${respText}`);
         logError({
           category: 'whatsapp_send',
           source: 'whatsappSender.sendOne',
@@ -275,7 +276,7 @@ export const pushMessagesToWhatsApp = async (phone, messages, user = null, bot =
         wamid = respJson?.messages?.[0]?.id || null;
       } catch {}
       const kind = body.image ? 'image' : body.video ? 'video' : body.file ? 'file' : body.contact ? 'contact' : body.buttons ? 'buttons' : 'text';
-      console.log(`[WA-PUSH] ✅ Sent ${kind} to ${normalizedPhone}${wamid ? ' | wamid=' + wamid.substring(0, 20) + '…' : ''}`);
+      console.log(`[WA-PUSH] ✅ Sent ${kind} to ${normalizedPhone}${wamid ? ' | wamid=' + wamid.substring(0, 20) + '…' : ' | wamid=NONE'} | replyTo=${body.replyTo ? 'YES' : 'no'}`);
       return { success: true, wamid };
     } catch (err) {
       console.error('[WA-PUSH] ❌ Exception:', err.message);
@@ -500,11 +501,14 @@ export const pushMessagesToWhatsApp = async (phone, messages, user = null, bot =
   if (textBuffer.trim()) {
     const buf = textBuffer.trim();
     const indices = [...textBufIndices];
+    // Native WhatsApp reply (agent quote): only the first chunk carries replyTo.
+    // Messages without replyTo are sent exactly as before.
+    const replyTo = indices.length ? (messages[indices[0]].replyTo || null) : null;
     textBuffer = '';
-    textBufIndices = [];
+    textBufIndices = []; 
     const chunks = splitText(buf);
     for (let ci = 0; ci < chunks.length; ci++) {
-      const { success, wamid } = await sendOne({ text: chunks[ci] });
+      const { success, wamid } = await sendOne({ text: chunks[ci], ...(ci === 0 && replyTo ? { replyTo } : {}) });
       if (success) {
         anySuccess = true;
         if (wamid) indices.forEach(idx => { wamidPerMsg[idx] = wamid; });

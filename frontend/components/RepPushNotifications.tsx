@@ -3,7 +3,7 @@
  * Never asks for userId/tenantId — Backend derives them from the JWT.
  */
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   createDeviceRegistrationService,
   usePushNotifications,
@@ -47,9 +47,60 @@ const RepPushNotifications: React.FC<RepPushNotificationsProps> = ({ token }) =>
     },
   });
 
+  const [emailEnabled, setEmailEnabled] = useState(false);
+  const [emailAddress, setEmailAddress] = useState('');
+  const [emailSaving, setEmailSaving] = useState(false);
+
+  useEffect(() => {
+    if (!notifications.enabled) return;
+    let cancelled = false;
+    deviceService
+      .getEmailPreference()
+      .then((pref) => {
+        if (cancelled) return;
+        setEmailEnabled(pref.enabled);
+        setEmailAddress(pref.email);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [deviceService, notifications.enabled]);
+
+  const toggleEmail = async (next: boolean) => {
+    setEmailSaving(true);
+    try {
+      const pref = await deviceService.setEmailPreference(next);
+      setEmailEnabled(pref.enabled);
+      setEmailAddress(pref.email);
+    } catch {
+      setPushToast('שמירת הגדרת המייל נכשלה');
+      window.setTimeout(() => setPushToast(null), 5000);
+    } finally {
+      setEmailSaving(false);
+    }
+  };
+
   return (
     <div className="flex flex-col items-end gap-1">
-      <EnableNotificationsButton notifications={notifications} showTestButton />
+      <div className="flex items-center gap-2 flex-wrap">
+        <EnableNotificationsButton notifications={notifications} showTestButton />
+        {notifications.enabled ? (
+          <label
+            className="flex items-center gap-1.5 text-xs font-bold text-slate-600 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-full cursor-pointer"
+            title={emailAddress ? `התראות יישלחו אל ${emailAddress}` : undefined}
+            dir="rtl"
+          >
+            <input
+              type="checkbox"
+              checked={emailEnabled}
+              disabled={emailSaving}
+              onChange={(e) => void toggleEmail(e.target.checked)}
+            />
+            גם למייל
+          </label>
+        ) : null}
+      </div>
       {pushToast ? (
         <button
           type="button"

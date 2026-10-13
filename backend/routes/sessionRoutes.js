@@ -10,7 +10,7 @@ router.get('/stream', streamEvents);
 
 // Authenticated route to get dashboard statistics for the current user
 router.get('/stats', authenticateToken, getUserStats);
-
+ 
 // Authenticated route to get all contacts
 router.get('/contacts', authenticateToken, getContacts);
 

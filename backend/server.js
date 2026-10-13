@@ -34,13 +34,13 @@ import smsInRoutes from './routes/smsInRoutes.js';
 import apiTokenRoutes from './routes/apiTokenRoutes.js';
 import errorLogRoutes from './logsAdmin/errorLog.routes.js';
 import { responseErrorInterceptor } from './logsAdmin/responseErrorInterceptor.js';
-import { connectSmsDb } from './sms-in/smsDb.js';
 import { seedTemplates } from './controllers/templateController.js';
 import { seedUserTypes } from './scripts/seed-user-types.js';
 import { authenticateToken } from './middleware/auth.js';
 import { setPushNotificationService } from './config/pushNotificationsRuntime.js';
 import { registerExpoPushNotifier } from './utils/expoPushNotifier.js';
 import './utils/activeContactsTicker.js';
+import './utils/dailySummaryTicker.js';
 import './internal-data/internalDataSyncTicker.js';
  
 const __filename = fileURLToPath(import.meta.url);
@@ -79,7 +79,6 @@ async function startServer() {
   try {
     // Connect to database FIRST
     await connectDB();
-    await connectSmsDb();
     console.log('✅ Database connected, registering routes...');
     
     // Seed templates and user types AFTER database connection
@@ -160,6 +159,9 @@ async function startServer() {
     app.listen(PORT, () => {
       console.log(`🚀 Backend server running on http://localhost:${PORT}`);
       console.log(`📝 Environment: ${process.env.NODE_ENV || 'development'}`);
+      if (!process.env.WA_STATUS_WEBHOOK_SECRET) {
+        console.warn('⚠️  WA_STATUS_WEBHOOK_SECRET is not set — POST /api/360/status will reject every delivery-status webhook (401).');
+      }
     });
   } catch (error) {
     console.error('❌ Failed to connect to database. Server will not start.');

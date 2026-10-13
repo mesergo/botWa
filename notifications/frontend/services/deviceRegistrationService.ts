@@ -83,6 +83,33 @@ export function createDeviceRegistrationService(options: DeviceRegistrationServi
       }
       return res.json();
     },
+
+    async getEmailPreference(): Promise<{ enabled: boolean; email: string }> {
+      const res = await fetchImpl(`${base}/email-preference`, {
+        method: 'GET',
+        headers: await authHeaders(options.getAccessToken),
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        throw new Error(`Get email preference failed (${res.status}): ${text || res.statusText}`);
+      }
+      const data = await res.json();
+      return { enabled: Boolean(data.enabled), email: data.email || '' };
+    },
+
+    async setEmailPreference(enabled: boolean): Promise<{ enabled: boolean; email: string }> {
+      const res = await fetchImpl(`${base}/email-preference`, {
+        method: 'PUT',
+        headers: await authHeaders(options.getAccessToken),
+        body: JSON.stringify({ enabled }),
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        throw new Error(`Set email preference failed (${res.status}): ${text || res.statusText}`);
+      }
+      const data = await res.json();
+      return { enabled: Boolean(data.enabled), email: data.email || '' };
+    },
   };
 }
 

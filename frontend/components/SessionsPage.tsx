@@ -1,6 +1,6 @@
 ﻿import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { WhatsAppText } from '../utils/whatsappFormat';
-import { Clock, MessageSquare, Search, Bot, User, Phone, List, Users, ExternalLink, X, Headphones, RefreshCw, Settings, UserCog, Layers, Plus, UserPlus, Check, CheckCheck, AlertCircle, Paperclip, ChevronRight, ChevronLeft, Bell, MoreVertical, Ban, Megaphone, Repeat, Reply } from 'lucide-react';
+import { Clock, MessageSquare, Search, Bot, User, Phone, List, Users, ExternalLink, X, Headphones, RefreshCw, Settings, UserCog, Layers, Plus, UserPlus, Check, CheckCheck, AlertCircle, Paperclip, ChevronRight, ChevronLeft, Bell, MoreVertical, Ban, Megaphone, Repeat, Reply, Lock, Unlock } from 'lucide-react';
 import ImpersonationBanner, { SiblingAccount } from './ImpersonationBanner';
 import OnboardingBanner from './OnboardingBanner';
 import MigrationNoticeBanner from './MigrationNoticeBanner';
@@ -8,6 +8,7 @@ import { TemplateHeaderMediaField } from './TemplateHeaderMediaField';
 import QuickInsertMenu from './shared/QuickInsertMenu';
 import ChatImage from './shared/ChatImage';
 import { getMissingTemplateVars } from './shared/templateValidation';
+import { applyDefaultBodyParams, FIELD_PREFIX } from './shared/templateDefaultParams';
 import { usePermission } from '../hooks/usePermission';
 import PageTopBar from './PageTopBar';
 import ProfileMenuContent from './ProfileMenuContent';
@@ -16,7 +17,7 @@ import AppNav from './AppNav';
 import { useContactFields } from '../context/ContactFieldsContext';
 import RepPushNotifications from './RepPushNotifications';
 import { useTranslation } from 'react-i18next';
- 
+  
 interface Session {  
   id: string;
   phone: string;
@@ -51,9 +52,12 @@ interface Contact {
   botPhones?: string[];
   assigned_to?: string[];
   status?: 'bot' | 'waiting' | 'handling' | 'closed' | 'resolved';
+  lastResponderName?: string | null;
   wants_phone?: boolean;
   whatsapp_name?: string;
   full_name?: string;
+  intro_text?: string;
+  bot_blocked?: boolean;
 }
 
 interface SessionsPageProps {
@@ -99,6 +103,22 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
   const [contactsLoading, setContactsLoading] = useState(true);
   const [contactSearch, setContactSearch] = useState('');
 
+  // Intro text (from the /sessions?text= link) saved on the contact and shown in the chat header
+  const [introText, setIntroText] = useState('');
+  const introTextVersionRef = useRef(0);
+  // Points at fetchContacts (declared further below) so saving can refresh the sidebar list,
+  // which must include contacts that have an intro text but no sessions yet.
+  const refreshContactsRef = useRef<() => void>(() => {});
+  const saveIntroText = (phone: string, text: string) => {
+    fetch(`${API_BASE}/contacts/intro-text`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ phone, text }),
+    })
+      .then(() => refreshContactsRef.current())
+      .catch(() => { /* non-critical */ });
+  };
+
   // Selected contact sessions
   const [selectedPhone, setSelectedPhone] = useState<string | null>(initialPhone ?? null);
   const [phoneSessions, setPhoneSessions] = useState<Session[]>([]);
@@ -131,6 +151,8 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
   // What the template is configured to do to the conversation right after it's sent
   // ('no_change' | 'agent' | 'bot'), per template name — from Dialog360TemplateSetting.
   const [templatePostSendMode, setTemplatePostSendMode] = useState<Record<string, 'no_change' | 'agent' | 'bot'>>({});
+  // Fixed BODY param values per template name (see shared/templateDefaultParams.ts).
+  const [templateDefaultParams, setTemplateDefaultParams] = useState<Record<string, string[]>>({});
   // Per-send override: null = use the template's configured default above.
   const [sendPostSendModeOverride, setSendPostSendModeOverride] = useState<'no_change' | 'agent' | 'bot' | null>(null);
 
@@ -164,6 +186,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
   const [showActionsMenu, setShowActionsMenu] = useState(false);
   const [addingToBlocklist, setAddingToBlocklist] = useState(false);
   const [blocklistSuccess, setBlocklistSuccess] = useState(false);
+  const [botBlockLoading, setBotBlockLoading] = useState(false);
   const actionsMenuRef = useRef<HTMLDivElement>(null);
 
   // Transfer conversation modal state
@@ -263,6 +286,10 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
       .catch(e => console.error('Failed to load contacts', e))
       .finally(() => { if (!silent) setContactsLoading(false); });
   }, [token]);
+
+  useEffect(() => {
+    refreshContactsRef.current = () => fetchContacts(true);
+  }, [fetchContacts]);
 
   useEffect(() => {
     fetchContacts();
@@ -643,6 +670,28 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
     prevScrollHeightRef.current = 0;
   }, [selectedPhone]);
 
+  // Load the saved intro text for the selected contact (stored on the Contact document,
+  // not taken from the sessions-derived contacts list, which may not include new contacts).
+  // Declared BEFORE the deep-link apply effect below so that, within one commit, the apply
+  // effect runs last and its text is not wiped by the reset here.
+  useEffect(() => {
+    setIntroText('');
+    if (!selectedPhone || isSimulator(selectedPhone) || !token) return;
+    const version = introTextVersionRef.current;
+    let cancelled = false;
+    fetch(`${API_BASE}/contacts/intro-text?phone=${encodeURIComponent(selectedPhone)}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then(r => (r.ok ? r.json() : null))
+      .then(data => {
+        // Ignore if an apply/dismiss happened while the request was in flight
+        if (cancelled || !data || version !== introTextVersionRef.current) return;
+        setIntroText(typeof data.text === 'string' ? data.text : '');
+      })
+      .catch(() => { /* non-critical */ });
+    return () => { cancelled = true; };
+  }, [selectedPhone, token]);
+
   // Deep link support: /sessions?phone=...&text=<message> — pre-fill the compose box with
   // the given text (un-sent, editable), mirroring wa.me's ?text= param. Applied once
   // (appliedInitialTextRef) so later contact switches don't re-apply it.
@@ -656,14 +705,26 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
   // a LATER commit still re-triggers this effect and applies the text (a version merged into
   // the clear effect — keyed on selectedPhone alone — would miss a later-arriving initialText
   // entirely, since its dependency array wouldn't change again).
-  const appliedInitialTextRef = useRef(false);
+  const appliedInitialTextRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!initialText) return;
+    if (!initialText || !selectedPhone) return;
     if (selectedPhone !== initialPhone) return;
-    if (appliedInitialTextRef.current) return;
-    appliedInitialTextRef.current = true;
+    const key = `${selectedPhone}|${initialText}`;
+    if (appliedInitialTextRef.current === key) return;
+    appliedInitialTextRef.current = key;
     setAgentMessage(initialText);
+    // Persist on the contact so the text stays visible in the chat header across reloads/reps.
+    introTextVersionRef.current += 1;
+    setIntroText(initialText);
+    saveIntroText(selectedPhone as string, initialText);
   }, [selectedPhone, initialText, initialPhone]);
+
+  const dismissIntroText = () => {
+    if (!selectedPhone) return;
+    introTextVersionRef.current += 1;
+    setIntroText('');
+    saveIntroText(selectedPhone, '');
+  };
 
   // Restore scroll position after loading older messages
   useEffect(() => {
@@ -1146,7 +1207,9 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                   : s
               ));
               setContacts(prev => prev.map(c =>
-                c.phone === selectedPhone ? { ...c, status: replyStatus } : c
+                c.phone === selectedPhone
+                  ? { ...c, status: replyStatus, lastResponderName: replyStatus === 'handling' ? currentAgentName : null }
+                  : c
               ));
               if (selectedPhone) bumpContactToTop(selectedPhone, created);
               // Keep agent-mode UI state in sync — a template configured to
@@ -1411,6 +1474,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
       requestBody.quotedWamid = currentReplyTarget.wamid;
       requestBody.quotedText = currentReplyTarget.text;
       requestBody.quotedSender = currentReplyTarget.displayName;
+      console.log('[REPLY-UI] sending', { quotedWamid: requestBody.quotedWamid || 'MISSING', quotedText: String(requestBody.quotedText || '').slice(0, 40) });
     }
     
     try {
@@ -1445,7 +1509,9 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
             : s
         ));
         setContacts(prev => prev.map(c =>
-          c.phone === selectedPhone ? { ...c, status: replyStatus } : c
+          c.phone === selectedPhone
+            ? { ...c, status: replyStatus, lastResponderName: replyStatus === 'handling' ? currentAgentName : null }
+            : c
         ));
         if (selectedPhone) bumpContactToTop(selectedPhone, created);
         // Keep the agent-mode UI (composer state) in sync with the resolved
@@ -1517,16 +1583,19 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
         const settingsMap: Record<string, 'hidden' | 'manager' | 'agent'> = {};
         const defaultMediaMap: Record<string, { url: string; type: 'image' | 'video' | 'document' }> = {};
         const postSendModeMap: Record<string, 'no_change' | 'agent' | 'bot'> = {};
+        const defaultParamsMap: Record<string, string[]> = {};
         settingsList.forEach((s: any) => {
           settingsMap[s.templateName] = s.visibility || (s.showInChat === false ? 'hidden' : 'manager');
           if (s.defaultHeaderMediaUrl && s.defaultHeaderMediaType) {
             defaultMediaMap[s.templateName] = { url: s.defaultHeaderMediaUrl, type: s.defaultHeaderMediaType };
           }
           postSendModeMap[s.templateName] = s.postSendMode || 'no_change';
+          if (Array.isArray(s.defaultBodyParams)) defaultParamsMap[s.templateName] = s.defaultBodyParams;
         });
         setTemplateSettings(settingsMap);
         setTemplateDefaultMedia(defaultMediaMap);
         setTemplatePostSendMode(postSendModeMap);
+        setTemplateDefaultParams(defaultParamsMap);
       }
     } catch (err) {
       console.error('Error fetching template settings:', err);
@@ -1546,6 +1615,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
     if (needsParams) {
       // Initialize params structure
       const initialParams: Record<string, any> = {};
+      const defaults = templateDefaultParams[templateName];
       if (template.components && Array.isArray(template.components)) {
         template.components.forEach((comp: any) => {
           if (comp.type === 'HEADER' && ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(comp.format)) {
@@ -1565,7 +1635,9 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
             // Extract {{1}}, {{2}} etc from body text
             const matches = comp.text.match(/\{\{\d+\}\}/g);
             if (matches) {
-              initialParams.body = matches.map((m: string) => '');
+              // Pre-fill configured fixed params; contact-field ones are filled in
+              // below once this contact's record has loaded.
+              initialParams.body = applyDefaultBodyParams(matches.length, defaults, currentUser?.name, () => '');
             }
           }
         });
@@ -1581,12 +1653,41 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
           .then(data => {
             const rec = data?.contacts?.[0] ?? null;
             setContactRecord(rec);
+            if (rec && defaults?.some(d => d?.startsWith(FIELD_PREFIX))) {
+              setTemplateParams(prev => {
+                if (!Array.isArray(prev.body)) return prev;
+                const body = [...prev.body];
+                defaults.forEach((d, i) => {
+                  // Don't overwrite anything the agent already typed meanwhile.
+                  if (d?.startsWith(FIELD_PREFIX) && i < body.length && !body[i]) {
+                    body[i] = resolveContactFieldRef(rec, d.slice(FIELD_PREFIX.length));
+                  }
+                });
+                return { ...prev, body };
+              });
+            }
           })
           .catch(() => setContactRecord(null));
       }
     }
   };
-  
+
+  // Resolve a contact-field ref (full_name / phone / custom:<id>...) against a contact
+  // record — same lookup as the params modal's "choose contact field" dropdown.
+  const resolveContactFieldRef = (rec: Record<string, any>, ref: string): string => {
+    if (ref.startsWith('custom:')) {
+      const fieldId = ref.slice(7);
+      // Bot-flow saves use _id as key; manual edits use the slug key — check both
+      const fieldDef = contactFieldDefs.find(f => f._id === fieldId);
+      return String(
+        rec.custom_field_values?.[fieldId] ??
+        (fieldDef ? rec.custom_field_values?.[fieldDef.key] : undefined) ??
+        ''
+      );
+    }
+    return String(rec[ref] ?? '');
+  };
+
   // Check if template needs parameters
   const checkTemplateNeedsParams = (template: any): boolean => {
     if (!template.components || !Array.isArray(template.components)) return false;
@@ -1826,6 +1927,30 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
     }
   };
 
+  const toggleBotBlock = async () => {
+    if (!selectedPhone || botBlockLoading) return;
+    setShowActionsMenu(false);
+    const nextBlocked = !selectedContact?.bot_blocked;
+    setBotBlockLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/contacts/bot-block`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: selectedPhone, blocked: nextBlocked })
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || t('errors.botBlockFailed'));
+      }
+      setContacts(prev => prev.map(c => c.phone === selectedPhone ? { ...c, bot_blocked: nextBlocked } : c));
+    } catch (e: any) {
+      console.error('Failed to toggle bot block', e);
+      alert(e.message || t('errors.botBlockFailed'));
+    } finally {
+      setBotBlockLoading(false);
+    }
+  };
+
   const handleAvailabilitySelect = async (s: 'available' | 'unavailable' | 'on_break') => {
     if (!onUpdateAvailability) return;
     if (s === (currentUser?.availability_status || 'available')) { setAvailabilityOpen(false); return; }
@@ -1935,7 +2060,8 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
       const q = contactSearch.toLowerCase();
       const matchesPhone = c.phone.toLowerCase().includes(q);
       const matchesName = (c.whatsapp_name || '').toLowerCase().includes(q) || (c.full_name || '').toLowerCase().includes(q);
-      if (!matchesPhone && !matchesName) return false;
+      const matchesIntro = (c.intro_text || '').toLowerCase().includes(q);
+      if (!matchesPhone && !matchesName && !matchesIntro) return false;
     }
     if (statusFilter !== 'all' && c.status !== statusFilter) return false;
     if (activeBotFilter) {
@@ -2060,6 +2186,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
   const handleStartReply = (item: any, senderType: string, session: Session) => {
     const previewText = getQuotePreviewText(item);
     if (!previewText) return;
+    console.log('[REPLY-UI] selected', { type: item.type, sender: senderType, wamid: item.wamid || 'MISSING', hid: item.hid, text: previewText.slice(0, 40) });
     setReplyTarget({
       wamid: item.wamid || null,
       text: previewText,
@@ -2171,12 +2298,10 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                     </div>
                   )}
                   {item.type === 'Image' && item.url && (
-                    <img
+                    <ChatImage
                       src={item.url}
                       alt={t('messageList.imageAlt')}
                       className="rounded-xl max-w-[200px] h-auto mb-2"
-                      onLoad={() => console.log('[Chat][Image][agent] ✅ loaded:', item.url)}
-                      onError={() => console.error('[Chat][Image][agent] ❌ FAILED to load image. url=', item.url, '| full item=', item)}
                     />
                   )} 
                   {item.type === 'Video' && item.url && (
@@ -2254,7 +2379,12 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 <div className="w-6 h-6 rounded-lg flex items-center justify-center shadow-sm bg-amber-100 border border-amber-200 text-amber-700">
                   <Megaphone size={12} />
                 </div>
-                {msgDate && <span className="text-[9px] text-slate-400 font-semibold">{msgDate}</span>}
+                {(msgDate || item.deliveryStatus) && (
+                  <span className="flex items-center gap-0.5 text-[9px] text-slate-400 font-semibold">
+                    {msgDate}
+                    {renderDeliveryTick(item)}
+                  </span>
+                )}
               </div>
               <div className="flex flex-col gap-0.5 items-end">
                 <div className="px-3 py-1.5 rounded-2xl text-sm font-semibold shadow-sm text-start bg-amber-50 border border-amber-200 text-amber-900 rounded-ss-none">
@@ -2263,14 +2393,12 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                     <p className="text-[9px] text-amber-400 font-bold mb-1">{t('messageList.templateLabel', { name: item.template_name })}</p>
                   )}
                   {item.type === 'Image' && item.url && (
-                    <img
+                    <ChatImage
                       src={item.url}
                       alt={t('messageList.imageAlt')}
                       className="rounded-xl max-w-[200px] h-auto mb-2"
-                      onLoad={() => console.log('[Chat][Image][broadcast] ✅ loaded:', item.url)}
-                      onError={() => console.error('[Chat][Image][broadcast] ❌ FAILED to load image. url=', item.url, '| full item=', item)}
                     />
-                  )}  
+                  )}
                   {item.type === 'Video' && item.url && (
                     <video src={item.url} controls className="rounded-xl max-w-[200px] mb-2" />
                   )}
@@ -2360,15 +2488,13 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                     <p className="text-[10px] font-semibold mb-1 opacity-70">🎙️ {t('messageList.recording')}</p>
                     <audio src={item.url || text} controls className="max-w-[220px] mb-1" />
                   </>
-                )}
+                )} 
                 {item.type === 'Image' && item.url && (
                   <>
-                    <img
+                    <ChatImage
                       src={item.url}
                       alt={t('messageList.imageAlt')}
                       className="rounded-xl max-w-[200px] h-auto mb-1"
-                      onLoad={() => console.log('[Chat][Image][bot/user] ✅ loaded:', item.url)}
-                      onError={() => console.error('[Chat][Image][bot/user] ❌ FAILED to load image. url=', item.url, '| full item=', item)}
                     />
                     {text && <WhatsAppText text={text} className="leading-snug" />}
                   </>
@@ -2427,7 +2553,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                   <div className="flex gap-2 overflow-x-auto pb-1 max-w-[320px]">
                     {item.carouselItems.map((card: any, ci: number) => (
                       <div key={ci} className="flex-shrink-0 w-40 bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
-                        {card.image && <img src={card.image} alt={card.title || ''} className="w-full h-24 object-cover" />}
+                        {card.image && <ChatImage src={card.image} alt={card.title || ''} className="w-full h-24 object-cover" />}
                         <div className="p-2.5">
                           {card.title && <p className="text-xs font-black text-slate-800 leading-tight">{card.title}</p>}
                           {card.subtitle && <p className="text-[10px] text-slate-500 mt-0.5 leading-snug">{card.subtitle}</p>}
@@ -2487,7 +2613,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
           onMobileNavToggle={() => setMobileNavOpen((prev) => !prev)}
           rightSlot={(
             <div className="flex items-center gap-3">
-              {token ? (
+              {token && currentUser?.role !== 'rep' ? (
                 <RepPushNotifications token={token} />
               ) : null}
               {showAvailability ? (
@@ -2863,6 +2989,16 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                               {t('sidebar.sessionsCountBadge', { count: contact.sessionCount })}
                             </span>
                             {!sim && renderStatusBadge(contact.status)}
+                            {!sim && contact.status === 'handling' && contact.lastResponderName && (
+                              <span className="text-[9px] font-semibold text-slate-500">
+                                {t('sidebar.lastReplyBy', {
+                                  name: contact.lastResponderName,
+                                  defaultValue: i18n.language === 'en'
+                                    ? `In progress by ${contact.lastResponderName}`
+                                    : `בטיפול ע״י ${contact.lastResponderName}`
+                                })}
+                              </span>
+                            )}
                             {contact.wants_phone && (
                               <span className="flex items-center gap-0.5 text-[9px] font-black px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 ring-1 ring-green-400/60 animate-pulse">
                                 <Phone size={9} />{t('sidebar.phoneOnlyBadge')}
@@ -2998,7 +3134,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                   ${isSimulator(selectedPhone) ? 'bg-blue-50 text-blue-400' : 'bg-sky-50 text-sky-500'}`}>
                   {isSimulator(selectedPhone) ? <MessageSquare size={20} /> : <Phone size={20} />}
                 </div>
-                <div className="flex-1 min-w-0">
+                <div className="min-w-0">
                   <div className="flex items-center gap-2">
                     <p className="text-base font-black text-slate-900 flex items-center gap-1.5 flex-wrap">
                       {isSimulator(selectedPhone) ? t('sidebar.simulator') : selectedPhone}
@@ -3035,6 +3171,33 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                     )}
                   </p>
                 </div>
+                {/* Intro text from the /sessions?text= link */}
+                {!isSimulator(selectedPhone) && introText && (
+                  <div className="flex items-start gap-1.5 max-w-xs flex-shrink min-w-0 px-2.5 py-1.5 rounded-xl bg-amber-50 ring-1 ring-amber-300/60 text-amber-800">
+                    <div className="min-w-0 flex flex-col">
+                      <span className="text-[10px] font-bold leading-none mb-0.5 text-amber-600">
+                        {t('chatPanel.introTextLabel')}
+                      </span>
+                      <span
+                        title={introText}
+                        className="text-xs font-semibold leading-snug break-words overflow-hidden whitespace-pre-wrap min-w-0"
+                        style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}
+                      >
+                        {introText}
+                      </span>
+                    </div>
+                    <button
+                      onClick={dismissIntroText}
+                      title={t('chatPanel.dismissIntroText')}
+                      aria-label={t('chatPanel.dismissIntroText')}
+                      className="flex-shrink-0 p-0.5 rounded-md text-amber-600 hover:text-amber-900 hover:bg-amber-100 transition-colors"
+                    >
+                      <X size={12} />
+                    </button>
+                  </div>
+                )}
+                {/* Spacer keeps the status badge / actions pushed to the far end */}
+                <div className="flex-1" />
                 {/* Conversation status badge */}
                 {!isSimulator(selectedPhone) && phoneSessions.length > 0 && (
                   <div className="flex-shrink-0">{renderStatusBadge(currentStatus)}</div>
@@ -3095,7 +3258,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                             {t('chatPanel.handled')}
                           </button>
                         )}
-                        {!isSimulator(selectedPhone!) && isAgentMode && (
+                        {!isSimulator(selectedPhone!) && isAgentMode && !selectedContact?.bot_blocked && (
                           <button
                             onClick={() => { setShowActionsMenu(false); deactivateAgent(); }}
                             className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-emerald-50 hover:text-emerald-700 transition-colors text-start"
@@ -3131,6 +3294,17 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                             {addingToBlocklist ? t('chatPanel.addingToBlocklist') : t('chatPanel.addToBlocklist')}
                           </button>
                         )}
+                        {!isSimulator(selectedPhone!) && (
+                          <button
+                            onClick={toggleBotBlock}
+                            disabled={botBlockLoading}
+                            className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-amber-50 hover:text-amber-700 transition-colors text-start disabled:opacity-60"
+                            title={t('chatPanel.botBlockTooltip')}
+                          >
+                            {selectedContact?.bot_blocked ? <Unlock size={15} /> : <Lock size={15} />}
+                            {selectedContact?.bot_blocked ? t('chatPanel.unblockBot') : t('chatPanel.blockBot')}
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>
@@ -3158,8 +3332,18 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                 </button>
               </div>
 
+              {/* Permanent bot-block banner — takes precedence over the regular (session-scoped) agent banner */}
+              {selectedContact?.bot_blocked && (
+                <div className="flex-shrink-0 px-6 py-2.5 bg-red-50 border-b border-red-200 flex items-center gap-3">
+                  <Lock size={14} className="text-red-500 flex-shrink-0" />
+                  <p className="text-xs font-black text-red-800 flex-1">
+                    {t('chatPanel.botBlockedBanner')}
+                  </p>
+                </div>
+              )}
+
               {/* Agent mode banner */}
-              {isAgentMode && (
+              {isAgentMode && !selectedContact?.bot_blocked && (
                 <div className="flex-shrink-0 px-6 py-2.5 bg-amber-50 border-b border-amber-200 flex items-center gap-3">
                   <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse flex-shrink-0" />
                   <p className="text-xs font-black text-amber-800 flex-1">

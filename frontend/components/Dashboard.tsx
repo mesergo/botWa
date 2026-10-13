@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Plus, Bot, ArrowLeft, ArrowRight, Trash2, Calendar, LogOut, Shield, UserCog, Users, List, Settings, Save, User as UserIcon, Phone, Mail, Star, Copy, Check, Wifi, Gauge, MessageSquare, MessageCircle, Globe, Layers, CheckCircle, Eye, EyeOff, X, Menu, Image as ImageIcon, FileText, Link as LinkIcon, Unlink, UserMinus, AlertTriangle, RefreshCcw, ToggleLeft, ToggleRight, Zap, GitFork, Edit2, KeyRound } from 'lucide-react';
+import { Plus, Bot, ArrowLeft, ArrowRight, Trash2, Calendar, LogOut, Shield, UserCog, Users, List, Settings, Save, User as UserIcon, Phone, Mail, Star, Copy, Check, Wifi, Gauge, MessageSquare, MessageCircle, Globe, Layers, CheckCircle, Eye, EyeOff, X, Menu, Image as ImageIcon, FileText, Link as LinkIcon, Unlink, UserMinus, AlertTriangle, RefreshCcw, ToggleLeft, ToggleRight, Zap, GitFork, Edit2, KeyRound, Bell } from 'lucide-react';
 import ImpersonationBanner from './ImpersonationBanner';
 import OnboardingBanner from './OnboardingBanner';
 import MigrationNoticeBanner from './MigrationNoticeBanner';
@@ -17,10 +17,18 @@ import LanguageSwitcher from './LanguageSwitcher';
 import SmsInApp from './sms-in/SmsInApp';
 import PaymentCountriesSelect from './admin/PaymentCountriesSelect';
 import ApiTokensPanel from './apiTokens/ApiTokensPanel';
+import NotificationAlertsPanel from './notifications/NotificationAlertsPanel';
 import TemplateActionsMenu from './admin/templates/TemplateActionsMenu';
 import TemplateFormModal from './admin/templates/TemplateFormModal';
 import { buildComponentsPayload, TemplateModalMode } from './admin/templates/types';
 import { useOwnDialog360Templates } from './admin/templates/useOwnDialog360Templates';
+import TemplateDefaultParamsEditor from './shared/TemplateDefaultParamsEditor';
+import { countBodyParams } from './shared/templateDefaultParams';
+import { useContactFields } from '../context/ContactFieldsContext';
+
+// Stable empty value for templates with no saved default params (keeps the editor's
+// draft from being reset on every render).
+const EMPTY_PARAMS: string[] = [];
 
 
 const API_BASE = window.location.hostname === 'localhost'
@@ -235,7 +243,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
   }, []);
 
   // Settings tab section
-  type SettingsSection = 'profile' | 'account' | 'connection' | 'quota' | 'numbers' | 'routing' | 'templates' | 'removal' | 'api_tokens';
+  type SettingsSection = 'profile' | 'account' | 'connection' | 'quota' | 'numbers' | 'routing' | 'templates' | 'removal' | 'api_tokens' | 'notifications';
   // Sub-tab within the 'templates' settings section: official WA templates vs. internal (self-authored) ones
   type TemplatesSubTab = 'wa' | 'internal';
   const [templatesSubTab, setTemplatesSubTab] = useState<TemplatesSubTab>('wa');
@@ -270,6 +278,10 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
   // Per-template setting: what happens to the conversation right after this
   // specific template is sent (no_change / agent / bot).
   const [templatePostSendMode, setTemplatePostSendMode] = useState<Record<string, 'no_change' | 'agent' | 'bot'>>({});
+  // Per-template fixed BODY param values (agent name / contact field / literal text),
+  // pre-filled whenever the template is picked for sending.
+  const [templateDefaultParams, setTemplateDefaultParams] = useState<Record<string, string[]>>({});
+  const { fields: contactFields } = useContactFields();
   const [previewTemplate, setPreviewTemplate] = useState<any | null>(null);
 
   // Self-service add/edit/duplicate/delete of the account's own WhatsApp templates,
@@ -398,6 +410,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
         const settingsMap: Record<string, boolean> = {};
         const defaultMediaMap: Record<string, { url: string; type: 'image' | 'video' | 'document' }> = {};
         const postSendModeMap: Record<string, 'no_change' | 'agent' | 'bot'> = {};
+        const defaultParamsMap: Record<string, string[]> = {};
         data.settings.forEach((s: any) => {
           if (s.templateName) {
             settingsMap[s.templateName] = s.showInChat ?? true;
@@ -405,11 +418,13 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
               defaultMediaMap[s.templateName] = { url: s.defaultHeaderMediaUrl, type: s.defaultHeaderMediaType };
             }
             postSendModeMap[s.templateName] = s.postSendMode || 'no_change';
+            if (Array.isArray(s.defaultBodyParams)) defaultParamsMap[s.templateName] = s.defaultBodyParams;
           }
         });
         setTemplateSettings(settingsMap);
         setTemplateDefaultMedia(defaultMediaMap);
         setTemplatePostSendMode(postSendModeMap);
+        setTemplateDefaultParams(defaultParamsMap);
       }
     } catch (err) {
       console.error('Failed to fetch template settings:', err);
@@ -488,6 +503,34 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
     } catch (err) {
       setTemplatePostSendMode(prev => ({ ...prev, [templateName]: previousValue }));
       console.error('Error updating template post-send mode:', err);
+    }
+  };
+
+  // Save the fixed BODY param values for a template ({{1}}, {{2}}...).
+  const updateTemplateDefaultParams = async (template: any, defaultBodyParams: string[]) => {
+    if (!token) return;
+    const templateName = template.name || template.elementName || template.template_name || '';
+    const previousValue = templateDefaultParams[templateName];
+
+    // Optimistic update
+    setTemplateDefaultParams(prev => ({ ...prev, [templateName]: defaultBodyParams }));
+
+    try {
+      const res = await fetch(`${API_BASE}/dialog360-templates/default-params`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ templateName, templateId: template.id, defaultBodyParams }),
+      });
+      if (!res.ok) {
+        setTemplateDefaultParams(prev => ({ ...prev, [templateName]: previousValue || [] }));
+        console.error('Failed to update template default params');
+      }
+    } catch (err) {
+      setTemplateDefaultParams(prev => ({ ...prev, [templateName]: previousValue || [] }));
+      console.error('Error updating template default params:', err);
     }
   };
 
@@ -1188,6 +1231,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
               { key: 'templates',  label: t('settingsNav.templates'),      icon: <MessageSquare size={16} /> },
               { key: 'removal',    label: t('settingsNav.removal'), icon: <UserMinus size={16} /> },
               { key: 'api_tokens', label: t('settingsNav.apiTokens'), icon: <KeyRound size={16} /> },
+              ...(currentUser?.role !== 'rep' ? [{ key: 'notifications' as const, label: t('settingsNav.notifications'), icon: <Bell size={16} /> }] : []),
             ] as { key: SettingsSection; label: string; icon: React.ReactNode }[]).map(({ key, label, icon }) => (
               <button
                 key={key}
@@ -2051,6 +2095,16 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                               <p className="text-xs text-slate-400 italic">{t('settings.templates.noContent')}</p>
                             )}
 
+                            {/* Fixed BODY params — pre-filled whenever this template is picked for sending */}
+                            <div onClick={(e) => e.stopPropagation()}>
+                              <TemplateDefaultParamsEditor
+                                count={countBodyParams(tmpl)}
+                                value={templateDefaultParams[name] || EMPTY_PARAMS}
+                                contactFields={contactFields}
+                                onSave={(next) => updateTemplateDefaultParams(tmpl, next)}
+                              />
+                            </div>
+
                             {/* Default header media (image/video/document) — reusable when sending in chat */}
                             {headerMediaType && (
                               <div className="mt-3" onClick={(e) => e.stopPropagation()}>
@@ -2392,6 +2446,10 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
 
               {settingsSection === 'api_tokens' && (
                 <ApiTokensPanel token={token} apiBase={API_BASE} />
+              )}
+
+              {settingsSection === 'notifications' && currentUser?.role !== 'rep' && (
+                <NotificationAlertsPanel token={token} apiBase={API_BASE} />
               )}
 
               </>
@@ -2844,6 +2902,18 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                       )}
                     </div>
                   </div>
+
+                  {/* Fixed BODY params — same editor as on the template card */}
+                  {countBodyParams(previewTemplate) > 0 && (
+                    <div className="mt-4 bg-white border border-slate-200 rounded-2xl p-4">
+                      <TemplateDefaultParamsEditor
+                        count={countBodyParams(previewTemplate)}
+                        value={templateDefaultParams[templateName] || EMPTY_PARAMS}
+                        contactFields={contactFields}
+                        onSave={(next) => updateTemplateDefaultParams(previewTemplate, next)}
+                      />
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

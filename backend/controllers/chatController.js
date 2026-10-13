@@ -19,6 +19,7 @@ import { handleWebService, findMatchingOption } from '../utils/webserviceHandler
 import { normalizePhone } from '../utils/phone.js';
 import { getEffectiveRemovalConfig, matchRemovalKeywordWithLang, DEFAULT_REMOVAL_CONFIG } from '../utils/removalConfig.js';
 import { pushMessagesToWhatsApp, debugCheckMediaUrl } from '../utils/whatsappSender.js';
+import { newHistoryId, saveWamidsByHid } from '../utils/historyWamids.js';
 import eventBus from '../utils/eventBus.js';
 import { applyConversationClosedToDoc, resolveClosingMessage } from '../utils/conversationActions.js';
 
@@ -403,13 +404,20 @@ const findNextNode = (nodeId, edges, handleId = null) => {
 const addToHistory = (session, message, nodeId) => {
   const history = session.process_history || [];
   const isUser = nodeId === 'user';
+  // 'System' entries are internal notes that are never sent over WhatsApp, so
+  // they get no hid/wamid/deliveryStatus.
+  const isSent = !isUser && message?.type !== 'System';
+  // The hid is stamped on the ORIGINAL message object too, so callers that
+  // later pass the same object to pushMessagesToWhatsApp can map each returned
+  // wamid back to exactly this history entry (see utils/historyWamids.js).
+  if (isSent) message.hid = newHistoryId();
   history.push({
     ...message,
     node_id: nodeId,
     sender: isUser ? 'user' : 'bot',
     name: isUser ? 'משתמש' : 'בוט',
     created: new Date().toISOString(),
-    ...(!isUser ? { wamid: null, deliveryStatus: null } : {})
+    ...(isSent ? { wamid: null, deliveryStatus: null } : {})
   });
   session.process_history = history;
 };
@@ -1400,22 +1408,25 @@ const performAutoRemoval = async (user, sender, phone, text, name = '') => {
 };
 
 // Saves wamids returned from pushMessagesToWhatsApp into the matching process_history entries.
+// Matching is done by each message's `hid` (stamped by addToHistory), not by
+// position, and the write is a targeted update (no session.save()).
 const applyWamids = async (sess, msgs, wamidPerMsg) => {
   if (!wamidPerMsg || !wamidPerMsg.some(Boolean)) return;
-  const histLen = sess.process_history ? sess.process_history.length : 0;
-  const startIdx = histLen - msgs.length;
-  if (startIdx < 0) return;
-  let changed = false;
-  wamidPerMsg.forEach((wamid, i) => {
-    if (wamid && sess.process_history[startIdx + i]) {
-      sess.process_history[startIdx + i].wamid = wamid;
-      changed = true;
-    }
-  });
-  if (changed) {
-    sess.markModified('process_history');
-    await sess.save();
+  const expected = wamidPerMsg.filter(Boolean).length;
+  const modified = await saveWamidsByHid(sess._id, msgs, wamidPerMsg);
+  if (!modified && expected) {
+    console.warn(`[BOT] applyWamids: no history entry updated | session=${sess._id} | wamids=${expected}`);
   }
+};
+
+// Records bot messages that are sent to the customer but are not produced by
+// walkChain (validation errors, removal confirmation, restart notice) in
+// process_history, so they get an hid and can receive a wamid/delivery status.
+const recordBotMessages = (session, msgs, nodeId = 'system') => {
+  (msgs || []).forEach(m => {
+    if (m && m.type !== 'Wait') addToHistory(session, m, nodeId);
+  });
+  session.markModified('process_history');
 };
 
 // Main API endpoint
@@ -1428,6 +1439,7 @@ export const respondToMessage = async (req, res) => {
     
     const { phone, text = '', sender: rawSender = 'unknown', token: tokenParam, bot_id, name = '', message_id = '' } = source;
     const sender = normalizePhone(rawSender);
+    console.log(`[BOT] 📩 message_id=${message_id || 'MISSING'} sender=${sender}`);
     const token = req.headers.authorization?.replace('Bearer ', '') || tokenParam;
 
     console.log(`\n${'═'.repeat(80)}`);
@@ -1477,6 +1489,14 @@ export const respondToMessage = async (req, res) => {
     // talking to multiple bots doesn't share state across them.
     const botFlowId = tokenBot._id.toString();
 
+    // ── Always-agent (bot-blocked) override ─────────────────────────────────
+    // A specific customer phone can be permanently pinned to representative mode
+    // (Contact.bot_blocked) — e.g. numbers that must never receive an automated
+    // reply. Unlike the normal 30-minute agent-mode window below, this override
+    // never expires on its own; only unblocking the contact restores the bot.
+    const blockedContact = await Contact.findOne({ user_id: String(user._id), phone: sender }).select('bot_blocked').lean();
+    const alwaysAgent = !!blockedContact?.bot_blocked;
+
     // ── Agent mode bypass ────────────────────────────────────────────────────
     // If a human agent has taken over THIS bot's conversation with this customer
     // (is_agent=true, activated within the last 30 minutes), save the incoming
@@ -1496,7 +1516,7 @@ export const respondToMessage = async (req, res) => {
 
     if (agentCheckSession) {
       const agentAgeMinutes = (Date.now() - new Date(agentCheckSession.agent_since).getTime()) / 60000;
-      if (agentAgeMinutes <= 30) {
+      if (alwaysAgent || agentAgeMinutes <= 30) {
         // Active agent — record user message only, return empty bot response
         agentCheckSession.process_history = agentCheckSession.process_history || [];
         const mediaType = detectMediaType(String(text));
@@ -1576,6 +1596,51 @@ export const respondToMessage = async (req, res) => {
         await agentCheckSession.save();
         console.log(`[BOT] 🔓 Agent mode expired — closed session ${agentCheckSession._id}, will create fresh session for ${sender}`);
       }
+    } else if (alwaysAgent) {
+      // No existing agent session (first message ever, or the previous one was
+      // closed) but this phone is permanently blocked from the bot — open a
+      // brand-new session directly in agent/waiting mode instead of running the
+      // bot flow at all.
+      const mediaType = detectMediaType(String(text));
+      const { url: mediaUrl, caption: mediaCaption } = splitMediaUrlAndCaption(text);
+      const historyEntry = mediaType
+        ? { type: mediaType, url: mediaUrl, text: mediaCaption || undefined, sender: 'user', name: 'משתמש', node_id: 'user', created: new Date().toISOString(), wamid: message_id || null }
+        : { type: 'UserInput', text: String(text), sender: 'user', name: 'משתמש', node_id: 'user', created: new Date().toISOString(), wamid: message_id || null };
+
+      const newAgentSession = await BotSession.create({
+        user_id: user._id,
+        flow_id: botFlowId,
+        customer_phone: phone,
+        sender,
+        is_active: true,
+        is_agent: true,
+        agent_since: new Date(),
+        status: 'waiting',
+        parameters: { waPhone: sender, waName: name || '' },
+        process_history: [historyEntry]
+      });
+
+      eventBus.emit('session:update', { userId: String(user._id), phone: sender });
+      notifyWaitingCustomerMessage({
+        eventId: `msg_${newAgentSession._id}_0_${Date.now()}`,
+        tenantId: String(user._id),
+        botLineId: botFlowId,
+        conversationId: String(newAgentSession._id),
+        messageId: 'hist_0',
+        senderDisplayName: name || sender || 'לקוח',
+        createdAt: new Date().toISOString(),
+        previewText: String(text || '').slice(0, 80),
+        clickAction: `/sessions?phone=${encodeURIComponent(sender)}`,
+      });
+      void sendExpoPushToUser(String(user._id), {
+        title: name || sender || 'לקוח',
+        body: 'הודעה חדשה מלקוח',
+        data: { sessionId: String(newAgentSession._id) },
+      }).catch((err) => console.error('[EXPO-PUSH] chatController isolated error:', err?.message || err));
+
+      console.log(`[BOT] 🙋 Created new AGENT-mode session (bot_blocked) id=${newAgentSession._id} phone=${phone}`);
+      console.log(`${'═'.repeat(80)}\n`);
+      return res.json({ StatusId: 1, StatusDescription: 'Agent mode active (blocked)', sender, messages: [], agentMode: true });
     }
     // ─────────────────────────────────────────────────────────────────────────
 
@@ -1882,12 +1947,14 @@ export const respondToMessage = async (req, res) => {
           session.waiting_text_input = false;
           session.waiting_webservice = false;
           session.execution_stack   = [];
+          recordBotMessages(session, restartOutMsg);
           await session.save();
         } catch (sessSaveErr) {
           console.error('[BOT] failed to reset session after restart keyword:', sessSaveErr.message);
         }
         console.log(`[BOT] 🔄 restart keyword matched: "${textLower}" | session=${session._id}`);
-        const { anySuccess: waPushed } = await pushMessagesToWhatsApp(sender, restartOutMsg, user, tokenBot);
+        const { anySuccess: waPushed, wamidPerMsg: restartWamids } = await pushMessagesToWhatsApp(sender, restartOutMsg, user, tokenBot);
+        try { await applyWamids(session, restartOutMsg, restartWamids); } catch (e) { console.error('[BOT] applyWamids failed (non-critical):', e.message); }
         return res.json({
           StatusId: 1,
           StatusDescription: 'Restarted by keyword',
@@ -2042,13 +2109,15 @@ export const respondToMessage = async (req, res) => {
           session.current_node_id = null;
           session.waiting_text_input = false;
           session.waiting_webservice = false;
+          recordBotMessages(session, removalResult.outMessages);
           await session.save();
         } catch (sessSaveErr) {
           console.error('[BOT] failed to close current session after removal:', sessSaveErr.message);
         }
-        const { anySuccess: waPushed } = removalResult.outMessages.length > 0
+        const { anySuccess: waPushed, wamidPerMsg: removalWamids } = removalResult.outMessages.length > 0
           ? await pushMessagesToWhatsApp(sender, removalResult.outMessages, user, tokenBot)
-          : { anySuccess: false };
+          : { anySuccess: false, wamidPerMsg: [] };
+        try { await applyWamids(session, removalResult.outMessages, removalWamids); } catch (e) { console.error('[BOT] applyWamids failed (non-critical):', e.message); }
         return res.json({
           StatusId: 1,
           StatusDescription: 'Removed by keyword',
@@ -2090,13 +2159,15 @@ export const respondToMessage = async (req, res) => {
             session.current_node_id = null;
             session.waiting_text_input = false;
             session.waiting_webservice = false;
+            recordBotMessages(session, removalResult.outMessages);
             await session.save();
           } catch (sessSaveErr) {
             console.error('[BOT] failed to close current session after removal:', sessSaveErr.message);
           }
-          const { anySuccess: waPushed } = removalResult.outMessages.length > 0
+          const { anySuccess: waPushed, wamidPerMsg: removalWamids } = removalResult.outMessages.length > 0
             ? await pushMessagesToWhatsApp(sender, removalResult.outMessages, user, tokenBot)
-            : { anySuccess: false };
+            : { anySuccess: false, wamidPerMsg: [] };
+          try { await applyWamids(session, removalResult.outMessages, removalWamids); } catch (e) { console.error('[BOT] applyWamids failed (non-critical):', e.message); }
           return res.json({
             StatusId: 1,
             StatusDescription: 'Removed by keyword',
@@ -2135,10 +2206,15 @@ export const respondToMessage = async (req, res) => {
       const validationType = currentNode.data.validationType;
       if (currentNode.type === 'input_text' && validationType && !validateInput(validationType, text)) {
         // Invalid input — notify user and re-prompt without advancing
-        messages.push({ type: 'Text', text: 'הערך שהוזן אינו חוקי, אנא הזן ערך מתאים.', created: new Date().toISOString() });
+        const invalidMsg = { type: 'Text', text: 'הערך שהוזן אינו חוקי, אנא הזן ערך מתאים.', created: new Date().toISOString() };
+        messages.push(invalidMsg);
+        addToHistory(session, invalidMsg, currentNode.id);
         if (currentNode.data.label) {
-          messages.push({ type: 'Text', text: replaceParameters(currentNode.data.label, params), created: new Date().toISOString() });
+          const reprompt = { type: 'Text', text: replaceParameters(currentNode.data.label, params), created: new Date().toISOString() };
+          messages.push(reprompt);
+          addToHistory(session, reprompt, currentNode.id);
         }
+        session.markModified('process_history');
         session.waiting_text_input = true;
         // current_node_id stays unchanged — fall through to session.save()
       } else if (currentNode.type === 'input_date' && !validateDateTimeInput(currentNode.data.dateTimeMode || 'date', text)) {
@@ -2146,10 +2222,15 @@ export const respondToMessage = async (req, res) => {
         const formatHint = dtMode === 'time'     ? 'HH:MM (לדוגמה: 14:30)' :
                            dtMode === 'datetime' ? 'DD/MM/YYYY HH:MM (לדוגמה: 25/06/2025 14:30)' :
                                                    'DD/MM/YYYY (לדוגמה: 25/06/2025)';
-        messages.push({ type: 'Text', text: `הפורמט שהוזן אינו תקין. אנא הזן בפורמט ${formatHint}`, created: new Date().toISOString() });
+        const badFormatMsg = { type: 'Text', text: `הפורמט שהוזן אינו תקין. אנא הזן בפורמט ${formatHint}`, created: new Date().toISOString() };
+        messages.push(badFormatMsg);
+        addToHistory(session, badFormatMsg, currentNode.id);
         if (currentNode.data.label) {
-          messages.push({ type: 'Text', text: replaceParameters(currentNode.data.label, params), created: new Date().toISOString() });
+          const reprompt = { type: 'Text', text: replaceParameters(currentNode.data.label, params), created: new Date().toISOString() };
+          messages.push(reprompt);
+          addToHistory(session, reprompt, currentNode.id);
         }
+        session.markModified('process_history');
         session.waiting_text_input = true;
         // current_node_id stays unchanged — fall through to session.save()
       } else {
@@ -2337,18 +2418,23 @@ export const respondToMessage = async (req, res) => {
           }
         } else {
           // No default edge — tell the user to pick from the menu and re-display it
-          messages.push({
+          const chooseOnlyMsg = {
             type: 'Text',
             text: 'בחר רק מהאפשרויות',
             created: new Date().toISOString()
-          });
+          };
+          messages.push(chooseOnlyMsg);
+          addToHistory(session, chooseOnlyMsg, currentNode.id);
           const menuOptions = (currentNode.data.options || []).filter(opt => opt !== 'default');
-          messages.push({
+          const menuRedisplayMsg = {
             type: 'Options',
             text: replaceParameters(currentNode.data.content || '', params),
             options: menuOptions,
             created: new Date().toISOString()
-          });
+          };
+          messages.push(menuRedisplayMsg);
+          addToHistory(session, menuRedisplayMsg, currentNode.id);
+          session.markModified('process_history');
           // Keep session.current_node_id pointing to this menu node so the next
           // incoming message is handled by the output_menu branch again.
         }
@@ -2377,13 +2463,15 @@ export const respondToMessage = async (req, res) => {
             session.current_node_id = null;
             session.waiting_text_input = false;
             session.waiting_webservice = false;
+            recordBotMessages(session, removalResult.outMessages);
             await session.save();
           } catch (sessSaveErr) {
             console.error('[BOT] failed to close current session after removal:', sessSaveErr.message);
           }
-          const { anySuccess: waPushed } = removalResult.outMessages.length > 0
+          const { anySuccess: waPushed, wamidPerMsg: removalWamids } = removalResult.outMessages.length > 0
             ? await pushMessagesToWhatsApp(sender, removalResult.outMessages, user, tokenBot)
-            : { anySuccess: false };
+            : { anySuccess: false, wamidPerMsg: [] };
+          try { await applyWamids(session, removalResult.outMessages, removalWamids); } catch (e) { console.error('[BOT] applyWamids failed (non-critical):', e.message); }
           return res.json({
             StatusId: 1,
             StatusDescription: 'Removed by keyword',
@@ -2788,7 +2876,7 @@ export const sendTemplateExternal = async (req, res) => {
       ...(templateButtons ? { template_buttons: templateButtons } : {}),
       wa_sent: waSent,
       created: now.toISOString(),
-      wamid: null,
+      wamid: (waSent && typeof waResponseBody === 'object' && waResponseBody?.messages?.[0]?.id) || null,
       deliveryStatus: null,
     };
 

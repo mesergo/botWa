@@ -117,7 +117,7 @@ const Carousel: React.FC<{ items: CarouselItem[], onSelect: (text: string, idx: 
         <div ref={scrollRef} className="w-full overflow-x-auto scrollbar-hide pb-4 flex gap-4 px-1" style={{ direction: 'rtl', scrollSnapType: 'x mandatory' }}>
           {items.map((item, idx) => (
             <div key={idx} className="flex-shrink-0 w-64 bg-white border border-slate-100 rounded-[2rem] overflow-hidden shadow-sm hover:shadow-md transition-all">
-              {item.image && <div className="h-36 w-full overflow-hidden bg-slate-50 border-b border-slate-50"><img src={item.image} alt={item.title} className="w-full h-full object-cover" /></div>}
+              {item.image && <div className="h-36 w-full overflow-hidden bg-slate-50 border-b border-slate-50"><ChatImage src={item.image} alt={item.title} className="w-full h-full object-cover" /></div>}
               <div className="p-5 flex flex-col gap-3 text-right">
                 <h4 className="font-bold text-slate-900 text-sm">{item.title}</h4>
                 {item.subtitle && <p className="text-[11px] text-slate-500">{item.subtitle}</p>}
@@ -1316,7 +1316,7 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
                           const imageUrl = typeof opt === 'object' ? (opt.image_url || msg.optionImages?.[i]) : msg.optionImages?.[i];
                           return (
                             <button key={i} onClick={() => handleMenuSelect(value, i, value, msg.sourceNodeId)} className="w-full text-start p-3 bg-slate-50 border border-slate-100 rounded-2xl hover:bg-blue-600 hover:text-white transition-all text-xs font-bold uppercase flex items-center gap-3">
-                              {imageUrl && <img src={imageUrl} className="w-8 h-8 rounded-lg object-cover" alt="" />}
+                              {imageUrl && <ChatImage src={imageUrl} className="w-8 h-8 rounded-lg object-cover" alt="" showControls={false} />}
                               <span className="flex-1">{label}</span>
                             </button>
                           );

@@ -21,6 +21,7 @@ import SmsInPage from './components/SmsInPage';
 import InternalDataPage from './components/internal-data/InternalDataPage';
 import SendMessagesPage from './components/SendMessagesPage';
 import ActiveContactsQuotaToast from './components/ActiveContactsQuotaToast';
+import { usePresenceHeartbeat } from '@notifications/hooks/usePresenceHeartbeat';
 import { StartNode, InputTextNode, InputDateNode, InputFileNode, OutputTextNode, OutputImageNode, OutputLinkNode, OutputMenuNode, ActionWebServiceNode, ActionWaitNode, ActionTimeRoutingNode, ActionAddToGroupNode, ActionRemoveFromGroupNode, ActionTransferToAgentNode, ActionSetParameterNode, ActionReturnToMainMenuNode, FixedProcessNode, AutomaticResponsesNode } from './components/nodes/CustomNodes';
 import ButtonEdge from './components/edges/ButtonEdge';
 import { CloudUpload, RotateCcw, Plus, AlertTriangle, Copy, X, Lock, Wallet, Sliders, Save, Layers } from 'lucide-react';
@@ -186,6 +187,9 @@ const FlowBuilder: React.FC = () => {
 
   const [token, setToken] = useState<string | null>(tokenExpiredOnLoad ? null : getStoredToken());
   const [sessionExpired, setSessionExpired] = useState(tokenExpiredOnLoad);
+
+  // "Connected" presence for the offline email alert — any open page counts
+  usePresenceHeartbeat(API_BASE, token);
 
   // Refresh permissions from the server on load, so admin-side changes
   // (e.g. the per-client "SMS נכנס" toggle) take effect without re-login.

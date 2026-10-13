@@ -2377,12 +2377,10 @@ const openRestoreConversations = async () => {
                                   )}
                                   {item.type === 'Image' && item.url && (
                                     <>
-                                      <img
+                                      <ChatImage
                                         src={item.url}
                                         alt="תמונה"
                                         className="rounded-xl max-w-[160px] h-auto mb-2"
-                                        onLoad={() => console.log('[AdminPanel][Image] ✅ loaded:', item.url)}
-                                        onError={() => console.error('[AdminPanel][Image] ❌ FAILED to load image. url=', item.url, '| full item=', item)}
                                       />
                                       {text && <p className="whitespace-pre-wrap leading-relaxed">{text}</p>}
                                     </>
@@ -2443,7 +2441,7 @@ const openRestoreConversations = async () => {
                                     <div className="flex gap-2 overflow-x-auto pb-1 max-w-[220px]">
                                       {item.carouselItems.map((card: any, ci: number) => (
                                         <div key={ci} className="flex-shrink-0 w-36 bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
-                                          {card.image && <img src={card.image} alt={card.title || ''} className="w-full h-20 object-cover" />}
+                                          {card.image && <ChatImage src={card.image} alt={card.title || ''} className="w-full h-20 object-cover" />}
                                           <div className="p-2">
                                             {card.title && <p className="text-[11px] font-black text-slate-800 leading-tight">{card.title}</p>}
                                             {card.subtitle && <p className="text-[9px] text-slate-500 mt-0.5 leading-snug">{card.subtitle}</p>}
@@ -4350,12 +4348,12 @@ const openRestoreConversations = async () => {
                  </button>
                </div>
 
-               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-6 items-start">
+               <div className="flex flex-row gap-6 items-start overflow-x-auto overflow-y-hidden pt-6 pb-6 px-3 snap-x">
                  {(['Unlimited', 'Pro', 'Premium', 'Basic', 'Trial'] as const).map(plan => {
                    const isPremium = plan === 'Premium';
                    const isTrial = plan === 'Trial';
                    return (
-                   <div key={plan} className={`relative rounded-[28px] overflow-hidden transition-all duration-300 group ${
+                   <div key={plan} className={`relative flex-shrink-0 snap-start w-[300px] sm:w-[340px] rounded-[28px] overflow-hidden transition-all duration-300 group ${
                      isPremium
                        ? 'bg-gradient-to-b from-sky-600 to-blue-700 text-white shadow-2xl shadow-sky-200 md:-translate-y-3 ring-4 ring-sky-100'
                        : isTrial

@@ -8,6 +8,7 @@ import { MongooseDeviceRegistrationRepository } from './infrastructure/repositor
 import { NotificationService } from './application/NotificationService.js';
 import { InMemoryEventDeduplicator } from './infrastructure/deduplication/InMemoryEventDeduplicator.js';
 import { createPushNotificationRouter } from './api/deviceRegistration.routes.js';
+import { notifyWaitingCustomerByEmail } from './infrastructure/email/waitingCustomerEmailNotifier.js';
 import { initFirebaseAdmin } from './infrastructure/firebase/firebaseAdmin.js';
 import { ensurePushDeviceRegistrationIndexes } from './infrastructure/migrations/001_push_device_registrations.js';
 
@@ -71,6 +72,13 @@ export async function bootstrapPushNotifications(options) {
     deviceRepository,
     deduplicator: new InMemoryEventDeduplicator(),
     logger,
+    // Representatives never receive push — also covers devices they registered earlier
+    findExcludedUserIds: async (userIds) => {
+      const User = (await import('../../backend/models/User.js')).default;
+      const reps = await User.find({ _id: { $in: userIds }, role: 'rep' }).select('_id').lean();
+      return new Set(reps.map((u) => String(u._id)));
+    },
+    emailNotifier: notifyWaitingCustomerByEmail,
   });
 
   const router = createPushNotificationRouter({

@@ -26,7 +26,9 @@ import {
   linkDialog360NumberForCustomer,
   getUserBots,
   previewRestoreConversations,
-  restoreConversations
+  restoreConversations,
+  getUserActiveSessionsCount,
+  closeAllUserSessions
 } from '../controllers/adminController.js';
 import {
   addUserDialog360Template,
@@ -97,6 +99,8 @@ router.get('/users/:userId/bots', requireAdmin, getUserBots);
 
 router.get('/users/:userId/restore-conversations', requireAdmin, previewRestoreConversations);
 router.post('/users/:userId/restore-conversations', requireAdmin, restoreConversations);
+router.get('/users/:userId/sessions/active-count', requireAdmin, getUserActiveSessionsCount);
+router.post('/users/:userId/sessions/close-all', requireAdmin, closeAllUserSessions);
 
 // All connected WhatsApp numbers across every customer (global admin view)
 router.get('/connected-numbers', requireAdmin, getAllConnectedNumbers);

@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { normalizePhone } from '../utils/phone.js';
 
 const userSchema = new mongoose.Schema({
   name: { type: String, required: true },
@@ -23,7 +24,7 @@ const userSchema = new mongoose.Schema({
     type: [{
       phone_number_id: { type: String, required: true },
       waba_id: { type: String, default: '' },
-      display_phone_number: { type: String, default: '' },
+      display_phone_number: { type: String, default: '', set: normalizePhone },
       verified_name: { type: String, default: '' },
       quality_rating: { type: String, default: '' },
       whatsapp_status: { type: String, default: '' },
@@ -70,6 +71,21 @@ const userSchema = new mongoose.Schema({
   // Bot restriction for reps: when non-empty, this rep can only see sessions of these bots.
   // Empty array = no restriction (sees all bots of the account).
   allowed_bot_ids: [{ type: mongoose.Schema.Types.ObjectId, ref: 'BotFlow', default: [] }],
+  // When true (and browser push is enabled), waiting-customer alerts are also emailed to `email`.
+  push_email_enabled: { type: Boolean, default: false },
+  // "התראה כשאינני מחובר" — one immediate email on a new inquiry while the user has no
+  // open browser (no presence heartbeat for a few minutes). offline_alert_sent_at=null
+  // means an alert may be sent; it is reset by the heartbeat when the user comes back.
+  offline_email_enabled: { type: Boolean, default: false },
+  last_active_at: { type: Date, default: null },
+  offline_alert_sent_at: { type: Date, default: null },
+  // "סיכום יומי במייל" — sent on the selected weekdays (0=Sunday) at `hour` (Asia/Jerusalem).
+  daily_summary: {
+    enabled: { type: Boolean, default: false },
+    days: { type: [Number], default: [0, 1, 2, 3, 4] },
+    hour: { type: Number, default: 20 },
+    last_sent_date: { type: String, default: null } // 'YYYY-MM-DD' (Israel time)
+  },
   // Per-user override for the auto-removal-from-group feature.
   // When `customized=true`, these values override the global SystemSetting('removal_config').
   // Keywords and messages are split by language: Hebrew (he) and English (en).
