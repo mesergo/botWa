@@ -501,11 +501,14 @@ export const pushMessagesToWhatsApp = async (phone, messages, user = null, bot =
   if (textBuffer.trim()) {
     const buf = textBuffer.trim();
     const indices = [...textBufIndices];
+    // Native WhatsApp reply (agent quote): only the first chunk carries replyTo.
+    // Messages without replyTo are sent exactly as before.
+    const replyTo = indices.length ? (messages[indices[0]].replyTo || null) : null;
     textBuffer = '';
-    textBufIndices = [];
+    textBufIndices = []; 
     const chunks = splitText(buf);
     for (let ci = 0; ci < chunks.length; ci++) {
-      const { success, wamid } = await sendOne({ text: chunks[ci] });
+      const { success, wamid } = await sendOne({ text: chunks[ci], ...(ci === 0 && replyTo ? { replyTo } : {}) });
       if (success) {
         anySuccess = true;
         if (wamid) indices.forEach(idx => { wamidPerMsg[idx] = wamid; });
