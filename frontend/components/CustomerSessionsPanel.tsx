@@ -595,7 +595,7 @@ const CustomerSessionsPanel: React.FC<CustomerSessionsPanelProps> = ({ token, ap
                             <div className="flex gap-2 overflow-x-auto pb-1 max-w-[220px]">
                               {item.carouselItems.map((card: any, ci: number) => (
                                 <div key={ci} className="flex-shrink-0 w-36 bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
-                                  {card.image && <img src={card.image} alt={card.title || ''} className="w-full h-20 object-cover" />}
+                                  {card.image && <ChatImage src={card.image} alt={card.title || ''} className="w-full h-20 object-cover" />}
                                   <div className="p-2">
                                     {card.title && <p className="text-[11px] font-black text-slate-800 leading-tight">{card.title}</p>}
                                     {card.subtitle && <p className="text-[9px] text-slate-500 mt-0.5 leading-snug">{card.subtitle}</p>}
