@@ -1472,6 +1472,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
       requestBody.quotedWamid = currentReplyTarget.wamid;
       requestBody.quotedText = currentReplyTarget.text;
       requestBody.quotedSender = currentReplyTarget.displayName;
+      console.log('[REPLY-UI] sending', { quotedWamid: requestBody.quotedWamid || 'MISSING', quotedText: String(requestBody.quotedText || '').slice(0, 40) });
     }
     
     try {
@@ -2181,6 +2182,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
   const handleStartReply = (item: any, senderType: string, session: Session) => {
     const previewText = getQuotePreviewText(item);
     if (!previewText) return;
+    console.log('[REPLY-UI] selected', { type: item.type, sender: senderType, wamid: item.wamid || 'MISSING', hid: item.hid, text: previewText.slice(0, 40) });
     setReplyTarget({
       wamid: item.wamid || null,
       text: previewText,
