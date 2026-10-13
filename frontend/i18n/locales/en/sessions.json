@@ -8,7 +8,7 @@
     "noActiveSessionToTransfer": "No active session to transfer",
     "chooseTransferTarget": "Please choose a transfer target",
     "transferFailed": "Failed to transfer the conversation",
-    "groupsLoadFailed": "Failed to load groups",
+    "groupsLoadFailed": "Failed to load groups", 
     "blocklistNotFound": "Blocklist not found in the system",
     "blocklistAddFailed": "Failed to add to the blocklist",
     "botBlockFailed": "Failed to update the bot-block state"
@@ -93,7 +93,25 @@
     "recording": "Recording",
     "openLink": "Open",
     "replyTooltip": "Reply to this message",
+    "actionsTooltip": "Message options",
+    "closeActions": "Close message options",
+    "reply": "Reply",
+    "forward": "Forward",
+    "forwardFailed": "Failed to forward the message",
     "customerLabel": "Customer"
+  },
+  "forwardModal": {
+    "title": "Forward message",
+    "close": "Close",
+    "searchContacts": "Choose from contacts",
+    "searchPlaceholder": "Search by name or number...",
+    "phoneLabel": "Or enter a number",
+    "phonePlaceholder": "0501234567",
+    "newContactTemplateOnly": "Only a template message can be forwarded to a new number.",
+    "newContactAllowed": "This is a template message, so it can also be forwarded to a new number.",
+    "cancel": "Cancel",
+    "send": "Forward",
+    "sending": "Forwarding..."
   },
   "header": {
     "title": "Conversations",

@@ -1,12 +1,12 @@
 ﻿import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { WhatsAppText } from '../utils/whatsappFormat';
-import { Clock, MessageSquare, Search, Bot, User, Phone, List, Users, ExternalLink, X, Headphones, RefreshCw, Settings, UserCog, Layers, Plus, UserPlus, Check, CheckCheck, AlertCircle, Paperclip, ChevronRight, ChevronLeft, Bell, MoreVertical, Ban, Megaphone, Repeat, Reply, Lock, Unlock } from 'lucide-react';
+import { Clock, MessageSquare, Search, Bot, User, Phone, List, Users, ExternalLink, X, Headphones, RefreshCw, Settings, UserCog, Layers, Plus, UserPlus, Check, CheckCheck, AlertCircle, Paperclip, ChevronRight, ChevronLeft, Bell, MoreVertical, Ban, Megaphone, Repeat, Reply, Forward, Lock, Unlock } from 'lucide-react';
 import ImpersonationBanner, { SiblingAccount } from './ImpersonationBanner';
-import OnboardingBanner from './OnboardingBanner';
+import OnboardingBanner from './OnboardingBanner'; 
 import MigrationNoticeBanner from './MigrationNoticeBanner';
 import { TemplateHeaderMediaField } from './TemplateHeaderMediaField';
 import QuickInsertMenu from './shared/QuickInsertMenu';
-import ChatImage from './shared/ChatImage';
+import ChatImage from './shared/ChatImage'; 
 import { getMissingTemplateVars } from './shared/templateValidation';
 import { applyDefaultBodyParams, FIELD_PREFIX } from './shared/templateDefaultParams';
 import { usePermission } from '../hooks/usePermission';
@@ -140,6 +140,20 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
   const agentMessageInputRef = React.useRef<HTMLTextAreaElement>(null);
   // Quote/reply-to-message state — the message currently being replied to in the composer
   const [replyTarget, setReplyTarget] = useState<{ wamid: string | null; text: string; sender: string; displayName: string } | null>(null);
+  const [openMessageMenu, setOpenMessageMenu] = useState<string | null>(null);
+  const [messageMenuPosition, setMessageMenuPosition] = useState<{ top: number; left: number } | null>(null);
+  const [forwardTarget, setForwardTarget] = useState<{
+    sessionId: string;
+    wamid: string | null;
+    hid: string | null;
+    created: string | null;
+    preview: string;
+    isTemplate: boolean;
+  } | null>(null);
+  const [forwardContactSearch, setForwardContactSearch] = useState('');
+  const [forwardPhone, setForwardPhone] = useState('');
+  const [forwardError, setForwardError] = useState<string | null>(null);
+  const [forwardSending, setForwardSending] = useState(false);
 
   // Template dropdown state
   const [showTemplates, setShowTemplates] = useState(false);
@@ -1025,6 +1039,19 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
       return t('validation.phoneInternationalMustNotStartWithZero');
     }
     return null;
+  };
+
+  const normalizePhoneForComparison = (phone: string) => {
+    let digits = phone.replace(/\D/g, '');
+    digits = digits.replace(/^972972/, '972');
+    if (!digits.startsWith('972')) digits = `972${digits.replace(/^0+/, '')}`;
+    return digits;
+  };
+
+  const isExistingForwardContact = (phone: string) => {
+    if (!phone.trim()) return false;
+    const normalized = normalizePhoneForComparison(phone);
+    return contacts.some(contact => normalizePhoneForComparison(contact.phone) === normalized);
   };
 
   const handleNewConvConfirm = async () => {
@@ -2196,16 +2223,135 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
     agentMessageInputRef.current?.focus();
   };
 
-  const ReplyButton = ({ item, senderType, session }: { item: any; senderType: string; session: Session }) => (
-    <button
-      type="button"
-      onClick={() => handleStartReply(item, senderType, session)}
-      title={t('messageList.replyTooltip')}
-      className="opacity-0 group-hover:opacity-100 transition-opacity self-center flex-shrink-0 p-1 rounded-full text-slate-400 hover:text-sky-600 hover:bg-slate-100"
-    >
-      <Reply size={13} />
-    </button>
-  );
+  const openForwardModal = (item: any, session: Session) => {
+    const preview = getQuotePreviewText(item);
+    if (!preview && !item.url) return;
+    setOpenMessageMenu(null);
+    setForwardTarget({
+      sessionId: session.id,
+      wamid: item.wamid || null,
+      hid: item.hid || null,
+      created: item.created || null,
+      preview: preview || item.url || '',
+      isTemplate: (item.is_template === true && !!item.template_data?.name) || !!item.template_name
+    });
+    setForwardContactSearch('');
+    setForwardPhone('');
+    setForwardError(null);
+  };
+
+  const submitForward = async () => {
+    if (!forwardTarget || forwardSending) return;
+    const phoneError = validatePhoneInput(forwardPhone);
+    if (phoneError) {
+      setForwardError(phoneError);
+      return;
+    }
+    setForwardSending(true);
+    setForwardError(null);
+    try {
+      const response = await fetch(`${API_BASE}/sessions/${forwardTarget.sessionId}/forward-message`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+        body: JSON.stringify({
+          targetPhone: forwardPhone,
+          messageWamid: forwardTarget.wamid,
+          messageHid: forwardTarget.hid,
+          messageCreated: forwardTarget.created
+        })
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setForwardError(data.error || t('messageList.forwardFailed'));
+        return;
+      }
+      setForwardTarget(null);
+      setForwardPhone('');
+      fetchContacts(true);
+      if (!data.waSent) {
+        alert(data.waError || t('messageList.forwardFailed'));
+      }
+    } catch {
+      setForwardError(t('errors.network'));
+    } finally {
+      setForwardSending(false);
+    }
+  };
+
+  const MessageActions = ({ item, senderType, session }: { item: any; senderType: string; session: Session }) => {
+    const menuKey = `${session.id}-${item.wamid || item.hid || item.created || getQuotePreviewText(item)}`;
+    const isOpen = openMessageMenu === menuKey;
+    return (
+      <div className="relative self-center flex-shrink-0">
+        <button
+          type="button"
+          onClick={(event) => {
+            if (isOpen) {
+              setOpenMessageMenu(null);
+              setMessageMenuPosition(null);
+              return;
+            }
+            const rect = event.currentTarget.getBoundingClientRect();
+            const menuWidth = 145;
+            setMessageMenuPosition({
+              top: Math.min(rect.bottom + 4, window.innerHeight - 88),
+              left: Math.min(Math.max(8, rect.left - menuWidth + rect.width), window.innerWidth - menuWidth - 8)
+            });
+            setOpenMessageMenu(menuKey);
+          }}
+          title={t('messageList.actionsTooltip')}
+          aria-label={t('messageList.actionsTooltip')}
+          className="opacity-60 md:opacity-0 md:group-hover:opacity-100 focus:opacity-100 transition-opacity p-1 rounded-full text-slate-400 hover:text-sky-600 hover:bg-slate-100"
+        >
+          <MoreVertical size={14} />
+        </button>
+        {isOpen && (
+          <>
+            <button
+              type="button"
+              aria-label={t('messageList.closeActions')}
+              onClick={() => {
+                setOpenMessageMenu(null);
+                setMessageMenuPosition(null);
+              }}
+              className="fixed inset-0 z-40 cursor-default"
+            />
+            <div
+              className="fixed z-[60] min-w-[145px] rounded-xl border border-slate-100 bg-white py-1 shadow-xl"
+              style={{
+                top: messageMenuPosition?.top ?? 0,
+                left: messageMenuPosition?.left ?? 0
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => {
+                  setOpenMessageMenu(null);
+                  setMessageMenuPosition(null);
+                  handleStartReply(item, senderType, session);
+                }}
+                className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-slate-700 hover:bg-sky-50 hover:text-sky-700 text-start"
+              >
+                <Reply size={14} />
+                {t('messageList.reply')}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setMessageMenuPosition(null);
+                  openForwardModal(item, session);
+                }}
+                className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 text-start"
+              >
+                <Forward size={14} />
+                {t('messageList.forward')}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    );
+  };
 
   const renderSessionMessages = (session: Session) => {
     if (!session.process_history.length) return null;
@@ -2273,7 +2419,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
       if (isAgent) {
         return (
           <div key={`${session.id}-${idx}`} className="group flex w-full items-center gap-1 justify-start">
-            <ReplyButton item={item} senderType={senderType} session={session} />
+            <MessageActions item={item} senderType={senderType} session={session} />
             <div className="flex gap-1.5 max-w-[88%] flex-row-reverse">
               <div className="flex flex-col items-center gap-0.5 flex-shrink-0">
                 <div className="w-6 h-6 rounded-lg flex items-center justify-center shadow-sm bg-purple-100 border border-purple-200 text-purple-700">
@@ -2373,7 +2519,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
       if (isBroadcast) {
         return (
           <div key={`${session.id}-${idx}`} className="group flex w-full items-center gap-1 justify-start">
-            <ReplyButton item={item} senderType={senderType} session={session} />
+            <MessageActions item={item} senderType={senderType} session={session} />
             <div className="flex gap-1.5 max-w-[88%] flex-row-reverse">
               <div className="flex flex-col items-center gap-0.5 flex-shrink-0">
                 <div className="w-6 h-6 rounded-lg flex items-center justify-center shadow-sm bg-amber-100 border border-amber-200 text-amber-700">
@@ -2451,7 +2597,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
           key={`${session.id}-${idx}`}
           className={`group flex w-full items-center gap-1 ${isBot ? 'justify-start' : 'justify-end'}`}
         >
-          {isBot && <ReplyButton item={item} senderType={senderType} session={session} />}
+          {isBot && <MessageActions item={item} senderType={senderType} session={session} />}
           <div className={`flex gap-1.5 max-w-[88%] ${isBot ? 'flex-row-reverse' : 'flex-row'}`}>
             <div className="flex flex-col items-center gap-0.5 flex-shrink-0">
               <div className={`w-6 h-6 rounded-lg flex items-center justify-center shadow-sm
@@ -2580,7 +2726,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
               </div>
             </div>
           </div>
-          {!isBot && <ReplyButton item={item} senderType={senderType} session={session} />}
+          {!isBot && <MessageActions item={item} senderType={senderType} session={session} />}
         </div>
       );
     });
@@ -3813,6 +3959,139 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                   })}
                 </>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Forward message modal */}
+      {forwardTarget && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[70] p-4">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full overflow-hidden">
+            <div className="px-6 pt-6 pb-4 border-b border-slate-100">
+              <div className="flex items-center justify-between gap-3 mb-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-indigo-100 flex items-center justify-center">
+                    <Forward size={20} className="text-indigo-600" />
+                  </div>
+                  <h3 className="text-lg font-black text-slate-900">{t('forwardModal.title')}</h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setForwardTarget(null)}
+                  className="p-2 rounded-xl text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                  aria-label={t('forwardModal.close')}
+                >
+                  <X size={18} />
+                </button>
+              </div>
+              <p dir="auto" className="text-xs text-slate-500 bg-slate-50 rounded-xl px-3 py-2 line-clamp-2">
+                {forwardTarget.preview}
+              </p>
+            </div>
+
+            <div className="px-6 py-4 space-y-4">
+              <div>
+                <label className="block text-xs font-black text-slate-700 mb-1.5">{t('forwardModal.searchContacts')}</label>
+                <div className="relative">
+                  <Search size={15} className="absolute inset-inline-start-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="search"
+                    dir="auto"
+                    value={forwardContactSearch}
+                    onChange={event => setForwardContactSearch(event.target.value)}
+                    placeholder={t('forwardModal.searchPlaceholder')}
+                    className="w-full ps-9 pe-3 py-2.5 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400"
+                  />
+                </div>
+                <div className="mt-2 max-h-44 overflow-y-auto rounded-xl border border-slate-100 divide-y divide-slate-100">
+                  {contacts
+                    .filter(contact => contact.phone !== selectedPhone)
+                    .filter(contact => {
+                      const query = forwardContactSearch.trim().toLowerCase();
+                      if (!query) return true;
+                      return contact.phone.includes(query)
+                        || (contact.full_name || '').toLowerCase().includes(query)
+                        || (contact.whatsapp_name || '').toLowerCase().includes(query);
+                    })
+                    .slice(0, 50)
+                    .map(contact => (
+                      <button
+                        key={contact.phone}
+                        type="button"
+                        onClick={() => {
+                          setForwardPhone(contact.phone);
+                          setForwardError(null);
+                        }}
+                        className={`w-full flex items-center justify-between gap-3 px-3 py-2.5 text-start hover:bg-indigo-50 ${
+                          isExistingForwardContact(forwardPhone)
+                            && normalizePhoneForComparison(forwardPhone) === normalizePhoneForComparison(contact.phone)
+                            ? 'bg-indigo-50 text-indigo-700'
+                            : 'text-slate-700'
+                        }`}
+                      >
+                        <span className="min-w-0">
+                          <span className="block text-sm font-bold truncate" dir="auto">
+                            {contact.full_name || contact.whatsapp_name || t('messageList.customerLabel')}
+                          </span>
+                          <span className="block text-xs text-slate-400" dir="ltr">{contact.phone}</span>
+                        </span>
+                        {normalizePhoneForComparison(forwardPhone) === normalizePhoneForComparison(contact.phone) && (
+                          <Check size={16} className="flex-shrink-0" />
+                        )}
+                      </button>
+                    ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-black text-slate-700 mb-1.5">{t('forwardModal.phoneLabel')}</label>
+                <input
+                  type="tel"
+                  dir="ltr"
+                  value={forwardPhone}
+                  onChange={event => {
+                    setForwardPhone(event.target.value.replace(/[^\d+\-\s()]/g, ''));
+                    setForwardError(null);
+                  }}
+                  placeholder={t('forwardModal.phonePlaceholder')}
+                  className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400"
+                />
+                {forwardPhone && !isExistingForwardContact(forwardPhone) && !forwardTarget.isTemplate && (
+                  <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2 mt-2">
+                    {t('forwardModal.newContactTemplateOnly')}
+                  </p>
+                )}
+                {forwardPhone && !isExistingForwardContact(forwardPhone) && forwardTarget.isTemplate && (
+                  <p className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-xl px-3 py-2 mt-2">
+                    {t('forwardModal.newContactAllowed')}
+                  </p>
+                )}
+                {forwardError && <p className="text-xs text-red-600 font-semibold mt-2">{forwardError}</p>}
+              </div>
+            </div>
+
+            <div className="px-6 pb-6 flex gap-3 justify-end">
+              <button
+                type="button"
+                onClick={() => setForwardTarget(null)}
+                className="px-5 py-2.5 rounded-2xl border border-slate-200 text-slate-700 text-sm font-bold hover:bg-slate-50"
+              >
+                {t('forwardModal.cancel')}
+              </button>
+              <button
+                type="button"
+                onClick={submitForward}
+                disabled={
+                  forwardSending
+                  || !forwardPhone.trim()
+                  || !!validatePhoneInput(forwardPhone)
+                  || (!isExistingForwardContact(forwardPhone) && !forwardTarget.isTemplate)
+                }
+                className="px-5 py-2.5 rounded-2xl bg-indigo-600 text-white text-sm font-bold hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {forwardSending ? t('forwardModal.sending') : t('forwardModal.send')}
+              </button>
             </div>
           </div>
         </div>

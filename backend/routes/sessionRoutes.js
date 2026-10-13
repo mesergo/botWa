@@ -1,12 +1,12 @@
 
 import express from 'express';
-import { startSession, updateSessionParameters, addHistoryMessage, getContacts, searchMessageContent, getSessionsByPhone, getLastMessageByPhone, getUserSessions, getAllSessions, toggleSessionActive, deactivateSession, setAgentMode, clearAgentMode, closeConversation, markResolved, sendAgentMessage, sendAdminMessageToSession, sendExternalMessage, getSessionMessages, sendTemplateToPhone, transferConversation, getTransferTargets, streamEvents, getUserStats } from '../controllers/sessionController.js';
+import { startSession, updateSessionParameters, addHistoryMessage, getContacts, searchMessageContent, getSessionsByPhone, getLastMessageByPhone, getUserSessions, getAllSessions, toggleSessionActive, deactivateSession, setAgentMode, clearAgentMode, closeConversation, markResolved, sendAgentMessage, forwardSessionMessage, sendAdminMessageToSession, sendExternalMessage, getSessionMessages, sendTemplateToPhone, transferConversation, getTransferTargets, streamEvents, getUserStats } from '../controllers/sessionController.js';
 import { authenticateToken, optionalAuthToken, requireAdmin } from '../middleware/auth.js';
 
 const router = express.Router();
 
 // SSE: real-time push stream (token auth via query param — EventSource can't set headers)
-router.get('/stream', streamEvents);
+router.get('/stream', streamEvents); 
 
 // Authenticated route to get dashboard statistics for the current user
 router.get('/stats', authenticateToken, getUserStats);
@@ -40,6 +40,7 @@ router.patch('/:id/mark-resolved', authenticateToken, markResolved);
 router.patch('/:id/transfer', authenticateToken, transferConversation);
 router.get('/transfer-targets', authenticateToken, getTransferTargets);
 router.post('/:id/send-agent-message', authenticateToken, sendAgentMessage);
+router.post('/:id/forward-message', authenticateToken, forwardSessionMessage);
 
 // Send a template to a phone number with no session
 router.post('/send-template-to-phone', authenticateToken, sendTemplateToPhone);

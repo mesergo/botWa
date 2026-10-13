@@ -343,7 +343,7 @@ const getFlowData = async (flowId, processId = null) => {
         } else {
           console.log(`[getFlowData]   ⚠️ default option exists but next=null (not connected in editor!)`);
         }
-      });
+      }); 
       if (defaultOpts.length === 0) {
         console.log(`[getFlowData]   ⚠️ NO default option found in DB for WS node ${w.id} — default exit will be null!`);
       }
@@ -2728,6 +2728,7 @@ export const sendTemplateExternal = async (req, res) => {
       ? `[${template}]: ${paramsArray.join(' | ')}`
       : `[${template}]`;
     let templateButtons = null;
+    let templateDefinition = null;
 
     try {
       const apiToken = crypto.createHash('sha1').update(wa_id + 'moomoo').digest('hex');
@@ -2743,6 +2744,7 @@ export const sendTemplateExternal = async (req, res) => {
         const tplDef = allTemplates.find(t => t.name === template || t.elementName === template);
 
         if (tplDef) {
+          templateDefinition = tplDef;
           console.log(`[360-TEMPLATE]    ✅ Template matched: "${tplDef.name}" | status=${tplDef.status} | components: ${(tplDef.components || []).map(c => c.type).join(', ')}`);
           const components = tplDef.components || [];
           const bodyComp = components.find(c => c.type === 'BODY');
@@ -2873,6 +2875,17 @@ export const sendTemplateExternal = async (req, res) => {
       node_id: 'outgoing_template',
       template_name: String(template),
       template_params: paramsArray,
+      is_template: true,
+      template_data: {
+        id: templateDefinition?.id || null,
+        name: String(template),
+        language: source.language || templateDefinition?.language || 'he',
+        components: templateDefinition?.components || [],
+        params: {
+          body: paramsArray,
+          ...(mediaUrl ? { header: { type: mediaType, url: mediaUrl } } : {})
+        }
+      },
       ...(templateButtons ? { template_buttons: templateButtons } : {}),
       wa_sent: waSent,
       created: now.toISOString(),

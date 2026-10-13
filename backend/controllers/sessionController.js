@@ -18,7 +18,7 @@ import { resolveTemplatePostSendMode, buildPostSendModeFields } from '../utils/t
  
 const SSE_SECRET_KEY = 'dfghjukiolp;[p0o9i8uytgbhnjmk,l.;p9876543t4rre2asd';
 const CASE1_REMINDER_MINUTES = 30;
-// const CASE1_REMINDER_MINUTES = 2;
+// const CASE1_REMINDER_MINUTES = 2; 
 const CASE1_REMINDER_MS = CASE1_REMINDER_MINUTES * 60 * 1000;
 // While a previous case1 reminder notification is still active (undismissed),
 // recheck at this shorter cadence instead of the full 30 minutes so a new
@@ -1970,6 +1970,249 @@ const getSessionWithOwnership = async (id, req) => {
   return { session, collection };
 };
 
+const findForwardSourceMessage = (history, { messageWamid, messageHid, messageCreated }) => {
+  if (!Array.isArray(history)) return null;
+  if (messageWamid) {
+    const byWamid = history.find(entry => String(entry?.wamid || '') === String(messageWamid));
+    if (byWamid) return byWamid;
+  }
+  if (messageHid) {
+    const byHid = history.find(entry => String(entry?.hid || '') === String(messageHid));
+    if (byHid) return byHid;
+  }
+  if (messageCreated) {
+    return history.find(entry => String(entry?.created || '') === String(messageCreated)) || null;
+  }
+  return null;
+};
+
+const buildForwardedWaMessage = (source) => {
+  const text = String(source.text ?? source.content ?? '');
+  switch (source.type) {
+    case 'Image':
+    case 'Video':
+      return source.url ? { type: source.type, url: source.url, text } : null;
+    case 'Document':
+      return source.url ? { type: 'Document', url: source.url, text, filename: source.filename || 'file' } : null;
+    case 'Contact':
+      return source.contactPhone
+        ? { type: 'Contact', contactName: source.contactName || '', contactPhone: source.contactPhone }
+        : null;
+    case 'URL':
+      return source.url ? { type: 'URL', url: source.url, text } : null;
+    case 'Options':
+      return Array.isArray(source.options)
+        ? { type: 'Options', text, options: source.options }
+        : null;
+    default:
+      return text ? { type: 'Text', text } : null;
+  }
+};
+
+export const forwardSessionMessage = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { targetPhone, messageWamid, messageHid, messageCreated } = req.body;
+    if (!targetPhone || !String(targetPhone).trim()) {
+      return res.status(400).json({ error: 'מספר יעד הוא שדה חובה' });
+    }
+
+    const { session: sourceSession, collection, error, status } = await getSessionWithOwnership(id, req);
+    if (error) return res.status(status).json({ error });
+
+    const source = findForwardSourceMessage(sourceSession.process_history, {
+      messageWamid,
+      messageHid,
+      messageCreated
+    });
+    if (!source) return res.status(404).json({ error: 'ההודעה להעברה לא נמצאה' });
+    if (source.sender === 'system' || source.type === 'System' || source.type === '_carousel') {
+      return res.status(400).json({ error: 'לא ניתן להעביר הודעת מערכת זו' });
+    }
+
+    const ownerId = String(getEffectiveUserId(req));
+    const normalizedTarget = normalizePhone(targetPhone);
+    if (!normalizedTarget || normalizedTarget === '972') {
+      return res.status(400).json({ error: 'מספר היעד אינו תקין' });
+    }
+    const sourcePhone = normalizePhone(sourceSession.sender || sourceSession.customer_phone || '');
+    if (normalizedTarget === sourcePhone) {
+      return res.status(400).json({ error: 'יש לבחור איש קשר אחר' });
+    }
+
+    const targetContact = await Contact.findOne({ user_id: ownerId, phone: normalizedTarget }).lean();
+    const templateData = source.is_template && source.template_data?.name
+      ? source.template_data
+      : source.template_name
+        ? {
+            name: source.template_name,
+            language: source.template_language || 'he',
+            components: [],
+            params: {
+              body: Array.isArray(source.template_params) ? source.template_params : [],
+              ...(source.url && ['Image', 'Video', 'Document'].includes(source.type)
+                ? { header: { type: source.type.toLowerCase(), url: source.url } }
+                : {})
+            }
+          }
+        : null;
+    if (!targetContact && !templateData) {
+      return res.status(400).json({ error: 'למספר חדש ניתן להעביר הודעת טמפלייט בלבד', code: 'NEW_CONTACT_TEMPLATE_ONLY' });
+    }
+
+    const targetSession = await collection.findOne(
+      {
+        user_id: ownerId,
+        $or: [{ sender: normalizedTarget }, { customer_phone: normalizedTarget }]
+      },
+      { sort: { created_at: -1 } }
+    );
+    const credentialSession = targetSession || sourceSession;
+    const bot = credentialSession?.flow_id
+      ? await BotFlow.findById(credentialSession.flow_id).select('endpoint user_id').lean()
+      : null;
+    const user = await User.findById(ownerId);
+    if (!user) return res.status(404).json({ error: 'המשתמש לא נמצא' });
+
+    let waSent = false;
+    let waError = null;
+    let forwardedWamid = null;
+
+    if (templateData) {
+      const { endpoint, waToken } = await buildWACredentials(user, bot);
+      if (!endpoint) {
+        return res.status(400).json({ error: 'לא הוגדר חיבור WhatsApp עבור יעד זה' });
+      }
+      const waBody = {
+        chat: normalizedTarget,
+        template: templateData.name,
+        language: templateData.language || 'he',
+        fromMe: 1
+      };
+      if (templateData.params?.header?.url) {
+        const mediaType = templateData.params.header.type || 'image';
+        waBody.header = [{ type: mediaType, [mediaType]: { link: templateData.params.header.url } }];
+      }
+      if (!waBody.header && Array.isArray(templateData.components)) {
+        const headerComponent = templateData.components.find(component => component.type === 'HEADER');
+        if (headerComponent && ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(headerComponent.format)) {
+          const example = headerComponent.example || {};
+          const exampleUrl = (Array.isArray(example.header_handle) ? example.header_handle[0] : example.header_handle)
+            || (Array.isArray(example.header_url) ? example.header_url[0] : example.header_url)
+            || '';
+          if (exampleUrl) {
+            const mediaType = headerComponent.format.toLowerCase();
+            waBody.header = [{ type: mediaType, [mediaType]: { link: exampleUrl } }];
+          }
+        }
+      }
+      if (Array.isArray(templateData.params?.body)) {
+        waBody.params = templateData.params.body.filter(value => value && String(value).trim());
+      }
+      try {
+        const waRes = await fetch(`https://wa.message.co.il/api/${endpoint}/send`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json; charset=utf-8',
+            Accept: 'application/json',
+            token: waToken
+          },
+          body: JSON.stringify(waBody)
+        });
+        const responseBody = await waRes.text().catch(() => '');
+        if (waRes.ok) {
+          waSent = true;
+          try { forwardedWamid = JSON.parse(responseBody)?.messages?.[0]?.id || null; } catch { /* non-JSON response */ }
+        } else {
+          waError = `HTTP ${waRes.status}: ${responseBody}`;
+        }
+      } catch (err) {
+        waError = err.message;
+      }
+    } else {
+      const waMessage = buildForwardedWaMessage(source);
+      if (!waMessage) return res.status(400).json({ error: 'סוג ההודעה אינו ניתן להעברה' });
+      try {
+        const result = await pushMessagesToWhatsApp(normalizedTarget, [waMessage], user, bot);
+        waSent = result.anySuccess;
+        forwardedWamid = result.wamidPerMsg?.find(Boolean) || null;
+        if (!waSent) waError = 'משלוח ה-WhatsApp נכשל';
+      } catch (err) {
+        waError = err.message;
+      }
+    }
+
+    const senderUser = await User.findById(req.userId).select('name email').lean();
+    const now = new Date();
+    const forwardedEntry = {
+      ...source,
+      sender: 'agent',
+      name: 'נציג',
+      agent_name: senderUser?.name || senderUser?.email || 'נציג',
+      agent_user_id: String(req.userId || ''),
+      node_id: 'agent',
+      created: now.toISOString(),
+      wa_sent: waSent,
+      wa_error: waError,
+      wamid: forwardedWamid,
+      deliveryStatus: null,
+      forwarded: true,
+      forwarded_from_phone: sourcePhone
+    };
+    delete forwardedEntry._id;
+    delete forwardedEntry.quoted_wamid;
+    delete forwardedEntry.quoted_text;
+    delete forwardedEntry.quoted_sender;
+
+    let targetSessionId;
+    if (targetSession) {
+      targetSessionId = targetSession._id.toString();
+      const setFields = templateData || !waSent
+        ? {}
+        : { status: 'handling', is_agent: true, agent_since: now };
+      await collection.updateOne(
+        { _id: targetSession._id },
+        { $push: { process_history: forwardedEntry }, ...(Object.keys(setFields).length ? { $set: setFields } : {}) }
+      );
+    } else {
+      const inserted = await collection.insertOne({
+        sender: normalizedTarget,
+        customer_phone: normalizedTarget,
+        user_id: ownerId,
+        flow_id: sourceSession.flow_id || null,
+        is_agent: !templateData && waSent,
+        agent_since: !templateData && waSent ? now : null,
+        status: !templateData && waSent ? 'handling' : 'bot',
+        is_active: true,
+        created_at: now,
+        process_history: [forwardedEntry]
+      });
+      targetSessionId = inserted.insertedId.toString();
+    }
+
+    if (!targetContact) {
+      await Contact.updateOne(
+        { user_id: ownerId, phone: normalizedTarget },
+        { $setOnInsert: { user_id: ownerId, phone: normalizedTarget } },
+        { upsert: true }
+      );
+    }
+
+    eventBus.emit('session:update', { userId: ownerId, phone: normalizedTarget });
+    res.json({
+      success: true,
+      waSent,
+      waError,
+      phone: normalizedTarget,
+      sessionId: targetSessionId,
+      historyEntry: forwardedEntry
+    });
+  } catch (err) {
+    console.error('forwardSessionMessage error:', err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
 export const setAgentMode = async (req, res) => {
   try {
     const { id } = req.params;
@@ -2849,6 +3092,15 @@ export const sendAgentMessage = async (req, res) => {
     // Build display content based on template or text
     console.log(`[sendAgentMessage] 📝 Building history entry | isTemplate=${isTemplate} | hasTemplateData=${!!templateData}`);
     if (isTemplate && templateData) {
+      historyEntry.is_template = true;
+      historyEntry.template_name = templateData.name;
+      historyEntry.template_data = {
+        id: templateData.id || null,
+        name: templateData.name,
+        language: templateData.language || 'he',
+        components: Array.isArray(templateData.components) ? templateData.components : [],
+        params: templateData.params || {}
+      };
       console.log(`[sendAgentMessage] 📝 Template components:`, JSON.stringify(templateData.components, null, 2));
       // Extract text from BODY component and replace variables
       let displayText = '';
@@ -3125,7 +3377,16 @@ export const sendTemplateToPhone = async (req, res) => {
       wamid: tplWamid,
       deliveryStatus: null,
       type: 'Text',
-      text: displayText || message
+      text: displayText || message,
+      is_template: true,
+      template_name: templateData.name,
+      template_data: {
+        id: templateData.id || null,
+        name: templateData.name,
+        language: templateData.language || 'he',
+        components: Array.isArray(templateData.components) ? templateData.components : [],
+        params: templateData.params || {}
+      }
     };
 
     // Check if there's header media
