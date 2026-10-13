@@ -2566,6 +2566,7 @@ export const sendAgentMessage = async (req, res) => {
     const { id } = req.params;
     const { message, isTemplate, templateData, mediaType, mediaUrl, mediaFilename, quotedWamid, quotedText, quotedSender } = req.body;
     const hasMedia = !!(mediaType && mediaUrl);
+    console.log(`[REPLY] IN session=${id} quotedWamid=${quotedWamid || 'NONE'} quotedText=${quotedText ? 'yes' : 'no'} isTemplate=${!!isTemplate} hasMedia=${hasMedia}`);
     if (!hasMedia && (!message || !String(message).trim())) {
       return res.status(400).json({ error: 'הודעה או מדיה הם שדה חובה' });
     }
@@ -2755,6 +2756,8 @@ export const sendAgentMessage = async (req, res) => {
         const quotedPrefix = `↪ ${quotedSender || ''}: ${quotedText}`.trim();
         outboundText = outboundText ? `${quotedPrefix}\n\n${outboundText}` : quotedPrefix;
       }
+      const replyMode = replyTo ? 'NATIVE(replyTo)' : quotedText ? 'FALLBACK(text prefix, no wamid)' : 'NONE';
+      console.log(`[REPLY] mode=${replyMode} replyTo=${replyTo || '-'}`);
       const waMessages = hasMedia
         ? [{ type: mediaType === 'video' ? 'Video' : mediaType === 'document' ? 'Document' : 'Image', url: mediaUrl, text: outboundText, filename: mediaFilename || 'file', ...(replyTo ? { replyTo } : {}) }]
         : [{ type: 'Text', text: outboundText, ...(replyTo ? { replyTo } : {}) }];

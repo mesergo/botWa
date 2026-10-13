@@ -1439,6 +1439,7 @@ export const respondToMessage = async (req, res) => {
     
     const { phone, text = '', sender: rawSender = 'unknown', token: tokenParam, bot_id, name = '', message_id = '' } = source;
     const sender = normalizePhone(rawSender);
+    console.log(`[BOT] 📩 message_id=${message_id || 'MISSING'} sender=${sender}`);
     const token = req.headers.authorization?.replace('Bearer ', '') || tokenParam;
 
     console.log(`\n${'═'.repeat(80)}`);
