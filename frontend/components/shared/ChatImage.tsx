@@ -6,6 +6,7 @@ interface ChatImageProps {
   src: string;
   alt?: string;
   className?: string;
+  showControls?: boolean;
 }
 
 const downloadImage = async (src: string, e?: React.MouseEvent) => {
@@ -86,21 +87,42 @@ const ImageLightbox: React.FC<{ src: string; alt: string; onClose: () => void }>
  * Used everywhere a chat/session message of type "image" is displayed,
  * so the user can view it enlarged or save it locally.
  */
-export const ChatImage: React.FC<ChatImageProps> = ({ src, alt = 'תמונה', className = '' }) => {
+export const ChatImage: React.FC<ChatImageProps> = ({ src, alt = 'תמונה', className = '', showControls = true }) => {
   const [zoomed, setZoomed] = useState(false);
+
+  const image = (
+    <img
+      src={src}
+      alt={alt}
+      className={`${className} cursor-zoom-in`}
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setZoomed(true);
+      }}
+    />
+  );
+
+  if (!showControls) {
+    return (
+      <>
+        <span className="inline-block align-top">{image}</span>
+        {zoomed && <ImageLightbox src={src} alt={alt} onClose={() => setZoomed(false)} />}
+      </>
+    );
+  }
 
   return (
     <div className="relative group/img">
-      <img
-        src={src}
-        alt={alt}
-        className={`${className} cursor-zoom-in`}
-        onClick={() => setZoomed(true)}
-      />
+      {image}
       <div className="absolute top-1.5 left-1.5 flex items-center gap-1 opacity-0 group-hover/img:opacity-100 transition-opacity">
         <button
           type="button"
-          onClick={() => setZoomed(true)}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setZoomed(true);
+          }}
           title="הגדל תמונה"
           className="p-1.5 bg-black/55 hover:bg-black/75 text-white rounded-lg shadow-md"
         >

@@ -1207,7 +1207,9 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                   : s
               ));
               setContacts(prev => prev.map(c =>
-                c.phone === selectedPhone ? { ...c, status: replyStatus } : c
+                c.phone === selectedPhone
+                  ? { ...c, status: replyStatus, lastResponderName: replyStatus === 'handling' ? currentAgentName : null }
+                  : c
               ));
               if (selectedPhone) bumpContactToTop(selectedPhone, created);
               // Keep agent-mode UI state in sync — a template configured to
@@ -1506,7 +1508,9 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
             : s
         ));
         setContacts(prev => prev.map(c =>
-          c.phone === selectedPhone ? { ...c, status: replyStatus } : c
+          c.phone === selectedPhone
+            ? { ...c, status: replyStatus, lastResponderName: replyStatus === 'handling' ? currentAgentName : null }
+            : c
         ));
         if (selectedPhone) bumpContactToTop(selectedPhone, created);
         // Keep the agent-mode UI (composer state) in sync with the resolved
@@ -2292,12 +2296,10 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                     </div>
                   )}
                   {item.type === 'Image' && item.url && (
-                    <img
+                    <ChatImage
                       src={item.url}
                       alt={t('messageList.imageAlt')}
                       className="rounded-xl max-w-[200px] h-auto mb-2"
-                      onLoad={() => console.log('[Chat][Image][agent] ✅ loaded:', item.url)}
-                      onError={() => console.error('[Chat][Image][agent] ❌ FAILED to load image. url=', item.url, '| full item=', item)}
                     />
                   )} 
                   {item.type === 'Video' && item.url && (
@@ -2389,14 +2391,12 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                     <p className="text-[9px] text-amber-400 font-bold mb-1">{t('messageList.templateLabel', { name: item.template_name })}</p>
                   )}
                   {item.type === 'Image' && item.url && (
-                    <img
+                    <ChatImage
                       src={item.url}
                       alt={t('messageList.imageAlt')}
                       className="rounded-xl max-w-[200px] h-auto mb-2"
-                      onLoad={() => console.log('[Chat][Image][broadcast] ✅ loaded:', item.url)}
-                      onError={() => console.error('[Chat][Image][broadcast] ❌ FAILED to load image. url=', item.url, '| full item=', item)}
                     />
-                  )}  
+                  )}
                   {item.type === 'Video' && item.url && (
                     <video src={item.url} controls className="rounded-xl max-w-[200px] mb-2" />
                   )}
@@ -2486,15 +2486,13 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                     <p className="text-[10px] font-semibold mb-1 opacity-70">🎙️ {t('messageList.recording')}</p>
                     <audio src={item.url || text} controls className="max-w-[220px] mb-1" />
                   </>
-                )}
+                )} 
                 {item.type === 'Image' && item.url && (
                   <>
-                    <img
+                    <ChatImage
                       src={item.url}
                       alt={t('messageList.imageAlt')}
                       className="rounded-xl max-w-[200px] h-auto mb-1"
-                      onLoad={() => console.log('[Chat][Image][bot/user] ✅ loaded:', item.url)}
-                      onError={() => console.error('[Chat][Image][bot/user] ❌ FAILED to load image. url=', item.url, '| full item=', item)}
                     />
                     {text && <WhatsAppText text={text} className="leading-snug" />}
                   </>
@@ -2553,7 +2551,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                   <div className="flex gap-2 overflow-x-auto pb-1 max-w-[320px]">
                     {item.carouselItems.map((card: any, ci: number) => (
                       <div key={ci} className="flex-shrink-0 w-40 bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
-                        {card.image && <img src={card.image} alt={card.title || ''} className="w-full h-24 object-cover" />}
+                        {card.image && <ChatImage src={card.image} alt={card.title || ''} className="w-full h-24 object-cover" />}
                         <div className="p-2.5">
                           {card.title && <p className="text-xs font-black text-slate-800 leading-tight">{card.title}</p>}
                           {card.subtitle && <p className="text-[10px] text-slate-500 mt-0.5 leading-snug">{card.subtitle}</p>}
