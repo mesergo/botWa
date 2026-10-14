@@ -79,9 +79,9 @@
   },
   "messageList": {
     "deliveryFailed": "Failed to send",
-    "clickForErrorDetails": "Click for error details",
+    "clickForErrorDetails": "Message not sent, click for details",
     "deliveryFailedTitle": "Message was not sent",
-    "errorCode": "Error code",
+    "errorCode": "Error code", 
     "whatToDo": "What to do",
     "originalErrorDetails": "Original error details",
     "metaDocs": "Meta docs",

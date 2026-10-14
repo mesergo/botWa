@@ -79,9 +79,9 @@
   },
   "messageList": {
     "deliveryFailed": "שליחה נכשלה",
-    "clickForErrorDetails": "לחץ לפרטי השגיאה",
+    "clickForErrorDetails": "ההודעה לא נשלחה, לחץ לפרטים",
     "deliveryFailedTitle": "ההודעה לא נשלחה",
-    "errorCode": "קוד שגיאה",
+    "errorCode": "קוד שגיאה", 
     "whatToDo": "מה לעשות",
     "originalErrorDetails": "פרטי השגיאה המקוריים",
     "metaDocs": "מסמך Meta",

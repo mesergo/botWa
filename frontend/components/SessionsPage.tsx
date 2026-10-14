@@ -5,7 +5,7 @@ import ImpersonationBanner, { SiblingAccount } from './ImpersonationBanner';
 import OnboardingBanner from './OnboardingBanner'; 
 import MigrationNoticeBanner from './MigrationNoticeBanner';
 import { TemplateHeaderMediaField } from './TemplateHeaderMediaField';
-import QuickInsertMenu from './shared/QuickInsertMenu';
+import QuickInsertMenu from './shared/QuickInsertMenu'; 
 import ChatImage from './shared/ChatImage'; 
 import { getMissingTemplateVars } from './shared/templateValidation';
 import { applyDefaultBodyParams, FIELD_PREFIX } from './shared/templateDefaultParams';
@@ -4793,11 +4793,6 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                       {err?.code && <p>{t('messageList.errorCode')}: {err.code}</p>}
                       {err?.title && <p>{err.title}</p>}
                       {originalDetails && originalDetails !== err?.title && <p className="break-words">{originalDetails}</p>}
-                      {typeof err?.href === 'string' && /^https:\/\//i.test(err.href) && (
-                        <a href={err.href} target="_blank" rel="noopener noreferrer" className="text-sky-500 hover:underline">
-                          {t('messageList.metaDocs')}
-                        </a>
-                      )}
                     </div>
                   </div>
                 );
