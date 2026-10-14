@@ -1176,6 +1176,13 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
             requestBody.mediaUrl = capturedFile.url;
             requestBody.mediaFilename = capturedFile.name;
           }
+
+          const currentReplyTarget = replyTarget;
+          if (currentReplyTarget) {
+            requestBody.quotedWamid = currentReplyTarget.wamid;
+            requestBody.quotedText = currentReplyTarget.text;
+            requestBody.quotedSender = currentReplyTarget.displayName;
+          }
           
           try {
             const msgResponse = await fetch(`${API_BASE}/sessions/${sid}/send-agent-message`, {
@@ -1188,6 +1195,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
               const msgData = await msgResponse.json();
               setAgentMessage('');
               setAttachedFile(null);
+              setReplyTarget(null);
               setSelectedTemplate(null);
               setSendPostSendModeOverride(null);
               setTemplateParams({});
@@ -2143,11 +2151,35 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
     }
   };
 
+  const [deliveryErrorPopup, setDeliveryErrorPopup] = useState<any[] | string | null>(null);
+
+  // Maps a WhatsApp delivery error (Meta/360dialog `errors[]` entry) to a translation key under
+  // messageList.deliveryErrors. Returns null when the code has no translation (falls back to the
+  // original Meta text). Some codes share a translation; 131053 is split by its `details` text.
+  const getDeliveryErrorKey = (err: any): string | null => {
+    const code = String(err?.code ?? '');
+    if (!code) return null;
+    const aliases: Record<string, string> = {
+      '131009': '131008',
+      '131016': '131000',
+      '133004': '131000',
+      '10': '131005',
+      '190': '131005',
+    };
+    let key = aliases[code] || code;
+    if (key === '131053') {
+      const details = String(err?.error_data?.details || err?.message || '');
+      if (/404|not found/i.test(details)) key = '131053_notFound';
+      else if (/invalid|supported|format|size/i.test(details)) key = '131053_invalidFile';
+    }
+    return i18n.exists(`messageList.deliveryErrors.${key}.title`, { ns: 'sessions' }) ? key : null;
+  };
+
   /* ─── WhatsApp delivery-status tick, shared by bot and agent bubbles ─── */
   const renderDeliveryTick = (item: any) => {
     if (!item.deliveryStatus) return null;
     const title = item.deliveryStatus === 'failed'
-      ? (item.deliveryError ? JSON.stringify(item.deliveryError) : t('messageList.deliveryFailed'))
+      ? undefined
       : item.deliveryStatus === 'read' ? t('messageList.read')
       : item.deliveryStatus === 'delivered' ? t('messageList.deliveredToCustomer')
       : t('messageList.sent');
@@ -2156,7 +2188,20 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
         {item.deliveryStatus === 'sent' && <Check size={12} className="text-slate-400" />}
         {item.deliveryStatus === 'delivered' && <CheckCheck size={12} className="text-slate-400" />}
         {item.deliveryStatus === 'read' && <CheckCheck size={12} className="text-sky-500" />}
-        {item.deliveryStatus === 'failed' && <AlertCircle size={12} className="text-red-500" />}
+        {item.deliveryStatus === 'failed' && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              const err = item.deliveryError;
+              setDeliveryErrorPopup(err ? (Array.isArray(err) ? err : [err]) : t('messageList.deliveryFailed'));
+            }}
+            title={t('messageList.clickForErrorDetails')}
+            className="inline-flex items-center cursor-pointer hover:scale-125 transition-transform"
+          >
+            <AlertCircle size={12} className="text-red-500" />
+          </button>
+        )}
       </span>
     );
   };
@@ -4417,6 +4462,67 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
               >
                 {transferLoading ? t('transferModal.transferring') : t('transferModal.transferButton')}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delivery failure details popup */}
+      {deliveryErrorPopup && (
+        <div
+          className="fixed inset-0 bg-black/30 flex items-center justify-center z-[110] p-4"
+          onClick={() => setDeliveryErrorPopup(null)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 bg-red-50">
+              <h3 className="flex items-center gap-2 text-sm font-black text-red-700">
+                <AlertCircle size={16} />
+                {t('messageList.deliveryFailedTitle')}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setDeliveryErrorPopup(null)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-white"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <div className="px-4 py-3 space-y-3 max-h-[50vh] overflow-y-auto text-sm text-slate-700" dir="auto">
+              {Array.isArray(deliveryErrorPopup) ? deliveryErrorPopup.map((err: any, i: number) => {
+                if (typeof err === 'string') return <p key={i}>{err}</p>;
+                const errKey = getDeliveryErrorKey(err);
+                const originalDetails = err?.error_data?.details || err?.message || '';
+                return (
+                  <div key={i} className="space-y-3">
+                    {errKey ? (
+                      <div className="space-y-2">
+                        <p className="font-black text-slate-800">{t(`messageList.deliveryErrors.${errKey}.title`)}</p>
+                        <p className="text-slate-600">{t(`messageList.deliveryErrors.${errKey}.explanation`)}</p>
+                        <div className="px-3 py-2 bg-amber-50 border border-amber-200 rounded-xl">
+                          <p className="text-xs font-black text-amber-700 mb-0.5">{t('messageList.whatToDo')}</p>
+                          <p className="text-slate-700">{t(`messageList.deliveryErrors.${errKey}.action`)}</p>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="font-black text-slate-800">{t('messageList.deliveryFailed')}</p>
+                    )}
+                    <div className="pt-2 border-t border-slate-100 text-[11px] text-slate-400 space-y-0.5" dir="ltr">
+                      <p className="font-bold">{t('messageList.originalErrorDetails')}</p>
+                      {err?.code && <p>{t('messageList.errorCode')}: {err.code}</p>}
+                      {err?.title && <p>{err.title}</p>}
+                      {originalDetails && originalDetails !== err?.title && <p className="break-words">{originalDetails}</p>}
+                      {typeof err?.href === 'string' && /^https:\/\//i.test(err.href) && (
+                        <a href={err.href} target="_blank" rel="noopener noreferrer" className="text-sky-500 hover:underline">
+                          {t('messageList.metaDocs')}
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                );
+              }) : <p>{deliveryErrorPopup}</p>}
             </div>
           </div>
         </div>
