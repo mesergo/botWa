@@ -2175,11 +2175,17 @@ export const forwardSessionMessage = async (req, res) => {
         { $push: { process_history: forwardedEntry }, ...(Object.keys(setFields).length ? { $set: setFields } : {}) }
       );
     } else {
+      // Source session without a bot: fall back to the user's only bot (if exactly one exists)
+      let forwardFallbackFlowId = null;
+      if (!sourceSession.flow_id) {
+        const ownerBots = await BotFlow.find({ user_id: ownerId }).select('_id').limit(2).lean();
+        if (ownerBots.length === 1) forwardFallbackFlowId = String(ownerBots[0]._id);
+      }
       const inserted = await collection.insertOne({
         sender: normalizedTarget,
         customer_phone: normalizedTarget,
         user_id: ownerId,
-        flow_id: sourceSession.flow_id || null,
+        flow_id: sourceSession.flow_id || forwardFallbackFlowId,
         is_agent: !templateData && waSent,
         agent_since: !templateData && waSent ? now : null,
         status: !templateData && waSent ? 'handling' : 'bot',
@@ -3225,10 +3231,57 @@ export const sendAgentMessage = async (req, res) => {
   }
 };
 
+// Picks the bot (BotFlow) a brand-new agent-initiated session should belong to.
+// `botIds` = candidate bot ids (all bots of the chosen phone-number group); empty = no choice made.
+// Several bots may share one connected number, so within the candidates the order is:
+//   1. bots with a non-empty endpoint (otherwise buildWACredentials may fall back to another account)
+//   2. the bot a connected number's assigned_bot_id currently points to
+//   3. newest whatsapp_connected_at
+//   4. newest created_at
+// Returns { bot } or { error, code, status }.
+const resolveBotForNewSession = async (user, botIds) => {
+  const ownerId = String(user._id);
+  const requestedIds = (Array.isArray(botIds) ? botIds : [])
+    .map(id => String(id || '').trim())
+    .filter(id => mongoose.Types.ObjectId.isValid(id));
+
+  const bots = await BotFlow.find(
+    requestedIds.length > 0
+      ? { _id: { $in: requestedIds }, user_id: ownerId }
+      : { user_id: ownerId }
+  ).select('_id name endpoint user_id whatsapp_connected_at created_at display_phone_number').lean();
+
+  if (requestedIds.length > 0 && bots.length === 0) {
+    return { status: 400, code: 'BOT_NOT_FOUND', error: 'הבוט שנבחר לא נמצא' };
+  }
+  if (bots.length === 0) {
+    return { status: 400, code: 'BOT_NOT_FOUND', error: 'לא נמצא בוט עבור משתמש זה' };
+  }
+  if (requestedIds.length === 0 && bots.length > 1) {
+    return { status: 400, code: 'BOT_REQUIRED', error: 'יש לבחור מספר WhatsApp לשליחת ההודעה' };
+  }
+  if (bots.length === 1) return { bot: bots[0] };
+
+  const withEndpoint = bots.filter(b => b.endpoint && String(b.endpoint).trim());
+  const candidates = withEndpoint.length > 0 ? withEndpoint : bots;
+  const assignedIds = new Set(
+    (user.connected_numbers || [])
+      .map(n => n.assigned_bot_id && String(n.assigned_bot_id))
+      .filter(Boolean)
+  );
+  const ts = (d) => (d ? new Date(d).getTime() || 0 : 0);
+  candidates.sort((a, b) =>
+    (assignedIds.has(String(b._id)) ? 1 : 0) - (assignedIds.has(String(a._id)) ? 1 : 0)
+    || ts(b.whatsapp_connected_at) - ts(a.whatsapp_connected_at)
+    || ts(b.created_at) - ts(a.created_at)
+  );
+  return { bot: candidates[0] };
+};
+
 // Send a template message directly to a phone number (no session required — for new contacts)
 export const sendTemplateToPhone = async (req, res) => {
   try {
-    const { phone, message, templateData } = req.body;
+    const { phone, message, templateData, botIds } = req.body;
     if (!phone || !String(phone).trim()) {
       return res.status(400).json({ error: 'מספר טלפון הוא שדה חובה' });
     }
@@ -3254,16 +3307,16 @@ export const sendTemplateToPhone = async (req, res) => {
       normalizedPhone = '972' + normalizedPhone;
     }
 
-    // Find the last session for this phone to determine which bot endpoint to use
+    // Resolve the bot (number) this new conversation belongs to — chosen by the agent, not guessed from past sessions
     const collection = mongoose.connection.collection('BotSession');
-    const lastSession = await collection.findOne(
-      { $or: [{ sender: normalizedPhone }, { customer_phone: normalizedPhone }], user_id: String(user._id) },
-      { sort: { created_at: -1 } }
-    );
-    const lastBot = lastSession?.flow_id ? await BotFlow.findById(lastSession.flow_id).select('endpoint user_id').lean() : null;
-    console.log(`[sendTemplateToPhone] 🔍 last session=${lastSession?._id || '(none)'} | lastBot.endpoint=${lastBot?.endpoint || '(none)'}`);
+    const resolved = await resolveBotForNewSession(user, botIds);
+    if (resolved.error) {
+      return res.status(resolved.status).json({ error: resolved.error, code: resolved.code });
+    }
+    const selectedBot = resolved.bot;
+    console.log(`[sendTemplateToPhone] 🔍 selected bot=${selectedBot._id} (${selectedBot.name}) | endpoint=${selectedBot.endpoint || '(none)'}`);
 
-    const { endpoint, waToken } = await buildWACredentials(user, lastBot);
+    const { endpoint, waToken } = await buildWACredentials(user, selectedBot);
     if (!endpoint) {
       console.error(`[sendTemplateToPhone] ❌ No WhatsApp endpoint could be resolved for user=${user.email || user._id} phone=${phone} — aborting instead of sending to ".../api/null/send"`);
       return res.status(400).json({ error: 'לא הוגדר חיבור WhatsApp עבור משתמש זה. יש להגדיר Bot ID / endpoint בהגדרות.' });
@@ -3443,6 +3496,7 @@ export const sendTemplateToPhone = async (req, res) => {
       sender: normalizedPhone,
       customer_phone: normalizedPhone,
       user_id: getEffectiveUserId(req),
+      flow_id: String(selectedBot._id),
       is_agent: false,
       agent_since: null,
       status: 'bot',
@@ -3480,6 +3534,8 @@ export const sendTemplateToPhone = async (req, res) => {
       processHistory: initialHistory,
       created,
       phone: normalizedPhone,
+      flow_id: sessionDoc.flow_id,
+      bot_name: selectedBot.name || null,
       status: sessionDoc.status,
       is_agent: sessionDoc.is_agent,
       agent_since: sessionDoc.agent_since ? sessionDoc.agent_since.toISOString() : null

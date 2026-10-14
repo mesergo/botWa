@@ -187,6 +187,10 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
   const [newConvPhone, setNewConvPhone] = useState('');
   const [newConvLoading, setNewConvLoading] = useState(false);
   const [newConvError, setNewConvError] = useState<string | null>(null);
+  // Sender number (phone group key) chosen in the modal; the map persists per contact phone
+  // so the choice survives switching between contacts before the first message is sent.
+  const [newConvGroupKey, setNewConvGroupKey] = useState('');
+  const [newConvBotByPhone, setNewConvBotByPhone] = useState<Record<string, string>>({});
 
   // Assign reps modal state
   const [showAssignModal, setShowAssignModal] = useState(false);
@@ -1071,10 +1075,17 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
       setNewConvError(t('newConversation.contactExists'));
       return;
     }
+    if (!activeBotFilter && phoneGroups.length > 1 && !newConvGroupKey) {
+      setNewConvError(t('newConvModal.senderRequired'));
+      return;
+    }
     setNewConvLoading(true);
     setNewConvError(null);
     const result = await createContactRecord(sanitized);
     if (result.ok) {
+      if (!activeBotFilter && newConvGroupKey) {
+        setNewConvBotByPhone(prev => ({ ...prev, [sanitized]: newConvGroupKey }));
+      }
       setShowNewConvModal(false);
       setSelectedPhone(sanitized);
       fetchContacts();
@@ -1388,6 +1399,10 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
       const msgText = agentMessage.trim();
       setAgentSending(true);
       setAgentWaFailed(false);
+      // Sender number for the new session: active number tab, else the one picked in the modal, else the single number
+      const newSessionGroup = activeBotFilter
+        || phoneGroups.find(g => g.key === newConvBotByPhone[selectedPhone || ''])
+        || (phoneGroups.length === 1 ? phoneGroups[0] : null);
       try {
         const r = await fetch(`${API_BASE}/sessions/send-template-to-phone`, {
           method: 'POST',
@@ -1395,6 +1410,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
           body: JSON.stringify({
             phone: selectedPhone,
             message: msgText,
+            ...(newSessionGroup ? { botIds: newSessionGroup.botIds } : {}),
             templateData: {
               id: selectedTemplate.id,
               name: selectedTemplate.name || selectedTemplate.elementName || selectedTemplate.template_name,
@@ -1420,7 +1436,8 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
               sender: data.phone || selectedPhone,
               customer_phone: data.phone || selectedPhone,
               widget_id: null,
-              bot_name: 'נציג',
+              bot_name: data.bot_name || newSessionGroup?.label || 'נציג',
+              flow_id: data.flow_id || null,
               created_at: data.created,
               parameters: {},
               process_history: data.processHistory || [data.historyEntry],
@@ -1437,6 +1454,13 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
             setAgentWaError(data.waError || null);
             setAgentWaRetryable(data.waRetryable === true);
             setTimeout(() => { setAgentWaFailed(false); setAgentWaError(null); setAgentWaRetryable(false); }, 12000);
+          }
+        } else {
+          const errData = await r.json().catch(() => null);
+          if (errData?.code === 'BOT_REQUIRED') {
+            alert(t('chat.botRequired'));
+          } else if (errData?.error) {
+            alert(errData.error);
           }
         }
       } catch (e) {
@@ -3062,7 +3086,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
               </div>
               {can('sessions.add') && (
               <button
-                onClick={() => { setShowNewConvModal(true); setNewConvPhone(''); setNewConvError(null); }}
+                onClick={() => { setShowNewConvModal(true); setNewConvPhone(''); setNewConvError(null); setNewConvGroupKey(''); }}
                 title={t('sidebar.newChat')}
                 className="w-8 h-8 rounded-xl bg-sky-500 text-white flex items-center justify-center hover:bg-sky-600 transition-colors flex-shrink-0"
               >
@@ -4175,6 +4199,25 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
               {newConvError && (
                 <p className="text-xs text-red-500 font-semibold mt-2">{newConvError}</p>
               )}
+              {activeBotFilter ? (
+                <p className="text-xs text-slate-500 mt-3">
+                  {t('newConvModal.senderInfo', { number: activeBotFilter.displayPhoneNumber })}
+                </p>
+              ) : phoneGroups.length > 1 ? (
+                <div className="mt-3">
+                  <label className="block text-xs font-bold text-slate-600 mb-1">{t('newConvModal.senderLabel')}</label>
+                  <select
+                    value={newConvGroupKey}
+                    onChange={e => { setNewConvGroupKey(e.target.value); setNewConvError(null); }}
+                    className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-400 bg-white"
+                  >
+                    <option value="">{t('newConvModal.senderPlaceholder')}</option>
+                    {phoneGroups.map(g => (
+                      <option key={g.key} value={g.key}>{g.displayPhoneNumber} - {g.label}</option>
+                    ))}
+                  </select>
+                </div>
+              ) : null}
             </div>
             <div className="px-6 pb-6 flex gap-3 justify-end">
               <button
