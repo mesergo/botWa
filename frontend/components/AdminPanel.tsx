@@ -3403,8 +3403,8 @@ const openRestoreConversations = async () => {
                               אנא ודא שהוגדר Bot ID עבור לקוח זה בפרופיל האישי.
                             </p>
                           </div>
-                        ) : (
-                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        ) : ( 
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                             {custDialog360Templates.map((template: any, idx: number) => {
                               const name = template.name || template.elementName || template.template_name || `Template ${idx + 1}`;
                               const language = template.language || '';
