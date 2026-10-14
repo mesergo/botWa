@@ -1,0 +1,513 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MeserGO למנהלים</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rubik:wght@500;700&family=Assistant:wght@400;600;700&display=swap">
+<style>
+/* Layout: two columns — sticky chapter index on the right (RTL), reading column with framed screenshots; stacks to one column on phones. */
+:root {
+  --bg: #f4f7fc;
+  --surface: #ffffff;
+  --ink: #15203a;
+  --muted: #5b6782;
+  --line: #dfe5f0;
+  --accent: #5a3fd1;
+  --accent-soft: #eeeafc;
+  --teal: #0fa3b8;
+  --tip-bg: #e9f8f0; --tip-ink: #11643c; --tip-line: #9fdcbc;
+  --warn-bg: #fff6e3; --warn-ink: #8a5300; --warn-line: #f2cf86;
+  --shadow: 0 1px 2px rgba(21,32,58,.06), 0 8px 24px rgba(21,32,58,.07);
+  --font-display: "Rubik", "Assistant", "Segoe UI", Arial, sans-serif;
+  --font-body: "Assistant", "Segoe UI", Arial, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0d1322; --surface: #151d30; --ink: #e5ebf6; --muted: #9aa6c0; --line: #26314a;
+    --accent: #a996ff; --accent-soft: #241f45; --teal: #4fd0e0;
+    --tip-bg: #12291f; --tip-ink: #8fe0b6; --tip-line: #245a3f;
+    --warn-bg: #2d2412; --warn-ink: #f3c977; --warn-line: #5e4719;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.35);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0d1322; --surface: #151d30; --ink: #e5ebf6; --muted: #9aa6c0; --line: #26314a;
+  --accent: #a996ff; --accent-soft: #241f45; --teal: #4fd0e0;
+  --tip-bg: #12291f; --tip-ink: #8fe0b6; --tip-line: #245a3f;
+  --warn-bg: #2d2412; --warn-ink: #f3c977; --warn-line: #5e4719;
+  --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.35);
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 17px; line-height: 1.7; margin: 0; }
+.page { direction: rtl; text-align: right; max-width: 1180px; margin: 0 auto; padding-inline: 20px; padding-block: 0 64px; }
+
+/* Header */
+.masthead { padding-block: 48px 36px; border-bottom: 1px solid var(--line); margin-bottom: 36px; display: grid; gap: 14px; }
+.eyebrow { font-family: var(--font-display); font-weight: 500; font-size: 14px; color: var(--teal); letter-spacing: .02em; }
+.masthead h1 { font-family: var(--font-display); font-weight: 700; font-size: clamp(30px, 5vw, 46px); line-height: 1.15; margin: 0; text-wrap: balance; }
+.masthead h1 .brand { color: var(--accent); }
+.masthead p { margin: 0; color: var(--muted); font-size: 19px; max-width: 60ch; }
+.contact { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 10px; font-size: 15px; color: var(--muted); }
+.contact code { font-family: var(--font-body); font-weight: 700; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 4px 10px; direction: ltr; user-select: all; }
+.copy { font: inherit; font-size: 14px; border: 1px solid var(--line); background: var(--surface); color: var(--accent); border-radius: 8px; padding: 4px 10px; cursor: pointer; }
+.copy:focus-visible, .toc a:focus-visible, .shot:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+/* Grid */
+.layout { display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 48px; align-items: start; }
+.toc { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 20px); max-height: calc(100vh - 40px); overflow: auto; padding-inline-end: 4px; }
+.toc h2 { font-family: var(--font-display); font-size: 14px; font-weight: 500; color: var(--muted); margin: 0 0 10px; letter-spacing: .02em; }
+.toc ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.toc a { display: flex; gap: 10px; align-items: baseline; padding: 6px 10px; border-radius: 8px; color: var(--ink); text-decoration: none; font-size: 15.5px; line-height: 1.4; }
+.toc a:hover { background: var(--accent-soft); }
+.toc a.active { background: var(--accent-soft); color: var(--accent); font-weight: 700; }
+.toc .n { font-family: var(--font-display); font-size: 13px; color: var(--muted); min-width: 1.6em; font-variant-numeric: tabular-nums; }
+.toc a.active .n { color: var(--accent); }
+
+main { min-width: 0; display: grid; gap: 64px; }
+section { display: grid; gap: 18px; scroll-margin-top: 20px; }
+.chapter-head { display: grid; gap: 4px; padding-bottom: 12px; border-bottom: 2px solid var(--accent); }
+.chapter-head .num { font-family: var(--font-display); font-size: 14px; color: var(--accent); font-weight: 500; }
+h2.ch { font-family: var(--font-display); font-weight: 700; font-size: clamp(25px, 3.4vw, 32px); line-height: 1.25; margin: 0; text-wrap: balance; }
+h3 { font-family: var(--font-display); font-weight: 500; font-size: 21px; margin: 14px 0 0; text-wrap: balance; }
+h4 { font-family: var(--font-display); font-weight: 500; font-size: 18px; margin: 6px 0 0; }
+p { margin: 0; max-width: 68ch; }
+.lead { font-size: 18.5px; color: var(--muted); }
+
+/* Lists */
+.features, .defs, .bullets { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; max-width: 72ch; }
+.features li { display: grid; grid-template-columns: 1.8em 1fr; gap: 8px; }
+.defs { gap: 0; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); overflow: hidden; }
+.defs li { display: grid; grid-template-columns: minmax(110px, 30%) 1fr; gap: 16px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+.defs li:last-child { border-bottom: 0; }
+.defs b { font-weight: 700; }
+.steps { counter-reset: s; list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; max-width: 70ch; }
+.steps li { counter-increment: s; position: relative; padding-inline-start: 44px; min-height: 30px; }
+.steps li::before { content: counter(s); position: absolute; inset-inline-start: 0; top: 0; font-family: var(--font-display); font-weight: 700; font-size: 15px; width: 30px; height: 30px; border-radius: 50%; background: var(--accent); color: var(--surface); display: grid; place-items: center; font-variant-numeric: tabular-nums; }
+.ui { font-weight: 700; color: var(--accent); white-space: nowrap; }
+
+/* Callouts */
+.note { display: grid; grid-template-columns: 1.6em 1fr; gap: 8px; padding: 12px 16px; border-radius: 12px; border: 1px solid; max-width: 72ch; }
+.note.tip { background: var(--tip-bg); color: var(--tip-ink); border-color: var(--tip-line); }
+.note.warn { background: var(--warn-bg); color: var(--warn-ink); border-color: var(--warn-line); }
+
+/* Screenshots */
+figure { margin: 6px 0; display: grid; gap: 8px; }
+.shot { display: block; padding: 0; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--surface); box-shadow: var(--shadow); cursor: zoom-in; width: 100%; }
+.shot .bar { display: flex; gap: 6px; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--line); direction: ltr; }
+.shot .bar i { width: 9px; height: 9px; border-radius: 50%; background: var(--line); }
+.shot .bar span { margin-left: 10px; font-size: 12px; color: var(--muted); font-family: var(--font-body); }
+.shot img { display: block; width: 100%; height: auto; max-width: 100%; }
+figcaption { font-size: 14.5px; color: var(--muted); }
+figure.narrow { max-width: 380px; }
+.pair figure.narrow { max-width: none; }
+.pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+
+/* Tables */
+.table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); max-width: 100%; }
+table { border-collapse: collapse; width: 100%; font-size: 16px; }
+th, td { padding: 11px 16px; border-bottom: 1px solid var(--line); text-align: right; vertical-align: top; }
+th { font-family: var(--font-display); font-weight: 500; font-size: 14.5px; color: var(--muted); background: var(--bg); }
+tr:last-child td { border-bottom: 0; }
+td.num { font-variant-numeric: tabular-nums; font-weight: 600; }
+.chat { background: var(--surface); border: 1px solid var(--line); border-radius: 14px 14px 4px 14px; padding: 14px 18px; max-width: 340px; box-shadow: var(--shadow); line-height: 1.8; }
+
+.pill { display: inline-block; font-size: 13.5px; font-weight: 700; padding: 1px 10px; border-radius: 99px; background: var(--accent-soft); color: var(--accent); white-space: nowrap; }
+
+footer { margin-top: 64px; padding-top: 24px; border-top: 1px solid var(--line); color: var(--muted); font-size: 15px; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+
+/* Lightbox */
+dialog { border: 0; padding: 0; background: transparent; max-width: min(96vw, 1500px); }
+dialog::backdrop { background: rgba(8, 12, 22, .82); }
+dialog img { display: block; max-width: 100%; max-height: 90vh; border-radius: 10px; }
+dialog button { position: absolute; top: 8px; left: 8px; font: inherit; border: 0; border-radius: 8px; padding: 4px 12px; background: var(--surface); color: var(--ink); cursor: pointer; }
+
+@media (max-width: 900px) {
+  .layout { grid-template-columns: minmax(0, 1fr); gap: 28px; }
+  .toc { position: static; max-height: none; border: 1px solid var(--line); border-radius: 12px; padding: 14px; background: var(--surface); }
+  .toc ol { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .pair { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 480px) {
+  body { font-size: 16px; }
+  .page { padding-inline: 16px; }
+  .toc ol { grid-template-columns: minmax(0, 1fr); }
+  .defs li { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+}
+@media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
+@page { size: A4; margin: 14mm 12mm; }
+@media print {
+  body { font-size: 12.5pt; background: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .page { max-width: none; padding-inline: 0; }
+  .layout { grid-template-columns: minmax(0, 1fr); gap: 20px; }
+  .toc { position: static; max-height: none; overflow: visible; border: 1px solid var(--line); border-radius: 12px; padding: 14px; background: var(--surface); break-after: page; }
+  .toc ol { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .toc a.active { background: none; color: var(--ink); font-weight: 400; }
+  .copy, dialog { display: none !important; }
+  main { gap: 0; }
+  section { break-before: page; gap: 12px; }
+  .shot { box-shadow: none; cursor: default; }
+  figure, .note, .steps li, .defs li, tr, .chat { break-inside: avoid; }
+  h3 { break-after: avoid; }
+  .pair { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  footer { margin-top: 24px; }
+}
+</style>
+
+<div class="page" lang="he" dir="rtl">
+
+<header class="masthead">
+  <div class="eyebrow">🛡️ מדריך למנהלי מערכת · לשימוש פנימי</div>
+  <h1><span class="brand">MeserGO</span> · פאנל הניהול</h1>
+  <p>כל הפעולות שמנהל מערכת יכול לבצע: ניהול לקוחות, מכסות, הרשאות, מספרים, SMS, תבניות והגדרות מערכת.</p>
+  <div class="contact">מסמך פנימי. אין להעביר ללקוחות.</div>
+</header>
+
+<div class="layout">
+<nav class="toc" aria-label="תוכן העניינים">
+  <h2>📑 תוכן העניינים</h2>
+  <ol>
+    <li><a href="#a1"><span class="n">1</span>🚪 כניסה לפאנל</a></li>
+    <li><a href="#a2"><span class="n">2</span>👥 ניהול לקוחות</a></li>
+    <li><a href="#a3"><span class="n">3</span>🎭 כניסה למשתמש</a></li>
+    <li><a href="#a4"><span class="n">4</span>🎧 נציגים ושיוך</a></li>
+    <li><a href="#a5"><span class="n">5</span>🔐 סוגי משתמשים והרשאות</a></li>
+    <li><a href="#a6"><span class="n">6</span>📞 מספרים מחוברים</a></li>
+    <li><a href="#a7"><span class="n">7</span>✉️ SMS</a></li>
+    <li><a href="#a8"><span class="n">8</span>📝 תבניות</a></li>
+    <li><a href="#a9"><span class="n">9</span>⚙️ הגדרות מערכת ומסלולים</a></li>
+    <li><a href="#a10"><span class="n">10</span>🔍 מעקב ותחזוקה</a></li>
+    <li><a href="#a11"><span class="n">11</span>⚠️ בעיות ידועות</a></li>
+  </ol>
+</nav>
+
+<main>
+
+<!-- 1 -->
+<section id="a1">
+  <div class="chapter-head"><span class="num">פרק 1</span><h2 class="ch">🚪 כניסה לפאנל הניהול</h2></div>
+  <p class="lead">משתמש בתפקיד מנהל רואה בתפריט הצד את הכפתור <span class="ui">ניהול מערכת</span> (סמל מגן). לחיצה עליו פותחת את פאנל הניהול. כדי לחזור למערכת הרגילה לוחצים על <span class="ui">חזרה למערכת</span> בתחתית תפריט הפאנל, או על הלוגו.</p>
+  <h3>🗂️ 1.1 הלשוניות בפאנל</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>לשונית</th><th>מה יש בה</th></tr></thead>
+      <tbody>
+        <tr><td><b>סקירה כללית</b></td><td>סה"כ משתמשים, סה"כ בוטים, מצטרפים היום ומצטרפים החודש.</td></tr>
+        <tr><td><b>ניהול לקוחות</b></td><td>רשימת הלקוחות, עריכה, מכסות, הרשאות, כניסה למשתמש ומחיקה (פרק 2).</td></tr>
+        <tr><td><b>סוגי משתמשים</b></td><td>הגדרת הרשאות לכל סוג משתמש (פרק 5).</td></tr>
+        <tr><td><b>מספרים מחוברים</b></td><td>כל מספרי ה־WhatsApp במערכת, הבעלים שלהם והסטטוס (פרק 6).</td></tr>
+        <tr><td><b>הודעות SMS</b></td><td>הודעות נכנסות, שיוך קווים, לקוחות קצה ו־Webhooks (פרק 7).</td></tr>
+        <tr><td><b>תיעוד שגיאות</b></td><td>כל שגיאה שלקוח נתקל בה, עם סינון לפי סוג ולקוח (פרק 10).</td></tr>
+        <tr><td><b>מאגר תבניות בוט</b></td><td>התסריטים המוכנים שלקוחות בוחרים כשהם יוצרים בוט (פרק 8).</td></tr>
+        <tr><td><b>הגדרות מערכת</b></td><td>מכסות ומחירים לכל מסלול, וברירות מחדל להסרה מקבוצה (פרק 9).</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="note tip"><span>💡</span><span>יש שתי לשוניות שלא מופיעות בתפריט, ונכנסים אליהן ישירות דרך הכתובת: <code dir="ltr">/admin/sessions</code> לכל הסשנים במערכת, ו־<code dir="ltr">/admin/dialog360</code> לכל הודעות התבנית.</span></div>
+</section>
+
+<!-- 2 -->
+<section id="a2">
+  <div class="chapter-head"><span class="num">פרק 2</span><h2 class="ch">👥 ניהול לקוחות</h2></div>
+
+  <h3>🔎 2.1 רשימת הלקוחות</h3>
+  <ul class="features">
+    <li><span>🔍</span><span><b>חיפוש:</b> לפי שם, מייל או טלפון.</span></li>
+    <li><span>🏷️</span><span><b>סינון:</b> הכל, מנהלים, ניסיון, פרימיום (מסלול Premium) וחסומים.</span></li>
+    <li><span>👤</span><span>בכל שורה מוצגים שם, מייל, סטטוס (פעיל או חסום), מסלול וסוג המשתמש.</span></li>
+    <li><span>🎧</span><span>נציגים לא מופיעים ברשימה הראשית. הם מוצגים מתחת ללקוח שלהם, בלחיצה על <span class="ui">הצג משתמשים משויכים</span>.</span></li>
+  </ul>
+
+  <h3>➕ 2.2 הוספת לקוח</h3>
+  <ol class="steps">
+    <li>לחצו על <span class="ui">+ הוסף לקוח</span>.</li>
+    <li>מלאו שם מלא ומייל (חובה), טלפון וסיסמה (רשות).</li>
+    <li>בחרו <b>סוג חשבון</b> (ברירת המחדל: ניסיון) ו<b>סוג משתמש</b>.</li>
+    <li>אם זה נציג, בחרו גם <b>שיוך למנהל / חשבון</b> ומספרים מורשים לצפייה.</li>
+    <li>לחצו על <span class="ui">צור משתמש</span>.</li>
+  </ol>
+  <p>אם המייל כבר קיים במערכת, מופיעה שאלה אם ליצור חשבון נוסף בכל זאת. אפשר לפתוח כמה חשבונות על אותו מייל, והמשתמש יבחר ביניהם בכניסה.</p>
+
+  <h3>📋 2.3 פרופיל הלקוח</h3>
+  <p>בחירת לקוח מהרשימה פותחת את הפרופיל שלו. בראש הפרופיל מופיעים המזהה הציבורי ותאריך ההצטרפות, ושלושה כפתורים: <span class="ui">כניסה למשתמש</span>, <span class="ui">עריכה</span> ומחיקה (סמל פח). מתחתם יש לשוניות: <b>פרופיל אישי</b>, <b>לוג פעילות הסרה</b>, <b>הודעות תבנית</b> (רק אם יש ללקוח מספר מחובר), <b>חיבורים</b>, <b>סשנים</b> ו<b>ניהול לשוניות</b>, וגם הכפתור <span class="ui">שחזור שיחות</span>.</p>
+  <p>כדי לשנות משהו בפרופיל לוחצים על <span class="ui">עריכה</span>, מעדכנים ולוחצים על <span class="ui">שמור שינויים</span>.</p>
+
+  <h3>⚙️ 2.4 הגדרות חשבון</h3>
+  <ul class="defs">
+    <li><b>סטטוס משתמש</b><span><b>פעיל</b> או <b>חסום</b>. כך חוסמים לקוח ומשחררים חסימה.</span></li>
+    <li><b>סוג מנוי</b><span>ניסיוני, בסיסי (Basic), מתקדם (Premium), פרימיום (Pro) או ללא הגבלה. <b>שימו לב:</b> בתפריט הזה "פרימיום" הוא מסלול Pro, ולא Premium.</span></li>
+    <li><b>סוג משתמש / הרשאות</b><span>סוג המשתמש שקובע מה הלקוח רואה ומה מותר לו לעשות (פרק 5).</span></li>
+    <li><b>לשונית SMS נכנס</b><span>מציג ללקוח את מסך "SMS נכנס". ברירת המחדל: מוסתר.</span></li>
+    <li><b>חיבור לפייסבוק</b><span>מאפשר ללקוח להשתמש בכפתור "חבר לפייסבוק" בהגדרות הבוט. ברירת המחדל: ללא הרשאה.</span></li>
+    <li><b>לשונית ניהול דטה פנימי</b><span>מציג ללקוח את מסך "ניהול דטה פנימי".</span></li>
+    <li><b>ניהול תבניות WhatsApp</b><span>מאפשר ללקוח להוסיף, לערוך, לשכפל ולמחוק תבניות WhatsApp בעצמו. בלי ההרשאה הזו הכפתור "הוסף תבנית" לא מופיע אצלו.</span></li>
+  </ul>
+
+  <h3>📏 2.5 מכסות אישיות ללקוח</h3>
+  <p>בחלק <b>הגדרות מכסה אישיות</b> אפשר לתת ללקוח ערכים שונים מברירת המחדל של המסלול שלו: מקסימום בוטים, גרסאות, מספרים ואנשי קשר פעילים, ומחיר לבוט ולגרסה. שדה ריק (AUTO) משתמש בערך של המסלול. החלק מופיע רק במצב עריכה, או כשכבר הוגדרו ללקוח מכסות אישיות.</p>
+  <div class="note tip"><span>💡</span><span>התג "אנשי קשר פעילים: X / Y" הופך לאדום כשהלקוח עבר את המכסה.</span></div>
+
+  <h3>🔑 2.6 איפוס סיסמה</h3>
+  <p>לוחצים על <span class="ui">עריכה</span>, מקלידים סיסמה חדשה בשדה <b>סיסמה</b> ושומרים. אחר כך מוסרים ללקוח את הסיסמה החדשה.</p>
+
+  <h3>🛡️ 2.7 הפיכת משתמש למנהל מערכת</h3>
+  <p>אין כפתור נפרד לזה. בשדה <b>סוג משתמש / הרשאות</b> בוחרים <b>מנהל מערכת</b> ושומרים, והמשתמש מקבל הרשאות מנהל מלאות.</p>
+  <div class="note warn"><span>⚠️</span><span>מנהל מערכת יכול לראות ולשנות את החשבונות של כל הלקוחות. תנו את ההרשאה הזו רק לאנשי צוות.</span></div>
+
+  <h3>🗑️ 2.8 מחיקת לקוח</h3>
+  <ol class="steps">
+    <li>בפרופיל הלקוח לחצו על סמל הפח.</li>
+    <li>בחלון "מחיקת לקוח" לחצו על <span class="ui">כן, מחק לצמיתות</span>.</li>
+  </ol>
+  <div class="note warn"><span>⚠️</span><span>אי אפשר לבטל מחיקה. בפועל נמחקים חשבון המשתמש והבוטים שלו, ושאר הנתונים נשארים במערכת (פרק 11). אם רוצים רק לעצור את הפעילות של לקוח, עדיף לחסום אותו.</span></div>
+</section>
+
+<!-- 3 -->
+<section id="a3">
+  <div class="chapter-head"><span class="num">פרק 3</span><h2 class="ch">🎭 כניסה למשתמש (התחזות)</h2></div>
+  <p class="lead">כניסה למשתמש מציגה את המערכת בדיוק כמו שהלקוח רואה אותה. זה שימושי לתמיכה, לבדיקת תקלות ולהגדרות בשם הלקוח.</p>
+  <ol class="steps">
+    <li>בפרופיל הלקוח לחצו על <span class="ui">כניסה למשתמש</span>.</li>
+    <li>המערכת עוברת לחשבון הלקוח, ובראש המסך מופיע פס כתום: "מצב התחזות - אתה רואה את המערכת כמשתמש: …".</li>
+    <li>בסיום לחצו על <span class="ui">חזור למצב מנהל</span>.</li>
+  </ol>
+  <ul class="features">
+    <li><span>⏱️</span><span>מצב ההתחזות מסתיים לבד אחרי שעתיים.</span></li>
+    <li><span>📝</span><span>כל כניסה למשתמש נרשמת במערכת.</span></li>
+    <li><span>⚠️</span><span>כל פעולה במצב התחזות נעשית באמת בחשבון הלקוח, וזה כולל שינויים בבוט ושליחת הודעות.</span></li>
+    <li><span>🧩</span><span>במצב התחזות אפשר לראות את שדה <b>Endpoint (מספר הבוט)</b> בהגדרות הבוט, ואת התסריטים מסוג "מנהל" במאגר התבניות.</span></li>
+    <li><span>🚫</span><span>חלק מהמסכים שייכים רק לחשבון המנהל, ולא נפתחים בזמן התחזות. כך למשל אי אפשר לפתוח בוט של חשבון אחר.</span></li>
+  </ul>
+</section>
+
+<!-- 4 -->
+<section id="a4">
+  <div class="chapter-head"><span class="num">פרק 4</span><h2 class="ch">🎧 נציגים ושיוך לחשבון</h2></div>
+  <p class="lead">נציג או מנהל משמרת שייכים תמיד לחשבון של לקוח. בדרך כלל הלקוח מוסיף אותם בעצמו במסך "משתמשים", אבל מנהל מערכת יכול גם לשייך ולערוך אותם מהפאנל.</p>
+  <ul class="defs">
+    <li><b>משויך למנהל / חשבון</b><span>החשבון שהנציג שייך אליו.</span></li>
+    <li><b>מספרים מורשים לצפייה בשיחות</b><span>המספרים שהנציג רואה את השיחות שלהם. אם לא בוחרים אף מספר, הנציג רואה את כל המספרים.</span></li>
+  </ul>
+  <div class="note warn"><span>⚠️</span><span>אם החשבון הגיע למכסת הנציגים של המסלול שלו, המערכת לא תאפשר לשייך אליו נציג נוסף. כרגע אי אפשר להגדיל את מכסת הנציגים ללקוח בודד (פרק 11), ולכן צריך לשדרג את המסלול.</span></div>
+</section>
+
+<!-- 5 -->
+<section id="a5">
+  <div class="chapter-head"><span class="num">פרק 5</span><h2 class="ch">🔐 סוגי משתמשים והרשאות</h2></div>
+  <p class="lead">סוג משתמש הוא אוסף הרשאות שמשייכים ללקוח או לנציג. במערכת יש ארבעה סוגים מובנים שאי אפשר למחוק: <b>מנהל מערכת</b>, <b>משתמש</b> (בעל חשבון), <b>מנהל משמרת</b> ו<b>נציג</b>.</p>
+  <h3>➕ 5.1 יצירת סוג משתמש</h3>
+  <ol class="steps">
+    <li>בלשונית <span class="ui">סוגי משתמשים</span> לחצו על <span class="ui">הוסף סוג משתמש</span>.</li>
+    <li>תנו שם לסוג, למשל "נציג בכיר".</li>
+    <li>אם המשתמשים מהסוג הזה יכולים להוסיף משתמשים אחרים, סמנו <b>יכול להוסיף משתמשים</b> ובחרו אילו סוגים הם יכולים להוסיף.</li>
+    <li>סמנו את ההרשאות. בכל קבוצה יש גם "בחר הכל" ו"הסר הכל".</li>
+    <li>לחצו על <span class="ui">שמור</span>.</li>
+  </ol>
+  <h3>🧾 5.2 קבוצות ההרשאות</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>קבוצה</th><th>הרשאות</th></tr></thead>
+      <tbody>
+        <tr><td>בוטים</td><td>הצגת לשונית, יצירה, עריכה, מחיקה, כפתור הגדרות, פרסום / חיבור לפייסבוק</td></tr>
+        <tr><td>שיחות</td><td>הצגה, הוספת שיחה, הצגת כל השיחות, הצגת שיחות משויכות בלבד, שליחת תבניות כנציג או כמנהל משמרת</td></tr>
+        <tr><td>אנשי קשר</td><td>הצגה, הוספה, עריכה, מחיקה, ייבוא מאקסל</td></tr>
+        <tr><td>קבוצות</td><td>הצגה, יצירת קבוצה, הוספת איש קשר, שליחת הודעה לקבוצה, הסרת איש קשר</td></tr>
+        <tr><td>הגדרות</td><td>הצגה, עדכון פרטים אישיים</td></tr>
+        <tr><td>משתמשים</td><td>הצגה, הוספה, עדכון, מחיקה</td></tr>
+        <tr><td>קבוצות נציגים</td><td>הצגה, הוספה, מחיקה</td></tr>
+        <tr><td>SMS נכנס</td><td>הצגת לשונית</td></tr>
+        <tr><td>חיבור לפייסבוק</td><td>הצגת לשונית</td></tr>
+        <tr><td>שליחת הודעות</td><td>הצגת לשונית, שליחת הודעה</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <h3>🧷 5.3 ניהול לשוניות ללקוח מסוים</h3>
+  <p>בפרופיל הלקוח, בלשונית <b>ניהול לשוניות</b>, קובעים לכל מסך אם הוא <b>מוצג</b>, <b>מוסתר</b> או לפי <b>ברירת מחדל</b>. המסכים שאפשר לקבוע הם SMS נכנס, הבוטים שלי, שיחות, אנשי קשר ושליחת הודעות, ויש גם כפתורים לשינוי של כולם יחד. ההגדרה כאן גוברת על ההרשאות של סוג המשתמש.</p>
+</section>
+
+<!-- 6 -->
+<section id="a6">
+  <div class="chapter-head"><span class="num">פרק 6</span><h2 class="ch">📞 מספרים מחוברים</h2></div>
+  <h3>🌐 6.1 כל המספרים במערכת</h3>
+  <p>בלשונית <span class="ui">מספרים מחוברים</span> מופיעים כל המספרים, עם חיפוש לפי מספר, שם משתמש או מייל. בכרטיס של כל מספר מוצגים:</p>
+  <ul class="features">
+    <li><span>🏷️</span><span>הספק: <b>360</b> (Dialog360) או <b>FB</b> (פייסבוק).</span></li>
+    <li><span>🟢</span><span>הסטטוס: "פעיל" או "מחובר — בתהליך הפעלה".</span></li>
+    <li><span>🤖</span><span>הבוט שהמספר משויך אליו, ושם ומייל של הבעלים.</span></li>
+    <li><span>⚠️</span><span><b>שגיאת חיבור אחרונה</b>, אם המספר לא פעיל.</span></li>
+    <li><span>🌍</span><span><b>קידומות מדינה מותרות לתשלום</b> (למשל 972), עם כפתור שמירה.</span></li>
+  </ul>
+
+  <h3>🔗 6.2 שיוך מספר ללקוח</h3>
+  <p>בפרופיל הלקוח, בלשונית <b>חיבורים</b>, יש שני כפתורים:</p>
+  <ul class="defs">
+    <li><b>הוספת מספר לחשבון פייסבוק</b><span>ממלאים את פרטי המספר מ־Meta (access_token, waba_id ו־phone_number_id הם חובה) ולוחצים על <span class="ui">שייך מספר</span>.</span></li>
+    <li><b>הוספת מספר Dialog360</b><span>ממלאים token360 וקישור. <b>לא עובד כרגע</b> (פרק 11).</span></li>
+  </ul>
+  <div class="note warn"><span>⚠️</span><span>בטופס הפייסבוק השדה access_token כבר ממולא בערך קבוע. לפני השיוך מחליפים אותו בטוקן של הלקוח.</span></div>
+
+  <h3>▶️ 6.3 הפעלה ושיוך לבוט</h3>
+  <p>את ההמשך עושים במסך של הלקוח עצמו, דרך <b>כניסה למשתמש</b> ואז <span class="ui">הגדרות ← מספרים מחוברים</span>:</p>
+  <ol class="steps">
+    <li>מספר שמסומן "מחובר — טרם הופעל": לחצו על <span class="ui">הפעל מספר</span>. אם המספר כבר הופעל ב־Meta בדרך אחרת, אפשר ללחוץ על <span class="ui">סמן כמופעל</span>.</li>
+    <li>מספר פעיל: לחצו על <span class="ui">שייך לבוט</span> ובחרו בוט.</li>
+    <li>מספר פייסבוק ששויך לבוט: לחצו על <span class="ui">הגדר בשרת</span>. המערכת מגדירה את המספר בשרת ומחזירה את ה־Endpoint.</li>
+  </ol>
+  <p>בהגדרות הבוט מופיע השדה <b>Endpoint (מספר הבוט)</b>, שמנהל רואה בחשבון שלו או בזמן התחזות. מזינים בו רק את המזהה, והמערכת בונה לבד את הקישור <code dir="ltr">dialog360/{id}</code>.</p>
+</section>
+
+<!-- 7 -->
+<section id="a7">
+  <div class="chapter-head"><span class="num">פרק 7</span><h2 class="ch">✉️ SMS</h2></div>
+  <p class="lead">בלשונית <span class="ui">הודעות SMS</span> יש ארבע לשוניות: <b>הודעות נכנסות</b>, <b>שיוך קווים</b>, <b>ניהול לקוחות</b> ו<b>ווב־הוקס</b>. שיוך קווים וניהול לקוחות זמינים רק למנהלים.</p>
+  <h3>🔀 7.1 שיוך קווים</h3>
+  <ol class="steps">
+    <li>בלשונית <b>שיוך קווים</b> מופיעים כל הקווים, עם הסטטוס והלקוח המשויך לכל קו.</li>
+    <li>לחצו על <span class="ui">שייך</span> או <span class="ui">עריכה</span> בשורה של הקו.</li>
+    <li>בחלון "הגדרות קו" אפשר להפעיל או לכבות את הקו, לשייך לקוח קצה, להוסיף כתובת Google Sheets ו־Webhook, ולכתוב הערות פנימיות.</li>
+    <li>כדי לשייך הרבה מספרים יחד, לחצו על <span class="ui">שיוך מספרים מרוכז</span>, הדביקו את המספרים ובחרו לקוח.</li>
+  </ol>
+  <h3>👤 7.2 לקוחות קצה</h3>
+  <p>בלשונית <b>ניהול לקוחות</b> מוסיפים, עורכים ומוחקים לקוחות קצה של SMS.</p>
+  <div class="note tip"><span>💡</span><span>כדי שלקוח יראה את מסך "SMS נכנס" במערכת שלו, צריך גם לסמן בפרופיל שלו את <b>לשונית SMS נכנס</b> (2.4).</span></div>
+</section>
+
+<!-- 8 -->
+<section id="a8">
+  <div class="chapter-head"><span class="num">פרק 8</span><h2 class="ch">📝 תבניות</h2></div>
+  <h3>🤖 8.1 מאגר תבניות בוט (תסריטים)</h3>
+  <p>זה המאגר שלקוחות בוחרים ממנו כשהם יוצרים בוט חדש, או כשהם לוחצים על "החלף תסריט".</p>
+  <ol class="steps">
+    <li>לחצו על <span class="ui">צור תבנית חדשה</span>.</li>
+    <li>בחרו <b>תבנית ריקה</b> (עריכה בעורך), או <b>מבוט קיים במערכת</b>: בחרו בוט של לקוח, תנו לתבנית שם ותיאור, ולחצו על <span class="ui">צור תבנית מנהל</span>.</li>
+  </ol>
+  <p>כשעומדים עם העכבר על כרטיס של תבנית מופיעות הפעולות:</p>
+  <ul class="defs">
+    <li><b>שנה סוג</b><span><b>ציבורי</b>: כל הלקוחות רואים. <b>בתשלום</b>: הלקוח צריך לאשר תשלום. <b>מנהל</b>: מוצג רק בזמן התחזות.</span></li>
+    <li><b>ניהול פרמטרים לטופס</b><span>שדות שהלקוח ממלא כשהוא בוחר את התבנית (תווית ושם משתנה). המשתנים נכתבים בתבנית כ־<code dir="ltr">--שם_משתנה--</code>.</span></li>
+    <li><b>מוצג / מוסתר בשיחות</b><span>קובע אם התבנית מופיעה ברשימה כשמקלידים <b>/</b> בשיחה.</span></li>
+    <li><b>ערוך / מחק</b><span>עריכה בעורך או מחיקה.</span></li>
+  </ul>
+
+  <h3>💬 8.2 הודעות תבנית WhatsApp של לקוח</h3>
+  <p>בפרופיל הלקוח, בלשונית <b>הודעות תבנית</b>, מנהלים את תבניות ה־WhatsApp שלו: הוספה, עריכה, שכפול ומחיקה. לכל תבנית אפשר לבחור למי היא מוצגת: מוסתר לכולם, מוצג למנהל משמרת, או מוצג גם לנציגים. אפשר גם להעלות תמונת ברירת מחדל.</p>
+  <div class="note tip"><span>💡</span><span>כדי שלקוח ינהל תבניות בעצמו, סמנו בפרופיל שלו את <b>ניהול תבניות WhatsApp</b> (2.4).</span></div>
+</section>
+
+<!-- 9 -->
+<section id="a9">
+  <div class="chapter-head"><span class="num">פרק 9</span><h2 class="ch">⚙️ הגדרות מערכת ומסלולים</h2></div>
+  <p class="lead">בלשונית <span class="ui">הגדרות מערכת</span> קובעים את המכסות והמחירים של כל מסלול. שינוי כאן חל על כל הלקוחות במסלול, חוץ מלקוחות שהוגדרו להם מכסות אישיות (2.5).</p>
+  <h3>📊 9.1 ברירות המחדל של המסלולים</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>מסלול (השם בתפריט)</th><th>בוטים</th><th>גרסאות לבוט</th><th>מספרים</th><th>נציגים</th><th>אנשי קשר פעילים</th><th>מחיר בוט נוסף</th><th>מחיר גרסה נוספת</th></tr></thead>
+      <tbody>
+        <tr><td>Trial (ניסיוני)</td><td class="num">1</td><td class="num">0</td><td class="num">1</td><td class="num">0</td><td class="num">50</td><td class="num">—</td><td class="num">—</td></tr>
+        <tr><td>Basic (בסיסי)</td><td class="num">3</td><td class="num">5</td><td class="num">1</td><td class="num">1</td><td class="num">200</td><td class="num">₪30</td><td class="num">₪5</td></tr>
+        <tr><td>Premium (מתקדם)</td><td class="num">6</td><td class="num">10</td><td class="num">5</td><td class="num">3</td><td class="num">500</td><td class="num">₪30</td><td class="num">₪5</td></tr>
+        <tr><td>Pro (פרימיום)</td><td class="num">10</td><td class="num">15</td><td class="num">5</td><td class="num">5</td><td class="num">1,000</td><td class="num">₪30</td><td class="num">₪5</td></tr>
+        <tr><td>Unlimited (ללא הגבלה)</td><td class="num">999</td><td class="num">999</td><td class="num">999</td><td class="num">999</td><td class="num">999,999</td><td class="num">0</td><td class="num">0</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <ul class="features">
+    <li><span>🧮</span><span><b>הסדר שבו נקבעת מכסה:</b> קודם המכסה האישית של הלקוח, אחר כך הערך של המסלול בהגדרות המערכת, ואם אין, ברירת המחדל שבטבלה.</span></li>
+    <li><span>📅</span><span><b>חלון ימים לספירת אנשי קשר פעילים:</b> מספר הימים שבהם איש קשר נחשב פעיל. ברירת המחדל היא 60 יום.</span></li>
+    <li><span>🧪</span><span><b>חשבון ניסיוני:</b> יש בו גישה לסימולטור בלבד, בלי פרסום ובלי גרסאות. כשתקופת הניסיון נגמרת, הבוט נחסם.</span></li>
+    <li><span>👤</span><span>לקוח שלא נבחר לו מסלול מקבל את המכסות של Basic.</span></li>
+  </ul>
+
+  <h3>🚫 9.2 ברירת מחדל להסרה מקבוצה</h3>
+  <p>בחלק <b>ניהול הסרה מקבוצה — ברירת מחדל כללית</b> קובעים מה יקבלו כל הלקוחות כברירת מחדל: האם ההסרה האוטומטית פעילה, מילות ההסרה בעברית ובאנגלית, והודעת האישור לאחר הסרה. כדי לשמור לוחצים על <span class="ui">שמור שינויים</span> ומאשרים. הכפתור <span class="ui">ערכי ברירת מחדל</span> מחזיר את ההגדרות המקוריות.</p>
+  <div class="note warn"><span>⚠️</span><span>כיבוי ההסרה האוטומטית לכל המערכת עלול ליצור בעיה חוקית בדיוור. לפני שמשנים את ההגדרה הזו, צריך לבדוק את ההשלכות.</span></div>
+</section>
+
+<!-- 10 -->
+<section id="a10">
+  <div class="chapter-head"><span class="num">פרק 10</span><h2 class="ch">🔍 מעקב ותחזוקה</h2></div>
+  <ul class="defs">
+    <li><b>תיעוד שגיאות</b><span>כל שגיאה שלקוח נתקל בה. אפשר לסנן לפי סוג (אימות/הרשאות, שליחת וואטסאפ, Webhook נכנס, API כללי, ממשק לקוח, רשת, פנימי) ולפי שם לקוח. בכל שורה מופיעים השעה, מספר השגיאה, קוד HTTP, פירוט בעברית ובאנגלית, והלקוח.</span></li>
+    <li><b>סשנים של לקוח</b><span>בלשונית <b>סשנים</b> בפרופיל הלקוח אפשר לחפש לפי טלפון או בוט, לצפות בפרמטרים ובהיסטוריה של כל סשן, ולהפעיל או לכבות סשן. הכפתור <span class="ui">כיבוי כל הסשנים הפעילים</span> לא הפיך: כל לקוח קצה יתחיל סשן חדש בהודעה הבאה שלו.</span></li>
+    <li><b>לוג פעילות הסרה</b><span>היסטוריה של שינויים במילות ההסרה של הלקוח, ושל הפעלה או כיבוי של ההסרה האוטומטית.</span></li>
+    <li><b>שחזור שיחות</b><span>מייבא היסטוריית שיחות מהמערכת הקודמת. בוחרים עד תאריך, כמה חודשים אחורה (1–24) ואיזה קו, ולוחצים על <span class="ui">שחזר שיחות</span>.</span></li>
+  </ul>
+</section>
+
+<!-- 11 -->
+<section id="a11">
+  <div class="chapter-head"><span class="num">פרק 11</span><h2 class="ch">⚠️ בעיות ידועות ומגבלות</h2></div>
+  <p class="lead">אלה נקודות שנמצאו בקוד ושכדאי להכיר. חלקן דורשות תיקון של צוות הפיתוח.</p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>נושא</th><th>מה קורה בפועל</th><th>מה עושים בינתיים</th></tr></thead>
+      <tbody>
+        <tr><td>הוספת מספר Dialog360 בפאנל</td><td>הכפתור קורא לכתובת שלא קיימת בשרת, ולכן השיוך נכשל.</td><td>לנסות לשייך דרך מסך הלקוח (כניסה למשתמש ← הוסף Dialog360). אם גם זה לא עובד, לפנות לפיתוח.</td></tr>
+        <tr><td>שם המסלולים</td><td>בסינון הרשימה "פרימיום" הוא Premium, ובתפריט העריכה "פרימיום" הוא Pro ו"מתקדם" הוא Premium.</td><td>לבדוק את המסלול לפי השם באנגלית שמופיע בתג.</td></tr>
+        <tr><td>ימי תוקף לניסיון</td><td>השדה נשמר אבל לא משפיע. כל חשבון ניסיוני מקבל חודש אחד.</td><td>אין דרך לשנות תאריך תפוגה מהממשק. צריך לפנות לפיתוח.</td></tr>
+        <tr><td>מכסת נציגים ללקוח בודד</td><td>אין שדה לזה במכסות האישיות.</td><td>לשדרג את המסלול.</td></tr>
+        <tr><td>מחיקת לקוח</td><td>נמחקים רק המשתמש והבוטים שלו. אנשי קשר, שיחות ונתונים נוספים נשארים.</td><td>אם צריך מחיקה מלאה, לפנות לפיתוח.</td></tr>
+        <tr><td>סיסמאות</td><td>השדה "סיסמה" מציג את הסיסמה כפי שהיא שמורה, וסיסמה שמנהל מגדיר נשמרת לא מוצפנת.</td><td>לא להציג את המסך מול אחרים. תיקון נדרש מצוות הפיתוח.</td></tr>
+        <tr><td>טוקן פייסבוק קבוע בטופס</td><td>הטופס "שיוך מספר לחשבון פייסבוק" ממולא מראש בטוקן קבוע.</td><td>תמיד להחליף בטוקן של הלקוח. תיקון נדרש מצוות הפיתוח.</td></tr>
+        <tr><td>תשלומים</td><td>אין מסך לצפייה ברכישות של בוטים וגרסאות.</td><td>לבדוק במערכת התשלומים.</td></tr>
+        <tr><td>יומן פעולות מנהלים</td><td>פעולות מנהלים, כמו עריכה, מחיקה והתחזות, נשמרות במערכת אבל אין מסך שמציג אותן.</td><td>לפנות לפיתוח אם צריך לבדוק פעולה.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+</main>
+</div>
+
+<footer>
+  <span>MeserGO · מדריך למנהלי מערכת</span>
+  <span>·</span>
+  <span>מסמך פנימי</span>
+</footer>
+</div>
+
+<dialog id="lightbox" aria-label="תצוגה מוגדלת">
+  <button type="button" id="lb-close">סגירה ✕</button>
+  <img id="lb-img" alt="">
+</dialog>
+
+<script>
+(function () {
+  var dlg = document.getElementById('lightbox');
+  var img = document.getElementById('lb-img');
+  document.querySelectorAll('.shot').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var src = b.querySelector('img');
+      img.src = src.src; img.alt = src.alt;
+      if (dlg.showModal) dlg.showModal();
+    });
+  });
+  document.getElementById('lb-close').addEventListener('click', function () { dlg.close(); });
+  dlg.addEventListener('click', function (e) { if (e.target === dlg) dlg.close(); });
+
+  document.querySelectorAll('.copy').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var t = b.getAttribute('data-copy');
+      var done = function () { b.textContent = 'הועתק ✓'; setTimeout(function () { b.textContent = 'העתקה'; }, 1600); };
+      var fallback = function () {
+        var r = document.createRange(); r.selectNodeContents(document.getElementById('mail'));
+        var s = getSelection(); s.removeAllRanges(); s.addRange(r);
+      };
+      try { navigator.clipboard.writeText(t).then(done, fallback); } catch (e) { fallback(); }
+    });
+  });
+
+  var links = Array.prototype.slice.call(document.querySelectorAll('.toc a'));
+  if ('IntersectionObserver' in window) {
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (en) {
+        if (en.isIntersecting) {
+          links.forEach(function (a) { a.classList.toggle('active', a.getAttribute('href') === '#' + en.target.id); });
+        }
+      });
+    }, { rootMargin: '-20% 0px -70% 0px' });
+    document.querySelectorAll('main section').forEach(function (s) { io.observe(s); });
+  }
+})();
+</script>

@@ -1,6 +1,7 @@
 import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
 import UserType from '../models/UserType.js';
+import ApiToken from '../models/ApiToken.js';
 
 const SECRET_KEY = 'dfghjukiolp;[p0o9i8uytgbhnjmk,l.;p9876543t4rre2asd';
 
@@ -140,6 +141,44 @@ export const authenticateJwtOrApiToken = async (req, res, next) => {
     req.userId = decoded.id;
     return next();
   } catch (_) { /* fall through to api_token lookup */ }
+
+  // Named, revocable tokens created in Settings → API Tokens (ApiToken model).
+  // ApiToken.user_id is the account (owner); the token authenticates as its creator
+  // (created_by), so a rep's token carries the rep's role, not the owner's.
+  try {
+    const apiTok = await ApiToken.findOne({ token });
+    if (apiTok) {
+      if (apiTok.expires_at && new Date(apiTok.expires_at).getTime() < Date.now()) {
+        return res.status(403).json({ error: 'token_expired' });
+      }
+      const accountId = apiTok.user_id.toString();
+      const creator = await User.findById(apiTok.created_by || apiTok.user_id);
+      // Creator deleted, or moved out of the account → the token no longer works.
+      const belongsToAccount = creator
+        && (creator._id.toString() === accountId || String(creator.manager_id || '') === accountId);
+      if (!belongsToAccount) return res.status(403).json({ error: 'invalid_token' });
+
+      req.user = {
+        id: creator._id.toString(),
+        email: creator.email,
+        role: creator.role || 'user',
+        manager_id: creator.manager_id || null,
+        authMethod: 'named_api_token',
+        apiTokenId: apiTok._id.toString()
+      };
+      req.userId = req.user.id;
+
+      // Throttled, fire-and-forget usage stamp (at most one write per minute per token).
+      const now = Date.now();
+      if (!apiTok.last_used_at || now - new Date(apiTok.last_used_at).getTime() > 60 * 1000) {
+        ApiToken.updateOne({ _id: apiTok._id }, { $set: { last_used_at: new Date(now) } })
+          .catch(err => console.warn(`[API-TOKEN] ⚠️ last_used_at update failed: ${err.message}`));
+      }
+      return next();
+    }
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
 
   try {
     const user = await User.findOne({ token });

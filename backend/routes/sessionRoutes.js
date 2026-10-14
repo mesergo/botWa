@@ -1,7 +1,7 @@
 
 import express from 'express';
 import { startSession, updateSessionParameters, addHistoryMessage, getContacts, searchMessageContent, getSessionsByPhone, getLastMessageByPhone, getUserSessions, getAllSessions, toggleSessionActive, deactivateSession, setAgentMode, clearAgentMode, closeConversation, markResolved, sendAgentMessage, forwardSessionMessage, sendAdminMessageToSession, sendExternalMessage, getSessionMessages, sendTemplateToPhone, transferConversation, getTransferTargets, streamEvents, getUserStats } from '../controllers/sessionController.js';
-import { authenticateToken, optionalAuthToken, requireAdmin } from '../middleware/auth.js';
+import { authenticateToken, optionalAuthToken, requireAdmin, authenticateJwtOrApiToken } from '../middleware/auth.js';
 
 const router = express.Router();
 
@@ -43,7 +43,8 @@ router.post('/:id/send-agent-message', authenticateToken, sendAgentMessage);
 router.post('/:id/forward-message', authenticateToken, forwardSessionMessage);
 
 // Send a template to a phone number with no session
-router.post('/send-template-to-phone', authenticateToken, sendTemplateToPhone);
+// Accepts the dashboard JWT or a customer API token (Settings → API Tokens) for external integrations.
+router.post('/send-template-to-phone', authenticateJwtOrApiToken, sendTemplateToPhone);
 
 // Admin route to send message to any session + activate agent mode
 router.post('/admin-send-message', authenticateToken, requireAdmin, sendAdminMessageToSession);

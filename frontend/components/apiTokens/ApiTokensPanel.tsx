@@ -3,12 +3,17 @@ import { useTranslation } from 'react-i18next';
 import { KeyRound, Copy, Check, Trash2, Plus } from 'lucide-react';
 import { getFormatLocale } from '../../i18n';
 
+
 interface ApiTokenItem {
   id: string;
   name: string;
   token: string;
+  masked?: boolean; // true when the viewer isn't the creator — token holds a partial value
+  is_mine?: boolean;
+  created_by?: { id: string; name: string; email: string } | null;
   expires_at: string | null;
   is_expired: boolean;
+  last_used_at?: string | null;
   created_at: string;
 }
 
@@ -167,7 +172,7 @@ const ApiTokensPanel: React.FC<ApiTokensPanelProps> = ({ token, apiBase }) => {
                     <span className="text-[10px] font-black text-red-600 bg-red-50 border border-red-100 rounded-lg px-2 py-0.5">{t('settings.apiTokens.expired')}</span>
                   )}
                 </div>
-                <div className="font-mono text-xs text-slate-500 truncate select-all" dir="ltr">{item.token}</div>
+                <div className={`font-mono text-xs text-slate-500 truncate ${item.masked ? '' : 'select-all'}`} dir="ltr">{item.token}</div>
                 <div className="text-[11px] text-slate-400 font-bold mt-1">
                   {t('settings.apiTokens.createdAt')}: {new Date(item.created_at).toLocaleDateString(dateLocale)}
                   {' · '}
@@ -175,11 +180,24 @@ const ApiTokensPanel: React.FC<ApiTokensPanelProps> = ({ token, apiBase }) => {
                     ? `${t('settings.apiTokens.expiresLabel')}: ${new Date(item.expires_at).toLocaleDateString(dateLocale)}`
                     : t('settings.apiTokens.noExpiry')}
                 </div>
+                <div className="text-[11px] text-slate-400 font-bold mt-0.5">
+                  {item.created_by && (
+                    <>
+                      {t('settings.apiTokens.createdBy')}: {item.created_by.name || item.created_by.email}
+                      {' · '}
+                    </>
+                  )}
+                  {item.last_used_at
+                    ? `${t('settings.apiTokens.lastUsed')}: ${new Date(item.last_used_at).toLocaleString(dateLocale)}`
+                    : t('settings.apiTokens.neverUsed')}
+                </div>
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
-                <button onClick={() => handleCopy(item)} className="p-2 text-slate-400 hover:text-blue-600 transition-colors" title={t('settings.apiTokens.copy')}>
-                  {copiedId === item.id ? <Check size={16} className="text-emerald-500" /> : <Copy size={16} />}
-                </button>
+                {!item.masked && (
+                  <button onClick={() => handleCopy(item)} className="p-2 text-slate-400 hover:text-blue-600 transition-colors" title={t('settings.apiTokens.copy')}>
+                    {copiedId === item.id ? <Check size={16} className="text-emerald-500" /> : <Copy size={16} />}
+                  </button>
+                )}
                 <button onClick={() => handleDelete(item.id)} className="p-2 text-slate-400 hover:text-red-600 transition-colors" title={t('settings.apiTokens.delete')}>
                   <Trash2 size={16} />
                 </button>

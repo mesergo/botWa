@@ -218,7 +218,10 @@
       "confirmDelete": "Delete this token? This cannot be undone.",
       "expired": "Expired",
       "noExpiry": "No expiry",
-      "createdAt": "Created on"
+      "createdAt": "Created on",
+      "createdBy": "Created by",
+      "lastUsed": "Last used",
+      "neverUsed": "Never used"
     },
     "notifications": {
       "heading": "Email notifications",

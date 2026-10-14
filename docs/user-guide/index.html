@@ -1,0 +1,895 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>מדריך MeserGO</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rubik:wght@500;700&family=Assistant:wght@400;600;700&display=swap">
+<style>
+/* Layout: two columns — sticky chapter index on the right (RTL), reading column with framed screenshots; stacks to one column on phones. */
+:root {
+  --bg: #f4f7fc;
+  --surface: #ffffff;
+  --ink: #15203a;
+  --muted: #5b6782;
+  --line: #dfe5f0;
+  --accent: #1f5fe0;
+  --accent-soft: #e7eefd;
+  --teal: #0fa3b8;
+  --tip-bg: #e9f8f0; --tip-ink: #11643c; --tip-line: #9fdcbc;
+  --warn-bg: #fff6e3; --warn-ink: #8a5300; --warn-line: #f2cf86;
+  --shadow: 0 1px 2px rgba(21,32,58,.06), 0 8px 24px rgba(21,32,58,.07);
+  --font-display: "Rubik", "Assistant", "Segoe UI", Arial, sans-serif;
+  --font-body: "Assistant", "Segoe UI", Arial, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0d1322; --surface: #151d30; --ink: #e5ebf6; --muted: #9aa6c0; --line: #26314a;
+    --accent: #7ea4ff; --accent-soft: #1c2a4a; --teal: #4fd0e0;
+    --tip-bg: #12291f; --tip-ink: #8fe0b6; --tip-line: #245a3f;
+    --warn-bg: #2d2412; --warn-ink: #f3c977; --warn-line: #5e4719;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.35);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0d1322; --surface: #151d30; --ink: #e5ebf6; --muted: #9aa6c0; --line: #26314a;
+  --accent: #7ea4ff; --accent-soft: #1c2a4a; --teal: #4fd0e0;
+  --tip-bg: #12291f; --tip-ink: #8fe0b6; --tip-line: #245a3f;
+  --warn-bg: #2d2412; --warn-ink: #f3c977; --warn-line: #5e4719;
+  --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.35);
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 17px; line-height: 1.7; margin: 0; }
+.page { direction: rtl; text-align: right; max-width: 1180px; margin: 0 auto; padding-inline: 20px; padding-block: 0 64px; }
+
+/* Header */
+.masthead { padding-block: 48px 36px; border-bottom: 1px solid var(--line); margin-bottom: 36px; display: grid; gap: 14px; }
+.eyebrow { font-family: var(--font-display); font-weight: 500; font-size: 14px; color: var(--teal); letter-spacing: .02em; }
+.masthead h1 { font-family: var(--font-display); font-weight: 700; font-size: clamp(30px, 5vw, 46px); line-height: 1.15; margin: 0; text-wrap: balance; }
+.masthead h1 .brand { color: var(--accent); }
+.masthead p { margin: 0; color: var(--muted); font-size: 19px; max-width: 60ch; }
+.contact { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 10px; font-size: 15px; color: var(--muted); }
+.contact code { font-family: var(--font-body); font-weight: 700; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 4px 10px; direction: ltr; user-select: all; }
+.copy { font: inherit; font-size: 14px; border: 1px solid var(--line); background: var(--surface); color: var(--accent); border-radius: 8px; padding: 4px 10px; cursor: pointer; }
+.copy:focus-visible, .toc a:focus-visible, .shot:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+/* Grid */
+.layout { display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 48px; align-items: start; }
+.toc { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 20px); max-height: calc(100vh - 40px); overflow: auto; padding-inline-end: 4px; }
+.toc h2 { font-family: var(--font-display); font-size: 14px; font-weight: 500; color: var(--muted); margin: 0 0 10px; letter-spacing: .02em; }
+.toc ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.toc a { display: flex; gap: 10px; align-items: baseline; padding: 6px 10px; border-radius: 8px; color: var(--ink); text-decoration: none; font-size: 15.5px; line-height: 1.4; }
+.toc a:hover { background: var(--accent-soft); }
+.toc a.active { background: var(--accent-soft); color: var(--accent); font-weight: 700; }
+.toc .n { font-family: var(--font-display); font-size: 13px; color: var(--muted); min-width: 1.6em; font-variant-numeric: tabular-nums; }
+.toc a.active .n { color: var(--accent); }
+
+main { min-width: 0; display: grid; gap: 64px; }
+section { display: grid; gap: 18px; scroll-margin-top: 20px; }
+.chapter-head { display: grid; gap: 4px; padding-bottom: 12px; border-bottom: 2px solid var(--accent); }
+.chapter-head .num { font-family: var(--font-display); font-size: 14px; color: var(--accent); font-weight: 500; }
+h2.ch { font-family: var(--font-display); font-weight: 700; font-size: clamp(25px, 3.4vw, 32px); line-height: 1.25; margin: 0; text-wrap: balance; }
+h3 { font-family: var(--font-display); font-weight: 500; font-size: 21px; margin: 14px 0 0; text-wrap: balance; }
+h4 { font-family: var(--font-display); font-weight: 500; font-size: 18px; margin: 6px 0 0; }
+p { margin: 0; max-width: 68ch; }
+.lead { font-size: 18.5px; color: var(--muted); }
+
+/* Lists */
+.features, .defs, .bullets { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; max-width: 72ch; }
+.features li { display: grid; grid-template-columns: 1.8em 1fr; gap: 8px; }
+.defs { gap: 0; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); overflow: hidden; }
+.defs li { display: grid; grid-template-columns: minmax(110px, 30%) 1fr; gap: 16px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+.defs li:last-child { border-bottom: 0; }
+.defs b { font-weight: 700; }
+.steps { counter-reset: s; list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; max-width: 70ch; }
+.steps li { counter-increment: s; position: relative; padding-inline-start: 44px; min-height: 30px; }
+.steps li::before { content: counter(s); position: absolute; inset-inline-start: 0; top: 0; font-family: var(--font-display); font-weight: 700; font-size: 15px; width: 30px; height: 30px; border-radius: 50%; background: var(--accent); color: var(--surface); display: grid; place-items: center; font-variant-numeric: tabular-nums; }
+.ui { font-weight: 700; color: var(--accent); white-space: nowrap; }
+
+/* Callouts */
+.note { display: grid; grid-template-columns: 1.6em 1fr; gap: 8px; padding: 12px 16px; border-radius: 12px; border: 1px solid; max-width: 72ch; }
+.note.tip { background: var(--tip-bg); color: var(--tip-ink); border-color: var(--tip-line); }
+.note.warn { background: var(--warn-bg); color: var(--warn-ink); border-color: var(--warn-line); }
+
+/* Screenshots */
+figure { margin: 6px 0; display: grid; gap: 8px; }
+.shot { display: block; padding: 0; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--surface); box-shadow: var(--shadow); cursor: zoom-in; width: 100%; }
+.shot .bar { display: flex; gap: 6px; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--line); direction: ltr; }
+.shot .bar i { width: 9px; height: 9px; border-radius: 50%; background: var(--line); }
+.shot .bar span { margin-left: 10px; font-size: 12px; color: var(--muted); font-family: var(--font-body); }
+.shot img { display: block; width: 100%; height: auto; max-width: 100%; }
+figcaption { font-size: 14.5px; color: var(--muted); }
+figure.narrow { max-width: 380px; }
+.pair figure.narrow { max-width: none; }
+.pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+
+/* Tables */
+.table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); max-width: 100%; }
+table { border-collapse: collapse; width: 100%; font-size: 16px; }
+th, td { padding: 11px 16px; border-bottom: 1px solid var(--line); text-align: right; vertical-align: top; }
+th { font-family: var(--font-display); font-weight: 500; font-size: 14.5px; color: var(--muted); background: var(--bg); }
+tr:last-child td { border-bottom: 0; }
+td.num { font-variant-numeric: tabular-nums; font-weight: 600; }
+.chat { background: var(--surface); border: 1px solid var(--line); border-radius: 14px 14px 4px 14px; padding: 14px 18px; max-width: 340px; box-shadow: var(--shadow); line-height: 1.8; }
+
+.pill { display: inline-block; font-size: 13.5px; font-weight: 700; padding: 1px 10px; border-radius: 99px; background: var(--accent-soft); color: var(--accent); white-space: nowrap; }
+
+footer { margin-top: 64px; padding-top: 24px; border-top: 1px solid var(--line); color: var(--muted); font-size: 15px; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+
+/* Lightbox */
+dialog { border: 0; padding: 0; background: transparent; max-width: min(96vw, 1500px); }
+dialog::backdrop { background: rgba(8, 12, 22, .82); }
+dialog img { display: block; max-width: 100%; max-height: 90vh; border-radius: 10px; }
+dialog button { position: absolute; top: 8px; left: 8px; font: inherit; border: 0; border-radius: 8px; padding: 4px 12px; background: var(--surface); color: var(--ink); cursor: pointer; }
+
+@media (max-width: 900px) {
+  .layout { grid-template-columns: minmax(0, 1fr); gap: 28px; }
+  .toc { position: static; max-height: none; border: 1px solid var(--line); border-radius: 12px; padding: 14px; background: var(--surface); }
+  .toc ol { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .pair { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 480px) {
+  body { font-size: 16px; }
+  .page { padding-inline: 16px; }
+  .toc ol { grid-template-columns: minmax(0, 1fr); }
+  .defs li { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+}
+@media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
+@page { size: A4; margin: 14mm 12mm; }
+@media print {
+  body { font-size: 12.5pt; background: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .page { max-width: none; padding-inline: 0; }
+  .layout { grid-template-columns: minmax(0, 1fr); gap: 20px; }
+  .toc { position: static; max-height: none; overflow: visible; border: 1px solid var(--line); border-radius: 12px; padding: 14px; background: var(--surface); break-after: page; }
+  .toc ol { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .toc a.active { background: none; color: var(--ink); font-weight: 400; }
+  .copy, dialog { display: none !important; }
+  main { gap: 0; }
+  section { break-before: page; gap: 12px; }
+  .shot { box-shadow: none; cursor: default; }
+  figure, .note, .steps li, .defs li, tr, .chat { break-inside: avoid; }
+  h3 { break-after: avoid; }
+  .pair { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  footer { margin-top: 24px; }
+}
+</style>
+
+<div class="page" lang="he" dir="rtl">
+
+<header class="masthead">
+  <div class="eyebrow">📘 מדריך למשתמש</div>
+  <h1><span class="brand">MeserGO</span> · ניהול בוטים ושירות לקוחות ב־WhatsApp</h1>
+  <p>מדריך הפעלה ידידותי, צעד אחר צעד, עם צילומי מסך מהמערכת.</p>
+  <div class="contact">לשאלות, תמיכה וסיוע:
+    <code id="mail">go@mesergo.co.il</code>
+    <button class="copy" type="button" data-copy="go@mesergo.co.il">העתקה</button>
+  </div>
+</header>
+
+<div class="layout">
+<nav class="toc" aria-label="תוכן העניינים">
+  <h2>📑 תוכן העניינים</h2>
+  <ol>
+    <li><a href="#ch1"><span class="n">1</span>🏠 היכרות עם המערכת</a></li>
+    <li><a href="#ch2"><span class="n">2</span>🔐 התחברות והרשמה</a></li>
+    <li><a href="#ch3"><span class="n">3</span>📊 לוח הבקרה</a></li>
+    <li><a href="#ch4"><span class="n">4</span>🤖 יצירה וניהול בוטים</a></li>
+    <li><a href="#ch5"><span class="n">5</span>🧩 עורך הבוט</a></li>
+    <li><a href="#ch6"><span class="n">6</span>💬 שיחות ומענה ללקוחות</a></li>
+    <li><a href="#ch7"><span class="n">7</span>👥 אנשי קשר ורשימות תפוצה</a></li>
+    <li><a href="#ch8"><span class="n">8</span>📤 שליחת הודעות</a></li>
+    <li><a href="#ch9"><span class="n">9</span>📝 תבניות WhatsApp</a></li>
+    <li><a href="#ch10"><span class="n">10</span>⚙️ הגדרות ונציגים</a></li>
+    <li><a href="#ch11"><span class="n">11</span>🚀 תהליכי עבודה מלאים</a></li>
+    <li><a href="#ch12"><span class="n">12</span>❓ פתרון בעיות</a></li>
+  </ol>
+</nav>
+
+<main>
+
+<!-- 1 -->
+<section id="ch1">
+  <div class="chapter-head"><span class="num">פרק 1</span><h2 class="ch">🏠 היכרות עם המערכת</h2></div>
+  <p class="lead">מערכת MeserGO מאפשרת לנהל את שירות הלקוחות של העסק באמצעות WhatsApp העסקי הרשמי. ניתן ליצור בוטים אוטומטיים, לנהל שיחות עם לקוחות, לשלוח הודעות ולנהל אנשי קשר ורשימות תפוצה, והכול ממערכת אחת.</p>
+
+  <h3>✨ 1.1 מה אפשר לעשות במערכת?</h3>
+  <ul class="features">
+    <li><span>🤖</span><span><b>הבוטים שלי</b>: יצירת בוטים ובניית תהליכי שיחה אוטומטיים.</span></li>
+    <li><span>💬</span><span><b>שיחות</b>: צפייה בשיחות, מענה ללקוחות והעברה לנציגים.</span></li>
+    <li><span>👥</span><span><b>אנשי קשר</b>: ניהול לקוחות, רשימות תפוצה ושדות מותאמים אישית.</span></li>
+    <li><span>📤</span><span><b>שליחת הודעות</b>: שליחת הודעות ללקוח בודד או לרשימת תפוצה.</span></li>
+    <li><span>⚙️</span><span><b>הגדרות</b>: ניהול החשבון, חיבור מספרים ותבניות הודעה.</span></li>
+    <li><span>🧑‍💼</span><span><b>משתמשים</b>: הוספת נציגים והגדרת הרשאות.</span></li>
+  </ul>
+
+  <h3>📖 1.2 מושגים בסיסיים</h3>
+  <ul class="defs">
+    <li><b>בוט (תזרים)</b><span>רצף של הודעות ופעולות שקובע איך המערכת מגיבה ללקוח.</span></li>
+    <li><b>רכיב</b><span>שלב בודד בבוט, למשל הודעת טקסט או תפריט בחירה.</span></li>
+    <li><b>מצב נציג</b><span>מצב שבו הבוט מושהה ונציג אנושי מטפל בשיחה.</span></li>
+    <li><b>תבנית WhatsApp</b><span>הודעה מוכנה שאושרה על ידי WhatsApp.</span></li>
+    <li><b>משתנה</b><span>מידע שנשמר במהלך השיחה, למשל שם הלקוח.</span></li>
+  </ul>
+
+  <h3>👤 1.3 סוגי משתמשים</h3>
+  <ul class="defs">
+    <li><b>👑 בעל החשבון</b><span>הרשאה מלאה לכל חלקי המערכת. במסך פרטי החשבון התפקיד מוצג כ<span class="ui">משתמש</span>.</span></li>
+    <li><b>🧑‍💼 מנהל משמרת</b><span>ניהול שיחות, אנשי קשר ושליחות.</span></li>
+    <li><b>🎧 נציג</b><span>טיפול בשיחות המשויכות אליו.</span></li>
+  </ul>
+
+  <h3>💎 1.4 מסלולי מנוי</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>מסלול</th><th>בוטים</th><th>נציגים</th><th>אנשי קשר פעילים</th></tr></thead>
+      <tbody>
+        <tr><td>ניסיוני</td><td class="num">1</td><td class="num">0</td><td class="num">50</td></tr>
+        <tr><td>Basic</td><td class="num">3</td><td class="num">1</td><td class="num">200</td></tr>
+        <tr><td>Premium</td><td class="num">6</td><td class="num">3</td><td class="num">500</td></tr>
+        <tr><td>Pro</td><td class="num">10</td><td class="num">5</td><td class="num">1,000</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="note tip"><span>💡</span><span>כדי לראות את המכסות המעודכנות שלכם, עברו אל <span class="ui">הגדרות ← מכסות אישיות</span> (ראו פרק 10).</span></div>
+</section>
+
+<!-- 2 -->
+<section id="ch2">
+  <div class="chapter-head"><span class="num">פרק 2</span><h2 class="ch">🔐 התחברות והרשמה</h2></div>
+
+  <h3>🔑 2.1 התחברות למערכת</h3>
+  <ol class="steps">
+    <li>פתחו את כתובת המערכת בדפדפן.</li>
+    <li>הזינו כתובת אימייל וסיסמה.</li>
+    <li>אם תרצו, סמנו <span class="ui">זכור אותי במחשב זה</span>.</li>
+    <li>לחצו על <span class="ui">כניסה</span>.</li>
+    <li>לחלופין, אפשר להתחבר עם חשבון Google.</li>
+  </ol>
+
+  <h3>📝 2.2 פתיחת חשבון חדש</h3>
+  <ol class="steps">
+    <li>לחצו על <span class="ui">הירשם כאן</span>.</li>
+    <li>מלאו שם עסק, כתובת אימייל, טלפון וסיסמה.</li>
+    <li>לחצו על <span class="ui">צור חשבון חדש</span>.</li>
+    <li>אחרי אישור ההרשמה לחצו על <span class="ui">מעבר ישיר למערכת</span>.</li>
+  </ol>
+  <div class="note tip"><span>💡</span><span>חשבון ניסיוני פתוח למשך 30 יום. תאריך התפוגה מופיע ב<span class="ui">הגדרות ← פרטי חשבון</span>.</span></div>
+
+  <h3>✉️ 2.3 הצטרפות כנציג</h3>
+  <ol class="steps">
+    <li>פתחו את קישור ההזמנה שקיבלתם במייל.</li>
+    <li>מלאו טלפון וסיסמה.</li>
+    <li>אשרו את ההצטרפות.</li>
+    <li>לחצו על <span class="ui">השלם הרשמה</span>.</li>
+  </ol>
+  <div class="note warn"><span>⚠️</span><span>קישור ההזמנה תקף לשבעה ימים בלבד. אם פג תוקפו, בקשו ממנהל החשבון לשלוח הזמנה חדשה.</span></div>
+
+  <h3>🌐 2.4 תפריט ופרופיל</h3>
+  <p>תפריט הצד מאפשר לעבור בין כל המסכים שיש לכם הרשאה אליהם. בראש התפריט מופיעים שם החשבון, כתובת המייל וסוג המנוי. בפינה העליונה אפשר להחליף שפה בין עברית לאנגלית.</p>
+</section>
+
+<!-- 3 -->
+<section id="ch3">
+  <div class="chapter-head"><span class="num">פרק 3</span><h2 class="ch">📊 לוח הבקרה</h2></div>
+  <p class="lead">לוח הבקרה הוא המסך הראשון אחרי הכניסה. הוא מציג נתונים עדכניים על פעילות העסק ומאפשר גישה מהירה למסכים המרכזיים.</p>
+  <figure>
+    <button class="shot" type="button" aria-label="הגדלת צילום המסך"><div class="bar"><i></i><i></i><i></i><span>app.message.co.il</span></div><img src="images/01-dashboard.jpg" alt="לוח הבקרה: כרטיסי סקירה כללית וכרטיסי ניווט מהיר" loading="lazy"></button>
+    <figcaption>לוח הבקרה: סקירה כללית למעלה, ניווט מהיר מתחת, ותפריט הצד מימין.</figcaption>
+  </figure>
+
+  <h3>📈 3.1 נתוני הפעילות</h3>
+  <ul class="features">
+    <li><span>💬</span><span><b>שיחות היום</b>: מספר השיחות שהתנהלו היום, ומתחתיו הסיכום החודשי.</span></li>
+    <li><span>📨</span><span><b>הודעות שנשלחו היום</b>: נתוני שליחה יומיים, שבועיים וחודשיים.</span></li>
+    <li><span>👥</span><span><b>אנשי קשר</b>: מספר אנשי הקשר בחשבון.</span></li>
+    <li><span>🤖</span><span><b>בוטים</b>: מספר הבוטים בחשבון.</span></li>
+  </ul>
+
+  <h3>⚡ 3.2 ניווט מהיר</h3>
+  <p>כרטיסי הניווט מובילים ישירות לבוטים, לשיחות, לאנשי הקשר, לשליחת הודעות, למשתמשים ולהגדרות.</p>
+</section>
+
+<!-- 4 -->
+<section id="ch4">
+  <div class="chapter-head"><span class="num">פרק 4</span><h2 class="ch">🤖 יצירה וניהול בוטים</h2></div>
+
+  <h3>➕ 4.1 יצירת בוט חדש</h3>
+  <ol class="steps">
+    <li>פתחו את <span class="ui">הבוטים שלי</span> בתפריט הצד.</li>
+    <li>לחצו על <span class="ui">צור תזרים חדש</span>.</li>
+    <li>הקלידו שם לבוט, למשל "שירות לקוחות".</li>
+    <li>לחצו על <span class="ui">יצירה</span>.</li>
+    <li>התחילו לבנות את תהליך השיחה בעורך (פרק 5).</li>
+  </ol>
+  <div class="pair">
+    <figure>
+      <button class="shot" type="button" aria-label="הגדלת צילום המסך"><div class="bar"><i></i><i></i><i></i><span>app.message.co.il/dashboard</span></div><img src="images/02-bots.jpg" alt="מסך הבוטים שלי עם כפתור צור תזרים חדש" loading="lazy"></button>
+      <figcaption>מסך "הבוטים שלי". בחשבון חדש עדיין אין בוטים.</figcaption>
+    </figure>
+    <figure>
+      <button class="shot" type="button" aria-label="הגדלת צילום המסך"><div class="bar"><i></i><i></i><i></i><span>app.message.co.il/dashboard</span></div><img src="images/03-new-bot.jpg" alt="חלון בוט חדש עם שדה שם הבוט" loading="lazy"></button>
+      <figcaption>חלון "בוט חדש": מזינים שם ולוחצים על "יצירה".</figcaption>
+    </figure>
+  </div>
+
+  <h3>✏️ 4.2 שינוי שם</h3>
+  <p>פתחו את הבוט, לחצו על שמו בסרגל העליון, הקלידו שם חדש והקישו Enter.</p>
+
+  <h3>🗑️ 4.3 מחיקת בוט</h3>
+  <p>לחצו על סמל הפח בכרטיס הבוט ואשרו את המחיקה.</p>
+  <div class="note warn"><span>⚠️</span><span>המחיקה סופית, וכוללת את כל הרכיבים והגרסאות של הבוט.</span></div>
+
+  <h3>⚙️ 4.4 הגדרות בוט</h3>
+  <p>בלחיצה על גלגל השיניים בכרטיס הבוט, או בעורך, נפתח חלון <b>הגדרות בוט</b>:</p>
+  <ul class="defs">
+    <li><b>מזהה ציבורי</b><span>מזהה הבוט, עם כפתורי העתקה ושמירה.</span></li>
+    <li><b>מילת מפתח לאיפוס שיחה</b><span>אם הלקוח שולח את המילה הזו בכל שלב, השיחה מתחילה מההתחלה, למשל "התחל מחדש". שדה ריק מבטל את האפשרות.</span></li>
+    <li><b>חיבור לפייסבוק</b><span>חיבור מספר WhatsApp לבוט. בכרטיס הבוט מוצג המספר שמשויך אליו, ואת המספרים מנהלים ב<span class="ui">הגדרות ← מספרים מחוברים</span>.</span></li>
+  </ul>
+  <figure class="narrow">
+    <button class="shot" type="button" aria-label="הגדלת צילום המסך"><div class="bar"><i></i><i></i><i></i><span>app.message.co.il/bot</span></div><img src="images/37-bot-settings.png" alt="חלון הגדרות בוט" width="340" loading="lazy"></button>
+    <figcaption>חלון הגדרות הבוט.</figcaption>
+  </figure>
+</section>
+
+<!-- 5 -->
+<section id="ch5">
+  <div class="chapter-head"><span class="num">פרק 5</span><h2 class="ch">🧩 עורך הבוט: תפריטים ותהליכי שיחה</h2></div>
+  <p class="lead">בעורך בונים את מה שהבוט עושה: אילו הודעות הוא שולח, אילו שאלות הוא שואל, ולאן הלקוח ממשיך לפי התשובה. כל שינוי נשמר אוטומטית ונכנס לפעולה מיד, גם בבוט שעובד מול לקוחות.</p>
+  <div class="note warn"><span>⚠️</span><span>אין "טיוטה". שינוי בעורך משפיע מיד על הלקוחות שמדברים עם הבוט. לפני שינוי גדול, פרסמו גרסה כגיבוי (5.9).</span></div>
+
+  <h3>🖥️ 5.1 מבנה העורך</h3>
+  <figure>
+    <button class="shot" type="button" aria-label="הגדלת צילום המסך"><div class="bar"><i></i><i></i><i></i><span>app.message.co.il/bot</span></div><img src="images/04-bot-editor.jpg" alt="עורך הבוט עם רשימת רכיבים ולוח עבודה עם רכיבים מחוברים" loading="lazy"></button>
+    <figcaption>עורך הבוט: סרגל עליון, רשימת רכיבים משמאל, ולוח העבודה עם הרכיבים המחוברים.</figcaption>
+  </figure>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>בסרגל העליון</th><th>מה זה עושה</th></tr></thead>
+      <tbody>
+        <tr><td>שם הבוט</td><td>לחיצה על השם מאפשרת לשנות אותו.</td></tr>
+        <tr><td><span class="ui">שמירה אוטומטית</span></td><td>מציג את מצב השמירה: "שומר..." ואז "נשמר". השמירה קורית לבד כשנייה וחצי אחרי כל שינוי, ואין כפתור שמירה ידני.</td></tr>
+        <tr><td><span class="ui">סדר הכל</span></td><td>מסדר את כל הרכיבים בטורים מסודרים.</td></tr>
+        <tr><td><span class="ui">החלף תסריט</span></td><td>מוחק את כל הבוט ומאפשר לבחור תבנית חדשה (5.10).</td></tr>
+        <tr><td><span class="ui">פרסם גרסה</span></td><td>שומר גיבוי של הבוט (5.9). בחשבון ניסיוני מופיע במקומו "ניסיוני — ללא פרסום".</td></tr>
+        <tr><td>חיפוש טקסט או מזהה</td><td>מחפש טקסט בתוך הרכיבים. כדי לקפוץ לרכיב לפי המספר שלו כותבים למשל <b>#5</b>. Enter עובר לתוצאה הבאה.</td></tr>
+        <tr><td>⚙️ גלגל שיניים</td><td>פותח את הגדרות הבוט (4.4).</td></tr>
+        <tr><td>✕</td><td>סוגר את העורך וחוזר לרשימת הבוטים.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>בצד יש שלוש לשוניות: <span class="ui">רכיבים</span> (רשימת הרכיבים לגרירה), <span class="ui">גרסאות</span> (גיבויים) ו<span class="ui">בחירה מרובה</span> (סמל התיבה המסומנת). בפינת לוח העבודה יש כפתורי זום (+ / −), כפתור התאמה למסך, ומנעול שקובע אם אפשר להזיז ולחבר רכיבים. את לוח העבודה מזיזים בגרירה של שטח ריק.</p>
+  <div class="pair">
+  <figure class="narrow">
+    <button class="shot" type="button" aria-label="הגדלת צילום המסך"><div class="bar"><i></i><i></i><i></i><span>app.message.co.il/bot</span></div><img src="images/33-palette-1.png" alt="רשימת הרכיבים: קלט ופלט" width="340" loading="lazy"></button>
+    <figcaption>רכיבי קלט (כחול) ופלט (ירוק).</figcaption>
+  </figure>
+  <figure class="narrow">
+    <button class="shot" type="button" aria-label="הגדלת צילום המסך"><div class="bar"><i></i><i></i><i></i><span>app.message.co.il/bot</span></div><img src="images/34-palette-2.png" alt="רשימת הרכיבים: פעולות מערכת והתהליכים שלי" width="340" loading="lazy"></button>
+    <figcaption>פעולות מערכת (כתום) והתהליכים שלי.</figcaption>
+  </figure>
+  </div>
+
+  <h3>🔗 5.2 עבודה עם רכיבים</h3>
+  <ol class="steps">
+    <li>גררו רכיב מהרשימה שבצד אל לוח העבודה.</li>
+    <li>לכל רכיב יש נקודת כניסה (משמאל) ונקודת יציאה (מימין). גררו קו מנקודת היציאה אל הרכיב הבא. אפשר לשחרר את הקו בכל מקום על גוף הרכיב.</li>
+    <li>מכל יציאה יוצא חיבור אחד בלבד. חיבור חדש מחליף את הקודם.</li>
+    <li>כדי לנתק חיבור, עמדו עם העכבר על היציאה המחוברת. היא תהפוך לאדומה עם ✕, ולחיצה עליה מנתקת.</li>
+    <li>כדי למחוק רכיב, לחצו על סמל הפח בכותרת שלו.</li>
+  </ol>
+  <ul class="features">
+    <li><span>🔢</span><span>לכל רכיב יש מספר (למשל <b>#5</b>). כשמבקשים מאיתנו עזרה, ציון המספר עוזר לנו למצוא את הרכיב.</span></li>
+    <li><span>🧭</span><span>כשרכיב מסומן, מופיעים מעליו הכפתורים <span class="ui">רכיב קודם</span> ו<span class="ui">רכיב הבא</span>, שקופצים לרכיבים המחוברים אליו.</span></li>
+    <li><span>✏️</span><span>ליד שדות טקסט יש סמל עיפרון שפותח <b>עריכה מורחבת</b> עם עיצוב: מודגש, נטוי, קו חוצה, קוד, תבליטים, רשימה ממוספרת וציטוט. <b>Ctrl+Enter</b> שומר ו־<b>Esc</b> מבטל. העיצוב יוצג ללקוח כמו בוואטסאפ.</span></li>
+  </ul>
+
+  <h3>🚪 5.3 נקודת הפתיחה: תגובות אוטומטיות</h3>
+  <p>כל בוט מתחיל ברכיב <b>תגובות אוטומטיות</b>. אי אפשר למחוק אותו, והוא קובע לאן ממשיכה ההודעה הראשונה של הלקוח.</p>
+  <figure class="narrow">
+    <button class="shot" type="button" aria-label="הגדלת צילום המסך"><div class="bar"><i></i><i></i><i></i><span>app.message.co.il/bot</span></div><img src="images/30-node-auto.png" alt="רכיב תגובות אוטומטיות עם שורות מערכת, כניסה ופתיח" width="340" loading="lazy"></button>
+    <figcaption>רכיב תגובות אוטומטיות: שורת המערכת, "כניסה" ופתיח עם מילת מפתח. לכל שורה יש נקודת יציאה משלה.</figcaption>
+  </figure>
+  <ul class="defs">
+    <li><b>כניסה</b><span>היציאה הכללית. אליה מגיע כל לקוח שההודעה שלו לא התאימה לאף מילת מפתח. אי אפשר למחוק אותה.</span></li>
+    <li><b>פתיחים / מילות מפתח</b><span>לחיצה על <span class="ui">הוסף פתיח חדש</span> מוסיפה שורה עם יציאה משלה. בוחרים איך להשוות את ההודעה: <b>שווה</b>, <b>מכיל מילה</b>, <b>מכיל אחת מהמילים</b> או <b>מכיל את כל המילים</b>. לדוגמה: הלקוח כותב "מחירון" ומגיע ישר להודעת המחירון.</span></li>
+    <li><b>תגובה לאחר המתנה ללא מענה נציג</b><span>שורת מערכת. אם מחברים אותה, הבוט שולח ללקוח הודעה כשהוא מחכה לנציג ואף אחד לא עונה.</span></li>
+  </ul>
+  <p>את סדר השורות משנים בגרירה. מעל חמש שורות הרשימה מתקפלת, ולוחצים על "הצג את כל האפשרויות" כדי לראות הכול.</p>
+
+  <h3>⌨️ 5.4 רכיבי קלט: שאלות ללקוח</h3>
+  <ul class="defs">
+    <li><b>✍️ שדה טקסט</b><span>
+      שואל שאלה ומחכה לתשובה חופשית.<br>
+      <b>שאלה מהבוט</b>: למשל "מה השם שלך?".<br>
+      <b>שם משתנה לאחסון</b>: איפה לשמור את התשובה, למשל <code dir="ltr">user_name</code> (ראו 5.7).<br>
+      <b>סוג ולידציה</b>: ללא, מייל, טלפון, ת.ז או כתובת אתר. אם הלקוח עונה בפורמט לא נכון, הוא מקבל "הערך שהוזן אינו חוקי, אנא הזן ערך מתאים." והשאלה חוזרת.<br>
+      <b>שמור בפרטי איש קשר</b>: שומר את התשובה גם בכרטיס איש הקשר (שם מלא, מייל או שדה מותאם אישית). כשמסמנים את האפשרות, חובה לבחור שדה.</span></li>
+    <li><b>📅 בחירת תאריך/שעה</b><span>הלקוח בוחר תאריך, שעה או את שניהם. התשובה נשמרת במשתנה בפורמט <code dir="ltr">DD/MM/YYYY</code>, <code dir="ltr">HH:MM</code> או שניהם יחד.</span></li>
+    <li><b>📎 העלאת קובץ</b><span>מבקש מהלקוח לשלוח קובץ או תמונה. בשדה <b>בקשת קובץ</b> כותבים את הבקשה, למשל "אנא העלה צילום של החשבונית".</span></li>
+  </ul>
+  <figure class="narrow">
+    <button class="shot" type="button" aria-label="הגדלת צילום המסך"><div class="bar"><i></i><i></i><i></i><span>app.message.co.il/bot</span></div><img src="images/31-node-input.png" alt="רכיב שדה טקסט עם שאלה, שם משתנה וסוג ולידציה" width="340" loading="lazy"></button>
+    <figcaption>רכיב שדה טקסט: השאלה, שם המשתנה לשמירה, סוג הוולידציה והאפשרות לשמור בפרטי איש קשר.</figcaption>
+  </figure>
+
+  <h3>💬 5.5 רכיבי פלט: הודעות מהבוט</h3>
+  <ul class="defs">
+    <li><b>💬 הודעת טקסט</b><span>שולחת הודעה כתובה. הודעה ארוכה מ־4,000 תווים מתחלקת אוטומטית לכמה הודעות.</span></li>
+    <li><b>🖼️ הודעת מדיה</b><span>שולחת תמונה, וידאו, PDF או כרטיס איש קשר. מעלים קובץ או מדביקים קישור, ואפשר להוסיף טקסט שיופיע מתחת למדיה.</span></li>
+    <li><b>🔗 קישור חיצוני</b><span>שולח קישור עם טקסט, למשל "בקר באתר שלנו". אפשר לשלב משתנה בכתובת.</span></li>
+    <li><b>📋 תפריט בחירה</b><span>מציג ללקוח אפשרויות. עד שתי אפשרויות מוצגות ככפתורים, ושלוש ומעלה מוצגות כרשימה נפתחת. לכל אפשרות יש יציאה משלה.</span></li>
+  </ul>
+
+  <h4>📋 בניית תפריט בחירה</h4>
+  <ol class="steps">
+    <li>גררו רכיב <span class="ui">תפריט בחירה</span> ללוח העבודה.</li>
+    <li>ב<b>הנחיית בחירה</b> כתבו את השאלה, למשל "במה נוכל לעזור?".</li>
+    <li>לחצו על <span class="ui">הוסף אפשרות חדשה</span> לכל אפשרות. את הסדר משנים בגרירה.</li>
+    <li>חברו כל אפשרות לרכיב המתאים.</li>
+    <li>חברו גם את <b>ברירת מחדל</b>, שאליה מגיע לקוח שכתב משהו שלא מתאים לאף אפשרות. אם היא לא מחוברת, הלקוח מקבל "בחר רק מהאפשרויות" והתפריט מוצג שוב.</li>
+    <li>אם רוצים לזכור מה הלקוח בחר, מלאו <b>שמור בחירה במשתנה</b>.</li>
+  </ol>
+  <figure class="narrow">
+    <button class="shot" type="button" aria-label="הגדלת צילום המסך"><div class="bar"><i></i><i></i><i></i><span>app.message.co.il/bot</span></div><img src="images/32-node-menu.png" alt="רכיב תפריט בחירה עם ברירת מחדל ושתי אפשרויות" width="340" loading="lazy"></button>
+    <figcaption>תפריט בחירה: הנחיה, ברירת מחדל ושתי אפשרויות, כל אחת עם יציאה משלה.</figcaption>
+  </figure>
+  <p><b>💬 דוגמה לתפריט פתיחה:</b></p>
+  <div class="chat">שלום וברוכים הבאים! 👋<br>במה נוכל לעזור?<br>1️⃣ מחירון<br>2️⃣ שעות פתיחה<br>3️⃣ שיחה עם נציג</div>
+  <div class="note tip"><span>💡</span><span>בכפתור <span class="ui">+ תנאי</span> מוסיפים זיהוי לפי מילים, גם אם הלקוח הקליד במקום ללחוץ. לדוגמה, "מכיל אחת מהמילים: מחיר, עלות, כמה" יוביל למחירון. התנאים נבדקים לפני האפשרויות הרגילות.</span></div>
+
+  <h3>⚙️ 5.6 פעולות מערכת</h3>
+  <ul class="defs">
+    <li><b>🎧 נציגים</b><span>
+      מעביר את השיחה לטיפול אנושי. ב<b>פעולה</b> בוחרים אחת משלוש אפשרויות:<br>
+      <b>העברה לנציג</b>: בוחרים קבוצת נציגים, ואז "כל נציג זמין מהקבוצה" או נציג מסוים. הבוט מפסיק לענות ללקוח למשך 30 דקות. אפשר לסמן "לקוח מעוניין בשיחת טלפון חוזרת".<br>
+      <b>סגירת פניה</b>: מסיימת את השיחה מיד.<br>
+      <b>הארכת זמן פניה פתוחה</b>: מוסיפה 30 דקות להמתנה לנציג.<br>
+      הרכיב לא שולח הודעה ללקוח, ולכן כדאי לשים לפניו הודעת טקסט כמו "מעבירים אותך לנציג, נחזור אליך בהקדם".</span></li>
+    <li><b>🕒 ניתוב לפי שעה/תאריך/יום</b><span>
+      מפנה את הלקוח לפי הזמן. כל <b>אופציה</b> היא ענף עם יציאה משלו, ובו תנאים שכולם צריכים להתקיים: <b>שעה</b> (למשל 09:00–17:00), <b>יום</b> (למשל ראשון עד חמישי) ו<b>תאריך</b> (טווח תאריכים).<br>
+      לקוח שלא מתאים לאף ענף יוצא ב<b>ברירת מחדל (כל שאר המקרים)</b>, למשל להודעה "אנחנו סגורים כרגע".<br>
+      אין במערכת לוח חגים מובנה. לחגים ולימי סגירה מוסיפים ענף עם טווח תאריכים ומעמידים אותו ראשון.</span></li>
+    <li><b>⏸️ המתנה</b><span>עוצרת לכמה שניות לפני השלב הבא, כדי שההודעות לא יגיעו בבת אחת.</span></li>
+    <li><b>👥 הוספה/הסרה מקבוצה</b><span>מוסיפה את הלקוח לרשימת תפוצה או מסירה אותו ממנה. האפשרות "הכל (רשימת הסרה)" מכניסה אותו לרשימת ההסרה, ובמקרה כזה חובה למלא סיבת הסרה.</span></li>
+    <li><b>🏷️ הגדרת פרמטר</b><span>שומרת ערך במשתנה: ערך קבוע, או ערך של משתנה אחר (5.7).</span></li>
+    <li><b>↩️ חזרה לתפריט ראשי</b><span>מחזירה את הלקוח לרכיב <b>תגובות אוטומטיות</b>. ב<b>ביטוי להתאמה</b> כותבים לאיזה פתיח לחזור. לרכיב הזה אין יציאה.</span></li>
+    <li><b>🌐 קריאת API</b><span>מתחברת למערכת חיצונית של העסק, למשל לבדיקת סטטוס הזמנה, והבוט ממשיך לפי התשובה. בדרך כלל מגדירים את הרכיב הזה יחד איתנו או עם איש המחשבים של העסק.</span></li>
+  </ul>
+
+  <h3>🏷️ 5.7 משתנים</h3>
+  <p>משתנה הוא מידע שהבוט זוכר במהלך השיחה. כדי לשלב משתנה בהודעה כותבים את שמו בין שני מקפים כפולים:</p>
+  <div class="chat">שלום --user_name--, תודה שפנית אלינו! 😊</div>
+  <ul class="defs">
+    <li><b>איך משתנה נוצר</b><span>מתשובה ב<b>שדה טקסט</b> או ב<b>בחירת תאריך/שעה</b> (שם משתנה לאחסון), מבחירה ב<b>תפריט בחירה</b>, מרכיב <b>הגדרת פרמטר</b>, או מתשובה של <b>קריאת API</b>.</span></li>
+    <li><b>משתנים מובנים</b><span><code dir="ltr">--waPhone--</code> מספר הטלפון של הלקוח · <code dir="ltr">--waName--</code> השם שלו בוואטסאפ · <code dir="ltr">--waOpen--</code> ההודעה הראשונה ששלח.</span></li>
+    <li><b>שמות אסורים</b><span>אי אפשר לקרוא למשתנה בשם של משתנה מובנה. משתנה שלא קיבל ערך יוצג כטקסט ריק.</span></li>
+  </ul>
+  <div class="note tip"><span>💡</span><span>משתנים עובדים בכל שדה טקסט: הודעות, שאלות בתפריט, כתובות קישור והגדרת פרמטר.</span></div>
+
+  <h3>♻️ 5.8 התהליכים שלי ובחירה מרובה</h3>
+  <p><b>התהליכים שלי</b> הם חלקים של בוט שאפשר להשתמש בהם שוב ושוב, גם בכמה בוטים. לדוגמה, תהליך "איסוף פרטים" שחוזר בכמה מקומות.</p>
+  <ul class="features">
+    <li><span>➕</span><span>לחיצה על <b>+</b> ליד "התהליכים שלי" יוצרת תהליך חדש. כל תהליך מתחיל ברכיב <b>התחלה</b>.</span></li>
+    <li><span>🖱️</span><span>גוררים תהליך ללוח העבודה, והוא מופיע כרכיב "תת תזרים". לחיצה על התהליך ברשימה פותחת אותו לעריכה.</span></li>
+    <li><span>⚠️</span><span>שינוי בתהליך משפיע על כל המקומות שבהם הוא מופיע. מחיקה שלו מסירה אותו מכל הבוטים.</span></li>
+    <li><span>☑️</span><span>במצב <span class="ui">בחירה מרובה</span> מסמנים כמה רכיבים בלחיצה או בגרירה. אחר כך אפשר <b>להעתיק</b> אותם לתהליך, <b>להעביר</b> אותם לתהליך (הם מתחלפים ברכיב תהליך אחד), או <b>למחוק</b> אותם.</span></li>
+  </ul>
+
+  <h3>💾 5.9 גרסאות וגיבויים</h3>
+  <ol class="steps">
+    <li>לחצו על <span class="ui">פרסם גרסה</span> בסרגל העליון, או בלשונית <span class="ui">גרסאות</span>.</li>
+    <li>תנו שם לגרסה, למשל "לפני שינוי שעות פתיחה", ולחצו על <span class="ui">פרסם</span>.</li>
+    <li>כדי לחזור לגרסה קודמת, לחצו ליד הגרסה ב<b>היסטוריית גרסאות</b> על <span class="ui">שחזר גרסה זו</span>.</li>
+  </ol>
+  <figure class="narrow">
+    <button class="shot" type="button" aria-label="הגדלת צילום המסך"><div class="bar"><i></i><i></i><i></i><span>app.message.co.il/bot</span></div><img src="images/35-publish-version.png" alt="חלון פרסום גרסה" width="340" loading="lazy"></button>
+    <figcaption>חלון "פרסום גרסה". השם ממולא אוטומטית לפי התאריך והשעה, ואפשר לשנות אותו.</figcaption>
+  </figure>
+  <div class="note warn"><span>⚠️</span><span>שחזור גרסה מחליף את הבוט הנוכחי. אם יש בו שינויים שלא נשמרו כגרסה, הם יאבדו, לכן כדאי לפרסם גרסה לפני כל שחזור.</span></div>
+  <p>מספר הגרסאות לכל מסלול מוגבל, ואת המכסה שלכם רואים ב<span class="ui">הגדרות ← מכסות אישיות</span>. כשמגיעים למגבלה, גרסאות ישנות שלא נעולות מוסתרות. גרסה חשובה אפשר <b>לנעול</b> כדי שתישמר תמיד. שחזור של גרסה מוסתרת, או פרסום מעבר למגבלה כשכל הגרסאות נעולות, כרוכים בתשלום, והמערכת מציגה את הסכום לפני האישור.</p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>מסלול</th><th>מקסימום גרסאות</th></tr></thead>
+      <tbody>
+        <tr><td>ניסיוני</td><td class="num">0 (אין פרסום גרסאות)</td></tr>
+        <tr><td>Basic</td><td class="num">5</td></tr>
+        <tr><td>Premium</td><td class="num">10</td></tr>
+        <tr><td>Pro</td><td class="num">15</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>🔄 5.10 החלפת תסריט</h3>
+  <p>הכפתור <span class="ui">החלף תסריט</span> מוחק את כל הבוט ופותח את מסך בחירת התבניות, כדי להתחיל מתבנית אחרת.</p>
+  <div class="note warn"><span>⚠️</span><span>הפעולה מוחקת את כל התסריט. לפני שמאשרים, פרסמו גרסה כדי שאפשר יהיה לחזור.</span></div>
+
+  <h3>🧪 5.11 בדיקה בסימולטור</h3>
+  <ol class="steps">
+    <li>לחצו על הסמל העגול בפינת לוח העבודה. חלון הסימולטור נפתח בצד.</li>
+    <li>כתבו הודעה כמו לקוח וענו על השאלות. הרכיב הפעיל מסומן בירוק בלוח העבודה.</li>
+    <li>כדי להתחיל מחדש, לחצו על <span class="ui">אפס צ'אט</span>, או כתבו את מילת האיפוס של הבוט (או <code dir="ltr">wastart</code>).</li>
+  </ol>
+  <figure>
+    <button class="shot" type="button" aria-label="הגדלת צילום המסך"><div class="bar"><i></i><i></i><i></i><span>app.message.co.il/bot</span></div><img src="images/36-simulator.jpg" alt="הסימולטור פתוח בצד העורך" loading="lazy"></button>
+    <figcaption>הסימולטור פתוח מימין. הרכיב הפעיל מסומן בירוק, ובצד שמאל פתוחה לשונית הגרסאות.</figcaption>
+  </figure>
+  <ul class="features">
+    <li><span>🔗</span><span><span class="ui">שיתוף קישור</span> יוצר קישור בדיקה שאפשר לשלוח לאחרים, לגרסה הנוכחית או לגרסה שמורה.</span></li>
+    <li><span>🪟</span><span><span class="ui">פתח בחלון חדש</span> פותח את הסימולטור בחלון נפרד.</span></li>
+    <li><span>ℹ️</span><span>בסימולטור לא שולחים הודעות אמיתיות, ולכן רכיב "הוספה/הסרה מקבוצה" מדולג. שיחות הסימולטור מופיעות במסך השיחות תחת "סימולטור".</span></li>
+  </ul>
+
+  <h3>✅ 5.12 בדיקה לפני שמחברים ללקוחות</h3>
+  <ul class="features">
+    <li><span>🔌</span><span><b>חברו את כל היציאות.</b> העורך לא מתריע על יציאה לא מחוברת, והשיחה פשוט נעצרת שם.</span></li>
+    <li><span>🧭</span><span><b>עברו בסימולטור על כל מסלול</b>, כולל ברירת המחדל בתפריטים ומחוץ לשעות הפעילות.</span></li>
+    <li><span>🗂️</span><span><b>בדקו ש"שמור בפרטי איש קשר" מוגדר כמו שצריך.</b> אם סימנתם את האפשרות בלי לבחור שדה, אי אפשר לפרסם גרסה.</span></li>
+    <li><span>💾</span><span><b>פרסמו גרסה</b> כשהבוט מוכן, כדי שתהיה נקודת חזרה.</span></li>
+  </ul>
+</section>
+
+<!-- 6 -->
+<section id="ch6">
+  <div class="chapter-head"><span class="num">פרק 6</span><h2 class="ch">💬 שיחות ומענה ללקוחות</h2></div>
+
+  <h3>📥 6.1 מסך השיחות</h3>
+  <p>בכניסה למסך בוחרים את המספר המחובר שבו רוצים לצפות, או <span class="ui">הכל</span> לכל השיחות. בצד מופיעה רשימת השיחות עם חיפוש וסינון לפי סטטוס, ובמרכז מוצגת השיחה עצמה. אפשר לענות ללקוח, לצרף קבצים ולהעביר את השיחה לנציג.</p>
+  <figure>
+    <button class="shot" type="button" aria-label="הגדלת צילום המסך"><div class="bar"><i></i><i></i><i></i><span>app.message.co.il/sessions</span></div><img src="images/06-chat.jpg" alt="מסך השיחות: רשימת שיחות, מסנני סטטוס וחלון שיחה פתוח" loading="lazy"></button>
+    <figcaption>רשימת השיחות עם מסנני הסטטוס, וחלון שיחה פתוח עם שדה כתיבה בתחתית.</figcaption>
+  </figure>
+
+  <h3>🔄 6.2 סטטוסים של שיחה</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>סטטוס</th><th>משמעות</th></tr></thead>
+      <tbody>
+        <tr><td>🤖 בוט</td><td>הבוט עונה אוטומטית.</td></tr>
+        <tr><td>⏳ ממתין</td><td>הלקוח ממתין לנציג.</td></tr>
+        <tr><td>🟢 בטיפול</td><td>נציג מטפל בשיחה.</td></tr>
+        <tr><td>✅ טופל</td><td>הטיפול הושלם.</td></tr>
+        <tr><td>🔒 סיום</td><td>השיחה נסגרה.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>🎧 6.3 מעבר למצב נציג</h3>
+  <ol class="steps">
+    <li>פתחו את השיחה.</li>
+    <li>כתבו הודעה ולחצו על שליחה.</li>
+    <li>אשרו את המעבר למצב נציג.</li>
+    <li>הבוט מושהה למשך 30 דקות, ובזמן הזה הנציג מנהל את השיחה.</li>
+  </ol>
+
+  <h3>📝 6.4 שליחת תבנית</h3>
+  <p>הקלידו <b>/</b> בשדה ההודעה, בחרו תבנית, מלאו את המשתנים ושלחו.</p>
+  <div class="note warn"><span>⚠️</span><span>אם עברו יותר מ־24 שעות מההודעה האחרונה של הלקוח, או שזה לקוח חדש, אפשר לשלוח רק תבנית WhatsApp מאושרת. במקרה כזה המערכת מציגה: "לקוח חדש — ניתן לשלוח הודעת תבנית WhatsApp בלבד".</span></div>
+
+  <h3>🔍 6.5 חיפוש והתראות</h3>
+  <p>אפשר לחפש שיחות לפי שם, מספר טלפון או תוכן הודעה. בסרגל העליון של מסך השיחות מפעילים התראות בדפדפן, ובסימון <span class="ui">גם למייל</span> מקבלים אותן גם במייל.</p>
+</section>
+
+<!-- 7 -->
+<section id="ch7">
+  <div class="chapter-head"><span class="num">פרק 7</span><h2 class="ch">👥 אנשי קשר ורשימות תפוצה</h2></div>
+  <figure>
+    <button class="shot" type="button" aria-label="הגדלת צילום המסך"><div class="bar"><i></i><i></i><i></i><span>app.message.co.il/contacts</span></div><img src="images/07-contacts.jpg" alt="מסך אנשי קשר עם כפתורי הוסף איש קשר וייבוא מאקסל" loading="lazy"></button>
+    <figcaption>מסך אנשי הקשר: חיפוש, ייבוא מאקסל והוספת איש קשר. בראש המסך עוברים ללשונית רשימות תפוצה.</figcaption>
+  </figure>
+
+  <h3>➕ 7.1 הוספת איש קשר</h3>
+  <ol class="steps">
+    <li>לחצו על <span class="ui">הוסף איש קשר</span>.</li>
+    <li>מלאו מספר טלפון (חובה), שם מלא, שם בוואטסאפ וכתובת מייל.</li>
+    <li>בחרו רשימות תפוצה, אם יש.</li>
+    <li>לחצו על <span class="ui">שמור</span>.</li>
+  </ol>
+
+  <h3>📥 7.2 ייבוא אנשי קשר מאקסל</h3>
+  <ol class="steps">
+    <li>לחצו על <span class="ui">ייבוא מאקסל</span>.</li>
+    <li>לחצו על <span class="ui">הורד קובץ לדוגמה</span> כדי לראות את המבנה הנדרש.</li>
+    <li>הכינו קובץ עם העמודות טלפון, שם מלא ומייל.</li>
+    <li>אם רוצים, סמנו <span class="ui">שייך לרשימת תפוצה</span>.</li>
+    <li>לחצו על <span class="ui">בחר קובץ Excel / CSV לייבוא</span> ובדקו את תוצאות הייבוא.</li>
+  </ol>
+  <div class="pair">
+    <figure>
+      <button class="shot" type="button" aria-label="הגדלת צילום המסך"><div class="bar"><i></i><i></i><i></i><span>app.message.co.il/contacts</span></div><img src="images/08-add-contact.jpg" alt="חלון הוספת איש קשר" loading="lazy"></button>
+      <figcaption>חלון "הוספת איש קשר".</figcaption>
+    </figure>
+    <figure>
+      <button class="shot" type="button" aria-label="הגדלת צילום המסך"><div class="bar"><i></i><i></i><i></i><span>app.message.co.il/contacts</span></div><img src="images/09-import.jpg" alt="חלון ייבוא אנשי קשר מאקסל" loading="lazy"></button>
+      <figcaption>חלון "ייבוא אנשי קשר" עם קובץ לדוגמה.</figcaption>
+    </figure>
+  </div>
+
+  <h3>📋 7.3 רשימות תפוצה</h3>
+  <p>רשימות תפוצה מקבצות לקוחות כדי לשלוח להם הודעה מרוכזת. בלשונית <span class="ui">רשימות תפוצה</span> מקלידים שם לרשימה חדשה ולוחצים על <b>+</b>.</p>
+
+  <h3>🚫 7.4 רשימת הסרה</h3>
+  <p>לקוחות שמבקשים לא לקבל הודעות נכנסים לרשימת ההסרה ולא יקבלו הודעות תפוצה. אם לקוח שולח מילת הסרה כמו "הסר", הוא מתווסף לרשימה אוטומטית (ראו פרק 10.6).</p>
+  <figure>
+    <button class="shot" type="button" aria-label="הגדלת צילום המסך"><div class="bar"><i></i><i></i><i></i><span>app.message.co.il/contacts</span></div><img src="images/10-lists.jpg" alt="לשונית רשימות תפוצה עם רשימת הסרה" loading="lazy"></button>
+    <figcaption>לשונית רשימות התפוצה. רשימת ההסרה מופיעה תמיד בראש הרשימה.</figcaption>
+  </figure>
+</section>
+
+<!-- 8 -->
+<section id="ch8">
+  <div class="chapter-head"><span class="num">פרק 8</span><h2 class="ch">📤 שליחת הודעות</h2></div>
+
+  <h3>🚀 8.1 שליחת הודעה</h3>
+  <ol class="steps">
+    <li>פתחו את מסך <span class="ui">שליחת הודעות</span>.</li>
+    <li>בחלק <b>למי לשלוח</b> בחרו אנשי קשר, קבוצות או מספרי טלפון. אפשר לשלב ביניהם, והמערכת מסירה כפילויות.</li>
+    <li>בחרו מספר שולח.</li>
+    <li>בחלק <b>מה תרצה לכתוב</b> בחרו תבנית הודעה או כתבו טקסט חופשי. מקישים <b>#</b> כדי להוסיף פרמטר אישי כמו שם או טלפון.</li>
+    <li>אם רוצים, צרפו מדיה ובדקו את מספר הנמענים.</li>
+    <li>לחצו על <span class="ui">שליחה מיידית</span> או על <span class="ui">תזמון קבוע</span>.</li>
+  </ol>
+  <figure>
+    <button class="shot" type="button" aria-label="הגדלת צילום המסך"><div class="bar"><i></i><i></i><i></i><span>app.message.co.il/send-messages</span></div><img src="images/11-send.jpg" alt="מסך שליחת הודעות: בחירת נמענים ותוכן ההודעה" loading="lazy"></button>
+    <figcaption>מסך שליחת הודעות: מימין בוחרים נמענים, משמאל כותבים את ההודעה, ובתחתית שולחים או מתזמנים.</figcaption>
+  </figure>
+
+  <h3>🗓️ 8.2 תזמון הודעות</h3>
+  <p>לחצו על <span class="ui">תזמון קבוע</span>, בחרו תאריך ושעה, בדקו את מועד השליחה ולחצו על <span class="ui">אישור — תזמן שליחה</span>.</p>
+
+  <h3>📈 8.3 מעקב אחרי שליחות</h3>
+  <p>בלשונית <span class="ui">שליחות מרוכזות</span> מופיעות כל השליחות מכל הקבוצות. לכל שליחה רואים כמה הודעות נשלחו, נכשלו או דולגו, ואת הסטטוס של כל נמען.</p>
+  <figure>
+    <button class="shot" type="button" aria-label="הגדלת צילום המסך"><div class="bar"><i></i><i></i><i></i><span>app.message.co.il/send-messages</span></div><img src="images/12-bulk-report.jpg" alt="לשונית שליחות מרוכזות" loading="lazy"></button>
+    <figcaption>לשונית "שליחות מרוכזות" עם סינון לפי רשימה וכפתור רענון.</figcaption>
+  </figure>
+</section>
+
+<!-- 9 -->
+<section id="ch9">
+  <div class="chapter-head"><span class="num">פרק 9</span><h2 class="ch">📝 תבניות WhatsApp</h2></div>
+  <p class="lead">התבניות נמצאות ב<span class="ui">הגדרות ← הודעות תבנית</span>. יש שני סוגים:</p>
+  <ul class="defs">
+    <li><b>תבניות WhatsApp</b><span>הודעות רשמיות שעוברות אישור של WhatsApp (Meta). רק אותן אפשר לשלוח ללקוח חדש או אחרי שעברו 24 שעות מההודעה האחרונה שלו.</span></li>
+    <li><b>תבניות פנימיות</b><span>טקסט או מדיה מוכנים מראש, שנשלחים כהודעה רגילה רק בתוך שיחה פעילה.</span></li>
+  </ul>
+  <figure>
+    <button class="shot" type="button" aria-label="הגדלת צילום המסך"><div class="bar"><i></i><i></i><i></i><span>app.message.co.il/settings</span></div><img src="images/17-settings-templates.jpg" alt="מסך הודעות תבנית עם לשוניות תבניות WhatsApp ותבניות פנימיות" loading="lazy"></button>
+    <figcaption>מסך הודעות התבנית עם שתי הלשוניות. בחשבון חדש עדיין אין תבניות.</figcaption>
+  </figure>
+
+  <h3>➕ 9.1 יצירת תבנית WhatsApp חדשה</h3>
+  <ol class="steps">
+    <li>בלשונית <span class="ui">תבניות WhatsApp</span> לחצו על <span class="ui">הוסף תבנית</span>.</li>
+    <li><b>שם התבנית</b>: אותיות אנגליות קטנות, ספרות וקו תחתון בלבד, למשל <code dir="ltr">order_ready</code>.</li>
+    <li><b>קטגוריה</b>: שיווקי (Marketing), שירותי (Utility) או אימות (Authentication).</li>
+    <li><b>שפה</b>: למשל עברית.</li>
+    <li><b>כותרת (Header)</b>: ללא, טקסט, תמונה, וידאו או מסמך. זה שדה רשות.</li>
+    <li><b>גוף ההודעה (Body)</b>: הטקסט עצמו. משתנים כותבים כ־<code dir="ltr">{{1}}</code>, <code dir="ltr">{{2}}</code>, ולכל משתנה ממלאים ערך דוגמה.</li>
+    <li><b>כותרת תחתונה וכפתורים</b>: רשות. סוגי הכפתורים הם תגובה מהירה, קישור או טלפון.</li>
+    <li>לחצו על <span class="ui">שמירה</span>. התבנית נשלחת לאישור של WhatsApp.</li>
+  </ol>
+  <p><b>דוגמה לגוף הודעה:</b> "שלום {{1}}, ההזמנה שלך מוכנה לאיסוף 🎉"</p>
+  <div class="note tip"><span>💡</span><span>אם הכפתור <span class="ui">הוסף תבנית</span> לא מופיע אצלכם, פנו אלינו ונפעיל את האפשרות בחשבון.</span></div>
+
+  <h3>🔄 9.2 סטטוס אישור</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>סטטוס בכרטיס</th><th>משמעות</th></tr></thead>
+      <tbody>
+        <tr><td><span class="pill">APPROVED</span></td><td>התבנית אושרה ואפשר לשלוח אותה.</td></tr>
+        <tr><td><span class="pill">PENDING</span></td><td>התבנית ממתינה לאישור של WhatsApp.</td></tr>
+        <tr><td><span class="pill">REJECTED</span></td><td>התבנית נדחתה. ערכו אותה או שכפלו אותה עם שינויים ושלחו שוב.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>⚙️ 9.3 הגדרות לכל תבנית</h3>
+  <ul class="features">
+    <li><span>👁️</span><span><b>מוצג בשיחות / מוסתר בשיחות</b>: קובע אם הנציגים יראו את התבנית ברשימה בזמן שיחה.</span></li>
+    <li><span>↪️</span><span><b>מה קורה לשיחה אחרי שליחת התבנית</b>: ללא שינוי, העברה לנציג או העברה לבוט.</span></li>
+    <li><span>🖼️</span><span><b>תמונת ברירת מחדל</b>: תמונת כותרת שנשלחת אוטומטית עם התבנית.</span></li>
+    <li><span>🧷</span><span><b>פרמטרים קבועים</b>: מילוי אוטומטי של משתנים, למשל שם הנציג, טקסט קבוע או שדה מפרטי איש הקשר.</span></li>
+  </ul>
+
+  <h3>✏️ 9.4 עריכה, שכפול ומחיקה</h3>
+  <p>בתפריט <span class="ui">פעולות נוספות</span> שבכרטיס התבנית בוחרים <b>עריכה</b>, <b>שכפול</b> או <b>מחיקה</b>. כדי למחוק צריך ללחוץ פעם שנייה לאישור.</p>
+
+  <h3>💬 9.5 תבנית פנימית</h3>
+  <p>בלשונית <span class="ui">תבניות פנימיות</span> יוצרים תבנית חדשה: שם, תוכן ההודעה (אפשר עם פרמטרים כמו <code dir="ltr">{{p1}}</code> שהנציג ממלא) ומדיה בכותרת לפי הצורך. יש תצוגה מקדימה, ושומרים בלחיצה על <span class="ui">שמור תבנית</span>.</p>
+</section>
+
+<!-- 10 -->
+<section id="ch10">
+  <div class="chapter-head"><span class="num">פרק 10</span><h2 class="ch">⚙️ הגדרות ונציגים</h2></div>
+  <p class="lead">מסך ההגדרות מחולק ללשוניות בצד. אלה הלשוניות העיקריות:</p>
+  <figure>
+    <button class="shot" type="button" aria-label="הגדלת צילום המסך"><div class="bar"><i></i><i></i><i></i><span>app.message.co.il/settings</span></div><img src="images/13-settings-profile.jpg" alt="מסך הגדרות בלשונית פרטים אישיים" loading="lazy"></button>
+    <figcaption>מסך ההגדרות: לשוניות בצד, ובמרכז הלשונית הפתוחה, כאן "פרטים אישיים".</figcaption>
+  </figure>
+
+  <h3>👤 10.1 פרטים אישיים ופרטי חשבון</h3>
+  <p>ב<b>פרטים אישיים</b> מעדכנים שם מלא, מייל וטלפון ולוחצים על <span class="ui">שמור שינויים</span>. ב<b>פרטי חשבון</b> מופיעים המזהה הציבורי (עם כפתור העתקה), סוג החשבון, הסטטוס, התפקיד, תאריך ההצטרפות ותפוגת תקופת הניסיון.</p>
+
+  <h3>📏 10.2 מכסות אישיות</h3>
+  <p>מקסימום מספרים מחוברים, מקסימום בוטים, מקסימום גרסאות, ועלות לגרסה ולבוט.</p>
+  <div class="pair">
+    <figure>
+      <button class="shot" type="button" aria-label="הגדלת צילום המסך"><div class="bar"><i></i><i></i><i></i><span>app.message.co.il/settings</span></div><img src="images/14-settings-account.jpg" alt="לשונית פרטי חשבון" loading="lazy"></button>
+      <figcaption>פרטי חשבון.</figcaption>
+    </figure>
+    <figure>
+      <button class="shot" type="button" aria-label="הגדלת צילום המסך"><div class="bar"><i></i><i></i><i></i><span>app.message.co.il/settings</span></div><img src="images/15-settings-quotas.jpg" alt="לשונית מכסות אישיות" loading="lazy"></button>
+      <figcaption>מכסות אישיות.</figcaption>
+    </figure>
+  </div>
+
+  <h3>📞 10.3 מספרים מחוברים</h3>
+  <ol class="steps">
+    <li>בלשונית <span class="ui">מספרים מחוברים</span> לחצו על <span class="ui">הוסף Facebook</span>.</li>
+    <li>אשרו את החלון "חיבור לפייסבוק" והשלימו את החיבור בחלון הקופץ.</li>
+    <li>אחרי ההודעה "החיבור הושלם בהצלחה", לחצו על <span class="ui">הפעל מספר</span> אם המספר מסומן "מחובר — טרם הופעל".</li>
+    <li>שייכו את המספר לבוט: <span class="ui">בחר בוט...</span> ואז <span class="ui">שייך לבוט</span>.</li>
+  </ol>
+  <figure>
+    <button class="shot" type="button" aria-label="הגדלת צילום המסך"><div class="bar"><i></i><i></i><i></i><span>app.message.co.il/settings</span></div><img src="images/16-settings-numbers.jpg" alt="לשונית מספרים מחוברים עם הודעת מכסה" loading="lazy"></button>
+    <figcaption>כשמכסת המספרים מלאה, מופיעה הודעה שצריך לפנות למשרד.</figcaption>
+  </figure>
+
+  <h3>🔔 10.4 התראות</h3>
+  <p>בוחרים אילו התראות יגיעו במייל: <b>התראה כשאינני מחובר/ת</b>, שנשלחת על פנייה חדשה כשהמערכת לא פתוחה, ו<b>סיכום יומי במייל</b> עם בחירת ימים ושעת שליחה. בסיום לוחצים על <span class="ui">שמירה</span>.</p>
+  <figure>
+    <button class="shot" type="button" aria-label="הגדלת צילום המסך"><div class="bar"><i></i><i></i><i></i><span>app.message.co.il/settings</span></div><img src="images/19-settings-notifications.jpg" alt="לשונית התראות במייל" loading="lazy"></button>
+    <figcaption>לשונית ההתראות במייל.</figcaption>
+  </figure>
+
+  <h3>🔑 10.5 טוקני API</h3>
+  <p>לחיבור מערכות חיצוניות: מזינים שם לטוקן, ואם רוצים גם תאריך תפוגה, ולוחצים על <span class="ui">צור טוקן</span>.</p>
+
+  <h3>🚫 10.6 ניהול הסרה מקבוצה</h3>
+  <p>כאן מגדירים את מילות המפתח להסרה בכל שפה (למשל "הסר", "הסירו אותי") ואת הודעת האישור ללקוח. כשנמען שולח אחת מהמילים, הוא מתווסף אוטומטית לרשימת ההסרה.</p>
+  <figure>
+    <button class="shot" type="button" aria-label="הגדלת צילום המסך"><div class="bar"><i></i><i></i><i></i><span>app.message.co.il/settings</span></div><img src="images/18-settings-optout.jpg" alt="לשונית ניהול הסרה מקבוצה עם מילות מפתח" loading="lazy"></button>
+    <figcaption>מילות המפתח להסרה בעברית, והמתג "הסרה אוטומטית פעילה".</figcaption>
+  </figure>
+  <div class="note warn"><span>⚠️</span><span>מומלץ להשאיר את ההסרה האוטומטית פעילה. אם מכבים אותה, האחריות החוקית לטפל בבקשות הסרה עוברת אליכם.</span></div>
+
+  <h3>🧑‍💼 10.7 הוספת נציג</h3>
+  <ol class="steps">
+    <li>פתחו את <span class="ui">משתמשים</span> בתפריט הצד ולחצו על <span class="ui">הוסף נציג</span>.</li>
+    <li>מלאו שם מלא, מייל וסוג משתמש: נציג או מנהל משמרת.</li>
+    <li>אם רוצים, שייכו לקבוצות נציגים והגבילו את המספרים שהנציג יראה. אם לא בוחרים מספרים, הנציג רואה את כולם.</li>
+    <li>לחצו על <span class="ui">שליחת הזמנה</span>. הנציג מקבל קישור הרשמה במייל, ואפשר גם להעתיק את הקישור ולשלוח אותו בעצמכם.</li>
+  </ol>
+  <p>בטבלת הנציגים אפשר <b>לשלוח שוב הזמנה במייל</b>, <b>להעתיק קישור הזמנה</b>, לערוך ולמחוק. סטטוס ההרשמה מוצג כ"פעיל" או "ממתין לאישור", ולכל נציג מוצגת גם הזמינות: זמין, בהפסקה או לא זמין.</p>
+  <figure>
+    <button class="shot" type="button" aria-label="הגדלת צילום המסך"><div class="bar"><i></i><i></i><i></i><span>app.message.co.il/users</span></div><img src="images/20-users.jpg" alt="מסך ניהול נציגים עם כפתור הוסף נציג" loading="lazy"></button>
+    <figcaption>מסך "ניהול נציגים" עם הלשוניות נציגים וקבוצות נציגים.</figcaption>
+  </figure>
+
+  <h3>👥 10.8 קבוצות נציגים</h3>
+  <p>בלשונית <span class="ui">קבוצות נציגים</span> לוחצים על <span class="ui">הוסף קבוצה</span>. לכל קבוצה מגדירים הודעת פתיחה, הודעת סיום, הודעה כשאף נציג לא זמין, ושעות עבודה. בראש המסך בוחרים אם הודעת סיום השיחה ללקוח תהיה שונה בכל קבוצה או אחידה לכל השיחות.</p>
+  <figure>
+    <button class="shot" type="button" aria-label="הגדלת צילום המסך"><div class="bar"><i></i><i></i><i></i><span>app.message.co.il/users</span></div><img src="images/22-agent-groups.jpg" alt="לשונית קבוצות נציגים עם הגדרת הודעת סיום שיחה" loading="lazy"></button>
+    <figcaption>לשונית קבוצות הנציגים והגדרת הודעת סיום השיחה.</figcaption>
+  </figure>
+</section>
+
+<!-- 11 -->
+<section id="ch11">
+  <div class="chapter-head"><span class="num">פרק 11</span><h2 class="ch">🚀 תהליכי עבודה מלאים</h2></div>
+
+  <h3>🏁 11.1 הפעלה ראשונה של העסק</h3>
+  <ol class="steps">
+    <li>חברו את מספר ה־WhatsApp העסקי ב<span class="ui">הגדרות ← מספרים מחוברים</span>.</li>
+    <li>צרו בוט חדש ב<span class="ui">הבוטים שלי</span> ובנו תפריט פתיחה (פרק 5).</li>
+    <li>בדקו את הבוט בסימולטור.</li>
+    <li>שייכו את המספר לבוט.</li>
+    <li>הוסיפו נציגים וקבוצות נציגים (פרק 10).</li>
+    <li>פרסמו גרסה כגיבוי.</li>
+  </ol>
+
+  <h3>📣 11.2 שליחת קמפיין לרשימת תפוצה</h3>
+  <ol class="steps">
+    <li>ייבאו אנשי קשר מאקסל ושייכו אותם לרשימת תפוצה (פרק 7).</li>
+    <li>צרו תבנית WhatsApp שיווקית והמתינו לסטטוס <span class="pill">APPROVED</span> (פרק 9).</li>
+    <li>ב<span class="ui">שליחת הודעות</span> בחרו את הרשימה, את המספר השולח ואת התבנית.</li>
+    <li>שלחו מיד או תזמנו.</li>
+    <li>עקבו אחרי התוצאות בלשונית <span class="ui">שליחות מרוכזות</span>.</li>
+  </ol>
+
+  <h3>🎧 11.3 טיפול בפנייה של לקוח</h3>
+  <ol class="steps">
+    <li>הלקוח כותב, והבוט עונה ומציג תפריט.</li>
+    <li>הלקוח בוחר "שיחה עם נציג", והשיחה עוברת לסטטוס <b>ממתין</b>.</li>
+    <li>הנציג פותח את השיחה ב<span class="ui">שיחות</span> ועונה. השיחה עוברת ל<b>בטיפול</b>.</li>
+    <li>בסיום הנציג מסמן <b>טופל</b>, והלקוח מקבל את הודעת הסיום.</li>
+  </ol>
+</section>
+
+<!-- 12 -->
+<section id="ch12">
+  <div class="chapter-head"><span class="num">פרק 12</span><h2 class="ch">❓ פתרון בעיות</h2></div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>מה רואים</th><th>מה עושים</th></tr></thead>
+      <tbody>
+        <tr><td>"לקוח חדש — ניתן לשלוח הודעת תבנית WhatsApp בלבד"</td><td>עברו יותר מ־24 שעות מההודעה האחרונה של הלקוח, או שזה לקוח חדש. הקלידו <b>/</b> ושלחו תבנית מאושרת.</td></tr>
+        <tr><td>"ההודעה נשמרה בהיסטוריה אך לא נשלחה ללקוח"</td><td>לחצו על <span class="ui">נסה שוב</span>. אם התקלה חוזרת, בדקו שהמספר מחובר ופעיל.</td></tr>
+        <tr><td>"יש למלא את כל המשתנים בתבנית לפני השליחה"</td><td>מלאו ערך בכל משתנה, או הגדירו פרמטרים קבועים לתבנית (פרק 9.3).</td></tr>
+        <tr><td>"לא נמצאו הודעות תבנית"</td><td>ודאו שמספר מחובר ומשויך לבוט. אם עדיין אין תבניות, צרו תבנית חדשה או פנו אלינו.</td></tr>
+        <tr><td>התבנית מסומנת REJECTED</td><td>WhatsApp דחה את התבנית. שנו את הניסוח (בלי תוכן שיווקי בקטגוריה "שירותי") ושמרו שוב.</td></tr>
+        <tr><td>"הקישור אינו תקין או שפג תוקפו"</td><td>קישור ההזמנה של הנציג תקף 7 ימים. במסך משתמשים לחצו על <span class="ui">שלח שוב הזמנה במייל</span>.</td></tr>
+        <tr><td>"מחובר — טרם הופעל"</td><td>ב<span class="ui">הגדרות ← מספרים מחוברים</span> לחצו על <span class="ui">הפעל מספר</span>.</td></tr>
+        <tr><td>"הדפדפן חסם את החלונית הקופצת"</td><td>אפשרו חלונות קופצים לאתר ונסו שוב את החיבור לפייסבוק.</td></tr>
+        <tr><td>"מכסת הנציגים מלאה" / "נגמרה המכסה"</td><td>הגעתם למגבלת המסלול. פנו אלינו לשדרוג.</td></tr>
+        <tr><td>"עברת את מכסת אנשי הקשר הפעילים"</td><td>פנו אלינו לשדרוג המסלול.</td></tr>
+        <tr><td>"הגעת למגבלת הגרסאות"</td><td>כל הגרסאות השמורות נעולות. פתחו נעילה של גרסה ישנה או פרסמו גרסה בתשלום (פרק 5.9).</td></tr>
+        <tr><td>"השמירה נחסמה ע"י השרת"</td><td>רעננו את הדף לפני שממשיכים לערוך. בדרך כלל זה קורה כשהבוט פתוח גם בחלון אחר.</td></tr>
+        <tr><td>הבוט נעצר באמצע שיחה</td><td>כנראה יש יציאה שלא מחוברת לרכיב הבא. בדקו את המסלול בסימולטור (פרק 5.12).</td></tr>
+        <tr><td>"הסשן פג תוקף"</td><td>לחצו על <span class="ui">התחבר מחדש</span>. השינויים שביצעתם נשמרו.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <figure>
+    <button class="shot" type="button" aria-label="הגדלת צילום המסך"><div class="bar"><i></i><i></i><i></i><span>app.message.co.il/users</span></div><img src="images/21-agents-quota.jpg" alt="הודעת מכסת הנציגים מלאה" loading="lazy"></button>
+    <figcaption>דוגמה להודעת מכסה: "מכסת הנציגים מלאה".</figcaption>
+  </figure>
+  <div class="note tip"><span>💬</span><span>לא מצאתם פתרון? כתבו לנו ל־go@mesergo.co.il עם צילום מסך ותיאור קצר של הבעיה.</span></div>
+</section>
+
+</main>
+</div>
+
+<footer>
+  <span>MeserGO · מדריך למשתמש</span>
+  <span>·</span>
+  <span>תמיכה: <b>go@mesergo.co.il</b></span>
+</footer>
+</div>
+
+<dialog id="lightbox" aria-label="תצוגה מוגדלת">
+  <button type="button" id="lb-close">סגירה ✕</button>
+  <img id="lb-img" alt="">
+</dialog>
+
+<script>
+(function () {
+  var dlg = document.getElementById('lightbox');
+  var img = document.getElementById('lb-img');
+  document.querySelectorAll('.shot').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var src = b.querySelector('img');
+      img.src = src.src; img.alt = src.alt;
+      if (dlg.showModal) dlg.showModal();
+    });
+  });
+  document.getElementById('lb-close').addEventListener('click', function () { dlg.close(); });
+  dlg.addEventListener('click', function (e) { if (e.target === dlg) dlg.close(); });
+
+  document.querySelectorAll('.copy').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var t = b.getAttribute('data-copy');
+      var done = function () { b.textContent = 'הועתק ✓'; setTimeout(function () { b.textContent = 'העתקה'; }, 1600); };
+      var fallback = function () {
+        var r = document.createRange(); r.selectNodeContents(document.getElementById('mail'));
+        var s = getSelection(); s.removeAllRanges(); s.addRange(r);
+      };
+      try { navigator.clipboard.writeText(t).then(done, fallback); } catch (e) { fallback(); }
+    });
+  });
+
+  var links = Array.prototype.slice.call(document.querySelectorAll('.toc a'));
+  if ('IntersectionObserver' in window) {
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (en) {
+        if (en.isIntersecting) {
+          links.forEach(function (a) { a.classList.toggle('active', a.getAttribute('href') === '#' + en.target.id); });
+        }
+      });
+    }, { rootMargin: '-20% 0px -70% 0px' });
+    document.querySelectorAll('main section').forEach(function (s) { io.observe(s); });
+  }
+})();
+</script>

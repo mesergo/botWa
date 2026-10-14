@@ -218,7 +218,10 @@
       "confirmDelete": "האם למחוק את הטוקן? לא ניתן לשחזר פעולה זו.",
       "expired": "פג תוקף",
       "noExpiry": "ללא תפוגה",
-      "createdAt": "נוצר בתאריך"
+      "createdAt": "נוצר בתאריך",
+      "createdBy": "נוצר על ידי",
+      "lastUsed": "שימוש אחרון",
+      "neverUsed": "טרם נעשה שימוש"
     },
     "notifications": {
       "heading": "התראות במייל",
