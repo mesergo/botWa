@@ -43,6 +43,7 @@
     "contactExists": "Contact already exists in the system"
   },
   "chat": {
+    "botRequired": "No sender number selected. Pick a number card in the conversations screen or start a new conversation from the dialog.",
     "missingTemplateVars": "Please fill in all template variables before sending (missing: {{vars}})",
     "sendMessageError": "Failed to send the message (code {{status}})",
     "sendMessageNetwork": "Network error sending the message",
@@ -260,6 +261,10 @@
     "title": "New conversation",
     "subtitle": "Enter a phone number to create a new conversation",
     "phonePlaceholder": "e.g. 972501234567 or 0501234567",
+    "senderLabel": "Send from number",
+    "senderPlaceholder": "Select a sender number",
+    "senderInfo": "The message will be sent from {{number}}",
+    "senderRequired": "Please select a sender number",
     "cancel": "Cancel",
     "confirm": "Confirm"
   },

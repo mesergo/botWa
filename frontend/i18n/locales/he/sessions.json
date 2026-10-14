@@ -43,6 +43,7 @@
     "contactExists": "איש קשר קיים במערכת"
   },
   "chat": {
+    "botRequired": "לא נבחר מספר שולח. יש לבחור כרטיסיית מספר במסך השיחות או ליצור שיחה חדשה מהחלונית.",
     "missingTemplateVars": "יש למלא את כל המשתנים בתבנית לפני השליחה (חסר: {{vars}})",
     "sendMessageError": "שגיאה בשליחת ההודעה (קוד {{status}})",
     "sendMessageNetwork": "שגיאת רשת בשליחת ההודעה",
@@ -260,6 +261,10 @@
     "title": "שיחה חדשה",
     "subtitle": "הזן מספר טלפון ליצירת שיחה חדשה",
     "phonePlaceholder": "לדוגמה: 972501234567 או 0501234567",
+    "senderLabel": "שלח מהמספר",
+    "senderPlaceholder": "בחר מספר שולח",
+    "senderInfo": "ההודעה תישלח ממספר {{number}}",
+    "senderRequired": "יש לבחור מספר שולח",
     "cancel": "ביטול",
     "confirm": "אישור"
   },
