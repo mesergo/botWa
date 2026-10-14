@@ -779,7 +779,7 @@ function renderTemplateBodyText(templateData, contact) {
 // Build the process_history-shaped entry representing a group broadcast message.
 // `contact` (optional) lets template body params personalized via __field: be resolved
 // to that specific recipient's real value instead of a generic placeholder.
-function buildBroadcastHistoryEntry(groupName, broadcastId, flowId, { isTemplate, templateData, msgText, media }, contact, wamid = null) {
+function buildBroadcastHistoryEntry(groupName, broadcastId, flowId, { isTemplate, templateData, msgText, media }, contact) {
   const base = {
     sender: 'broadcast',
     name: groupName,
@@ -788,9 +788,6 @@ function buildBroadcastHistoryEntry(groupName, broadcastId, flowId, { isTemplate
     broadcast_id: String(broadcastId),
     broadcast_group: groupName,
     created: new Date().toISOString(),
-    // Only the personalized per-recipient /send path returns a wamid; the sheet
-    // batch endpoint does not, so those entries stay without delivery fields.
-    ...(wamid ? { wamid, deliveryStatus: null } : {}),
   };
 
   if (isTemplate && templateData) {
@@ -896,7 +893,7 @@ async function saveBroadcastToSessions(userId, flowId, broadcastId, groupName, s
   const contactOps = [];
 
   for (const p of phonesArr) {
-    const entry = buildBroadcastHistoryEntry(groupName, broadcastId, flowId, sendOpts, p.contact, p.wamid);
+    const entry = buildBroadcastHistoryEntry(groupName, broadcastId, flowId, sendOpts, p.contact);
 
     // Layer 1: open agent conversation — always append in-place, never a new session.
     const agentInfo = agentSessionByPhone.get(p.phone);
@@ -1124,8 +1121,6 @@ async function processBroadcast(broadcastId, userId, group, contacts, opts) {
             body: JSON.stringify(payload),
           });
           if (waRes.ok) {
-            const okBody = await waRes.json().catch(() => null);
-            p.wamid = okBody?.messages?.[0]?.id || null;
             sentCount++;
             recipients.push({ phone: p.phone, name: p.name, status: 'sent' });
           } else {
