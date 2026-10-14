@@ -15,6 +15,7 @@ import { FileUploader } from './FileUploader';
 import ChatImage from './shared/ChatImage';
 import TemplateFormModal from './admin/templates/TemplateFormModal';
 import TemplateActionsMenu from './admin/templates/TemplateActionsMenu';
+import TemplateVisibilityToggle from './admin/templates/TemplateVisibilityToggle';
 import { useAdminCustomerTemplates } from './admin/templates/useAdminCustomerTemplates';
 import { buildComponentsPayload, TemplateModalMode } from './admin/templates/types';
 import SmsInApp from './sms-in/SmsInApp';
@@ -22,7 +23,7 @@ import SmsExternalLogTab from './sms-in/SmsExternalLogTab';
 import CustomerSessionsPanel from './CustomerSessionsPanel';
 import ErrorLogTab from './logsAdmin/ErrorLogTab';
 import PaymentCountriesSelect from './admin/PaymentCountriesSelect';
-
+ 
 interface User {
   id: string;
   name: string;
@@ -3436,23 +3437,10 @@ const openRestoreConversations = async () => {
                                             {name}
                                           </h3>
                                           <div className="flex items-center gap-1.5">
-                                            {(() => {
-                                              const currentVis = custDialog360Settings[name] ?? 'manager';
-                                              const cfg = {
-                                                hidden:  { icon: <EyeOff size={16} />,    title: 'מוסתר לכולם — לחץ כדי לשנות',          cls: 'bg-rose-500 text-white border-rose-500 hover:bg-rose-600' },
-                                                manager: { icon: <UserCheck size={16} />, title: 'מוצג למנהל משמרת — לחץ כדי לשנות',     cls: 'bg-amber-500 text-white border-amber-500 hover:bg-amber-600' },
-                                                agent:   { icon: <Headphones size={16} />, title: 'מוצג גם לנציגים — לחץ כדי לשנות',       cls: 'bg-emerald-500 text-white border-emerald-500 hover:bg-emerald-600' },
-                                              }[currentVis];
-                                              return (
-                                                <button
-                                                  onClick={() => cycleCustomerDialog360Visibility(selectedUser.id, template)}
-                                                  className={`p-2 rounded-lg transition-colors border ${cfg.cls}`}
-                                                  title={cfg.title}
-                                                >
-                                                  {cfg.icon}
-                                                </button>
-                                              );
-                                            })()}
+                                            <TemplateVisibilityToggle
+                                              value={custDialog360Settings[name] ?? 'manager'}
+                                              onChange={() => cycleCustomerDialog360Visibility(selectedUser.id, template)}
+                                            />
                                             <TemplateActionsMenu
                                               deleting={adminCustomerTemplates.saving}
                                               onEdit={() => {
@@ -3980,23 +3968,10 @@ const openRestoreConversations = async () => {
                                   {name}
                                 </h3>
                                 {/* Visibility cycling toggle: hidden -> manager -> agent -> hidden */}
-                                {(() => {
-                                  const currentVis = dialog360TemplateSettings[name] ?? 'manager';
-                                  const cfg = {
-                                    hidden:  { icon: <EyeOff size={16} />,    title: 'מוסתר לכולם — לחץ כדי לשנות',              cls: 'bg-rose-500 text-white border-rose-500 hover:bg-rose-600' },
-                                    manager: { icon: <UserCheck size={16} />, title: 'מוצג למנהל משמרת  — לחץ כדי לשנות',     cls: 'bg-amber-500 text-white border-amber-500 hover:bg-amber-600' },
-                                    agent:   { icon: <Headphones size={16} />, title: 'מוצג גם לנציגים — לחץ כדי לשנות',          cls: 'bg-emerald-500 text-white border-emerald-500 hover:bg-emerald-600' },
-                                  }[currentVis];
-                                  return (
-                                    <button
-                                      onClick={() => cycleDialog360Visibility(template)}
-                                      className={`p-2 rounded-lg transition-colors border ${cfg.cls}`}
-                                      title={cfg.title}
-                                    >
-                                      {cfg.icon}
-                                    </button>
-                                  );
-                                })()}
+                                <TemplateVisibilityToggle
+                                  value={dialog360TemplateSettings[name] ?? 'manager'}
+                                  onChange={() => cycleDialog360Visibility(template)}
+                                />
                               </div>
                               <div className="flex items-center gap-2 flex-wrap">
                                 {language && (

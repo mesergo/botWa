@@ -19,13 +19,14 @@ import PaymentCountriesSelect from './admin/PaymentCountriesSelect';
 import ApiTokensPanel from './apiTokens/ApiTokensPanel';
 import NotificationAlertsPanel from './notifications/NotificationAlertsPanel';
 import TemplateActionsMenu from './admin/templates/TemplateActionsMenu';
+import TemplateVisibilityToggle, { TemplateVisibility, nextTemplateVisibility } from './admin/templates/TemplateVisibilityToggle';
 import TemplateFormModal from './admin/templates/TemplateFormModal';
 import { buildComponentsPayload, TemplateModalMode } from './admin/templates/types';
 import { useOwnDialog360Templates } from './admin/templates/useOwnDialog360Templates';
 import TemplateDefaultParamsEditor from './shared/TemplateDefaultParamsEditor';
 import { countBodyParams } from './shared/templateDefaultParams';
 import { useContactFields } from '../context/ContactFieldsContext';
-
+ 
 // Stable empty value for templates with no saved default params (keeps the editor's
 // draft from being reset on every render).
 const EMPTY_PARAMS: string[] = [];
@@ -273,7 +274,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
   // WA templates state (Settings tab)
   const [waTemplates, setWaTemplates] = useState<any[]>([]);
   const [waTemplatesLoading, setWaTemplatesLoading] = useState(false);
-  const [templateSettings, setTemplateSettings] = useState<Record<string, boolean>>({});
+  const [templateSettings, setTemplateSettings] = useState<Record<string, TemplateVisibility>>({});
   const [templateDefaultMedia, setTemplateDefaultMedia] = useState<Record<string, { url: string; type: 'image' | 'video' | 'document' }>>({});
   // Per-template setting: what happens to the conversation right after this
   // specific template is sent (no_change / agent / bot).
@@ -407,13 +408,13 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
       if (!res.ok) return;
       const data = await res.json();
       if (data.success && Array.isArray(data.settings)) {
-        const settingsMap: Record<string, boolean> = {};
+        const settingsMap: Record<string, TemplateVisibility> = {};
         const defaultMediaMap: Record<string, { url: string; type: 'image' | 'video' | 'document' }> = {};
         const postSendModeMap: Record<string, 'no_change' | 'agent' | 'bot'> = {};
         const defaultParamsMap: Record<string, string[]> = {};
         data.settings.forEach((s: any) => {
           if (s.templateName) {
-            settingsMap[s.templateName] = s.showInChat ?? true;
+            settingsMap[s.templateName] = s.visibility || (s.showInChat === false ? 'hidden' : 'manager');
             if (s.defaultHeaderMediaUrl && s.defaultHeaderMediaType) {
               defaultMediaMap[s.templateName] = { url: s.defaultHeaderMediaUrl, type: s.defaultHeaderMediaType };
             }
@@ -536,8 +537,8 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
 
   const toggleShowInChat = async (template: any) => {
     if (!token) return;
-    const currentValue = templateSettings[template.name] ?? true;
-    const newValue = !currentValue;
+    const currentValue: TemplateVisibility = templateSettings[template.name] ?? 'manager';
+    const newValue = nextTemplateVisibility(currentValue);
     
     // Optimistic update
     setTemplateSettings(prev => ({ ...prev, [template.name]: newValue }));
@@ -552,7 +553,8 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
         body: JSON.stringify({
           templateName: template.name,
           templateId: template.id,
-          showInChat: newValue,
+          visibility: newValue,
+          showInChat: newValue !== 'hidden',
           language: template.language,
           category: template.category,
           status: template.status
@@ -2006,17 +2008,15 @@ const Dashboard: React.FC<DashboardProps> = ({ bots, onEnterBot, onCreateBot, on
                                 <div className="flex items-center gap-2 mb-2">
                                   <h3 className="text-sm font-black text-slate-800 truncate group-hover:text-sky-700 transition-colors flex-1">{name}</h3>
                                   <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
-                                    <button
-                                      onClick={() => toggleShowInChat(tmpl)}
-                                      className={`p-1.5 rounded-lg transition-all ${
-                                        (templateSettings[name] ?? true)
-                                          ? 'bg-emerald-500 hover:bg-emerald-600 text-white'
-                                          : 'bg-slate-300 hover:bg-slate-400 text-slate-700'
-                                      }`}
-                                      title={(templateSettings[name] ?? true) ? t('settings.templates.shownInChat') : t('settings.templates.hiddenInChat')}
-                                    >
-                                      {(templateSettings[name] ?? true) ? <Eye size={14} /> : <EyeOff size={14} />}
-                                    </button>
+                                    <TemplateVisibilityToggle
+                                      value={templateSettings[name] ?? 'manager'}
+                                      onChange={() => toggleShowInChat(tmpl)}
+                                      labels={{
+                                        hidden: t('settings.templates.visibilityHidden'),
+                                        manager: t('settings.templates.visibilityManager'),
+                                        agent: t('settings.templates.visibilityAgent'),
+                                      }}
+                                    />
                                     {can('wa_templates_manage.view') && (
                                       <TemplateActionsMenu
                                         deleting={ownWaTemplates.saving}
