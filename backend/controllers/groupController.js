@@ -1053,7 +1053,7 @@ async function processBroadcast(broadcastId, userId, group, contacts, opts) {
     console.log(`${TAG} 🚫 Blocked phones count: ${blocked.size}`);
 
     // ── בנה מערך טלפונים (סנן חסומים/לא תקינים) ─────────────────────
-    const phonesArr = [];
+    let phonesArr = [];
     let skipped = 0;
     const recipients = [];
 
@@ -1152,6 +1152,48 @@ async function processBroadcast(broadcastId, userId, group, contacts, opts) {
       return;
     }
 
+    // ── Template with per-contact fields (__field:...) ──────────────────────
+    // send-to-list only merges $name$, so we resolve every __field: ourselves per
+    // recipient and ship a ready `params` array inside each phones[] entry.
+    const bodyParams = (isTemplate && Array.isArray(templateData?.params?.body))
+      ? templateData.params.body.map(v => String(v ?? ''))
+      : [];
+    const hasFieldParams = bodyParams.some(s => s.startsWith('__field:'));
+
+    if (hasFieldParams) {
+      // WhatsApp rejects template params containing newlines/tabs or 4+ consecutive spaces
+      const sanitize = v => String(v ?? '').replace(/[\r\n\t]+/g, ' ').replace(/ {4,}/g, '   ').trim();
+      const ready = [];
+      for (const p of phonesArr) {
+        let emptyRef = null;
+        const resolved = bodyParams.map(s => {
+          if (!s.startsWith('__field:')) return s;
+          const ref = s.slice(8);
+          const val = sanitize(resolveContactField(p.contact, ref));
+          if (!val && !emptyRef) emptyRef = ref;
+          return val;
+        });
+        if (emptyRef) {
+          skipped++;
+          recipients.push({ phone: p.phone, name: p.name, status: 'skipped', reason: `empty_field:${emptyRef}` });
+          console.warn(`${TAG} ⚠️ skip ${p.phone} — empty field "${emptyRef}" (contact=${p.contact?._id})`);
+          continue;
+        }
+        p.params = resolved;
+        ready.push(p);
+        console.log(`${TAG} 🧩 ${p.phone} (${p.name}) params=${JSON.stringify(resolved)}`);
+      }
+      phonesArr = ready;
+      if (phonesArr.length === 0) {
+        console.warn(`${TAG} ⚠️ All recipients skipped (empty fields) — nothing to send`);
+        await GroupBroadcast.findByIdAndUpdate(broadcastId, {
+          status: 'completed', completed_at: new Date(),
+          processed: contacts.length, sent: 0, failed: 0, skipped, recipients,
+        });
+        return;
+      }
+    }
+
     // ── Build URL query params (everything except phones goes in URL) ────
     const queryParts = [];
     queryParts.push(`token=${encodeURIComponent(SHEET_TOKEN)}`);
@@ -1166,15 +1208,9 @@ async function processBroadcast(broadcastId, userId, group, contacts, opts) {
         queryParts.push(`header[0][0][link]=${encodeURIComponent(templateData.params.header.url)}`);
         queryParts.push(`header[0][1]=${encodeURIComponent(headerType)}`);
       }
-      if (Array.isArray(templateData.params?.body) && templateData.params.body.length > 0) {
-        templateData.params.body.forEach((p, i) => {
-          const s = String(p || '');
-          // __field:full_name / whatsapp_name → $name$ (מוחלף אוטומטית לכל נמען ע"י ה-API)
-          let val = s;
-          if (s === '__field:full_name' || s === '__field:whatsapp_name') val = '$name$';
-          else if (s.startsWith('__field:')) val = '';
-          queryParts.push(`params[${i}]=${encodeURIComponent(val)}`);
-        });
+      // With __field: params the values travel per-recipient in the body (see `body` below)
+      if (!hasFieldParams && bodyParams.length > 0) {
+        bodyParams.forEach((s, i) => queryParts.push(`params[${i}]=${encodeURIComponent(s)}`));
       }
     } else if (media?.url && media?.type) {
       // מדיה חופשית — שלח את ה-URL כטקסט
@@ -1186,16 +1222,16 @@ async function processBroadcast(broadcastId, userId, group, contacts, opts) {
 
     const fullUrl = `${SHEET_URL}?${queryParts.join('&')}`;
 
-    // Body: phones as { phone, name } objects (personalized plain-text messages never
-    // reach this point — they're handled earlier via the per-recipient loop above).
-    // CONFIRMED from the actual send-to-list server source: it maps each phones[] entry
-    // to `[phone, name]` via `typeof p === 'object' ? [p.phone, p.name] : [p, '']` and
-    // ONLY ever substitutes `$name$` (or positionally `$A$`/`$B$`) — no other key is read.
-    // Sending flat phone strings here (as before) meant `name` was always '' server-side,
-    // silently breaking template `$name$` params (__field:full_name/whatsapp_name). Always
-    // sending `{ phone, name }` fixes that, and is a harmless no-op for messages that don't
-    // reference `$name$`.
-    const body = { phones: phonesArr.map(p => ({ phone: p.phone, name: p.name })) };
+    // Body: phones as { phone, name, params? } objects (personalized plain-text messages
+    // never reach this point — they're handled earlier via the per-recipient loop above).
+    // `params` (templates with __field: params only) is the ready, per-recipient body-params
+    // array resolved above. The external send-to-list server must be updated to use it;
+    // an older server ignores the unknown key and keeps its previous behavior.
+    const body = { phones: phonesArr.map(p => ({
+      phone: p.phone,
+      name: p.name,
+      ...(p.params ? { params: p.params } : {}),
+    })) };
 
     console.log(`${TAG} 📤 POST ${fullUrl}`);
     console.log(`${TAG}   → phones: ${phonesArr.length} | template: ${isTemplate ? (templateData?.name || 'N/A') : 'N/A'} | text: ${!isTemplate ? String(msgText || '').substring(0, 50) : 'N/A'} | reportId: ${broadcastId}`);

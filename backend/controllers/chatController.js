@@ -422,6 +422,61 @@ const addToHistory = (session, message, nodeId) => {
   session.process_history = history;
 };
 
+// Helper: Build the quoted/replied-to fields for an INCOMING customer message.
+// The customer's WhatsApp reply arrives with `reply_to` (wamid of the quoted
+// message) and optionally `reply_text` (preview text from dialog360). The quoted
+// content is resolved from our own history first (in-memory session, then DB by
+// wamid) and falls back to `reply_text`. Returns {} when there is nothing to quote.
+const QUOTE_MAX_LEN = 300;
+const QUOTE_MEDIA_LABELS = { Image: '📷 תמונה', Video: '🎬 וידאו', Document: '📄 מסמך', Audio: '🎙️ הקלטה' };
+const buildQuoteFields = async ({ replyTo, replyText, history, userId, sender, botName }) => {
+  const wamid = replyTo ? String(replyTo).trim() : '';
+  const fallbackText = replyText ? String(replyText).trim() : '';
+  if (!wamid && !fallbackText) return {};
+
+  let found = null;
+  if (wamid) {
+    if (Array.isArray(history)) {
+      found = history.find(h => h && h.wamid === wamid) || null;
+    }
+    if (!found) {
+      try {
+        const doc = await BotSession.findOne({
+          user_id: userId,
+          sender,
+          'process_history.wamid': wamid
+        }).select({ 'process_history.$': 1 }).lean();
+        found = doc?.process_history?.[0] || null;
+      } catch (err) {
+        console.error('[BOT] buildQuoteFields lookup failed:', err.message);
+      }
+    }
+  }
+
+  let quotedText = '';
+  let quotedSender = null;
+  if (found) {
+    quotedText = String(found.text ?? found.content ?? '').trim();
+    if (!quotedText) {
+      if (found.type === 'Contact') quotedText = `👤 ${found.contactName || ''}`.trim();
+      else quotedText = QUOTE_MEDIA_LABELS[found.type] || '';
+    }
+    if (found.sender === 'user') quotedSender = 'לקוח';
+    else if (found.sender === 'agent') quotedSender = found.agent_name || found.name || 'נציג';
+    else if (found.sender === 'broadcast') quotedSender = found.broadcast_group || found.name || 'שידור';
+    else quotedSender = botName || 'בוט';
+  }
+  if (!quotedText) quotedText = fallbackText;
+  if (!quotedText && !wamid) return {};
+  if (quotedText.length > QUOTE_MAX_LEN) quotedText = quotedText.slice(0, QUOTE_MAX_LEN) + '…';
+
+  return {
+    quoted_wamid: wamid || null,
+    quoted_text: quotedText || null,
+    quoted_sender: quotedSender
+  };
+};
+
 // Main: Walk through nodes chain
 // `ctx` is a plain object shared across the recursive fixed_process calls made
 // while walking ONE incoming message; every external (non-recursive) call site
@@ -1437,7 +1492,7 @@ export const respondToMessage = async (req, res) => {
     const isGetRequest = req.method === 'GET';
     const source = (isGetRequest ? req.query : req.body) || {};
     
-    const { phone, text = '', sender: rawSender = 'unknown', token: tokenParam, bot_id, name = '', message_id = '' } = source;
+    const { phone, text = '', sender: rawSender = 'unknown', token: tokenParam, bot_id, name = '', message_id = '', reply_to: replyTo = '', reply_text: replyText = '' } = source;
     const sender = normalizePhone(rawSender);
     console.log(`[BOT] 📩 message_id=${message_id || 'MISSING'} sender=${sender}`);
     const token = req.headers.authorization?.replace('Bearer ', '') || tokenParam;
@@ -1527,10 +1582,11 @@ export const respondToMessage = async (req, res) => {
         console.log(`[BOT-MEDIA]    text/url    : ${String(text).substring(0, 120)}`);
         console.log(`[BOT-MEDIA]    detected as : ${mediaType || 'plain text (UserInput)'}`);
         const { url: mediaUrl, caption: mediaCaption } = splitMediaUrlAndCaption(text);
+        const quoteFields = await buildQuoteFields({ replyTo, replyText, history: agentCheckSession.process_history, userId: user._id, sender, botName: tokenBot.name });
         agentCheckSession.process_history.push(
           mediaType
-            ? { type: mediaType, url: mediaUrl, text: mediaCaption || undefined, sender: 'user', name: 'משתמש', node_id: 'user', created: new Date().toISOString(), wamid: message_id || null }
-            : { type: 'UserInput', text: String(text), sender: 'user', name: 'משתמש', node_id: 'user', created: new Date().toISOString(), wamid: message_id || null }
+            ? { type: mediaType, url: mediaUrl, text: mediaCaption || undefined, sender: 'user', name: 'משתמש', node_id: 'user', created: new Date().toISOString(), wamid: message_id || null, ...quoteFields }
+            : { type: 'UserInput', text: String(text), sender: 'user', name: 'משתמש', node_id: 'user', created: new Date().toISOString(), wamid: message_id || null, ...quoteFields }
         );
         console.log(`[BOT-MEDIA] ✅ Saved to process_history as ${mediaType || 'UserInput'}`);
         agentCheckSession.markModified('process_history');
@@ -1603,9 +1659,10 @@ export const respondToMessage = async (req, res) => {
       // bot flow at all.
       const mediaType = detectMediaType(String(text));
       const { url: mediaUrl, caption: mediaCaption } = splitMediaUrlAndCaption(text);
+      const quoteFields = await buildQuoteFields({ replyTo, replyText, history: [], userId: user._id, sender, botName: tokenBot.name });
       const historyEntry = mediaType
-        ? { type: mediaType, url: mediaUrl, text: mediaCaption || undefined, sender: 'user', name: 'משתמש', node_id: 'user', created: new Date().toISOString(), wamid: message_id || null }
-        : { type: 'UserInput', text: String(text), sender: 'user', name: 'משתמש', node_id: 'user', created: new Date().toISOString(), wamid: message_id || null };
+        ? { type: mediaType, url: mediaUrl, text: mediaCaption || undefined, sender: 'user', name: 'משתמש', node_id: 'user', created: new Date().toISOString(), wamid: message_id || null, ...quoteFields }
+        : { type: 'UserInput', text: String(text), sender: 'user', name: 'משתמש', node_id: 'user', created: new Date().toISOString(), wamid: message_id || null, ...quoteFields };
 
       const newAgentSession = await BotSession.create({
         user_id: user._id,
@@ -1840,7 +1897,8 @@ export const respondToMessage = async (req, res) => {
         console.log(`[BOT-MEDIA]    url         : ${text.substring(0, 120)}`);
         console.log(`[BOT-MEDIA]    detected as : ${mediaType}`);
         const { url: mediaUrl, caption: mediaCaption } = splitMediaUrlAndCaption(text);
-        addToHistory(session, { type: mediaType, url: mediaUrl, text: mediaCaption || undefined, wamid: message_id || null }, 'user');
+        const mediaQuoteFields = await buildQuoteFields({ replyTo, replyText, history: session.process_history, userId: user._id, sender, botName: tokenBot.name });
+        addToHistory(session, { type: mediaType, url: mediaUrl, text: mediaCaption || undefined, wamid: message_id || null, ...mediaQuoteFields }, 'user');
         session.markModified('process_history');
         await session.save();
         eventBus.emit('session:update', { userId: String(user._id), phone: sender });
@@ -1848,7 +1906,8 @@ export const respondToMessage = async (req, res) => {
         console.log(`${'═'.repeat(60)}\n`);
         return res.json({ StatusId: 1, StatusDescription: 'Media recorded', sender, messages: [] });
       }
-      addToHistory(session, { type: 'UserInput', text, wamid: message_id || null }, 'user');
+      const inputQuoteFields = await buildQuoteFields({ replyTo, replyText, history: session.process_history, userId: user._id, sender, botName: tokenBot.name });
+      addToHistory(session, { type: 'UserInput', text, wamid: message_id || null, ...inputQuoteFields }, 'user');
       session.markModified('process_history');
       session.last_user_input = text; // Save for webservice
     }
