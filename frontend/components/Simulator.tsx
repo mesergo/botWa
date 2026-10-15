@@ -452,7 +452,9 @@ const Simulator: React.FC<SimulatorProps> = ({ isOpen, onClose, flowInstance, no
   const interpolate = (text: string | undefined): string => {
     if (!text) return '';
     return text.replace(/--(.+?)--/g, (match, paramName) => {
-      const value = sessionParamsRef.current[paramName];
+      // --today-- mirrors backend/utils/builtinParams.js: current Israel date as DD/MM/YYYY
+      const value = sessionParamsRef.current[paramName]
+        ?? (paramName === 'today' ? new Date().toLocaleDateString('en-GB', { timeZone: 'Asia/Jerusalem', day: '2-digit', month: '2-digit', year: 'numeric' }) : undefined);
       return value !== undefined ? String(value) : "null";
     });
   };

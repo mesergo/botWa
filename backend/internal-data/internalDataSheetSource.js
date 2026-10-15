@@ -4,8 +4,32 @@
 // (recurring updates to an existing table).
 import XLSX from 'xlsx';
 
+// Rewrites a regular Google Sheets browser link (/edit, /view, /htmlview, /pubhtml)
+// to its CSV export, keeping the tab (gid). Otherwise the fetch returns the HTML page,
+// which XLSX happily parses into junk columns (A, B, C, __EMPTY) with HTML entities.
+export const toGoogleSheetCsvUrl = (sourceUrl) => {
+  let u;
+  try { u = new URL(String(sourceUrl).trim()); } catch { return sourceUrl; }
+  if (u.hostname !== 'docs.google.com') return sourceUrl;
+  const gid = u.searchParams.get('gid') || (u.hash.match(/gid=(\d+)/) || [])[1];
+  const gidParam = gid ? `&gid=${gid}` : '';
+
+  const published = u.pathname.match(/^\/spreadsheets\/d\/e\/([^/]+)/);
+  if (published) {
+    if (u.searchParams.get('output') === 'csv') return sourceUrl;
+    return `https://docs.google.com/spreadsheets/d/e/${published[1]}/pub?output=csv${gidParam}`;
+  }
+  const regular = u.pathname.match(/^\/spreadsheets\/d\/([^/]+)/);
+  if (regular) {
+    if (u.pathname.endsWith('/export') && u.searchParams.get('format') === 'csv') return sourceUrl;
+    return `https://docs.google.com/spreadsheets/d/${regular[1]}/export?format=csv${gidParam}`;
+  }
+  return sourceUrl;
+};
+
 export const parseWorkbookFromSource = async (sourceType, sourceUrl) => {
-  const response = await fetch(sourceUrl);
+  const url = sourceType === 'google_sheet' ? toGoogleSheetCsvUrl(sourceUrl) : sourceUrl;
+  const response = await fetch(url);
   if (!response.ok) throw new Error(`שגיאת הורדה (${response.status})`);
 
   if (sourceType === 'google_sheet') {

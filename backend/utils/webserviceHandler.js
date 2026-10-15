@@ -1,11 +1,12 @@
 import BotSession from '../models/BotSession.js';
 import fetch from 'node-fetch';
+import { getBuiltinParam } from './builtinParams.js';
 
 // Helper: Replace parameters in text
 const replaceParameters = (text, parameters) => {
   if (!text) return '';
   return text.replace(/--(.+?)--/g, (match, paramName) => {
-    const value = parameters[paramName];
+    const value = parameters[paramName] ?? getBuiltinParam(paramName);
     return value !== undefined ? String(value) : 'null';
   });
 };

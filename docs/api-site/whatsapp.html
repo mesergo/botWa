@@ -1,0 +1,465 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>מסר גו · ווטסאפ · תיעוד API</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+  :root{--brand:#1877C2;--brand-ink:#0F5FA0;--yellow:#F5D21A;--teal:#12B5A5;--wa:#25D366;
+    --bg:#EEF2F6;--surface:#FFFFFF;--surface-2:#F7F9FB;--code-bg:#0E1726;--code-text:#E6EDF6;
+    --text:#1A1A2E;--subtext:#6B7280;--border:#E5E7EB;--ok:#0E7A3C;--error:#C0392B;--sidebar:300px}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:Heebo,system-ui,Arial,sans-serif;background:var(--bg);color:var(--text);line-height:1.6}
+  a{color:var(--brand);text-decoration:none}
+  header{position:sticky;top:0;z-index:20;background:linear-gradient(135deg,var(--brand),var(--brand-ink));color:#fff;padding:12px 18px;box-shadow:0 2px 8px rgba(16,24,40,.12)}
+  header .wrap{max-width:1400px;margin:0 auto;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+  header h1{font-size:19px;margin:0;font-weight:800}
+  header .base{font-family:'JetBrains Mono',monospace;font-size:12.5px;background:rgba(0,0,0,.18);padding:5px 10px;border-radius:8px}
+  .creds{margin-inline-start:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .creds input{font-family:inherit;font-size:13px;padding:7px 9px;border:0;border-radius:8px;width:150px}
+  .creds label{font-size:12px;color:#fff;display:flex;gap:5px;align-items:center}
+  .layout{max-width:1400px;margin:0 auto;display:grid;grid-template-columns:var(--sidebar) 1fr;gap:0;align-items:start}
+  @media(max-width:900px){.layout{grid-template-columns:1fr}.sidebar{position:static!important;height:auto!important}}
+  .sidebar{position:sticky;top:60px;height:calc(100vh - 60px);overflow:auto;padding:16px 12px;border-inline-start:1px solid var(--border);background:var(--surface)}
+  .sidebar input.search{width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:9px;font-family:inherit;font-size:13px;margin-bottom:12px;background:var(--surface-2)}
+  .navgroupwrap{margin:4px 0}
+  .navgroup{font-size:12px;font-weight:800;color:var(--brand-ink);text-transform:uppercase;letter-spacing:.4px;margin:8px 0 2px;padding:8px 8px;border-radius:8px;cursor:pointer;user-select:none;display:flex;align-items:center;justify-content:space-between;background:var(--surface-2)}
+  .navgroup:hover{background:#EEF3F8}
+  .navgroup .chev{font-size:10px;transition:transform .18s ease;color:var(--subtext)}
+  .navgroup.collapsed .chev{transform:rotate(-90deg)}
+  .navitems{display:flex;flex-direction:column;gap:1px;padding:2px 0 4px}
+  .navitems.collapsed{display:none}
+  .navlink{display:flex;gap:8px;align-items:center;padding:6px 10px;border-radius:8px;color:var(--text);font-size:13.5px;cursor:pointer}
+  .navlink:hover{background:var(--surface-2)}
+  .navlink .mm{font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;padding:1px 5px;border-radius:5px;background:#E7F1FB;color:var(--brand-ink)}
+  .navlink .mm.GET{background:#E7F6EC;color:var(--ok)}
+  main{padding:22px 26px;min-width:0}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:20px;margin-bottom:18px;box-shadow:0 1px 2px rgba(16,24,40,.04);scroll-margin-top:70px}
+  .card h2{margin:0 0 4px;font-size:20px;font-weight:800}
+  .card h3{margin:0 0 6px;font-size:17px;font-weight:700}
+  .tag{display:inline-block;font-family:'JetBrains Mono',monospace;font-weight:700;font-size:12px;padding:3px 8px;border-radius:6px;background:var(--teal);color:#fff;margin-inline-end:8px}
+  .urlline{font-family:'JetBrains Mono',monospace;font-size:13px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:9px 11px;direction:ltr;text-align:left;overflow:auto;margin:8px 0}
+  .desc{white-space:pre-wrap;color:#333;font-size:14px;margin:8px 0}
+  pre{background:var(--code-bg);color:var(--code-text);border-radius:10px;padding:13px;overflow:auto;font-family:'JetBrains Mono',monospace;font-size:12.5px;direction:ltr;text-align:left;margin:8px 0;max-height:360px}
+  .lbl{font-size:12.5px;font-weight:700;color:var(--subtext);margin:12px 0 2px}
+  button{cursor:pointer;border:0;border-radius:9px;padding:9px 15px;font-family:inherit;font-size:13.5px;font-weight:700}
+  .try{background:var(--surface-2);color:var(--brand-ink);border:1px solid var(--border)}
+  .send{background:var(--wa);color:#fff}.copy{background:var(--surface-2);color:var(--text);border:1px solid var(--border)}
+  .trybox{border:1px dashed var(--border);border-radius:10px;padding:12px;margin-top:10px;background:var(--surface-2)}
+  .trybox.hidden{display:none}
+  .trybox textarea{width:100%;font-family:'JetBrains Mono',monospace;font-size:12.5px;min-height:150px;border:1px solid var(--border);border-radius:8px;padding:9px;direction:ltr;text-align:left;background:#fff}
+  .status{font-weight:700;padding:4px 9px;border-radius:7px;font-family:'JetBrains Mono',monospace;font-size:12.5px}
+  .status.ok{background:#E7F6EC;color:var(--ok)}.status.err{background:#FBEAE8;color:var(--error)}
+  .rowbtn{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px}
+  table{border-collapse:collapse;width:100%;font-size:13px;margin:8px 0}
+  th,td{border:1px solid var(--border);padding:6px 9px;text-align:right}
+  th{background:var(--surface-2)}
+  .note{background:#FFF8DB;border:1px solid #F1E1A6;border-radius:10px;padding:10px 12px;font-size:13px;margin-top:10px}
+  code{font-family:'JetBrains Mono',monospace;background:var(--surface-2);padding:1px 5px;border-radius:5px;font-size:12.5px}
+  .seccreds{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin:12px 0 4px}
+  .seccreds label{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:700;color:var(--subtext)}
+  .seccreds input:not([type=checkbox]){font-family:inherit;font-size:13px;padding:8px 10px;border:1px solid var(--border);border-radius:9px;width:200px;background:var(--surface-2);color:var(--text)}
+  .seccreds label.rem{flex-direction:row;align-items:center;gap:6px;font-weight:600;padding-bottom:9px;color:var(--text)}
+  ol.steps{margin:6px 2px 0;padding-inline-start:20px;display:flex;flex-direction:column;gap:7px}
+  ol.steps li{font-size:13.5px;line-height:1.6}
+  ol.steps li b{color:var(--brand-ink)}
+  .navsub{font-size:11px;font-weight:800;color:var(--subtext);text-transform:uppercase;letter-spacing:.3px;margin:8px 6px 2px;padding:5px 8px;cursor:pointer;border-top:1px solid var(--border)}
+  .navsub:first-child{border-top:0;margin-top:2px}
+  .navsub:hover{color:var(--brand-ink)}
+  .switch{margin-inline-start:auto;display:flex;gap:6px;flex-wrap:wrap}
+  .switch a{font-size:13px;font-weight:700;color:#fff;background:rgba(255,255,255,.14);padding:7px 14px;border-radius:999px;border:1px solid rgba(255,255,255,.25)}
+  .switch a:hover{background:rgba(255,255,255,.24);text-decoration:none}
+  .switch a.active{background:#fff;color:var(--brand-ink);border-color:#fff}
+  .trybox input.tryurl{width:100%;font-family:'JetBrains Mono',monospace;font-size:12.5px;border:1px solid var(--border);border-radius:8px;padding:8px 9px;direction:ltr;text-align:left;background:#fff;margin-bottom:8px}
+  .navlink .mm.POST{background:#E7F1FB;color:var(--brand-ink)}
+  @media(prefers-color-scheme:dark){:root{--bg:#0A0F18;--surface:#141C28;--surface-2:#0F1622;--text:#E8EDF3;--subtext:#94A1B2;--border:#263143}.desc{color:var(--text)!important}.navgroup:hover{background:#1B2534}.trybox textarea,.trybox input.tryurl{background:var(--surface);color:var(--text)}.note{background:rgba(245,210,26,.1);border-color:rgba(245,210,26,.3);color:#E8EDF3}}
+</style>
+</head>
+<body>
+<header><div class="wrap">
+  <h1>מסר גו · מרכז תיעוד API</h1>
+  <nav class="switch">
+    <a href="index.html">מערכת דיוור ו-SMS</a>
+    <a href="whatsapp.html" class="active">ווטסאפ</a>
+  </nav>
+</div></header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <input class="search" id="search" placeholder="🔎 חיפוש בתיעוד…">
+    <div id="nav"></div>
+  </aside>
+  <main id="main"></main>
+</div>
+
+<script>
+// כתובת הבסיס של מערכת הווטסאפ — לשנות כאן בלבד במעבר לסביבה אחרת.
+const BASE = 'https://appdev.message.co.il/api';
+
+// auth: 'bearer' = טוקן API מההגדרות (נשלח אוטומטית מכפתור "נסה עכשיו"),
+//       'url'    = המפתח עובר כפרמטר בכתובת (טוקן ערוץ / מזהה בוט / מפתח טבלה).
+const ENDPOINTS = [
+  { section:'Numbers', name:'רשימת המספרים המחוברים', method:'GET', auth:'bearer',
+    url: BASE+'/whatsapp-registration/connected-numbers',
+    desc:'מחזירה את כל מספרי ה-WhatsApp שמחוברים לחשבון. הקריאה לא משנה דבר — מתאימה גם לבדיקה שהטוקן תקין.\nהשדה phone_number_id מכל מספר משמש את שאר הקריאות בקטגוריה.',
+    respCode:200,
+    respExample:'{\n  "success": true,\n  "connected_numbers": [\n    {\n      "phone_number_id": "123456789012345",\n      "display_phone_number": "972501234567",\n      "verified_name": "העסק שלי",\n      "whatsapp_status": "CONNECTED",\n      "registered": true,\n      "assigned_bot_id": "66f1a2b3c4d5e6f7a8b9c0d1",\n      "allowedPaymentCountries": "972",\n      "quality_rating": "GREEN",\n      "connected_at": "2026-09-15T12:39:58.231Z"\n    }\n  ]\n}' },
+  { section:'Numbers', name:'שיוך מספר לבוט', method:'POST', auth:'bearer',
+    url: BASE+'/whatsapp-registration/assign-to-bot',
+    desc:'משייכת מספר מחובר לבוט. מרגע השיוך, הודעות שמגיעות למספר מטופלות על ידי הבוט.',
+    params:[['phone_number_id','חובה','string','מזהה המספר, מתוך "רשימת המספרים המחוברים".'],['bot_id','חובה','string','מזהה הבוט בחשבון.']],
+    body:'{\n  "phone_number_id": "123456789012345",\n  "bot_id": "66f1a2b3c4d5e6f7a8b9c0d1"\n}',
+    respCode:200, respExample:'{\n  "success": true,\n  "bot_id": "66f1a2b3c4d5e6f7a8b9c0d1",\n  "bot_name": "בוט שירות",\n  "connected_number": { "phone_number_id": "123456789012345", "assigned_bot_id": "66f1a2b3c4d5e6f7a8b9c0d1" }\n}' },
+  { section:'Numbers', name:'ניתוק מספר מבוט', method:'POST', auth:'bearer',
+    url: BASE+'/whatsapp-registration/unassign-from-bot',
+    desc:'מנתקת את המספר מהבוט. המספר נשאר מחובר לחשבון.',
+    params:[['phone_number_id','חובה','string','מזהה המספר.']],
+    body:'{\n  "phone_number_id": "123456789012345"\n}',
+    respCode:200, respExample:'{\n  "success": true,\n  "connected_number": { "phone_number_id": "123456789012345", "assigned_bot_id": null }\n}' },
+  { section:'Numbers', name:'עדכון מדינות תשלום', method:'POST', auth:'bearer',
+    url: BASE+'/whatsapp-registration/update-payment-countries',
+    desc:'קובעת מאילו מדינות מותר לשלם דרך המספר.',
+    params:[['phone_number_id','חובה','string','מזהה המספר.'],['allowedPaymentCountries','חובה','string','קידומות מדינה מופרדות ב-| , ספרות בלבד. לדוגמה 972 או 972|1.']],
+    body:'{\n  "phone_number_id": "123456789012345",\n  "allowedPaymentCountries": "972|1"\n}',
+    respCode:200, respExample:'{\n  "success": true,\n  "connected_number": { "phone_number_id": "123456789012345", "allowedPaymentCountries": "972|1" }\n}' },
+  { section:'Numbers', name:'הסרת מספר מהחשבון', method:'POST', auth:'bearer',
+    url: BASE+'/whatsapp-registration/remove-connected-number',
+    desc:'מוחקת את המספר מהחשבון. לא ניתן לבטל את הפעולה.',
+    params:[['phone_number_id','חובה','string','מזהה המספר.']],
+    body:'{\n  "phone_number_id": "123456789012345"\n}',
+    respCode:200, respExample:'{\n  "success": true,\n  "total_connected": 0\n}' },
+
+  { section:'Send', name:'שליחת הודעת תבנית', method:'POST', auth:'bearer',
+    url: BASE+'/sessions/send-template-to-phone',
+    desc:'שולחת תבנית WhatsApp מאושרת למספר טלפון, גם כשאין עדיין שיחה עם הלקוח. כל קריאה פותחת שיחה חדשה שמופיעה במסך השיחות במערכת.\n\nחשוב: התשובה חוזרת עם HTTP 200 גם כש-WhatsApp דחה את ההודעה. ההודעה נשלחה רק אם waSent הוא true; אחרת הסיבה מופיעה ב-waError.',
+    params:[
+      ['phone','חובה','string','מספר ישראלי, למשל 0501234567 או 972501234567. המערכת ממירה לפורמט בינלאומי.'],
+      ['message','חובה','string','טקסט שיוצג בהיסטוריית השיחה במערכת. ללקוח נשלחת התבנית, לא הטקסט הזה.'],
+      ['templateData.name','חובה','string','שם התבנית בדיוק כפי שאושר ב-WhatsApp.'],
+      ['templateData.language','רשות','string','קוד השפה של התבנית. ברירת מחדל: he.'],
+      ['templateData.params.body','רשות','array','ערכים למשתני התבנית לפי הסדר: הראשון מחליף את {{1}}, השני את {{2}} וכן הלאה.'],
+      ['templateData.params.header','רשות','object','מדיה לכותרת: {"type":"image","url":"https://..."}. אפשר גם video או document. הכתובת חייבת להיות ציבורית.']],
+    body:'{\n  "phone": "0501234567",\n  "message": "תזכורת לפגישה נשלחה",\n  "templateData": {\n    "name": "appointment_reminder",\n    "language": "he",\n    "params": {\n      "body": ["דנה", "יום ראשון 10:00"]\n    }\n  }\n}',
+    respCode:200, respExample:'{\n  "success": true,\n  "waSent": true,\n  "waError": null,\n  "sessionId": "6aa93c9e7720841936ed380b",\n  "phone": "972501234567",\n  "status": "bot"\n}' },
+  { section:'Send', name:'שליחת הודעת תבנית בקישור', method:'GET', auth:'url',
+    url: BASE+'/360/WA_ID/send?token=CHANNEL_TOKEN&phone=0501234567&template=appointment_reminder&params=דנה,יום ראשון 10:00',
+    desc:'אותה שליחה של תבנית, ככתובת אחת — בלי Headers ובלי Body. מתאים למערכות שיודעות רק לפתוח כתובת. אפשר גם POST עם אותם שדות ב-Body כ-JSON (ואז params יכול להיות מערך).\n\nאת WA_ID (מזהה הערוץ) ואת CHANNEL_TOKEN (טוקן הערוץ) מקבלים מצוות התמיכה של מסר גו.\nמערכת שבונה את הכתובת בקוד צריכה לקודד כל ערך (URL encoding). התשובה חוזרת עם 200 גם כשהשליחה נכשלה — יש לבדוק את תוכן התשובה.',
+    params:[
+      ['token','חובה','string','טוקן הערוץ.'],
+      ['phone','חובה','string','מספר הנמען.'],
+      ['template','חובה','string','שם התבנית המאושרת.'],
+      ['params','רשות','string','ערכי המשתנים לפי הסדר, מופרדים בפסיק או ב-|. אפשר גם param1=...&param2=...'],
+      ['header','רשות','string','כתובת ציבורית של תמונה, וידאו או מסמך לכותרת התבנית.'],
+      ['language','רשות','string','קוד השפה. ברירת מחדל: he.']],
+    respCode:200, respExample:'{\n  "success": true,\n  "waSent": true,\n  "waError": null,\n  "phone": "972501234567"\n}' },
+
+  { section:'Bot', name:'הודעה נכנסת לבוט', method:'GET', auth:'url',
+    url: BASE+'/chat/get-reply-text?token=BOT_PUBLIC_ID&phone=972501112222&sender=0523334444&text=שלום&name=דנה',
+    desc:'מעבירה לבוט הודעה נכנסת של לקוח ומחזירה את תשובת הבוט. מתאים כשמערכת הצ\'אט שלכם מקבלת את ההודעות ורוצה שבוט של מסר גו יענה עליהן. אפשר גם POST עם אותם שדות ב-Body כ-JSON.\n\n• StatusId הוא 1 בהצלחה ו-0 בשגיאה.\n• כשהמערכת כבר שלחה את התשובות ל-WhatsApp בעצמה, messages חוזר ריק עם "wa_pushed": true — אין לשלוח אותן שוב.\n• כשנציג מטפל בשיחה, הבוט לא עונה ומוחזר "agentMode": true.',
+    params:[
+      ['token','חובה','string','המזהה הציבורי של הבוט (מהגדרות הבוט). אפשר גם כ-Authorization: Bearer.'],
+      ['phone','חובה','string','מספר העסק שקיבל את ההודעה.'],
+      ['sender','חובה','string','מספר הלקוח ששלח את ההודעה.'],
+      ['text','רשות','string','תוכן ההודעה.'],
+      ['name','רשות','string','שם הלקוח.'],
+      ['message_id','רשות','string','מזהה ההודעה במערכת שלכם.']],
+    respCode:200, respExample:'{\n  "StatusId": 1,\n  "StatusDescription": "Success",\n  "sender": "972523334444",\n  "messages": [ ... ],\n  "control": { "type": "InputText", "name": "full_name" }\n}' },
+
+  { section:'Data', name:'חיפוש רשומה לפי ערך', method:'GET', auth:'url',
+    url: BASE+'/v1/collections/TABLE_ID/lookup?key=phone&value=0501234567&apiKey=TABLE_API_KEY',
+    desc:'מחזירה רשומה אחת מטבלה ב"ניהול דטה פנימי" לפי ערך של שדה. את TABLE_ID ואת המפתח מוצאים בלשונית ה-API של הטבלה. אם ה-API של הטבלה מוגדר כציבורי — אין צורך במפתח. אפשר לשלוח את המפתח גם בכותרת x-api-key.',
+    params:[
+      ['key','חובה','string','שם השדה לחיפוש.'],
+      ['value','חובה','string','הערך לחיפוש.'],
+      ['apiKey','חובה*','string','מפתח ה-API של הטבלה (*לא נדרש בטבלה ציבורית).'],
+      ['_fields','רשות','string','רשימת שדות להחזרה, מופרדים בפסיק.'],
+      ['_format','רשות','string','json_array (ברירת מחדל), single_object, key_value, csv, xml או bot_actions.']],
+    respCode:200, respExample:'{\n  "success": true,\n  "count": 1,\n  "data": [\n    { "_id": "6a1b...", "name": "דנה כהן", "phone": "0501234567", "city": "תל אביב" }\n  ]\n}' },
+  { section:'Data', name:'שאילתה עם סינון', method:'GET', auth:'url',
+    url: BASE+'/v1/collections/TABLE_ID/query?city=תל אביב&age__gte=18&_limit=20&apiKey=TABLE_API_KEY',
+    desc:'מחזירה רשומות לפי תנאי סינון. כל פרמטר שלא מתחיל ב-_ הוא תנאי: field=value לשוויון, או field__op=value.\nפעולות: contains, startsWith, endsWith, gt, gte, lt, lte, ne, in (ערכים מופרדים בפסיק).',
+    params:[
+      ['apiKey','חובה*','string','מפתח ה-API של הטבלה (*לא נדרש בטבלה ציבורית).'],
+      ['_limit','רשות','number','כמות רשומות, 1 עד 200. ברירת מחדל: 50.'],
+      ['_sort / _order','רשות','string','שדה למיון, ו-asc לסדר עולה (ברירת מחדל: יורד).'],
+      ['_fields','רשות','string','רשימת שדות להחזרה, מופרדים בפסיק.'],
+      ['_format','רשות','string','כמו בחיפוש רשומה.']],
+    respCode:200, respExample:'{\n  "success": true,\n  "count": 2,\n  "data": [\n    { "_id": "6a1b...", "name": "דנה כהן", "city": "תל אביב", "age": 31 },\n    { "_id": "6a1c...", "name": "יוסי לוי", "city": "תל אביב", "age": 45 }\n  ]\n}' },
+];
+
+const ERRORS = {
+  Numbers:{ example:'{\n  "error": "connected_number_not_found"\n}', tables:[{ title:'קודי שגיאה', http:true, rows:[
+    ['401','missing_token','חסרה הכותרת Authorization או שאינה בפורמט Bearer <טוקן>.'],
+    ['403','invalid_token','הטוקן לא קיים, נמחק, או שהמשתמש שיצר אותו הוסר מהחשבון.'],
+    ['403','token_expired','עבר תאריך התפוגה של הטוקן.'],
+    ['400','missing_phone_number_id / missing_bot_id','חסר שדה חובה.'],
+    ['400','invalid_allowed_payment_countries','ערך לא תקין — ספרות ו-| בלבד.'],
+    ['404','connected_number_not_found','המספר לא מחובר לחשבון.'],
+    ['404','bot_not_found','הבוט לא נמצא בחשבון.'],
+    ['500','error','שגיאת שרת. נסו שוב; אם חוזרת — פנו לתמיכה.']]}]},
+  Send:{ example:'{\n  "success": true,\n  "waSent": false,\n  "waError": "HTTP 400: template not found"\n}', tables:[{ title:'קודי שגיאה', http:true, rows:[
+    ['200','waSent: false','הבקשה התקבלה אך WhatsApp דחה את ההודעה. הסיבה ב-waError.'],
+    ['401 / 403','missing_token / invalid_token / token_expired','בעיית טוקן — ראו "הפקת טוקן והזדהות".'],
+    ['400','מספר טלפון הוא שדה חובה','חסר phone.'],
+    ['400','נתוני תבנית הם שדה חובה','חסר templateData.'],
+    ['400','הודעה היא שדה חובה','חסר message.'],
+    ['400','לא הוגדר חיבור WhatsApp עבור משתמש זה','לחשבון אין מספר WhatsApp פעיל המשויך לבוט.'],
+    ['400','phone, template and token are required','בשליחה בקישור — חסר אחד מהפרמטרים.']]}]},
+  Bot:{ example:'{\n  "StatusId": 0,\n  "StatusDescription": "Bot not found"\n}', tables:[{ title:'קודי שגיאה', http:true, rows:[
+    ['400','Missing phone or token','חסר phone או token.'],
+    ['404','Bot not found','המזהה הציבורי של הבוט שגוי.'],
+    ['404','No automatic responses configured','לבוט אין תהליך מוגדר.'],
+    ['500','(הודעת שגיאה)','שגיאת שרת.']]}]},
+  Data:{ example:'{\n  "success": false,\n  "error": "מפתח API חסר או שגוי"\n}', tables:[{ title:'קודי שגיאה', http:true, rows:[
+    ['401','מפתח API חסר או שגוי','בדקו את apiKey של הטבלה.'],
+    ['404','טבלה לא נמצאה','TABLE_ID שגוי.'],
+    ['404','לא נמצאה רשומה תואמת','בחיפוש רשומה — אין רשומה עם הערך.'],
+    ['400','נדרשים הפרמטרים key ו-value','חסר key או value.'],
+    ['400','אופרטור לא נתמך','פעולת סינון שאינה ברשימה.']]}]},
+};
+const ERR_NOTE = 'בססו את הלוגיקה על קוד ה-HTTP ועל שדות כמו success / waSent / StatusId — לא על טקסט הודעת השגיאה, שעשוי להשתנות.';
+const $ = (s, r=document) => r.querySelector(s);
+const SECTIONS = [
+  { key:'Numbers', title:'מספרי WhatsApp' },
+  { key:'Send', title:'שליחת הודעות' },
+  { key:'Bot', title:'חיבור בוט למערכת צ\'אט' },
+  { key:'Data', title:'דטה פנימי' },
+];
+const SECTION_TITLE = {}; SECTIONS.forEach(s=>SECTION_TITLE[s.key]=s.title);
+const STATUS = [[200,'הצלחה (בשליחת הודעות — בדקו גם את waSent)'],[400,'בקשה לא תקינה — חסר שדה או ערך שגוי'],[401,'חסר טוקן / מפתח'],[403,'טוקן לא תקין או שפג תוקפו'],[404,'המשאב לא נמצא בחשבון'],[500,'שגיאת שרת']];
+const el = (t,c,txt) => { const e=document.createElement(t); if(c)e.className=c; if(txt!=null)e.textContent=txt; return e; };
+const slug = (i) => 'ep-'+i;
+
+// auth intro card
+function authCard(){
+  const c = el('section','card'); c.id='sec-__auth';
+  c.innerHTML = `<h2>אימות וכללי יסוד</h2>
+    <p class="desc">כל הקריאות פועלות מול <code>${BASE}</code> ב-HTTPS וקידוד UTF-8. ברוב הקריאות האימות הוא <b>Bearer Token</b>: טוקן API שאתם מפיקים בהגדרות החשבון, בכותרת Authorization.</p>
+    <div class="urlline">Authorization: Bearer YOUR_API_TOKEN<br>Content-Type: application/json</div>
+    <div class="lbl">ב-Postman</div>
+    <ol class="steps">
+      <li>בבקשה, פתחו את הלשונית <b>Authorization</b> ובחרו <b>Bearer Token</b>.</li>
+      <li>הדביקו את הטוקן בשדה <b>Token</b>.</li>
+      <li>בקריאות POST: בלשונית <b>Body</b> בחרו <b>raw</b> ואז <b>JSON</b>, והדביקו את גוף הבקשה מהתיעוד.</li>
+    </ol>
+    <div class="lbl" style="margin-top:14px">סוגי מפתחות</div>
+    <table><thead><tr><th>מפתח</th><th>איפה מקבלים</th><th>איך שולחים</th><th>קריאות</th></tr></thead><tbody>
+      <tr><td>טוקן API</td><td>הגדרות ← טוקני API</td><td>Authorization: Bearer</td><td>מספרי WhatsApp, שליחת הודעת תבנית</td></tr>
+      <tr><td>טוקן ערוץ</td><td>צוות התמיכה</td><td>פרמטר token בכתובת</td><td>שליחת הודעת תבנית בקישור</td></tr>
+      <tr><td>מזהה ציבורי של בוט</td><td>הגדרות הבוט</td><td>פרמטר token בכתובת</td><td>חיבור בוט למערכת צ'אט</td></tr>
+      <tr><td>מפתח API של טבלה</td><td>ניהול דטה פנימי ← הטבלה ← API</td><td>פרמטר apiKey או כותרת x-api-key</td><td>דטה פנימי</td></tr>
+    </tbody></table>
+    <div class="lbl" style="margin-top:14px">קודי HTTP נפוצים</div>
+    <table><thead><tr><th>קוד</th><th>משמעות</th></tr></thead><tbody id="stbody"></tbody></table>`;
+  const tb = $('#stbody', c);
+  STATUS.forEach(([k,v]) => { const tr=el('tr'); tr.appendChild(el('td',null,String(k))); tr.appendChild(el('td',null,v)); tb.appendChild(tr); });
+  return c;
+}
+
+// error-codes card for a section
+function errCard(key){
+  const e = ERRORS[key]; if(!e) return null;
+  const c = el('section','card'); c.id = 'err-'+key;
+  c.appendChild(el('h3',null,'⚠ קודי שגיאה'));
+  c.appendChild(el('div','note', ERR_NOTE));
+  c.appendChild(el('div','lbl','דוגמת תגובת שגיאה'));
+  c.appendChild(el('pre',null,e.example));
+  for(const t of e.tables){
+    c.appendChild(el('div','lbl',t.title));
+    const tbl=el('table'), thead=el('thead'), htr=el('tr');
+    (t.http?['HTTP','תשובה','משמעות']:['קוד','משמעות']).forEach(h=>htr.appendChild(el('th',null,h)));
+    thead.appendChild(htr); tbl.appendChild(thead);
+    const tb=el('tbody');
+    for(const r of t.rows){ const tr=el('tr'); r.forEach(cell=>tr.appendChild(el('td',null,cell))); tb.appendChild(tr); }
+    tbl.appendChild(tb); c.appendChild(tbl);
+  }
+  return c;
+}
+
+function paramsTable(rows){
+  const tbl=el('table'), thead=el('thead'), htr=el('tr');
+  ['פרמטר','חובה / רשות','סוג','תיאור'].forEach(h=>htr.appendChild(el('th',null,h)));
+  thead.appendChild(htr); tbl.appendChild(thead);
+  const tb=el('tbody');
+  for(const r of rows){ const tr=el('tr'); r.forEach((cell,ix)=>{ const td=el('td'); if(ix===0){ td.appendChild(el('code',null,cell)); } else td.textContent=cell; tr.appendChild(td); }); tb.appendChild(tr); }
+  tbl.appendChild(tb); return tbl;
+}
+
+function gToken(){ const tI=$('#gToken_whatsapp'); return tI?tI.value.trim():''; }
+
+function epCard(e, i){
+  const c = el('section','card'); c.id=slug(i);
+  const h = el('h3'); h.innerHTML = '<span class="tag">'+e.method+'</span>'+e.name;
+  c.appendChild(h);
+  c.appendChild(el('div','urlline', e.url));
+  c.appendChild(el('div','lbl', e.auth==='bearer' ? 'אימות: Authorization: Bearer <טוקן API>' : 'אימות: המפתח עובר כפרמטר בכתובת'));
+  if(e.desc){ c.appendChild(el('div','desc', e.desc)); }
+  if(e.params && e.params.length){ c.appendChild(el('div','lbl','פרמטרים')); c.appendChild(paramsTable(e.params)); }
+  if(e.body && e.body.trim()){
+    c.appendChild(el('div','lbl','גוף הבקשה (JSON)'));
+    c.appendChild(el('pre',null,e.body.trim()));
+  }
+  if(e.respExample && e.respExample.trim()){
+    c.appendChild(el('div','lbl','דוגמת תגובה'+(e.respCode?' (HTTP '+e.respCode+')':'')));
+    c.appendChild(el('pre',null,e.respExample.trim()));
+  }
+  // try it
+  const rb = el('div','rowbtn');
+  const tbtn = el('button','try','▶ נסה עכשיו');
+  const cbtn = el('button','copy','העתק כתובת');
+  rb.appendChild(tbtn); rb.appendChild(cbtn); c.appendChild(rb);
+  const box = el('div','trybox hidden');
+  const ui = el('input','tryurl'); ui.value = e.url; ui.spellcheck=false;
+  const ta = el('textarea'); ta.value = e.body || ''; ta.spellcheck=false;
+  if(e.method==='GET') ta.style.display='none';
+  const sendRow = el('div','rowbtn');
+  const sbtn = el('button','send','שלח'); const st = el('span','status'); st.style.display='none';
+  const tm = el('span'); tm.style.cssText='font-size:12px;color:var(--subtext)';
+  const warn = el('span'); warn.style.cssText='font-size:12.5px;color:var(--error);font-weight:700';
+  sendRow.appendChild(sbtn); sendRow.appendChild(st); sendRow.appendChild(tm); sendRow.appendChild(warn);
+  const out = el('pre',null,''); out.style.display='none';
+  box.appendChild(ui); box.appendChild(ta); box.appendChild(sendRow); box.appendChild(out);
+  c.appendChild(box);
+
+  tbtn.addEventListener('click', () => box.classList.toggle('hidden'));
+  cbtn.addEventListener('click', () => navigator.clipboard.writeText(ui.value).then(()=>{const o=cbtn.textContent;cbtn.textContent='✓ הועתק';setTimeout(()=>cbtn.textContent=o,1200);}, ()=>{ box.classList.remove('hidden'); ui.select(); }));
+  sbtn.addEventListener('click', async () => {
+    warn.textContent='';
+    const headers = {};
+    if(e.auth==='bearer'){
+      const t = gToken();
+      if(!t){ warn.textContent='נא להזין טוקן API בכרטיס "הפקת טוקן והזדהות".'; return; }
+      headers['Authorization'] = 'Bearer '+t;
+    }
+    const init = { method:e.method, headers };
+    if(e.method!=='GET'){ headers['Content-Type']='application/json'; init.body=ta.value; }
+    out.style.display='block'; out.textContent='⏳ שולח…'; st.style.display='none';
+    const t0=performance.now();
+    try{
+      const res=await fetch(ui.value.trim(), init); const ms=Math.round(performance.now()-t0);
+      const txt=await res.text(); let pretty=txt; try{pretty=JSON.stringify(JSON.parse(txt),null,2);}catch(x){}
+      st.style.display='inline-block'; st.className='status '+(res.ok?'ok':'err'); st.textContent=res.status+' '+res.statusText;
+      tm.textContent=ms+' ms'; out.textContent=pretty||'(ריק)';
+    }catch(err){ st.style.display='none'; tm.textContent=''; out.textContent='❌ '+err.message+'\n\n(ייתכן חסימת CORS מהדפדפן — העתיקו את הכתובת ובצעו את הקריאה ב-Postman.)'; }
+  });
+  return c;
+}
+
+// token-generation guide
+const TOKEN_STEPS = [
+  'היכנסו למערכת ופתחו <b>הגדרות ← טוקני API</b>.',
+  'בשדה <b>"שם הטוקן"</b> תנו שם שמזהה את השימוש, למשל <b>CRM</b>.',
+  '<b>תאריך תפוגה (רשות):</b> בחרו תאריך שאחריו הטוקן יפסיק לעבוד. בלי תאריך — הטוקן תקף עד שיימחק.',
+  'לחצו <b>"צור טוקן"</b>. הטוקן יופיע ברשימה.',
+  '<b>העתקה:</b> לחצו על סמל ההעתקה שליד הטוקן ושמרו אותו במערכת שלכם.',
+  '<b>כמה טוקנים:</b> אפשר ליצור כמה טוקנים שרוצים, וכולם פעילים במקביל. מומלץ טוקן נפרד לכל מערכת, כדי שאפשר יהיה לבטל אחד בלי לפגוע באחרים.',
+  '<b>הרשאות:</b> טוקן פועל עם ההרשאות של המשתמש שיצר אותו. מומלץ שמנהל החשבון יפיק את הטוקנים לאינטגרציות.',
+  '<b>מעקב:</b> ברשימה מוצגים לכל טוקן מי יצר אותו, מתי נוצר, תוקף ו<b>שימוש אחרון</b>.',
+  '<b>מחיקה:</b> לחצו על סמל הפח. טוקן שנמחק מפסיק לעבוד מיד — אם טוקן נחשף, מחקו אותו והפיקו חדש.',
+];
+function tokenCard(){
+  const c = el('section','card'); c.id='tok-whatsapp';
+  const steps = TOKEN_STEPS.map(s=>'<li>'+s+'</li>').join('');
+  c.innerHTML = `<h3>🔑 הפקת טוקן והזדהות</h3>
+    <p class="desc">הקריאות במערכת הווטסאפ פועלות מול <code>${BASE}</code> ב-HTTPS. האימות הוא <b>Bearer Token</b>: הטוקן נשלח בכותרת <code>Authorization: Bearer &lt;טוקן&gt;</code>. אין צורך בשם משתמש.</p>
+    <div class="seccreds">
+      <label>טוקן API<input id="gToken_whatsapp" type="password" autocomplete="off" placeholder="טוקן"></label>
+      <label class="rem"><input type="checkbox" id="gRemember_whatsapp"> שמור במכשיר</label>
+    </div>
+    <div class="note">הטוקן שתזינו כאן משמש את כפתורי <b>"נסה עכשיו"</b> בקריאות שדורשות טוקן API. בקריאות שבהן המפתח עובר בכתובת — ערכו את הכתובת בחלון "נסה עכשיו".</div>
+    <div class="lbl" style="margin-top:14px">כיצד מפיקים טוקן</div>
+    <ol class="steps">${steps}</ol>`;
+  return c;
+}
+
+// build nav + main
+const nav = $('#nav'), main = $('#main');
+main.appendChild(authCard());
+const allGroups = [];
+function makeGroup(title){
+  const wrap = el('div','navgroupwrap');
+  const head = el('div','navgroup collapsed');
+  head.appendChild(el('span',null,title));
+  head.appendChild(el('span','chev','▾'));
+  const list = el('div','navitems collapsed');
+  head.addEventListener('click',()=>{ head.classList.toggle('collapsed'); list.classList.toggle('collapsed'); });
+  wrap.appendChild(head); wrap.appendChild(list); nav.appendChild(wrap);
+  const g={head,list,wrap}; allGroups.push(g); return g;
+}
+let openByDefault = 1;
+function setDefaultGroups(){
+  allGroups.forEach((g,idx)=>{
+    const open = idx===0 || idx===openByDefault;
+    g.head.classList.toggle('collapsed',!open);
+    g.list.classList.toggle('collapsed',!open);
+    g.wrap.style.display='';
+  });
+}
+
+const startG = makeGroup('התחלה');
+{ const l=el('div','navlink','אימות וכללי יסוד'); l.addEventListener('click',()=>document.getElementById('sec-__auth').scrollIntoView({behavior:'smooth'})); startG.list.appendChild(l); }
+{ const l=el('div','navlink','🔑 הפקת טוקן והזדהות'); l.addEventListener('click',()=>document.getElementById('tok-whatsapp').scrollIntoView({behavior:'smooth'})); startG.list.appendChild(l); }
+main.appendChild(tokenCard());
+
+ENDPOINTS.forEach((e,i)=> e._i=i);
+for(const s of SECTIONS){
+  const secKey = s.key;
+  const eps = ENDPOINTS.filter(e=>e.section===secKey);
+  if(!eps.length) continue;
+  const g = makeGroup(SECTION_TITLE[secKey]||secKey);
+  const secHead = el('h2'); secHead.textContent=SECTION_TITLE[secKey]||secKey; secHead.id='sec-'+secKey;
+  secHead.style.cssText='margin:28px 4px 10px;font-size:22px'; main.appendChild(secHead);
+  for(const e of eps){
+    const i=e._i;
+    const link=el('div','navlink'); link.dataset.i=i; link.dataset.text=(e.name+' '+e.url+' '+(e.desc||'')).toLowerCase();
+    link.innerHTML='<span class="mm '+e.method+'">'+e.method+'</span>';
+    link.appendChild(document.createTextNode(e.name));
+    link.addEventListener('click',()=>document.getElementById(slug(i)).scrollIntoView({behavior:'smooth'}));
+    g.list.appendChild(link);
+    main.appendChild(epCard(e,i));
+  }
+  const ec = errCard(secKey);
+  if(ec){
+    main.appendChild(ec);
+    const elink=el('div','navlink errlink','⚠ קודי שגיאה');
+    elink.addEventListener('click',()=>document.getElementById('err-'+secKey).scrollIntoView({behavior:'smooth'}));
+    g.list.appendChild(elink);
+  }
+}
+if(openByDefault>=allGroups.length) openByDefault=0;
+setDefaultGroups();
+
+// search filter
+$('#search').addEventListener('input',(ev)=>{
+  const q=ev.target.value.trim().toLowerCase();
+  document.querySelectorAll('.navlink[data-i]').forEach(l=>{
+    const show=!q||l.dataset.text.includes(q);
+    l.style.display=show?'':'none';
+    const card=document.getElementById(slug(l.dataset.i)); if(card)card.style.display=show?'':'none';
+  });
+  if(!q){ setDefaultGroups(); return; }
+  allGroups.forEach(g=>{
+    const links=[...g.list.querySelectorAll('.navlink[data-i]')];
+    const anyVisible = links.length===0 || links.some(l=>l.style.display!=='none');
+    g.wrap.style.display = anyVisible?'':'none';
+    g.head.classList.remove('collapsed'); g.list.classList.remove('collapsed');
+  });
+});
+
+// token persistence (per device, opt-in)
+(function(){
+  const tI=$('#gToken_whatsapp'), rI=$('#gRemember_whatsapp');
+  if(!tI||!rI) return;
+  try{ const rt=localStorage.getItem('mg_token_whatsapp'); if(rt!=null){ tI.value=rt; rI.checked=true; } }catch(e){}
+  const persist=()=>{ try{
+    if(rI.checked) localStorage.setItem('mg_token_whatsapp',tI.value);
+    else localStorage.removeItem('mg_token_whatsapp');
+  }catch(e){} };
+  [tI,rI].forEach(x=>x.addEventListener('change',persist));
+})();
+</script>
+</body>
+</html>
