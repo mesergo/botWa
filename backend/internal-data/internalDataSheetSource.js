@@ -33,8 +33,15 @@ export const parseWorkbookFromSource = async (sourceType, sourceUrl) => {
   if (!response.ok) throw new Error(`שגיאת הורדה (${response.status})`);
 
   if (sourceType === 'google_sheet') {
+    // A non-sheet link (or a private sheet's login page) returns HTML, which XLSX
+    // either rejects cryptically or parses into junk rows — fail with a clear message.
+    if ((response.headers.get('content-type') || '').includes('text/html')) {
+      throw new Error('הקישור אינו מוביל לגיליון Google Sheets ציבורי. יש להדביק קישור מסוג docs.google.com/spreadsheets/... ולוודא שהגיליון משותף כ"כל מי שיש לו את הקישור"');
+    }
     const text = await response.text();
-    return XLSX.read(text, { type: 'string' });
+    // raw: keep CSV cells as the sheet shows them. Without it XLSX guesses dates in US
+    // order — "01/09/2026" becomes a serial for Jan 9 while "14/08/2026" stays text.
+    return XLSX.read(text, { type: 'string', raw: true });
   }
   const buffer = Buffer.from(await response.arrayBuffer());
   return XLSX.read(buffer, { type: 'buffer' });
