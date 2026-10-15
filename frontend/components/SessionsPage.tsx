@@ -51,6 +51,8 @@ interface Contact {
   bots: { id: string; name: string }[];
   botPhones?: string[];
   assigned_to?: string[];
+  repUserId?: string | null;
+  lastResponderUserId?: string | null;
   status?: 'bot' | 'waiting' | 'handling' | 'closed' | 'resolved';
   lastResponderName?: string | null;
   wants_phone?: boolean;
@@ -62,7 +64,7 @@ interface Contact {
 
 interface SessionsPageProps {
   token: string | null;
-  currentUser?: { name?: string; email?: string; role?: string; isImpersonating?: boolean; availability_status?: 'available' | 'unavailable' | 'on_break'; onboarding?: { completed?: boolean; current_step?: string } } | null;
+  currentUser?: { id?: string; name?: string; email?: string; role?: string; isImpersonating?: boolean; availability_status?: 'available' | 'unavailable' | 'on_break'; onboarding?: { completed?: boolean; current_step?: string } } | null;
   onBack?: () => void;
   onLogout: () => void;
   onOpenContacts?: (phone?: string) => void;
@@ -2065,6 +2067,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
   };
 
   const [statusFilter, setStatusFilter] = useState<ConvStatus | 'all'>('all');
+  const [myConversationsOnly, setMyConversationsOnly] = useState(false);
 
   // Content search state
   const [contentSearchResults, setContentSearchResults] = useState<{ phone: string; snippet: string; whatsapp_name?: string; full_name?: string; matchCount: number }[]>([]);
@@ -2112,7 +2115,22 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
   useEffect(() => {
     setVisibleContactsLimit(50);
     setLoadingMoreContacts(false);
-  }, [contactSearch, statusFilter, activeBotFilter]);
+  }, [contactSearch, statusFilter, activeBotFilter, myConversationsOnly]);
+
+  const representativeIds = [...new Set(
+    contacts
+      .filter(contact => contact.status === 'handling' && contact.lastResponderName)
+      .map(contact => contact.lastResponderUserId || contact.lastResponderName)
+      .filter((id): id is string => Boolean(id))
+  )].sort();
+  const representativeColors = new Map<string, { color: string; backgroundColor: string }>();
+  representativeIds.forEach((id, index) => {
+    const hue = (index * 360) / representativeIds.length;
+    representativeColors.set(id, {
+      color: `hsl(${hue}, 88%, 42%)`,
+      backgroundColor: `hsl(${hue}, 90%, 95%)`
+    });
+  });
 
   const filteredContacts = contacts.filter(c => {
     if (contactSearch) {
@@ -2123,6 +2141,12 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
       if (!matchesPhone && !matchesName && !matchesIntro) return false;
     }
     if (statusFilter !== 'all' && c.status !== statusFilter) return false;
+    if (myConversationsOnly && currentUser?.id) {
+      const isAssignedToMe = c.assigned_to?.includes(currentUser.id);
+      const routedToMe = c.repUserId === currentUser.id;
+      const handledByMe = c.lastResponderUserId === currentUser.id;
+      if (!isAssignedToMe && !routedToMe && !handledByMe) return false;
+    }
     if (activeBotFilter) {
       // Match by bot flow id (widget-based sessions) — any bot in the group
       if (c.bots.some(b => activeBotFilter.botIds.includes(b.id))) return true;
@@ -2318,7 +2342,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
     }
     setForwardSending(true);
     setForwardError(null);
-    try {
+    try { 
       const response = await fetch(`${API_BASE}/sessions/${forwardTarget.sessionId}/forward-message`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
@@ -2438,7 +2462,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
       if (cur.type === 'waitingwebservice') { hi++; continue; }
       if (cur.type === 'SendItem') {
         const cards: any[] = [];
-        const created = cur.created;
+       const created = cur.created;
         while (hi < sortedHistory.length && sortedHistory[hi].type === 'SendItem') {
           cards.push(sortedHistory[hi]); hi++;
         }
@@ -2447,7 +2471,7 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
         grouped.push(cur); hi++;
       }
     }
-
+ 
 
 
     return grouped.map((item: any, idx: number) => {
@@ -3105,6 +3129,20 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
             </div>
             {/* Status filter pills */}
             <div className="flex gap-1 mt-2 flex-wrap">
+              {currentUser?.role === 'rep' && currentUser.id && (
+                <button
+                  type="button"
+                  onClick={() => setMyConversationsOnly(value => !value)}
+                  aria-pressed={myConversationsOnly}
+                  className={`text-[9px] font-black px-2 py-0.5 rounded-full border transition-colors ${
+                    myConversationsOnly
+                      ? 'bg-sky-500 text-white border-sky-500'
+                      : 'bg-white text-slate-500 border-slate-200 hover:border-slate-400'
+                  }`}
+                >
+                  {t('sidebar.filterMine')}
+                </button>
+              )}
               {(['all', 'waiting', 'handling', 'resolved', 'bot', 'closed'] as const).map(s => (
                 <button
                   key={s}
@@ -3204,16 +3242,6 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                               {t('sidebar.sessionsCountBadge', { count: contact.sessionCount })}
                             </span>
                             {!sim && renderStatusBadge(contact.status)}
-                            {!sim && contact.status === 'handling' && contact.lastResponderName && (
-                              <span className="text-[9px] font-semibold text-slate-500">
-                                {t('sidebar.lastReplyBy', {
-                                  name: contact.lastResponderName,
-                                  defaultValue: i18n.language === 'en'
-                                    ? `In progress by ${contact.lastResponderName}`
-                                    : `בטיפול ע״י ${contact.lastResponderName}`
-                                })}
-                              </span>
-                            )}
                             {contact.wants_phone && (
                               <span className="flex items-center gap-0.5 text-[9px] font-black px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 ring-1 ring-green-400/60 animate-pulse">
                                 <Phone size={9} />{t('sidebar.phoneOnlyBadge')}
@@ -3225,15 +3253,29 @@ const SessionsPage: React.FC<SessionsPageProps> = ({ token, currentUser, onBack,
                           <span className="text-[10px] text-slate-400 font-semibold">
                             {formatContactTime(contact.lastMessageAt || contact.lastSeen)}
                           </span>
-                          {!sim && onOpenContacts && (
-                            <button
-                              onClick={e => { e.stopPropagation(); onOpenContacts(contact.phone); }}
-                              title={t('sidebar.openContactDetails')}
-                              className="p-1 text-slate-300 hover:text-sky-500 hover:bg-sky-50 rounded-lg transition-colors"
-                            >
-                              <User size={12} />
-                            </button>
-                          )}
+                          <div className="flex items-center gap-1">
+                            {!sim && contact.status === 'handling' && contact.lastResponderName && (() => {
+                              const colors = representativeColors.get(contact.lastResponderUserId || contact.lastResponderName);
+                              return (
+                                <span
+                                  className="text-xs font-black px-1.5 py-0.5 rounded-md"
+                                  style={colors}
+                                  dir="auto"
+                                >
+                                  {contact.lastResponderName}
+                                </span>
+                              );
+                            })()}
+                            {!sim && onOpenContacts && (
+                              <button
+                                onClick={e => { e.stopPropagation(); onOpenContacts(contact.phone); }}
+                                title={t('sidebar.openContactDetails')}
+                                className="p-1 text-slate-300 hover:text-sky-500 hover:bg-sky-50 rounded-lg transition-colors"
+                              >
+                                <User size={12} />
+                              </button>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </button>

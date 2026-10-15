@@ -12,7 +12,7 @@
     "blocklistNotFound": "Blocklist not found in the system",
     "blocklistAddFailed": "Failed to add to the blocklist",
     "botBlockFailed": "Failed to update the bot-block state"
-  }, 
+  },  
   "dateLabels": {
     "unknown": "Unknown",
     "yesterday": "Yesterday",
@@ -161,6 +161,7 @@
     "contactsCount": "{{count}} contacts",
     "newChat": "New conversation",
     "searchPlaceholder": "Search contact by phone, intro text...",
+    "filterMine": "My conversations",
     "filterAll": "All",
     "filterWaiting": "Waiting",
     "filterHandling": "In progress",
