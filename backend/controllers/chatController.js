@@ -25,6 +25,7 @@ import { applyConversationClosedToDoc, resolveClosingMessage } from '../utils/co
 
 import { notifyWaitingCustomerMessage } from '../config/pushNotificationsRuntime.js';
 import { sendExpoPushToUser } from '../utils/expoPush.js';
+import { getBuiltinParam } from '../utils/builtinParams.js';
  
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -104,7 +105,7 @@ const convertBase64ToUrl = (base64Data, req) => {
 const replaceParameters = (text, parameters) => {
   if (!text) return '';
   return text.replace(/--(.+?)--/g, (match, paramName) => {
-    const value = parameters[paramName];
+    const value = parameters[paramName] ?? getBuiltinParam(paramName);
     return value !== undefined ? String(value) : 'null';
   });
 };
